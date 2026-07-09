@@ -1,0 +1,7 @@
+# Untch pnpm workspace. Scoped to packages/* so @untch/canon (D0.5) and @untch/policy-engine
+# resolve by name across package boundaries via a symlink in node_modules/@untch. services/asp
+# is intentionally NOT a member — it is a deployable island with its own lockfile and heavy
+# OKX x402 deps, installed independently, and pulling it into the root graph would change its
+# install semantics for no benefit here.
+packages:
+  - "packages/*"

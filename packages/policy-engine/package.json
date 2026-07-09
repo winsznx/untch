@@ -1,0 +1,17 @@
+{
+  "name": "@untch/policy-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Untch deterministic policy engine (PRD §7.1). PARTIAL SLICE — see README: only intent canonicalization/validation, policy-active lookup, the budget + duplicate rules, and the per-agent concurrency lock are real; every other §7.1 rule is an explicit NOT-YET-IMPLEMENTED stub surfaced in the decision trace.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@untch/canon": "workspace:*",
+    "viem": "^2.55.0"
+  }
+}

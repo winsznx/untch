@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "check-wallet": "tsx scripts/check-wallet.ts",
     "gen:fixtures": "tsx packages/canon/scripts/gen-fixture-hashes.ts",
-    "test:canon": "node --import tsx --test packages/canon/test/*.test.ts"
+    "test:canon": "node --import tsx --test packages/canon/test/*.test.ts",
+    "test:policy": "node --import tsx --test packages/policy-engine/test/*.test.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
