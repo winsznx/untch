@@ -1,0 +1,6 @@
+node: v24.14.1   npm: 11.12.1
+.env present: yes — contains OKX REST API HMAC triple (OKX_API_KEY / OKX_SECRET_KEY / OKX_PASSPHRASE).
+             NO on-chain EVM private key; NO confirmed funded X Layer USDT/USDG balance.  (values not reproduced here)
+Verified npm packages: x402@1.2.0, x402-express@1.2.0, x402-fetch@1.2.0, x402-axios@1.2.1, @coinbase/x402@2.1.0,
+                       @okxweb3/a2a-hermes@0.1.7, @okx_ai/okx-trade-cli@1.3.9
+No standalone `onchainos` npm package (404); OKX skills install via `npx skills add okx/onchainos-skills`.

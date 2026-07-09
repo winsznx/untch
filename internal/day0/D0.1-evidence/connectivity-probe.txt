@@ -1,0 +1,13 @@
+# D0.1 blocker evidence — OKX host reachability probe
+# Captured: 2026-07-09 (sandboxed shell, then sandbox-disabled retry gave identical 000 for okx.com hosts)
+# Format: <http_code>  <url>   (000 = no connection established)
+
+000  https://www.okx.com/api/v5/public/time
+000  https://web3.okx.com/api/v5/public/time
+000  https://web3.okx.com/onchainos/dev-docs/payments/x402-introduction
+200  https://www.okx.ai/
+200  https://registry.npmjs.org/x402/latest
+
+# Interpretation: OKX API/docs/facilitator hosts (okx.com, web3.okx.com) unreachable;
+# okx.ai and npm reachable. The x402 facilitator + integration docs live on the blocked hosts,
+# so no real settled paid call can originate from this environment.

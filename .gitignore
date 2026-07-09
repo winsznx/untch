@@ -1,0 +1,12 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# node
+node_modules/
+dist/
+*.log
+
+# internal PRD stays local per D0.8 (repo scaffold gitignores /internal)
+# NOTE: for D0.1 we DO want the notes + evidence tracked locally; see below
