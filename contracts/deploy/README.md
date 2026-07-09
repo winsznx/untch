@@ -14,10 +14,10 @@ never an ad-hoc scheme — then deploys, registers one demo policy, and reads it
 
 | Item | Value |
 |------|-------|
-| **Contract** | [`0xc571022c5b0fD0014D7778a817A98bce515b7f81`](https://www.oklink.com/x-layer-testnet/address/0xc571022c5b0fd0014d7778a817a98bce515b7f81) (chainId 1952) |
-| **Source verified** | ✅ OKLink — "Pass - Verified" |
-| **Deploy tx** | `0x17bc47bbdf75509b6c35420e612ace424f4c6b0066fdb448a09d3f3d94cc6246` (status `0x1`, block 35153551, gas 722,695) |
-| **Register tx** | `0xfa97f4c8de7dc03c89e3f52af73016a951cd0205bbedb88901c97c91d1cb9f2e` (status `0x1`, emitted `PolicyRegistered`) |
+| **Contract** | [`0xe1d74c90801db0fa806c72eb818b7671b8233532`](https://www.oklink.com/x-layer-testnet/address/0xe1d74c90801db0fa806c72eb818b7671b8233532) (chainId 1952) |
+| **Source verified** | ✅ OKLink — "Pass - Verified" (repo HEAD source == this deployed bytecode) |
+| **Deploy tx** | `0x36df741c9611965fc02e619dea4d6efe91e9641f2e38aae331a4c327eb12f43b` (status `0x1`, block 35156334) |
+| **Register tx** | `0xf7f25c7486c8aa4406fe2fb973f75940cbc75991a8e4cf865f1aa4ed83724708` (status `0x1`, emitted `PolicyRegistered`) |
 | **Demo policyId** | `43689584780193288224528649685930235207374048247885169918877241264404980193079` |
 | **policyHash** | `0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d` — `@untch/canon hashCanonicalJson(demo rules)`, **equals the on-chain value** |
 | **Readback** | owner `0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b`, agent `0x…A9E7`, status ACTIVE, version 1, `isUsable = true` |
@@ -38,7 +38,7 @@ RPC_URL=https://testrpc.xlayer.tech DEPLOYER_PRIVATE_KEY=<ops-key> BROADCAST=1 \
   pnpm exec tsx scripts/deploy-policy-registry.ts
 
 # verify source on OKLink (no API key needed for the plugin endpoint):
-forge verify-contract 0xc571022c5b0fD0014D7778a817A98bce515b7f81 src/PolicyRegistry.sol:PolicyRegistry \
+forge verify-contract 0xe1d74c90801db0fa806c72eb818b7671b8233532 src/PolicyRegistry.sol:PolicyRegistry \
   --chain-id 1952 --verifier oklink \
   --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET
 ```

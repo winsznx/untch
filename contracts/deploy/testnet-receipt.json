@@ -1,11 +1,10 @@
 {
   "network": "X Layer testnet",
   "chainId": 1952,
-  "registry": "0xc571022c5b0fd0014d7778a817a98bce515b7f81",
-  "deployTx": "0x17bc47bbdf75509b6c35420e612ace424f4c6b0066fdb448a09d3f3d94cc6246",
-  "registerTx": "0xfa97f4c8de7dc03c89e3f52af73016a951cd0205bbedb88901c97c91d1cb9f2e",
-  "deployBlock": 35153551,
-  "deployGasUsed": 722695,
+  "registry": "0xe1d74c90801db0fa806c72eb818b7671b8233532",
+  "deployTx": "0x36df741c9611965fc02e619dea4d6efe91e9641f2e38aae331a4c327eb12f43b",
+  "registerTx": "0xf7f25c7486c8aa4406fe2fb973f75940cbc75991a8e4cf865f1aa4ed83724708",
+  "deployBlock": 35156334,
   "policyId": "43689584780193288224528649685930235207374048247885169918877241264404980193079",
   "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
   "policyHashSource": "@untch/canon hashCanonicalJson(demo §8 rules)",
@@ -15,7 +14,9 @@
   "status": "ACTIVE",
   "version": 1,
   "isUsable": true,
+  "sourceVerified": "OKLink — Pass - Verified",
   "independentlyVerifiedViaRawRpc": true,
-  "explorer": "https://www.oklink.com/x-layer-testnet/address/0xc571022c5b0fd0014d7778a817a98bce515b7f81",
-  "deployedAt": "2026-07-09"
+  "explorer": "https://www.oklink.com/x-layer-testnet/address/0xe1d74c90801db0fa806c72eb818b7671b8233532",
+  "deployedAt": "2026-07-09",
+  "note": "Redeploy after the isUsable lint-fix (Foundry v1.7.1 block-timestamp lint); repo HEAD source == this deployed+verified bytecode. Supersedes the earlier demo at 0xc571022c5b0fd0014d7778a817a98bce515b7f81."
 }

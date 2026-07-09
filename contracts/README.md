@@ -12,7 +12,7 @@ the full §28 pipeline for real.
 
 | Path | What it is | Status |
 |------|-----------|--------|
-| [`src/PolicyRegistry.sol`](src/PolicyRegistry.sol) | PRD §10.1 — on-chain anchor: a committed ruleset (`policyHash`) governed a given agent at a given time. Owner-gated register / update / pause / resume, event per mutation. | **Real & LIVE on X Layer testnet** at [`0xc571…7f81`](https://www.oklink.com/x-layer-testnet/address/0xc571022c5b0fd0014d7778a817a98bce515b7f81) (verified source; one demo policy registered + read back). Full §28 pipeline green. See [`deploy/README.md`](deploy/README.md). |
+| [`src/PolicyRegistry.sol`](src/PolicyRegistry.sol) | PRD §10.1 — on-chain anchor: a committed ruleset (`policyHash`) governed a given agent at a given time. Owner-gated register / update / pause / resume, event per mutation. | **Real & LIVE on X Layer testnet** at [`0xe1d7…3532`](https://www.oklink.com/x-layer-testnet/address/0xe1d74c90801db0fa806c72eb818b7671b8233532) (verified source; one demo policy registered + read back). Full §28 pipeline green. See [`deploy/README.md`](deploy/README.md). |
 | [`src/lib/IntentHash.sol`](src/lib/IntentHash.sol) | PRD §8.1 SpendIntent struct hash; the Solidity half of the D0.5 canonicalization differential. | Real library. |
 | `src/Scaffold.sol` | The D0.4 throwaway ownable/pausable stub. | **Removed** — a real contract (`PolicyRegistry`) now exercises the same CI, so the scaffold's only remaining effect was analyzer noise. (Same call Step-1b made about `ping_untch`.) |
 
@@ -81,7 +81,7 @@ aderyn --src src/ -o report.json .                             # 6. Aderyn (gate
 | **Static — Aderyn** | ✅ 0 High, **0 Low** |
 | **Coverage** | ✅ **100% branch** (11/11) on `PolicyRegistry.sol` — target was ≥95% (see [`coverage-summary.txt`](coverage-summary.txt), [`lcov.info`](lcov.info)) |
 | **Gas** | ✅ [`forge snapshot`](.gas-snapshot) committed |
-| **Testnet deploy + verify + readback** | ✅ **DONE** — deployed to X Layer testnet (`0xc571…7f81`), source verified on OKLink, one demo policy registered and read back (independently re-read via raw RPC). [`deploy/README.md`](deploy/README.md), [`deploy/testnet-receipt.json`](deploy/testnet-receipt.json). |
+| **Testnet deploy + verify + readback** | ✅ **DONE** — deployed to X Layer testnet (`0xe1d7…3532`), source verified on OKLink, one demo policy registered and read back (independently re-read via raw RPC). [`deploy/README.md`](deploy/README.md), [`deploy/testnet-receipt.json`](deploy/testnet-receipt.json). |
 
 - **Slither** triage: accepted Medium/High findings must be justified in
   [`slither-triage.md`](slither-triage.md); `slither.triage.json` is the (empty) machine database.

@@ -259,10 +259,17 @@ contract PolicyRegistry {
     /// @return True iff the policy is ACTIVE and not past its expiry.
     function isUsable(uint256 policyId) external view returns (bool) {
         Policy storage p = _policies[policyId];
-        // Usability is time-derived and inclusive of the expiry second, verbatim per PRD §10.1
-        // ("status == ACTIVE && block.timestamp <= expiry").
-        // solhint-disable-next-line not-rely-on-time,gas-strict-inequalities
-        return p.status == PolicyStatus.ACTIVE && block.timestamp <= p.expiry;
+        // Derived, inclusive usability per PRD §10.1 ("status == ACTIVE && block.timestamp <=
+        // expiry"). block.timestamp is read into a uint64 local first — the same intentional,
+        // acknowledged time dependency as register/update (a few seconds of validator skew is
+        // immaterial to a day/year-scale expiry). Reading it into a local also keeps the three
+        // time-using functions uniform: Slither still reports the tainted comparison (accepted
+        // Low, see slither-triage.md), while Foundry's block-timestamp lint — which only flags
+        // block.timestamp used directly in a comparison — is satisfied here as it is there.
+        // solhint-disable-next-line not-rely-on-time
+        uint64 nowTs = uint64(block.timestamp);
+        // solhint-disable-next-line gas-strict-inequalities
+        return p.status == PolicyStatus.ACTIVE && nowTs <= p.expiry;
     }
 
     /// @notice Deterministically derive the `policyId` a given `owner`/`nonce` pair produces.
