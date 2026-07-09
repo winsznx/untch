@@ -1,0 +1,21 @@
+{
+  "network": "X Layer testnet",
+  "chainId": 1952,
+  "registry": "0xc571022c5b0fd0014d7778a817a98bce515b7f81",
+  "deployTx": "0x17bc47bbdf75509b6c35420e612ace424f4c6b0066fdb448a09d3f3d94cc6246",
+  "registerTx": "0xfa97f4c8de7dc03c89e3f52af73016a951cd0205bbedb88901c97c91d1cb9f2e",
+  "deployBlock": 35153551,
+  "deployGasUsed": 722695,
+  "policyId": "43689584780193288224528649685930235207374048247885169918877241264404980193079",
+  "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
+  "policyHashSource": "@untch/canon hashCanonicalJson(demo §8 rules)",
+  "owner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+  "agent": "0x000000000000000000000000000000000000A9E7",
+  "expiry": 1798761600,
+  "status": "ACTIVE",
+  "version": 1,
+  "isUsable": true,
+  "independentlyVerifiedViaRawRpc": true,
+  "explorer": "https://www.oklink.com/x-layer-testnet/address/0xc571022c5b0fd0014d7778a817a98bce515b7f81",
+  "deployedAt": "2026-07-09"
+}
