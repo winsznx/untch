@@ -1,0 +1,12 @@
+{
+    "name": "@untch/contracts",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Untch smart contracts (Foundry) and the solhint lint gate for the PRD §28 / D0.4 audit pipeline.",
+    "scripts": {
+        "lint": "solhint --disc 'src/**/*.sol' --max-warnings 0"
+    },
+    "devDependencies": {
+        "solhint": "6.2.3"
+    }
+}

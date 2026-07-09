@@ -1,0 +1,70 @@
+# Untch contracts — Foundry config (D0.4 toolchain gate, PRD §28).
+# This config is the single source of compiler truth: the SAME solc version,
+# optimizer settings, and evm_version are used for `forge test`, static analysis,
+# and deploy. Do not diverge these between profiles (§28: "constant across test/deploy").
+
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+
+# --- Compiler pin (PRD §28: solc pinned, exact patch recorded) ---
+# Pinned to the latest stable 0.8.x available locally on 2026-07-09.
+# Verified: `solc --version` => 0.8.34+commit.80d5c536. Foundry resolves this exact
+# version via svm (binaries.soliditylang.org). Bumping this patch is a deliberate,
+# reviewed change — never let it float.
+solc = "0.8.34"
+
+# --- Optimizer (PRD §28: optimizer settings documented + constant across test/deploy) ---
+optimizer = true
+# 200 runs = balanced default (favors neither pure deploy-size nor pure runtime cost).
+# The real receipts/vault contracts are write-heavy and long-lived; when they land,
+# revisit runs against measured gas (§28 gas stage) before mainnet. 200 is the
+# documented D0 baseline.
+optimizer_runs = 200
+
+# via-ir DECISION (PRD §28: "via-ir decision documented and constant across test/deploy"):
+# OFF for the scaffold. via-ir roughly doubles compile time and is unnecessary at this
+# surface; the legacy pipeline is sufficient and keeps CI fast. Revisit only if a real
+# contract hits stack-too-deep. Kept explicit so test and deploy stay identical.
+via_ir = false
+
+# --- Warnings-as-errors (PRD §28: "warnings-as-errors") ---
+# Any solc warning fails the build. This is the compiler-level half of the static gate;
+# solhint/Slither/Aderyn are the other halves.
+# NOTE: this is the D0.4-brief's `deny_warnings = true` in its current, non-deprecated
+# spelling. Foundry 1.6.0 deprecated `deny_warnings = true` in favor of `deny = "warnings"`;
+# both mean the same thing (fail on any compiler warning). We use the current key so CI
+# logs stay clean of the deprecation notice.
+deny = "warnings"
+
+# --- EVM version DECISION (conservative default; D0 FOLLOW-UP) ---
+# Target: X Layer (OKX L2, chainId 196 mainnet / 1952 testnet; Polygon-CDK zkEVM stack).
+# Chosen: "paris". Rationale: paris emits no PUSH0 (Shanghai) and no transient-storage /
+# MCOPY / blob opcodes (Cancun+), so bytecode is portable to zkEVM L2s whose opcode
+# support historically lags L1. This is the safe, universally-executable target.
+#
+# WHY conservative and not verified-exact: X Layer's own developer docs
+# (web3.okx.com / www.okx.com) are network-unreachable from this build environment
+# (HTTP 000 on 2026-07-09 — same blocker recorded in D0.3-sources.md), so the precise
+# hardfork X Layer supports could not be confirmed from an official source today.
+# Per the D0.4 brief, we take the conservative default and flag the follow-up.
+#
+# D0 FOLLOW-UP (before mainnet, tracked for D0.5+): confirm X Layer's supported EVM
+# version from official OKX/X Layer docs once reachable (or by probing PUSH0/TSTORE via
+# the testnet RPC). If X Layer confirms Shanghai/Cancun support, this may be raised to
+# capture cheaper opcodes — but only after the §28 fork-integration stage proves it on
+# an X Layer testnet fork.
+evm_version = "paris"
+
+# --- Formatter (used by `forge fmt --check`, the first CI gate) ---
+[profile.default.fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = true
+int_types = "long"
+quote_style = "double"
+number_underscore = "thousands"
+
+# See all options: https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

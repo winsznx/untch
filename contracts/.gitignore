@@ -1,0 +1,11 @@
+# Foundry build artifacts
+out/
+cache/
+broadcast/
+
+# node / solhint
+node_modules/
+
+# Aderyn CI JSON (regenerated each run; the committed evidence md lives in /internal)
+aderyn-report.json
+report.md

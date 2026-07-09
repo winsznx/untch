@@ -1,0 +1,31 @@
+==============================================================================
+ D0.4 EVIDENCE — Slither static analysis on the scaffold contract
+ PRD §28 static stage. Generated 2026-07-09.
+==============================================================================
+
+TOOL VERSION
+  slither 0.11.5
+  solc    0.8.34+commit.80d5c536.Darwin.appleclang
+  forge   1.6.0-v1.6.0-t3-tempo
+
+COMMAND (identical to .github/workflows/contracts.yml slither stage)
+  slither . --triage-database slither.triage.json --fail-medium
+  config slither.config.json: fail_on=medium, filter_paths=lib/, exclude_dependencies=true
+
+GATE RULE (PRD §28)
+  CI fails on any Medium or High impact finding not accepted with a written
+  justification in slither.triage.json. Optimization/Informational/Low do not block.
+
+RESULT
+'forge clean' running (wd: /Users/mac/untch/contracts)
+'forge config --json' running
+'forge build --build-info --skip ./test/** ./script/** --force' running (wd: /Users/mac/untch/contracts)
+INFO:Slither:. analyzed (1 contracts with 117 detectors), 0 result(s) found
+
+  slither exit code: 0  (0 = gate PASS)
+  scaffold findings Medium/High: 0    accepted-in-triage: 0
+
+GATE-BITES VERIFICATION (probe not committed)
+  A temporary contract using tx.origin for authorization (Medium impact) was
+  compiled into src/ and run through the exact CI command: slither exited 1 (gate
+  BLOCKED). Probe removed; scaffold returns to exit 0. The Medium/High gate is live.

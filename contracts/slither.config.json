@@ -1,0 +1,12 @@
+{
+    "detectors_to_exclude": "",
+    "exclude_dependencies": true,
+    "filter_paths": "lib/",
+    "fail_on": "medium",
+    "solc_disable_warnings": false,
+    "exclude_informational": false,
+    "exclude_optimization": false,
+    "exclude_low": false,
+    "exclude_medium": false,
+    "exclude_high": false
+}

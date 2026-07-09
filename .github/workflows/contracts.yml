@@ -1,0 +1,90 @@
+# Untch contract audit & test pipeline — PRD §28 static stage, stood up in D0.4.
+# Gates the scaffold today; the same pipeline governs PolicyRegistry / SpendIntentRegistry
+# / UntchReceipts / UntchVault as they land. Single job, sequential + fail-fast so the
+# stages run strictly in order: fmt → build → test → solhint → slither → aderyn.
+name: contracts
+
+on:
+  push:
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts.yml"
+  pull_request:
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts.yml"
+
+# forge-std is vendored under contracts/lib (committed, no submodule), so a plain
+# checkout is sufficient — no submodule fetch required.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: contracts
+
+jobs:
+  audit:
+    name: forge + static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      # --- 1. Formatting gate ---
+      - name: forge fmt --check
+        run: forge fmt --check
+
+      # --- 2. Compile (solc pinned to 0.8.34 via foundry.toml; deny = "warnings") ---
+      - name: forge build
+        run: forge build
+
+      # --- 3. Test battery ---
+      - name: forge test
+        run: forge test -vvv
+
+      # --- 4. solhint (style/lint gate; --max-warnings 0 = clean-or-fail) ---
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install solhint (pinned)
+        run: npm ci
+
+      - name: solhint
+        run: npm run lint
+
+      # --- 5. Slither (fail on Medium/High not accepted in slither.triage.json) ---
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Slither (pinned)
+        run: pipx install slither-analyzer==0.11.5
+
+      - name: Slither
+        run: slither . --triage-database slither.triage.json --fail-medium
+
+      # --- 6. Aderyn (fail on any High) ---
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Aderyn (pinned to the D0.4 version)
+        run: cargo install aderyn --version 0.1.9 --locked
+
+      - name: Aderyn (gate on High)
+        run: |
+          aderyn --src src/ --skip-update-check -o aderyn-report.json .
+          high="$(jq '.issue_count.high' aderyn-report.json)"
+          echo "Aderyn HIGH issues: ${high}"
+          if [ "${high}" -ne 0 ]; then
+            echo "::error::Aderyn reported ${high} HIGH issue(s) — blocking per PRD §28."
+            exit 1
+          fi
