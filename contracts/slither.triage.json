@@ -1,8 +1,1 @@
-[
-    {
-        "__triage_policy__": "Slither triage ledger (PRD 28). This file is Slither's --triage-database. It is EMPTY of accepted findings by design: the D0.4 Scaffold has zero Medium/High results. RULE: CI fails on any Slither finding of Medium OR High impact (fail_on=medium in slither.config.json) UNLESS that exact finding is accepted in this file with a written justification. Optimization / Informational / Low findings do not block CI.",
-        "how_to_accept_a_finding": "Run `slither . --triage-database slither.triage.json --triage-mode` and mark the finding; Slither appends an object carrying its stable finding hash under \"id\". Then edit that object to add a \"justification\" (why it is a false positive or an accepted risk), a \"reviewer\", and a \"date\". Never accept a finding without a written justification.",
-        "cross_tool_disposition_rule": "PRD 28: any finding one of Slither/Aderyn raises and the other does not gets a written disposition here or in the Aderyn report - no silent disagreement between the two analyzers.",
-        "_loader_note": "Slither's triage loader only reads array elements that contain an \"id\" key; these documentation objects have none, so they are ignored and the ledger stays functionally empty until a real finding is accepted."
-    }
-]
+[]
