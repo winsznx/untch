@@ -11,11 +11,14 @@ on:
       # The D0.5 canonicalization differential (test/IntentHash.t.sol) reads the shared
       # corpus at the repo root, so a fixtures change must re-run forge test here too.
       - "fixtures/**"
+      # aderyn.toml (repo root) scopes the aderyn gate; a change to it must re-run this job.
+      - "aderyn.toml"
       - ".github/workflows/contracts.yml"
   pull_request:
     paths:
       - "contracts/**"
       - "fixtures/**"
+      - "aderyn.toml"
       - ".github/workflows/contracts.yml"
 
 # forge-std is vendored under contracts/lib (committed, no submodule), so a plain
@@ -33,12 +36,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
+      # Pinned to an EXACT Foundry release, not the floating `stable` channel. `stable` silently
+      # rolled to v1.7.1 mid-development, whose new block-timestamp build lint (deny="warnings"
+      # turns it into a hard error) broke a green build with no repo change. v1.7.1 is the current
+      # stable and the version the last green run already passed on; freezing it here means the
+      # next Foundry release cannot break this job underneath us. Bump deliberately, never let float.
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.7.1
 
       # --- 1. Formatting gate ---
       - name: forge fmt --check
@@ -54,7 +62,7 @@ jobs:
 
       # --- 4. solhint (style/lint gate; --max-warnings 0 = clean-or-fail) ---
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
 
@@ -66,7 +74,7 @@ jobs:
 
       # --- 5. Slither (fail on Medium/High not accepted in slither.triage.json) ---
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -77,18 +85,16 @@ jobs:
         run: slither . --triage-database slither.triage.json --fail-medium
 
       # --- 6. Aderyn (fail on any High) ---
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Aderyn (pinned to the D0.4 version)
-        run: cargo install aderyn --version 0.1.9 --locked
-
+      # Installed via the maintainer's own CI action, NOT `cargo install aderyn`. The from-source
+      # build pulled a transitive dep (svm-rs-builds) that currently emits duplicate `pub const`
+      # definitions for solc 0.8.31/0.8.35 and fails to compile — an upstream bug (alloy-rs/svm-rs
+      # #177, fix #178) that `--locked` does not shield against. aderyn-ci@v0 installs a prebuilt
+      # npm binary (@cyfrin/aderyn@0.6), sidestepping the compile path entirely rather than
+      # working around it. `fail-on: high` is the exact policy this repo committed to (PRD §28:
+      # High findings block; Low do not). Project config (root=contracts, src=src/) comes from
+      # aderyn.toml at the repo root — the action discourages the `working-directory:` input.
+      # Verified locally against the same aderyn 0.6.8 the action installs: PolicyRegistry high=0.
       - name: Aderyn (gate on High)
-        run: |
-          aderyn --src src/ --skip-update-check -o aderyn-report.json .
-          high="$(jq '.issue_count.high' aderyn-report.json)"
-          echo "Aderyn HIGH issues: ${high}"
-          if [ "${high}" -ne 0 ]; then
-            echo "::error::Aderyn reported ${high} HIGH issue(s) — blocking per PRD §28."
-            exit 1
-          fi
+        uses: Cyfrin/aderyn-ci@v0
+        with:
+          fail-on: high

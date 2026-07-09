@@ -1,0 +1,14 @@
+# Aderyn static-analysis config (PRD §28 static stage). Consumed by the Cyfrin/aderyn-ci@v0
+# CI gate in .github/workflows/contracts.yml AND by the local evidence run that archives to
+# internal/day0/D0.4-evidence/. Lives at the repo root because aderyn-ci runs `aderyn .` from
+# the repo root and discourages the `working-directory:` input — it reads the toml here and
+# appends `root` to locate the Foundry project. Keeping one config for CI + local guarantees
+# the archived evidence is generated with identical scoping to the gate.
+version = 1
+
+# The Foundry project is a subdirectory; aderyn appends this to its invocation dir (repo root).
+root = "contracts"
+
+# Scope analysis to first-party sources only (contracts/src/), matching the retired
+# `aderyn --src src/` invocation. Excludes lib/forge-std from the report and the High gate.
+src = "src/"
