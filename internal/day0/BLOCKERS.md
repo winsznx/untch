@@ -40,6 +40,11 @@ The task cannot proceed without the following. Each is a step only you can take.
 
 # D0.3 BLOCKER — funding gate: no testnet-funded ops wallet
 
+> **SUPERSEDED (2026-07-09):** the funding target below (testnet OKB) was wrong — D0.1 proved
+> no testnet facilitator exists, so the whole rail runs on mainnet. The gate now checks
+> **mainnet** native OKB. See the mainnet-redirect section at the bottom of this file for the
+> current, authoritative D0.3 funding status.
+
 **Gate:** §29 D0.3 · **Result:** constants **PASS**, funding gate **BLOCKED** (no funded testnet ops wallet).
 **Date:** 2026-07-09
 
@@ -62,3 +67,97 @@ There is **no ops wallet address configured and no testnet OKB balance**. `OPS_W
 4. Re-run `pnpm check-wallet`. PASS = testnet native OKB balance > 0 (exit 0); the run output overwrites `D0.3-evidence/wallet-check.txt` as the funded-wallet evidence.
 
 ## Session ended here per instructions (blocked on ops-wallet provisioning + faucet funding — steps only you can do).
+
+---
+
+# D0.1 FUNDING BLOCKER — buyer wallet generated but unfunded
+
+**Gate:** §29 D0.1 · **Result:** BLOCKED (buyer wallet has no settlement token).
+
+A fresh burner buyer wallet was generated. It must be funded before a real x402 call
+can settle. No payment was simulated.
+
+- **Fund this address:** `0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b`
+- **Token:** USD₮ `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` (6 decimals)
+- **Amount:** at least 0.01 USD₮ (send ~$0.05 worth for margin)
+- **Network:** X Layer Mainnet (eip155:196, chainId 196)
+- **Gas:** none needed on the buyer — EIP-3009 is gasless for the signer.
+
+After funding, re-run `pnpm --filter @untch/asp pay`.
+
+---
+
+# D0.1 NETWORK BLOCKER (2026-07-09, 2nd attempt) — OKX facilitator unreachable (HARD, independent of funding)
+
+**Gate:** §29 D0.1 · **Result:** BLOCKED. This blocker is independent of the funding blocker
+above — even a fully funded buyer wallet cannot complete a call from this environment.
+
+The scaffold is now built and typechecks clean (`services/asp/`, first-party `@okxweb3/x402-*`
+packages). What blocks execution is purely network reachability:
+
+- `OKXFacilitatorClient` (in `@okxweb3/x402-core@0.1.0`) targets `https://web3.okx.com/facilitator`
+  for `getSupported` / `verify` / `settle` / `settle/status`.
+- From here, `web3.okx.com` and `www.okx.com` time out (HTTP 000) — verified twice, sandbox
+  disabled. `rpc.xlayer.tech` and npm ARE reachable; the block is OKX hosts specifically.
+- Proven at runtime: the seller cannot even build the 402 challenge offline — an unpaid request
+  500s with *"Facilitator does not support exact on eip155:196. Make sure to call initialize()
+  to fetch supported kinds from facilitators."* (evidence: `D0.1-evidence/facilitator-dependency-proof.txt`).
+
+**Next action (you):** run `pnpm --filter @untch/asp pay` from a host with outbound access to
+`web3.okx.com` (local machine / OKX-whitelisted egress), with a funded `BUYER_PRIVATE_KEY` and a
+real `PAY_TO_ADDRESS` set in `services/asp/.env`. The code path (challenge → EIP-3009 sign →
+verify/settle → decode PAYMENT-RESPONSE tx hash → write `D0.1-evidence/paid-call-transcript.json`)
+is ready and will run unchanged.
+
+## Session ended here per instructions (blocked on OKX network egress + buyer funding — steps only you can do). No payment simulated.
+
+---
+
+# D0.1 RESOLVED — PASS (2026-07-09). Both blockers cleared.
+
+The two D0.1 blockers above (buyer funding + OKX network egress) are **cleared**:
+- **Funding:** buyer 0x98F4…c0b funded with USDT0 (1.5) — confirmed on-chain.
+- **Egress:** solved by hosting the *seller* on Railway (reachable to web3.okx.com) instead of
+  fighting the Nigeria/VPN block locally. Only the seller needs OKX reach.
+
+Real settled paid call executed: tx `0x9db78b52ca60f376b84b37510ce77836051b3177973ef22f05285e9296cd1efc` on X Layer mainnet via OKX's hosted x402 facilitator
+(relayer 0x5ee567b8… broadcast the EIP-3009 transfer; receipt 0x1). Evidence in `D0.1-evidence/`.
+Nothing simulated. **§29 D0.1 = PASS.**
+
+---
+
+# D0.3 — funding target redirected to MAINNET; gate condition fixed; funding still INSUFFICIENT
+
+**Gate:** §29 D0.3 · **Result:** gate-condition bug **FIXED**; funding gate **BLOCKED — insufficient (not zero)**.
+**Date:** 2026-07-09
+
+## What was fixed (code — done, verified)
+- `scripts/check-wallet.ts` previously exited nonzero when the **testnet** native OKB balance
+  was zero. D0.1 proved no testnet facilitator exists — mainnet is the operative network for
+  this entire build — so testnet was the wrong thing to gate on. The gate now checks **mainnet**
+  native OKB (chainId 196) against a small sane floor (`MIN_MAINNET_NATIVE_WEI` = 0.0005 OKB).
+  Both networks' balances are still printed for visibility; only which one gates PASS/FAIL changed.
+- `OPS_WALLET_ADDRESS` set in `.env` (gitignored) to the ops wallet
+  `0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b` (the same address used as the D0.1 buyer wallet — reused deliberately).
+- `pnpm typecheck` clean (exit 0).
+
+## The blocker — live mainnet balance is below the ~$1 provisioning bar
+Real on-chain read (no mock), confirmed twice via `rpc.xlayer.tech`:
+- **Ops wallet:** `0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b`
+- **Mainnet native OKB:** **`0.006324310650139134` OKB** (`6324310650139134` wei; raw `eth_getBalance` → `0x1677ed51c031fe`; chainId `0xc4` = 196)
+- **USD equivalent:** **≈ $0.50** (OKB $79.20, CoinGecko, 2026-07-09) — this balance would need OKB at ~$158 to reach $1.
+- Also present on mainnet (not gas): USD₮ (USDT0) **1.5**, from the D0.1 session. USDT/USDG = 0.
+- Testnet (1952) native OKB: **0** — no longer gates anything.
+
+Per the session hard rule (*live mainnet native balance under roughly $1 equivalent → STOP,
+do not fake a PASS*), **$0.50 is under the ~$1 bar**, so D0.3's funding gate is **not** closed.
+The mechanical dust floor (0.0005 OKB) passes, but the operator provisioning bar (~$1) does not.
+
+## Next action (you) — a step only you can take
+1. Top up the ops wallet `0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b` with more **mainnet OKB**
+   on X Layer (chainId 196) to at least **~0.0127 OKB (~$1)**; send **~0.03 OKB (~$2–3)** for margin.
+2. Re-run `pnpm check-wallet`. When the mainnet native balance clears the ~$1 provisioning bar,
+   save the run output to `internal/day0/D0.3-evidence/wallet-check-mainnet.txt` and mark this
+   blocker RESOLVED with the balance + timestamp.
+
+## Session ended here per the hard rule (insufficient mainnet funding — top-up is a step only you can take). No PASS faked.

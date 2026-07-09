@@ -13,7 +13,6 @@ import {
   isConfirmed,
   TOKENS,
   X_LAYER_MAINNET_ID,
-  X_LAYER_TESTNET_FAUCET_URL,
   X_LAYER_TESTNET_ID,
   xLayerMainnet,
   xLayerTestnet,
@@ -66,7 +65,11 @@ async function tokenBalance(chain: Chain, token: ConfirmedToken): Promise<bigint
 console.log(`Ops wallet: ${wallet}`);
 console.log(`Checked at: ${new Date().toISOString()}\n`);
 
-let testnetNativeWei: bigint | null = null;
+// D0.1 proved no testnet facilitator exists; mainnet is the operative network for this
+// entire build. The funding gate therefore checks MAINNET native OKB, not testnet.
+const MIN_MAINNET_NATIVE_WEI = 500_000_000_000_000n; // 0.0005 OKB — a few cents; covers many X Layer gas txns
+
+let mainnetNativeWei: bigint | null = null;
 
 for (const { chainId, chain, isTestnet } of NETWORKS) {
   const rpc = chain.rpcUrls.default.http[0];
@@ -74,11 +77,11 @@ for (const { chainId, chain, isTestnet } of NETWORKS) {
 
   try {
     const wei = await nativeBalance(chain);
-    if (isTestnet) testnetNativeWei = wei;
+    if (!isTestnet) mainnetNativeWei = wei;
     console.log(`   OKB (native): ${formatEther(wei)}  [${wei} wei]`);
   } catch (err) {
     console.log(`   OKB (native): ERROR reading balance — ${(err as Error).message}`);
-    if (isTestnet) testnetNativeWei = null;
+    if (!isTestnet) mainnetNativeWei = null;
   }
 
   const tokens = TOKENS[chainId as keyof typeof TOKENS] ?? {};
@@ -100,26 +103,25 @@ for (const { chainId, chain, isTestnet } of NETWORKS) {
 }
 
 console.log("──────────────────────────────────────────────");
-if (testnetNativeWei === null) {
+if (mainnetNativeWei === null) {
   die(
-    "FUNDING GATE FAIL: could not read testnet native OKB balance (RPC error above).\n" +
+    "FUNDING GATE FAIL: could not read mainnet native OKB balance (RPC error above).\n" +
       "  Treating as unfunded (fail-closed).",
   );
 }
-if (testnetNativeWei === 0n) {
-  console.error("\n✗ FUNDING GATE FAIL: testnet native OKB balance is ZERO.\n");
-  console.error("  Fund the ops wallet with testnet OKB (gas), then re-run:");
-  console.error(`    Faucet: ${X_LAYER_TESTNET_FAUCET_URL}`);
-  console.error("    Steps:");
-  console.error("      1. Open the faucet URL and sign in with an OKX account.");
-  console.error("      2. Select network: X Layer Testnet (chainId 1952).");
-  console.error(`      3. Paste the ops wallet address: ${wallet}`);
-  console.error("      4. Complete the captcha / eligibility check and claim testnet OKB.");
-  console.error("      5. Wait for confirmation, then re-run `pnpm check-wallet`.");
+if (mainnetNativeWei < MIN_MAINNET_NATIVE_WEI) {
+  console.error(
+    `\n✗ FUNDING GATE FAIL: mainnet native OKB balance is ${formatEther(mainnetNativeWei)} ` +
+      `(below the ${formatEther(MIN_MAINNET_NATIVE_WEI)} OKB floor).\n`,
+  );
+  console.error("  Fund the ops wallet with mainnet OKB (gas) on X Layer (chainId 196), then re-run:");
+  console.error(`    Ops wallet: ${wallet}`);
+  console.error("    A dollar or so of OKB covers thousands of X Layer gas transactions.");
   process.exit(1);
 }
 
 console.log(
-  `\n✓ FUNDING GATE PASS: testnet native OKB balance is ${formatEther(testnetNativeWei)} (> 0).`,
+  `\n✓ FUNDING GATE PASS: mainnet native OKB balance is ${formatEther(mainnetNativeWei)} ` +
+    `(≥ ${formatEther(MIN_MAINNET_NATIVE_WEI)} OKB floor).`,
 );
 process.exit(0);
