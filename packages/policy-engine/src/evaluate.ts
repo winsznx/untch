@@ -1,11 +1,6 @@
 import { canonAddress, canonTimestamp, canonUint256, canonUrl, hashSpendIntent } from "@untch/canon";
 import type { Hex } from "viem";
-import {
-  buildStubTrace,
-  evaluateBudget,
-  evaluateDuplicate,
-  evaluatePolicyActive,
-} from "./rules";
+import { evaluatePolicyActive, evaluateRuleChain } from "./rules";
 import type {
   Decision,
   DecisionOutcome,
@@ -22,8 +17,8 @@ import type {
  * BLOCKED_* / REJECTED_* outcome — never a silent APPROVE.
  *
  * Pipeline: canonicalize+validate → policy-active lookup → state-assembly guard → RULE_EVAL
- * (this slice's order: duplicate → budget → stubs → APPROVED), short-circuiting on the first
- * fail with the full partial trace attached.
+ * (the ordered §7.1 chain in `rules.ts` — ten real rules interleaved with three stubs),
+ * short-circuiting on the first fail/escalate with the full partial trace attached.
  */
 
 const ZERO_HASH = `0x${"0".repeat(64)}` as Hex;
@@ -78,39 +73,13 @@ export function evaluateIntent(
     );
   }
 
-  // 4. RULE_EVAL — slice order, short-circuit on first fail. Any unexpected throw (e.g. a
-  //    malformed prior-intent record) is caught and failed closed, never allowed to approve.
+  // 4. RULE_EVAL — the ordered §7.1 chain, short-circuit on first fail/escalate. Any unexpected
+  //    throw (e.g. a malformed prior-intent record) is caught and failed closed, never approved.
   try {
-    const dup = evaluateDuplicate(intent, active, state, nowMs);
-    rules.push(dup.entry);
-    if (dup.blocked) {
-      return make(
-        "BLOCKED_DUPLICATE",
-        intentHash,
-        [
-          `duplicate of ${String(dup.entry.priorIntentId)} within ${active.rules.duplicates.ttlMin}m TTL ` +
-            `(${String(dup.entry.ttlRemainingSec)}s remaining)`,
-        ],
-        rules,
-      );
+    const { outcome, reason } = evaluateRuleChain({ intent, policy: active, state, nowMs }, rules);
+    if (outcome) {
+      return make(outcome, intentHash, [reason ?? outcome], rules);
     }
-
-    const budget = evaluateBudget(intent, active, state);
-    rules.push(budget.entry);
-    if (budget.blocked) {
-      return make(
-        "BLOCKED_BUDGET",
-        intentHash,
-        [
-          `daily budget exceeded: projected ${String(budget.entry.observed)} > ` +
-            `${String(budget.entry.limit)} ${String(budget.entry.token)}`,
-        ],
-        rules,
-      );
-    }
-
-    // Every other §7.1 rule is stubbed: recorded as PASS + implemented:false, never silently skipped.
-    rules.push(...buildStubTrace());
     return make(
       "APPROVED",
       intentHash,
@@ -198,6 +167,10 @@ function validateIntent(intent: SpendIntentInput): Validation {
   if (!isBytes32(r.policyHash)) reasons.push("policyHash is not a bytes32");
   if (!isBytes32(r.paramsHash)) reasons.push("paramsHash is not a bytes32");
   if (!isValidUrl(r.endpoint)) reasons.push("endpoint is not an absolute URL");
+  if (!isValidAddress(r.recipientAddress)) reasons.push("recipientAddress is not a 20-byte hex address");
+  if (typeof r.category !== "string" || r.category.trim().length === 0) {
+    reasons.push("category is not a non-empty string");
+  }
   if (typeof r.amount !== "number" || !Number.isFinite(r.amount) || r.amount < 0) {
     reasons.push("amount is not a finite, non-negative number");
   }
@@ -233,5 +206,12 @@ function isValidLedgerState(state: LedgerWindowState): boolean {
   const spent = s.spentTodayByAgent;
   if (typeof spent !== "number" || !Number.isFinite(spent) || spent < 0) return false;
   if (!Array.isArray(s.recentIntents)) return false;
+  const calls = s.callsInLastHour;
+  if (typeof calls !== "number" || !Number.isFinite(calls) || calls < 0) return false;
+  const lastByService = s.lastCallByService;
+  if (!lastByService || typeof lastByService !== "object" || Array.isArray(lastByService)) return false;
+  for (const v of Object.values(lastByService as Record<string, unknown>)) {
+    if (typeof v !== "number" || !Number.isFinite(v)) return false;
+  }
   return true;
 }

@@ -32,7 +32,12 @@ class InMemoryLedger implements Ledger {
 
   async read(agentKey: string): Promise<LedgerWindowState> {
     await tick(this.delayMs);
-    return { spentTodayByAgent: this.spent.get(agentKey) ?? 0, recentIntents: [] };
+    return {
+      spentTodayByAgent: this.spent.get(agentKey) ?? 0,
+      recentIntents: [],
+      lastCallByService: {},
+      callsInLastHour: 0,
+    };
   }
 
   async commitApproved(agentKey: string, intent: SpendIntentInput, _decision: Decision): Promise<void> {
@@ -60,10 +65,12 @@ async function runUnlocked(
 }
 
 // Two distinct intents for the SAME agent (id 1): each 15 USDT, daily budget 25 ⇒ each fits
-// alone (15 ≤ 25), together they don't (30 > 25).
+// alone (15 ≤ 25), together they don't (30 > 25). `maxAmount` is set well above 15 (in base units,
+// 6dp) so the intent-bound rule passes and the budget rule stays the discriminator this test is about.
 const AGENT = 1n;
-const intentA = validIntent({ buyerAgentId: AGENT, nonce: 1n, amount: 15, taskHash: `0x${"a1".repeat(32)}` });
-const intentB = validIntent({ buyerAgentId: AGENT, nonce: 2n, amount: 15, taskHash: `0x${"b2".repeat(32)}` });
+const HIGH_MAX = 1_000_000_000n; // 1000 USDT in 6-decimal base units
+const intentA = validIntent({ buyerAgentId: AGENT, nonce: 1n, amount: 15, maxAmount: HIGH_MAX, taskHash: `0x${"a1".repeat(32)}` });
+const intentB = validIntent({ buyerAgentId: AGENT, nonce: 2n, amount: 15, maxAmount: HIGH_MAX, taskHash: `0x${"b2".repeat(32)}` });
 const policy = activePolicy();
 
 describe("budget race", () => {
