@@ -25,10 +25,18 @@ optimizer = true
 optimizer_runs = 200
 
 # via-ir DECISION (PRD §28: "via-ir decision documented and constant across test/deploy"):
-# OFF for the scaffold. via-ir roughly doubles compile time and is unnecessary at this
-# surface; the legacy pipeline is sufficient and keeps CI fast. Revisit only if a real
-# contract hits stack-too-deep. Kept explicit so test and deploy stay identical.
-via_ir = false
+# ON. Was OFF (legacy pipeline) through PolicyRegistry / SpendIntentRegistry — sufficient at
+# that surface and kept CI fast. The documented "revisit only if a real contract hits
+# stack-too-deep" trigger fired with UntchReceipts (§10.3): its `ReceiptLogged` event has 16
+# fields verbatim from the spec, and emitting all 16 exceeds the legacy pipeline's stack limit
+# even when isolated in its own function. via-ir resolves it cleanly (it is the exact remedy
+# solc names for stack-too-deep), so it is enabled here. It applies to the WHOLE set from one
+# config, so it stays constant across test / static-analysis / deploy (§28), and it also unlocks
+# better optimization for the write-heavy receipt path. Cost: ~2x compile time in CI, accepted.
+# NOTE: the already-deployed PolicyRegistry / SpendIntentRegistry were built + verified on
+# testnet under via_ir = false and are NOT being rebuilt or redeployed; only future builds use
+# this pipeline (see contracts/README.md).
+via_ir = true
 
 # --- Warnings-as-errors (PRD §28: "warnings-as-errors") ---
 # Any solc warning fails the build. This is the compiler-level half of the static gate;

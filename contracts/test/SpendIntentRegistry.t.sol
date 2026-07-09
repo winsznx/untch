@@ -3,6 +3,7 @@ pragma solidity 0.8.34;
 
 import { Test } from "forge-std/Test.sol";
 import { SpendIntentRegistry } from "../src/SpendIntentRegistry.sol";
+import { AuthorizedWriters } from "../src/AuthorizedWriters.sol";
 import { IntentHash } from "../src/lib/IntentHash.sol";
 
 /// @title SpendIntentRegistryTest
@@ -124,7 +125,7 @@ contract SpendIntentRegistryTest is Test {
 
     function test_RevertWhen_RegisterByNonWriter() public {
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.NotWriter.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotWriter.selector, stranger));
         reg.registerIntent(_intent(1), POLICY_ID);
     }
 
@@ -240,7 +241,7 @@ contract SpendIntentRegistryTest is Test {
     function test_RevertWhen_SetStatusByNonWriter() public {
         bytes32 h = _register(1);
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.NotWriter.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotWriter.selector, stranger));
         reg.setStatus(h, SpendIntentRegistry.Status.APPROVED);
     }
 
@@ -279,17 +280,17 @@ contract SpendIntentRegistryTest is Test {
 
     function test_RevertWhen_AddWriterByNonAdmin() public {
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.NotAdmin.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotAdmin.selector, stranger));
         reg.addWriter(stranger);
     }
 
     function test_RevertWhen_AddWriterZeroAddress() public {
-        vm.expectRevert(SpendIntentRegistry.ZeroAddress.selector);
+        vm.expectRevert(AuthorizedWriters.ZeroAddress.selector);
         reg.addWriter(address(0));
     }
 
     function test_RevertWhen_AddWriterAlreadyAuthorized() public {
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.AlreadyWriter.selector, writer));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.AlreadyWriter.selector, writer));
         reg.addWriter(writer);
     }
 
@@ -300,20 +301,20 @@ contract SpendIntentRegistryTest is Test {
         assertFalse(reg.isWriter(writer));
 
         vm.prank(writer);
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.NotWriter.selector, writer));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotWriter.selector, writer));
         reg.registerIntent(_intent(1), POLICY_ID);
     }
 
     function test_RevertWhen_RemoveWriterNotAuthorized() public {
         vm.expectRevert(
-            abi.encodeWithSelector(SpendIntentRegistry.NotAuthorizedWriter.selector, stranger)
+            abi.encodeWithSelector(AuthorizedWriters.NotAuthorizedWriter.selector, stranger)
         );
         reg.removeWriter(stranger);
     }
 
     function test_RevertWhen_RemoveWriterByNonAdmin() public {
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.NotAdmin.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotAdmin.selector, stranger));
         reg.removeWriter(writer);
     }
 
@@ -324,9 +325,7 @@ contract SpendIntentRegistryTest is Test {
         assertEq(reg.admin(), newAdmin);
 
         // old admin can no longer manage writers
-        vm.expectRevert(
-            abi.encodeWithSelector(SpendIntentRegistry.NotAdmin.selector, address(this))
-        );
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotAdmin.selector, address(this)));
         reg.addWriter(stranger);
 
         // new admin can
@@ -336,13 +335,13 @@ contract SpendIntentRegistryTest is Test {
     }
 
     function test_RevertWhen_TransferAdminZeroAddress() public {
-        vm.expectRevert(SpendIntentRegistry.ZeroAddress.selector);
+        vm.expectRevert(AuthorizedWriters.ZeroAddress.selector);
         reg.transferAdmin(address(0));
     }
 
     function test_RevertWhen_TransferAdminByNonAdmin() public {
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.NotAdmin.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotAdmin.selector, stranger));
         reg.transferAdmin(stranger);
     }
 
@@ -540,7 +539,7 @@ contract SpendIntentRegistryTest is Test {
     function testFuzz_NonWriterCannotRegister(address caller) public {
         vm.assume(caller != writer);
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.NotWriter.selector, caller));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotWriter.selector, caller));
         reg.registerIntent(_intent(1), POLICY_ID);
     }
 
@@ -549,15 +548,14 @@ contract SpendIntentRegistryTest is Test {
         bytes32 h = _register(1);
         vm.assume(caller != writer);
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(SpendIntentRegistry.NotWriter.selector, caller));
+        vm.expectRevert(abi.encodeWithSelector(AuthorizedWriters.NotWriter.selector, caller));
         reg.setStatus(h, SpendIntentRegistry.Status.APPROVED);
     }
 
     /// @notice Access control is total for admin ops: no non-admin can add/remove writers or transfer.
     function testFuzz_NonAdminCannotManage(address caller) public {
         vm.assume(caller != address(this));
-        bytes memory notAdmin =
-            abi.encodeWithSelector(SpendIntentRegistry.NotAdmin.selector, caller);
+        bytes memory notAdmin = abi.encodeWithSelector(AuthorizedWriters.NotAdmin.selector, caller);
 
         vm.prank(caller);
         vm.expectRevert(notAdmin);

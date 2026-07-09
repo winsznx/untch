@@ -2,6 +2,7 @@
 pragma solidity 0.8.34;
 
 import { IntentHash } from "./lib/IntentHash.sol";
+import { AuthorizedWriters } from "./AuthorizedWriters.sol";
 
 /// @title SpendIntentRegistry
 /// @author Untch
@@ -23,9 +24,12 @@ import { IntentHash } from "./lib/IntentHash.sol";
 /// Three spec-interpretation / modelling decisions are documented at their definitions and in
 /// contracts/README.md so they are easy to correct if a reading was wrong:
 ///   1. ACCESS CONTROL = an admin-managed AUTHORIZED WRITER SET, deliberately NOT owner-gated like
-///      PolicyRegistry (see the writer-set section and `registerIntent`). This is the coherent design
-///      for an object created constantly by software on an owner's behalf; it mirrors the §10.3
-///      UntchReceipts writer-set pattern, not §10.1's per-owner gating.
+///      PolicyRegistry (see `registerIntent`). This is the coherent design for an object created
+///      constantly by software on an owner's behalf; it mirrors the §10.3 UntchReceipts writer-set
+///      pattern, not §10.1's per-owner gating. The allowlist itself (admin/writer roles, add/remove/
+///      transfer) lives in the shared `AuthorizedWriters` base; §10.2 surfaces it as IMMEDIATE
+///      `onlyAdmin` externals (its admin is deliberately un-timelocked for this first pass — §10.3's
+///      UntchReceipts is the contract that adds the timelock the base is designed to support).
 ///   2. NO cross-contract validation of `policyId` against PolicyRegistry in this first pass — the
 ///      id is stored as an opaque reference (see `registerIntent`). Off-chain preflight has already
 ///      evaluated the intent against the real policy; on-chain re-verification would be
@@ -34,7 +38,7 @@ import { IntentHash } from "./lib/IntentHash.sol";
 ///      stored EXPIRED state (see `Status` / `isExpired` / `isUsable`), and `setStatus` accepts any
 ///      real lifecycle state from a writer — the transition DAG is enforced off-chain (also a named
 ///      future hardening). Same precedent as PolicyRegistry's derived-expiry `isUsable`.
-contract SpendIntentRegistry {
+contract SpendIntentRegistry is AuthorizedWriters {
     /// @notice Lifecycle state of an anchored intent (PRD §10.2, minus the stored `EXPIRED` member).
     /// @dev The five real lifecycle states are {PENDING, APPROVED, BLOCKED, SETTLED, DISPUTED}, exactly
     /// as §10.2 lists them minus `EXPIRED`. `NONE` is the zero-value EXISTENCE sentinel — an
@@ -71,21 +75,6 @@ contract SpendIntentRegistry {
     /// nonexistent hash instead of returning a zeroed struct that looks deceptively valid.
     mapping(bytes32 intentHash => IntentRecord record) private _intents;
 
-    /// @notice The account that manages the authorized writer set (add/remove writers, transfer admin).
-    /// @dev Set to the deployer at construction. This is the §10.3 "admin" role. Deliberately kept as
-    /// a plain admin for this first pass; putting it behind a timelock is a named future hardening
-    /// (README), matching how PolicyRegistry kept its first surface minimal.
-    address public admin;
-
-    /// @notice The authorized writer set — addresses permitted to call `registerIntent` / `setStatus`.
-    /// @dev This is the deliberate access-control divergence from PolicyRegistry (§10.1 owner-gating).
-    /// Intents are created constantly and automatically by backend/relayer software acting on an
-    /// owner's behalf, so requiring an owner signature per intent would defeat an automated policy
-    /// engine. Mirrors the §10.3 UntchReceipts writer-set pattern (rotatable; admin-managed). The
-    /// writer key can only write into this registry's log/state — it holds no funds and authorizes no
-    /// transfer (§16: "writer signs only into event log").
-    mapping(address writer => bool authorized) public isWriter;
-
     /// @notice A new intent was anchored (status PENDING).
     /// @param intentHash Canonical hash derived on-chain from the §8.1 struct via `IntentHash`.
     /// @param policyId The policy this intent was evaluated under (opaque reference; not validated
@@ -114,27 +103,6 @@ contract SpendIntentRegistry {
         Status previousStatus
     );
 
-    /// @notice An address was granted writer authorization.
-    /// @param writer The newly authorized writer.
-    /// @param admin The admin that granted it.
-    event WriterAdded(address indexed writer, address indexed admin);
-
-    /// @notice An address had its writer authorization revoked.
-    /// @param writer The de-authorized writer.
-    /// @param admin The admin that revoked it.
-    event WriterRemoved(address indexed writer, address indexed admin);
-
-    /// @notice The admin role was transferred.
-    /// @param previousAdmin The prior admin.
-    /// @param newAdmin The new admin.
-    event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
-
-    /// @notice `caller` is not an authorized writer.
-    error NotWriter(address caller);
-
-    /// @notice `caller` is not the admin.
-    error NotAdmin(address caller);
-
     /// @notice No intent exists for `intentHash`.
     error IntentNotFound(bytes32 intentHash);
 
@@ -153,36 +121,6 @@ contract SpendIntentRegistry {
     /// @notice `NONE` was supplied as a target status; it is the existence sentinel, not a state an
     /// intent can be set to (that would corrupt the record's existence marker).
     error StatusCannotBeNone();
-
-    /// @notice The zero address was supplied where a real account is required.
-    error ZeroAddress();
-
-    /// @notice `writer` is already authorized — reject rather than silently no-op.
-    error AlreadyWriter(address writer);
-
-    /// @notice `writer` is not currently authorized — reject rather than silently no-op.
-    error NotAuthorizedWriter(address writer);
-
-    /// @notice Restrict a call to an authorized writer.
-    modifier onlyWriter() {
-        if (!isWriter[msg.sender]) revert NotWriter(msg.sender);
-        _;
-    }
-
-    /// @notice Restrict a call to the admin.
-    modifier onlyAdmin() {
-        if (msg.sender != admin) revert NotAdmin(msg.sender);
-        _;
-    }
-
-    /// @notice Deploy the registry with the deployer as the initial admin.
-    /// @dev The admin manages the writer set but is NOT itself a writer by default (least privilege):
-    /// registering intents requires an explicit `addWriter`. Deliberately no initial-writer
-    /// constructor arg — the writer set is always established through the audited `addWriter` path.
-    constructor() {
-        admin = msg.sender;
-        emit AdminTransferred(address(0), msg.sender);
-    }
 
     /// @notice Anchor a bounded SpendIntent, deriving its canonical hash on-chain from the struct.
     /// @dev Writer-gated (decision #1). The `intentHash` is computed with `IntentHash.hashIntent` — a
@@ -243,34 +181,31 @@ contract SpendIntentRegistry {
     }
 
     /// @notice Grant writer authorization to `writer`.
-    /// @dev Admin-gated. Reverts on the zero address and on an already-authorized writer (no silent
-    /// no-op), matching PolicyRegistry's reject-don't-clobber discipline.
+    /// @dev Admin-gated and IMMEDIATE — §10.2's admin is deliberately un-timelocked for this first
+    /// pass (its deployed, testnet-verified behavior). The guard + event live in the shared
+    /// `AuthorizedWriters` base (`_addWriter`): reverts on the zero address and on an
+    /// already-authorized writer (no silent no-op). §10.3's UntchReceipts routes the same base call
+    /// through a timelock instead; that difference is per-contract by design.
     /// @param writer The address to authorize.
     function addWriter(address writer) external onlyAdmin {
-        if (writer == address(0)) revert ZeroAddress();
-        if (isWriter[writer]) revert AlreadyWriter(writer);
-        isWriter[writer] = true;
-        emit WriterAdded(writer, msg.sender);
+        _addWriter(writer);
     }
 
     /// @notice Revoke writer authorization from `writer`.
-    /// @dev Admin-gated. Reverts if the address is not currently a writer (no silent no-op).
+    /// @dev Admin-gated and immediate; guard + event in the `AuthorizedWriters` base
+    /// (`_removeWriter`): reverts if the address is not currently a writer (no silent no-op).
     /// @param writer The address to de-authorize.
     function removeWriter(address writer) external onlyAdmin {
-        if (!isWriter[writer]) revert NotAuthorizedWriter(writer);
-        isWriter[writer] = false;
-        emit WriterRemoved(writer, msg.sender);
+        _removeWriter(writer);
     }
 
     /// @notice Transfer the admin role to `newAdmin`.
-    /// @dev Admin-gated. Reverts on the zero address (which would brick writer-set management). Admin
-    /// and writer are separate roles: transferring admin does not change the writer set.
+    /// @dev Admin-gated and immediate; guard + event in the `AuthorizedWriters` base
+    /// (`_transferAdmin`): reverts on the zero address (which would brick writer-set management).
+    /// Admin and writer are separate roles: transferring admin does not change the writer set.
     /// @param newAdmin The address to become admin.
     function transferAdmin(address newAdmin) external onlyAdmin {
-        if (newAdmin == address(0)) revert ZeroAddress();
-        address previousAdmin = admin;
-        admin = newAdmin;
-        emit AdminTransferred(previousAdmin, newAdmin);
+        _transferAdmin(newAdmin);
     }
 
     /// @notice Read an intent record, reverting if it does not exist.

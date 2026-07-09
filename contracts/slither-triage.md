@@ -29,7 +29,7 @@ contract (`PolicyRegistry`) produced its first finding, Slither crashed with
 The fix is the correct shape for a triage database: machine-format only, and **empty** because
 there is nothing Medium/High to accept. All human documentation lives in this `.md` instead.
 
-## Current dispositions (PolicyRegistry + SpendIntentRegistry)
+## Current dispositions (PolicyRegistry + SpendIntentRegistry + UntchReceipts)
 
 | # | Finding | Tool | Impact | Disposition |
 |---|---------|------|--------|-------------|
@@ -39,17 +39,35 @@ there is nothing Medium/High to accept. All human documentation lives in this `.
 | 4 | `timestamp` — `SpendIntentRegistry.registerIntent` compares `deadline <= block.timestamp` | Slither | **Low** | Accepted — same rationale as #1. The intent `deadline` is a wall-clock bound (§8.1 / §10.2); registration only rejects a deadline already at or behind the current second, and second-scale validator skew is immaterial to a real deadline. Non-blocking (Low). |
 | 5 | `timestamp` — `SpendIntentRegistry.isExpired` computes `block.timestamp > deadline` | Slither | **Low** | Accepted — this IS the derived-expiry rule PRD §10.2 requires: expiry is computed at read time, never a stored/transitioned `EXPIRED` state. Non-blocking (Low). |
 | 6 | `timestamp` — `SpendIntentRegistry.isUsable` computes `block.timestamp <= deadline` (with `status == APPROVED`) | Slither | **Low** | Accepted — the derived usability rule the vault (§7.5) turns on, the intent analogue of PolicyRegistry's `isUsable`. Non-blocking (Low). |
+| 7 | `timestamp` — `UntchReceipts.execute` compares `nowTs < eta` | Slither | **Low** | Accepted — intentional. This IS the §10.3 admin timelock: an op cannot execute before `eta = proposeTime + timelockDelay`. The comparison is the enforcement point of judgment call 3 (proven by the adversarially-fuzzed `invariant_TimelockNeverExecutesEarly`). Second-scale validator skew is immaterial to a timelock delay of minutes/days. `propose` uses `block.timestamp` only in the arithmetic `eta = now + delay` (not a comparison), so Slither does not flag it — consistent. Non-blocking (Low). |
 
-Slither total: **0 High, 0 Medium, 6 Low** — CI passes under `--fail-medium`, nothing to triage.
+Slither total: **0 High, 0 Medium, 7 Low** — CI passes under `--fail-medium`, nothing to triage.
 
-All six are the same `timestamp` (block-timestamp) detector class: a deliberate, dispositioned
+All seven are the same `timestamp` (block-timestamp) detector class: a deliberate, dispositioned
 wall-clock comparison, read into a `uint64 nowTs` local first so it is uniform across every
 time-using function and satisfies the Foundry v1.7.1 block-timestamp build lint at the same time.
 
+## solhint dispositions in UntchReceipts (inline, cross-referenced here)
+
+solhint runs `--max-warnings 0`, so intentional deviations are suppressed inline with a written
+reason at the deviation (the same discipline PolicyRegistry/SpendIntentRegistry use for
+`not-rely-on-time`). UntchReceipts (§10.3) adds two, both spec-fidelity choices, not oversights:
+
+- **`gas-indexed-events`** on `ScoreAnchored` / `AuditAnchored`. Their signatures are VERBATIM from
+  §10.3 (non-indexed). The rule would have `epoch`/`subjectKind`/`period` indexed; doing so would
+  change how an indexer subscribes and diverge from the given event contract. `ReceiptLogged`'s
+  three §10.3-specified indexed topics (`policyId`, `agentId`, `vendorId`) ARE honored. Suppressed
+  over just those two events via a scoped `solhint-disable`/`enable` block.
+- **`gas-struct-packing`** on the `Receipt` struct. It is calldata-only (never stored), where every
+  field occupies a full word regardless of type, so packing yields nothing — and its field order is
+  kept 1:1 with the §10.3 `ReceiptLogged` event for mapping clarity. Reordering for "packing" would
+  only obscure that mapping. Suppressed at the struct with a written reason.
+
 ## Cross-check vs Aderyn
 
-Aderyn (v0.6.8, via the pinned `Cyfrin/aderyn-ci@v0` npm binary) reports **0 High, 0 Low** across
-all three source files (`PolicyRegistry`, `SpendIntentRegistry`, `IntentHash`). There is **no**
-High/Medium finding either tool raises that the other misses. The `timestamp` (block-timestamp)
-class above is a Slither Low with no Aderyn High/Medium counterpart — expected, and consistent with
-both tools' severity models.
+Aderyn (v0.6.x, via the pinned `Cyfrin/aderyn-ci@v0` npm binary) reports **0 High, 0 Low** across
+all five source files (`PolicyRegistry`, `SpendIntentRegistry`, `IntentHash`, `AuthorizedWriters`,
+`UntchReceipts`). There is **no** High/Medium finding either tool raises that the other misses. The
+`timestamp` (block-timestamp) class above — 7 Slither Lows, including UntchReceipts.execute's
+timelock comparison — has no Aderyn High/Medium counterpart: expected, and consistent with both
+tools' severity models.

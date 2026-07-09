@@ -99,3 +99,73 @@ forge verify-contract 0xf87e50f83172c2dace7d274e4c701212caeb1372 src/SpendIntent
   --chain-id 1952 --verifier oklink \
   --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET
 ```
+
+---
+
+# UntchReceipts — deploy runbook (X Layer **testnet only**)
+
+Driver: [`scripts/deploy-untch-receipts.ts`](../../scripts/deploy-untch-receipts.ts) (repo root, run
+with `tsx`). It deploys `UntchReceipts(delay)`, then authorizes the deployer as a writer **through
+the admin timelock end-to-end** (propose → prove execute reverts before the delay via a read-only
+`eth_call` → wait the real delay → execute), logs a demo batch of 3 §10.3 receipts in one tx, anchors
+one score root and one audit report, reads it all back, and finally **measures real gas** by sending
+`logReceipts` batches of 1 / 10 / 50 and recording `gasUsed` from the real receipts. It references the
+real SpendIntentRegistry demo intent/policy so the three contracts tell one coherent story.
+
+> **Mainnet is deliberately deferred.** The driver refuses `chainId 196`. Nothing touches X Layer
+> **mainnet** until `UntchVault` also exists and the full contract set clears §28's mainnet checklist
+> together.
+
+## Status (2026-07-09) — ✅ LIVE ON X LAYER TESTNET
+
+| Item | Value |
+|------|-------|
+| **Contract** | [`0x0c64997277b7d94d2999dea22a123cac56334863`](https://www.oklink.com/x-layer-testnet/address/0x0c64997277b7d94d2999dea22a123cac56334863) (chainId 1952) |
+| **Source verified** | ✅ OKLink — "Pass - Verified" |
+| **Timelock delay** | 60s (testnet demo value; a mainnet deploy would use e.g. 48h) |
+| **Deploy tx** | `0xf0df27f3970daffa63bd32f61033c6737bafb30278b72aeb637d5120126d43f1` (status `0x1`, block 35174695) |
+| **propose tx** | `0x15dbc176672efb5d5f33b67671e54462061b28e008251db6575cbb0c1b58ed81` (opId `0xda9d…70ae`, eta 1783633596) |
+| **execute-before-delay** | reverts (read-only `eth_call`) — the §10.3 timelock property, on-chain |
+| **execute tx** | `0x7ec1447966c081f74115da8c6fbc6caacf467e1baadf71eee593f9df3a727162` (after the 60s delay; `isWriter[deployer]=true`) |
+| **logReceipts tx (batch of 3)** | `0x09a4297b1be05b364468e3723f5679a86c60e8f40b00025e73e4ee3c64f7ab3a` (ReceiptLogged×3 + BatchLogged id 1) |
+| **anchorScore tx** | `0xba85dbf61d6c5ac4fef61501c20480c71e5af37e377d707bc31c53d90743cb88` |
+| **anchorAudit tx** | `0xa1ba739455c0f6999df3a42f662f59191a833688b8e2cbc0524f29542288b8d6` |
+| **Readback** | batchCount=4, timelockDelay=60, SCHEMA_VERSION=1, admin=deployer, isWriter[deployer]=true, opEta=0 |
+
+**Independently re-read** from `https://testrpc.xlayer.tech` via raw `eth_getTransactionReceipt`
+(`cast receipt --json`) per tx — all 9 tx status `0x1`; event topics counted + fields decoded
+client-side (**64 ReceiptLogged, 4 BatchLogged, 1 ScoreAnchored, 1 AuditAnchored, 1 OpProposed, 1
+OpExecuted, 1 WriterAdded**); the demo `ReceiptLogged` decodes to `schemaVersion=1` and `agentId =
+0x00…01` (= `bytes32(uint256 buyerAgentId=1)`, a numeric id, **not** an address — judgment call 1) —
+not taken on the driver's stdout. Machine receipt:
+[`untch-receipts-testnet-receipt.json`](untch-receipts-testnet-receipt.json). Local anvil proof of the
+same path: [`anvil-untch-receipts-proof.json`](anvil-untch-receipts-proof.json).
+
+## Measured gas/receipt (real testnet txs — §17/§25/§10.4 "no cost claim before measurement")
+
+| Batch size | Total gasUsed | Gas / receipt |
+|-----------:|--------------:|--------------:|
+| 1 | 42,109 | 42,109 |
+| 10 | 149,270 | 14,927 |
+| 50 | 658,610 | 13,172 |
+
+**Marginal gas/receipt (50 vs 10): ≈ 12,734.** Batching amortizes the fixed per-tx overhead (~21k
+intrinsic + the batch-counter `SSTORE` + the `BatchLogged` event) across the batch — from ~42k/receipt
+at size 1 down to ~13k/receipt at size 50. This is the first **measured** number behind §10.4's
+events-only, batched anchoring; no cost was claimed before it.
+
+## How it was deployed (reproducible)
+
+```bash
+# ops wallet 0x98F43e… funded with testnet OKB (chainId 1952). DEPLOYER_PRIVATE_KEY = ops key from
+# services/asp/.env (BUYER_PRIVATE_KEY on this wallet); never printed.
+RPC_URL=https://testrpc.xlayer.tech DEPLOYER_PRIVATE_KEY=<ops-key> TIMELOCK_DELAY=60 BROADCAST=1 \
+  pnpm exec tsx scripts/deploy-untch-receipts.ts
+
+# verify source on OKLink (constructor takes uint64 delay = 60):
+forge verify-contract 0x0c64997277b7d94d2999dea22a123cac56334863 src/UntchReceipts.sol:UntchReceipts \
+  --chain 1952 --constructor-args $(cast abi-encode "constructor(uint64)" 60) \
+  --verifier oklink \
+  --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET
+```
+

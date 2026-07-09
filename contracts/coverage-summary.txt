@@ -1,6 +1,16 @@
 ╭------------------------------------------+------------------+------------------+-----------------+-----------------╮
 | File                                     | % Lines          | % Statements     | % Branches      | % Funcs         |
+| src/AuthorizedWriters.sol                | 100.00% (21/21)  | 100.00% (20/20)  | 100.00% (6/6)   | 100.00% (6/6)   |
 | src/PolicyRegistry.sol                   | 100.00% (50/50)  | 100.00% (57/57)  | 100.00% (11/11) | 100.00% (10/10) |
-| src/SpendIntentRegistry.sol              | 100.00% (53/53)  | 100.00% (58/58)  | 100.00% (13/13) | 100.00% (13/13) |
+| src/SpendIntentRegistry.sol              | 100.00% (38/38)  | 100.00% (41/41)  | 100.00% (7/7)   | 100.00% (10/10) |
+| src/UntchReceipts.sol                    | 100.00% (41/41)  | 100.00% (51/51)  | 100.00% (14/14) | 100.00% (8/8)   |
 | src/lib/IntentHash.sol                   | 100.00% (2/2)    | 100.00% (2/2)    | 100.00% (0/0)   | 100.00% (1/1)   |
 ╰------------------------------------------+------------------+------------------+-----------------+-----------------╯
+
+Branch coverage per source file is 100% — target was ≥95% (PRD §28 item 8; 100% on
+UntchReceipts is above the bar). Regenerated with `forge coverage --ir-minimum --report summary`
+(via_ir is on for the set — see foundry.toml). SpendIntentRegistry drops from 13/13 to 7/7
+branches because 6 branches (the writer-set add/remove/transfer + admin guards) moved into the
+shared `src/AuthorizedWriters.sol` base, where they are still 100% covered — the refactor moved
+coverage, it did not lose any. The `Total` row forge prints also counts test-harness files; the
+per-source-file numbers above are the ones §28 gates on.
