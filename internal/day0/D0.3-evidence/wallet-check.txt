@@ -1,0 +1,60 @@
+D0.3 — check-wallet run output
+Gate: §29 D0.3 funding gate — ops wallet must hold testnet native OKB (gas).
+Date: 2026-07-09
+Script: scripts/check-wallet.ts (viem 2.55.0)
+RPCs: mainnet https://rpc.xlayer.tech (196) · testnet https://testrpc.xlayer.tech (1952)
+============================================================================
+
+## RUN 1 — REAL run against committed .env (OPS_WALLET_ADDRESS empty)
+## Expected: gate cannot run without an ops wallet -> exit 1 (BLOCKED on provisioning)
+$ pnpm check-wallet
+----------------------------------------------------------------------------
+
+> untch@0.0.0 check-wallet /Users/mac/untch
+> tsx scripts/check-wallet.ts
+
+
+✗ OPS_WALLET_ADDRESS is not set. Add it to .env (documented in .env.example).
+  This is the funding gate — with no ops wallet address there is nothing to check.
+ ELIFECYCLE  Command failed with exit code 1.
+exit_code=1
+
+
+## RUN 2 — FUNCTIONAL SMOKE TEST (proves the read path + gate-PASS branch)
+## OPS_WALLET_ADDRESS overridden with an ARBITRARY PUBLIC funded testnet EOA
+## (0x90329b94b178b45b4a9f25cfcf3979a2aea41542, a recent testnet tx sender).
+## This is NOT the Untch ops wallet — it only demonstrates the script works.
+$ OPS_WALLET_ADDRESS=0x9032...1542 pnpm check-wallet
+----------------------------------------------------------------------------
+
+> untch@0.0.0 check-wallet /Users/mac/untch
+> tsx scripts/check-wallet.ts
+
+Ops wallet: 0x90329b94b178b45B4a9f25cfCF3979a2aea41542
+Checked at: 2026-07-09T01:49:07.555Z
+
+── X Layer Mainnet (chainId 196) · https://rpc.xlayer.tech
+   OKB (native): 0.05236323337331896  [52363233373318960 wei]
+   USDT: 0  [0 · 0x1E4a5963aBFD975d8c9021ce480b42188849D41d]
+   USD₮: 0  [0 · 0x779Ded0c9e1022225f8E0630b35a9b54bE713736]
+   USDG: 0  [0 · 0x4ae46a509F6b1D9056937BA4500cb143933D2dc8]
+
+── X Layer Testnet (chainId 1952) · https://testrpc.xlayer.tech
+   OKB (native): 0.034105480399195022  [34105480399195022 wei]
+   USDT: skipped — UNCONFIRMED address (UNCONFIRMED: no official X Layer testnet (1952) USDT address found. The testnet faucet issues native OKB only; OKX testnet bridged-token docs on web3.okx.com are unreachable from this environment (HTTP 000). Not guessed.)
+   USDG: skipped — UNCONFIRMED address (UNCONFIRMED: Global Dollar publishes USDG only on mainnets (Ethereum, Ink, Solana, Robinhood Chain, X Layer mainnet); no X Layer testnet deployment is documented. Not guessed.)
+
+──────────────────────────────────────────────
+
+✓ FUNDING GATE PASS: testnet native OKB balance is 0.034105480399195022 (> 0).
+exit_code=0
+
+============================================================================
+SUMMARY
+  RUN 1 (real .env): FUNDING GATE BLOCKED — OPS_WALLET_ADDRESS not configured.
+  RUN 2 (smoke test): gate logic verified end-to-end — reads native OKB on both
+                      networks, reads confirmed ERC-20 balances on mainnet, skips
+                      UNCONFIRMED testnet tokens, and returns PASS/exit 0 when the
+                      testnet native balance is > 0.
+  D0.3 funding gate status: BLOCKED pending an operator-provisioned, testnet-funded
+                      ops wallet. See internal/day0/BLOCKERS.md.

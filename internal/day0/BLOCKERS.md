@@ -35,3 +35,30 @@ The task cannot proceed without the following. Each is a step only you can take.
 - Plan for `services/asp/`: an `x402-express` (v1.2.0) seller exposing **one** tool `ping_untch({echo}) → {echo, ts}` priced at the minimum, returning the 402 challenge (asset=USDT/USDG, network=196, `payTo`, `maxAmountRequired`, `resource`); buyer pays via the OKX facilitator; capture request/response JSON + decoded `PAYMENT-RESPONSE` (tx hash) + console transcript into `D0.1-evidence/`.
 
 ## Session ended here per instructions (blocked on account/funding/network steps only you can do).
+
+---
+
+# D0.3 BLOCKER — funding gate: no testnet-funded ops wallet
+
+**Gate:** §29 D0.3 · **Result:** constants **PASS**, funding gate **BLOCKED** (no funded testnet ops wallet).
+**Date:** 2026-07-09
+
+## What passed (no blocker)
+- **X Layer constants verified & shipped** in [`packages/shared/src/chains.ts`](../../packages/shared/src/chains.ts) — mainnet (196) + testnet (**1952**, not the deprecated 195), OKB native, official RPCs, OKLink explorers, faucet. Every value sourced in [`D0.3-sources.md`](./D0.3-sources.md). `tsc --noEmit` clean.
+- **§23 Q5 resolved:** USDG on X Layer mainnet = `0x4ae46a509F6b1D9056937BA4500cb143933D2dc8`, **6 decimals** (issuer + explorer + on-chain agree). USDT = `0x1E4a5963aBFD975d8c9021ce480b42188849D41d` (legacy) / USDT0 `0x779Ded0c9e1022225f8E0630b35a9b54bE713736`, both 6 dp.
+- **Testnet USDT/USDG left UNCONFIRMED** (`address: null`) — no official testnet address exists; excluded from allowlists, not guessed.
+- **`scripts/check-wallet.ts` works** — verified end-to-end against a public funded testnet address (gate PASS/exit 0) and against the empty env (gate FAIL/exit 1). See [`D0.3-evidence/wallet-check.txt`](./D0.3-evidence/wallet-check.txt).
+
+## The one blocker (a step only you can take)
+There is **no ops wallet address configured and no testnet OKB balance**. `OPS_WALLET_ADDRESS` in `.env` is empty, so the funding gate cannot pass. Private keys are never handled here — only the public address is needed to prove funding.
+
+**Next action (you):**
+1. Choose/generate the ops wallet (custody the private key yourself — never put it in this repo).
+2. Set its **public** address in `.env`: `OPS_WALLET_ADDRESS=0x…` (documented in `.env.example`).
+3. Fund it with **testnet OKB (gas)** from the official faucet:
+   - Faucet: `https://www.okx.com/xlayer/faucet` (also `https://web3.okx.com/xlayer/faucet`)
+   - Docs: `https://web3.okx.com/xlayer/docs/developer/bridge/get-testnet-okb-from-faucet`
+   - Steps: sign in with an OKX account → select **X Layer Testnet (chainId 1952)** → paste the ops wallet address → complete captcha/eligibility → claim testnet OKB.
+4. Re-run `pnpm check-wallet`. PASS = testnet native OKB balance > 0 (exit 0); the run output overwrites `D0.3-evidence/wallet-check.txt` as the funded-wallet evidence.
+
+## Session ended here per instructions (blocked on ops-wallet provisioning + faucet funding — steps only you can do).
