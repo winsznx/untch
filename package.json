@@ -12,7 +12,8 @@
     "check-wallet": "tsx scripts/check-wallet.ts",
     "gen:fixtures": "tsx packages/canon/scripts/gen-fixture-hashes.ts",
     "test:canon": "node --import tsx --test packages/canon/test/*.test.ts",
-    "test:policy": "node --import tsx --test packages/policy-engine/test/*.test.ts"
+    "test:policy": "node --import tsx --test packages/policy-engine/test/*.test.ts",
+    "test:asp": "node --import tsx --test services/asp/test/*.test.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
@@ -22,5 +23,8 @@
     "@types/node": "^24.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   }
 }

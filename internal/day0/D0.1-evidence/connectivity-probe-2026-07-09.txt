@@ -1,0 +1,19 @@
+D0.1 connectivity probe — 2026-07-09 (second attempt, sandbox disabled)
+
+Command: curl -sS -m 20 -o /dev/null -w "http_code=%{http_code} time=%{time_total}s"
+
+  https://web3.okx.com/onchainos/dev-docs/payments/x402-introduction
+    -> curl (28) Connection timed out after 20006 ms · http_code=000
+  https://www.okx.com
+    -> curl (28) Connection timed out after 20006 ms · http_code=000
+  https://xlayerrpc.okx.com  (JSON-RPC eth_chainId)
+    -> curl (28) Connection timed out after 15005 ms · http_code=000
+
+Controls (reachable):
+  https://registry.npmjs.org/          -> http_code=200
+  https://www.okx.ai/                  -> http_code=200
+  https://rpc.xlayer.tech (eth_chainId) -> {"result":"0xc4"} = 196 (X Layer mainnet)
+
+Conclusion: every OKX-operated host (web3.okx.com, www.okx.com, *.okx.com RPC) is
+network-unreachable from this environment. npm, okx.ai, and the community X Layer RPC
+(rpc.xlayer.tech) ARE reachable. Same block as the 2026-07-09 first attempt.

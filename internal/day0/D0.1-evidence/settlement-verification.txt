@@ -1,0 +1,27 @@
+D0.1 — REAL SETTLED PAID CALL — on-chain verification (2026-07-09)
+
+Settlement tx : 0x9db78b52ca60f376b84b37510ce77836051b3177973ef22f05285e9296cd1efc
+Explorer      : https://www.oklink.com/x-layer/tx/0x9db78b52ca60f376b84b37510ce77836051b3177973ef22f05285e9296cd1efc
+Verified independently via rpc.xlayer.tech (eth_getTransactionReceipt):
+  status   : 0x1 (success)
+  block    : 64815585
+  to       : 0x779Ded0c9e1022225f8E0630b35a9b54bE713736  (USDT0 token)
+  from     : 0x5ee567b86214bd51527ad1baf6c91bf2c1e5f0a1  (OKX facilitator relayer — OKX
+             submitted the EIP-3009 transferWithAuthorization + paid the gas)
+  gasUsed  : 79858
+  Transfer : 10000 (= 0.01 USDT0)  payer 0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b
+PAYMENT-RESPONSE (from the 200): {"status":"success","success":true,"network":"eip155:196",
+  "payer":"0x98f4...c0b","transaction":"0x9db78b52ca60f376b84b37510ce77836051b3177973ef22f05285e9296cd1efc"}
+
+Rail: OKX Onchain OS x402 facilitator (https://web3.okx.com/api/v6/pay/x402/{supported,verify,
+settle}), authenticated with the OKX HMAC triple. x402 v2 "exact" scheme, EIP-3009 gasless.
+NOT a mock, NOT a substitute rail, NOT self-hosted — OKX's own relayer broadcast the tx.
+
+Topology that made it work despite OKX blocking the operator's Nigeria/VPN egress:
+  buyer (local, Nigeria) --402/sign EIP-3009--> SELLER on Railway (untch-asp-production.up.railway.app)
+  seller --verify+settle (HMAC)--> OKX facilitator (web3.okx.com, reachable from Railway) --> X Layer
+Only the seller needs OKX egress; the buyer only needs the seller URL + rpc.xlayer.tech.
+
+NOTE: PAY_TO was set to the buyer address (self-pay) for this smoke test, so payer==payee. The
+settlement, tx, facilitator path, and amount are all real; to route revenue to a distinct
+wallet, set PAY_TO_ADDRESS to that wallet on the Railway service and re-run.

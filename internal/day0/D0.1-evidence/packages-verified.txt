@@ -1,0 +1,15 @@
+D0.1 — OKX x402 packages verified on npm (registry.npmjs.org reachable), 2026-07-09
+Extracted each tarball and read the .d.ts to confirm the exact API used by the scaffold.
+
+  @okxweb3/x402-express  0.1.1  -> paymentMiddleware, x402ResourceServer
+  @okxweb3/x402-core     0.1.0  -> OKXFacilitatorClient (+ config apiKey/secretKey/passphrase/
+                                   baseUrl?/syncSettle?), x402Version=2, x402Client (/client)
+  @okxweb3/x402-evm      0.2.1  -> ExactEvmScheme (/exact/server + /exact/client),
+                                   toClientEvmSigner(account, publicClient?). X Layer eip155:196,
+                                   default stablecoin USDT0, EIP-3009 transferWithAuthorization.
+  @okxweb3/x402-fetch    0.1.0  -> wrapFetchWithPayment, decodePaymentResponseHeader
+
+Custody: SELF-CUSTODY confirmed. Buyer signs EIP-3009 with its own key (gasless for signer;
+facilitator submits). OKX API triple authenticates only the seller's facilitator calls.
+Settlement token used: USDT0 0x779Ded0c9e1022225f8E0630b35a9b54bE713736 (6 dp), eip155:196.
+Price: $0.01 (documented floor). Network: X Layer MAINNET (no confirmed testnet token/facilitator).

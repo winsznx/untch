@@ -1,0 +1,23 @@
+D0.1 — proof the OKX facilitator (web3.okx.com) is required for BOTH challenge and settlement
+Date: 2026-07-09
+
+A. Code-level (from the published @okxweb3/x402-core@0.1.0 tarball):
+   OKXFacilitatorClient default baseUrl = https://web3.okx.com/facilitator
+   Endpoints called:
+     GET  /api/v6/pay/x402/supported       (initialize / getSupported)
+     POST /api/v6/pay/x402/verify
+     POST /api/v6/pay/x402/settle
+     GET  /api/v6/pay/x402/settle/status
+   Auth: HMAC-SHA256 over OKX REST spec (OK-ACCESS-KEY/SIGN/PASSPHRASE/TIMESTAMP).
+
+B. Runtime (seller started locally, syncFacilitatorOnStart=false, unpaid GET /ping_untch):
+   HTTP/1.1 500 Internal Server Error
+   Error: "Facilitator does not support exact on eip155:196. Make sure to call
+           initialize() to fetch supported kinds from facilitators."
+     at x402ResourceServer.buildPaymentRequirements (x402-core/src/server/x402ResourceServer.ts:519)
+
+   => The resource server CANNOT build the 402 PAYMENT-REQUIRED challenge until it has
+      fetched supported kinds from the facilitator (getSupported on web3.okx.com). With the
+      facilitator unreachable, the x402 flow cannot even reach the 402 step, let alone
+      verify/settle. The shipped server.ts therefore uses the default
+      syncFacilitatorOnStart=true (sync at boot) — production-correct, requires web3.okx.com.

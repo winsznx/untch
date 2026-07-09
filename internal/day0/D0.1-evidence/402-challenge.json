@@ -1,0 +1,40 @@
+{
+  "status": 402,
+  "headers": {
+    "connection": "keep-alive",
+    "content-length": "2",
+    "content-type": "application/json; charset=utf-8",
+    "date": "Thu, 09 Jul 2026 08:10:19 GMT",
+    "etag": "W/\"2-vyGp6PvFo4RvsFtPoIWeCReyIC8\"",
+    "payment-required": "eyJ4NDAyVmVyc2lvbiI6MiwiZXJyb3IiOiJQYXltZW50IHJlcXVpcmVkIiwicmVzb3VyY2UiOnsidXJsIjoiaHR0cDovL3VudGNoLWFzcC1wcm9kdWN0aW9uLnVwLnJhaWx3YXkuYXBwL3BpbmdfdW50Y2giLCJkZXNjcmlwdGlvbiI6IlVudGNoIGhlbGxvLXdvcmxkIHBpbmcg4oCUIEQwLjEgcGFpZCBBMk1DUCBjYWxsIiwibWltZVR5cGUiOiJhcHBsaWNhdGlvbi9qc29uIn0sImFjY2VwdHMiOlt7InNjaGVtZSI6ImV4YWN0IiwibmV0d29yayI6ImVpcDE1NToxOTYiLCJhbW91bnQiOiIxMDAwMCIsImFzc2V0IjoiMHg3NzlkZWQwYzllMTAyMjIyNWY4ZTA2MzBiMzVhOWI1NGJlNzEzNzM2IiwicGF5VG8iOiIweDk4RjQzZUFCY2FEMzgwZjRmMUYwNTg3YUU5NDVCYzhjNzlFNDNjMGIiLCJtYXhUaW1lb3V0U2Vjb25kcyI6MzAwLCJleHRyYSI6eyJuYW1lIjoiVVNE4oKuMCIsInZlcnNpb24iOiIxIn19XX0=",
+    "server": "railway-hikari",
+    "x-hikari-trace": "jnb1.w0as",
+    "x-powered-by": "Express",
+    "x-railway-edge": "jnb1",
+    "x-railway-request-id": "hoZDUeJjRQq6GeKB0-QtfA"
+  },
+  "paymentRequiredDecoded": {
+    "x402Version": 2,
+    "error": "Payment required",
+    "resource": {
+      "url": "http://untch-asp-production.up.railway.app/ping_untch",
+      "description": "Untch hello-world ping — D0.1 paid A2MCP call",
+      "mimeType": "application/json"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:196",
+        "amount": "10000",
+        "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+        "payTo": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD₮0",
+          "version": "1"
+        }
+      }
+    ]
+  },
+  "body": "{}"
+}

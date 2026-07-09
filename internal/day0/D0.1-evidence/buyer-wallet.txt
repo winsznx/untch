@@ -1,0 +1,6 @@
+D0.1 buyer wallet (fresh burner generated this session, 2026-07-09)
+Public address : 0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b
+Private key    : services/asp/.env (gitignored, mode 600) — NOT committed, burner only
+On-chain USDT0 balance at generation (read via rpc.xlayer.tech): 0  -> UNFUNDED
+Fund with >= 0.01 USD₮ (0x779Ded0c9e1022225f8E0630b35a9b54bE713736) on X Layer mainnet (eip155:196).
+No OKB gas needed on the buyer (EIP-3009 is gasless for the signer).

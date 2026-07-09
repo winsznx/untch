@@ -1,0 +1,22 @@
+# Root railway.json + this ignore govern the Railway deploy. Since Step-2, the @untch/asp seller
+# builds from the repo ROOT (it now has workspace deps on @untch/canon + @untch/policy-engine, whose
+# source must be present), start command `pnpm --filter @untch/asp start`. Keep the upload to just
+# what the workspace install + server runtime need.
+
+# secrets — never upload (buyer key + OKX triple live in gitignored .env files; belt-and-suspenders)
+.env
+.env.*
+
+# installed deps / build junk (Railway reinstalls)
+node_modules
+dist
+*.log
+.DS_Store
+
+# not needed to build or run the seller
+.git
+internal
+contracts
+fixtures
+scripts
+services/asp/run-paid-call-under-vpn.sh

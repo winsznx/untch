@@ -1,7 +1,14 @@
-# Untch pnpm workspace. Scoped to packages/* so @untch/canon (D0.5) and @untch/policy-engine
-# resolve by name across package boundaries via a symlink in node_modules/@untch. services/asp
-# is intentionally NOT a member — it is a deployable island with its own lockfile and heavy
-# OKX x402 deps, installed independently, and pulling it into the root graph would change its
-# install semantics for no benefit here.
+# Untch pnpm workspace. `packages/*` holds the shared libraries (@untch/canon (D0.5),
+# @untch/policy-engine (Step-1), @untch/shared) that resolve by name across package boundaries
+# via workspace symlinks in each consumer's node_modules/@untch.
+#
+# services/* joined the workspace in Step-2: the seller service (@untch/asp) now has REAL
+# workspace dependencies on @untch/canon (canonicalize+hash for create_spend_intent) and
+# @untch/policy-engine (evaluateIntentSerialized for preflight_payment), consumed as
+# `workspace:*` — NOT vendored/reimplemented. Because these packages are private TS source with
+# no registry to publish to, the source must be present at build time, so the service now
+# deploys from the repo ROOT as a workspace (Railway start = `pnpm --filter @untch/asp start`)
+# rather than as the standalone island it was through D0.1. See services/asp/README.md.
 packages:
   - "packages/*"
+  - "services/*"

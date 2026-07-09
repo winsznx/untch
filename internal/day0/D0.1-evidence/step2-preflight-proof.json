@@ -1,0 +1,261 @@
+{
+  "meta": {
+    "step": "Step-2 preflight_payment end-to-end proof",
+    "note": "Continuation of the D0.1 proof line. Real x402 settlement + real §7.1 policy decision.",
+    "buyer": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "seller": "https://untch-asp-production.up.railway.app",
+    "price": "$0.05",
+    "network": "eip155:196",
+    "settlementToken": {
+      "symbol": "USD₮0",
+      "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "decimals": 6
+    },
+    "runSalt": "1783597080735",
+    "capturedAt": "2026-07-09T11:38:07.908Z"
+  },
+  "createSpendIntent": {
+    "status": 200,
+    "request": {
+      "owner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+      "buyerAgentId": "1",
+      "workerAgentId": "0",
+      "token": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "maxAmount": "1000000",
+      "taskHash": "0x742305499bd0aaa75f53e2709e3ed7f9c5624978198b2124d5a8b3b92c8f0d36",
+      "acceptanceHash": "0xb9a1bcb131e463dc7a833e7ea3d0fce05742a9d02449c262de233aa2012cb26a",
+      "schemaHash": "0x35f9f1e14423f1de4181bb1fa235c5bfcd20d985426bdf82ec160ec5d9a87fb1",
+      "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
+      "deadline": "9999999999",
+      "nonce": "1783597080735",
+      "endpoint": "https://api.vendor.example/v1/market-data?symbol=OKB",
+      "paramsHash": "0xd25c4517557bc50daa613d1e583c239bac44719a0cd9e347f78ec1ec62f89463",
+      "recipientAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "category": "market-data",
+      "amount": 0.5
+    },
+    "response": {
+      "intentHash": "0x7a140719ed248509828960f7811d01612edcf15eba75e30705440a70c8334811",
+      "canonicalIntent": {
+        "struct": {
+          "owner": "0x98f43eabcad380f4f1f0587ae945bc8c79e43c0b",
+          "buyerAgentId": "1",
+          "workerAgentId": "0",
+          "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+          "maxAmount": "1000000",
+          "taskHash": "0x742305499bd0aaa75f53e2709e3ed7f9c5624978198b2124d5a8b3b92c8f0d36",
+          "acceptanceHash": "0xb9a1bcb131e463dc7a833e7ea3d0fce05742a9d02449c262de233aa2012cb26a",
+          "schemaHash": "0x35f9f1e14423f1de4181bb1fa235c5bfcd20d985426bdf82ec160ec5d9a87fb1",
+          "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
+          "deadline": "9999999999",
+          "nonce": "1783597080735"
+        },
+        "operational": {
+          "endpoint": "https://api.vendor.example/v1/market-data?symbol=OKB",
+          "paramsHash": "0xd25c4517557bc50daa613d1e583c239bac44719a0cd9e347f78ec1ec62f89463",
+          "recipientAddress": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+          "category": "market-data",
+          "amount": 0.5
+        }
+      },
+      "onchain": null
+    }
+  },
+  "preflightPayment": {
+    "challenge": {
+      "status": 402,
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "2",
+        "content-type": "application/json; charset=utf-8",
+        "date": "Thu, 09 Jul 2026 11:38:06 GMT",
+        "etag": "W/\"2-vyGp6PvFo4RvsFtPoIWeCReyIC8\"",
+        "payment-required": "eyJ4NDAyVmVyc2lvbiI6MiwiZXJyb3IiOiJQYXltZW50IHJlcXVpcmVkIiwicmVzb3VyY2UiOnsidXJsIjoiaHR0cDovL3VudGNoLWFzcC1wcm9kdWN0aW9uLnVwLnJhaWx3YXkuYXBwL3ByZWZsaWdodF9wYXltZW50IiwiZGVzY3JpcHRpb24iOiJVbnRjaCBwcmVmbGlnaHRfcGF5bWVudCDigJQgZGV0ZXJtaW5pc3RpYyDCpzcuMSBwb2xpY3kgcHJlZmxpZ2h0IG9mIGEgYm91bmRlZCBTcGVuZEludGVudCIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRzIjpbeyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJlaXAxNTU6MTk2IiwiYW1vdW50IjoiNTAwMDAiLCJhc3NldCI6IjB4Nzc5ZGVkMGM5ZTEwMjIyMjVmOGUwNjMwYjM1YTliNTRiZTcxMzczNiIsInBheVRvIjoiMHg5OEY0M2VBQmNhRDM4MGY0ZjFGMDU4N2FFOTQ1QmM4Yzc5RTQzYzBiIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsibmFtZSI6IlVTROKCrjAiLCJ2ZXJzaW9uIjoiMSJ9fV19",
+        "server": "railway-hikari",
+        "x-hikari-trace": "jnb1.x1wt",
+        "x-powered-by": "Express",
+        "x-railway-edge": "jnb1",
+        "x-railway-request-id": "-iPz5oI-QXCSH4A2nbOCzg"
+      },
+      "paymentRequiredDecoded": {
+        "x402Version": 2,
+        "error": "Payment required",
+        "resource": {
+          "url": "http://untch-asp-production.up.railway.app/preflight_payment",
+          "description": "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
+          "mimeType": "application/json"
+        },
+        "accepts": [
+          {
+            "scheme": "exact",
+            "network": "eip155:196",
+            "amount": "50000",
+            "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+            "payTo": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+            "maxTimeoutSeconds": 300,
+            "extra": {
+              "name": "USD₮0",
+              "version": "1"
+            }
+          }
+        ]
+      },
+      "body": "{}"
+    },
+    "paymentSignatureDecoded": {
+      "x402Version": 2,
+      "payload": {
+        "authorization": {
+          "from": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+          "to": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+          "value": "50000",
+          "validAfter": "1783597081",
+          "validBefore": "1783597386",
+          "nonce": "0xc0473e52e509642c5c438c136dafcf12dc65473f489cb9740c7da7e9fc2a3d78"
+        },
+        "signature": "0x2ffbca136a8562f4f29e5a41f8f6390ec4d0a70158f019f0612b08674fe9c3a45ab7467151fc9990a72a576b9d418503938ae3787167301aae2292e9dee3db101c"
+      },
+      "resource": {
+        "url": "http://untch-asp-production.up.railway.app/preflight_payment",
+        "description": "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
+        "mimeType": "application/json"
+      },
+      "accepted": {
+        "scheme": "exact",
+        "network": "eip155:196",
+        "amount": "50000",
+        "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+        "payTo": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD₮0",
+          "version": "1"
+        }
+      }
+    },
+    "response": {
+      "status": 200,
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "1640",
+        "content-type": "application/json; charset=utf-8",
+        "date": "Thu, 09 Jul 2026 11:38:08 GMT",
+        "etag": "W/\"668-meYlB7g4LtyC3yqATPcJx4yk2mA\"",
+        "payment-response": "eyJhbW91bnQiOm51bGwsImVycm9yTWVzc2FnZSI6bnVsbCwiZXJyb3JSZWFzb24iOm51bGwsIm5ldHdvcmsiOiJlaXAxNTU6MTk2IiwicGF5ZXIiOiIweDk4ZjQzZWFiY2FkMzgwZjRmMWYwNTg3YWU5NDViYzhjNzllNDNjMGIiLCJzdGF0dXMiOiJzdWNjZXNzIiwic3VjY2VzcyI6dHJ1ZSwidHJhbnNhY3Rpb24iOiIweDJlNmRjZmU4ZTEyNTBkZWViODVhNzkwYjcyZTNhYzFlYmNkOTYwMzEwNDFjYWRhN2RiMDI4NTA2YmIwYjhjNDYifQ==",
+        "server": "railway-hikari",
+        "vary": "accept-encoding",
+        "x-hikari-trace": "jnb1.x1wt",
+        "x-powered-by": "Express",
+        "x-railway-edge": "jnb1",
+        "x-railway-request-id": "XnGSch4gTKe3_yDAnbOCzg"
+      },
+      "body": {
+        "decision": "APPROVED",
+        "reasons": [
+          "all implemented rules passed; stubbed rules not yet enforced (see trace implemented:false)"
+        ],
+        "ruleTrace": [
+          {
+            "rule": "policy.active",
+            "result": "PASS",
+            "observed": "ACTIVE"
+          },
+          {
+            "rule": "duplicate.taskHash_endpoint_paramsHash",
+            "result": "PASS"
+          },
+          {
+            "rule": "cooldown.sameService",
+            "result": "PASS",
+            "limit": 300
+          },
+          {
+            "rule": "replay.contextBinding",
+            "result": "PASS",
+            "implemented": false,
+            "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+          },
+          {
+            "rule": "recipient.allowDeny",
+            "result": "PASS",
+            "observed": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+          },
+          {
+            "rule": "agent.workerAllowDeny",
+            "result": "PASS",
+            "observed": "0"
+          },
+          {
+            "rule": "category.allow",
+            "result": "PASS",
+            "observed": "market-data"
+          },
+          {
+            "rule": "vendor.lcbFloor",
+            "result": "PASS",
+            "implemented": false,
+            "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+          },
+          {
+            "rule": "intent.maxAmountBound",
+            "result": "PASS",
+            "observed": "0.50",
+            "limit": "1.00",
+            "token": "USDT"
+          },
+          {
+            "rule": "perCall.cap",
+            "result": "PASS",
+            "observed": "0.50",
+            "limit": "1.00",
+            "token": "USDT"
+          },
+          {
+            "rule": "budget.daily",
+            "result": "PASS",
+            "observed": "0.50",
+            "limit": "25.00",
+            "token": "USDT"
+          },
+          {
+            "rule": "rate.limit",
+            "result": "PASS",
+            "observed": 1,
+            "limit": 40
+          },
+          {
+            "rule": "proof.tierRequired",
+            "result": "PASS",
+            "implemented": false,
+            "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+          },
+          {
+            "rule": "escalate.aboveThreshold",
+            "result": "PASS",
+            "observed": "0.50",
+            "limit": "5.00",
+            "token": "USDT"
+          }
+        ],
+        "intentHash": "0x7a140719ed248509828960f7811d01612edcf15eba75e30705440a70c8334811",
+        "policyId": "1",
+        "policyVersion": 1,
+        "evaluatedAt": "2026-07-09T11:38:06Z",
+        "receiptRef": null,
+        "sig": null
+      }
+    },
+    "settlement": {
+      "amount": null,
+      "errorMessage": null,
+      "errorReason": null,
+      "network": "eip155:196",
+      "payer": "0x98f43eabcad380f4f1f0587ae945bc8c79e43c0b",
+      "status": "success",
+      "success": true,
+      "transaction": "0x2e6dcfe8e1250deeb85a790b72e3ac1ebcd96031041cada7db028506bb0b8c46"
+    }
+  },
+  "decision": "APPROVED",
+  "settlementTx": "0x2e6dcfe8e1250deeb85a790b72e3ac1ebcd96031041cada7db028506bb0b8c46"
+}
