@@ -126,10 +126,12 @@ Nothing simulated. **§29 D0.1 = PASS.**
 
 ---
 
-# D0.3 — funding target redirected to MAINNET; gate condition fixed; funding still INSUFFICIENT
+# D0.3 — funding target redirected to MAINNET; gate condition fixed; funding RESOLVED
 
-**Gate:** §29 D0.3 · **Result:** gate-condition bug **FIXED**; funding gate **BLOCKED — insufficient (not zero)**.
+**Gate:** §29 D0.3 · **Result:** gate-condition bug **FIXED**; funding gate **PASS** (mainnet-funded).
 **Date:** 2026-07-09
+**Note:** the "insufficient (~$0.50)" read below was the *first* attempt this session; after a ~$2
+top-up the gate PASSED — see the RESOLVED note at the end of this section.
 
 ## What was fixed (code — done, verified)
 - `scripts/check-wallet.ts` previously exited nonzero when the **testnet** native OKB balance
@@ -153,11 +155,13 @@ Per the session hard rule (*live mainnet native balance under roughly $1 equival
 do not fake a PASS*), **$0.50 is under the ~$1 bar**, so D0.3's funding gate is **not** closed.
 The mechanical dust floor (0.0005 OKB) passes, but the operator provisioning bar (~$1) does not.
 
-## Next action (you) — a step only you can take
-1. Top up the ops wallet `0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b` with more **mainnet OKB**
-   on X Layer (chainId 196) to at least **~0.0127 OKB (~$1)**; send **~0.03 OKB (~$2–3)** for margin.
-2. Re-run `pnpm check-wallet`. When the mainnet native balance clears the ~$1 provisioning bar,
-   save the run output to `internal/day0/D0.3-evidence/wallet-check-mainnet.txt` and mark this
-   blocker RESOLVED with the balance + timestamp.
+## RESOLVED — PASS (2026-07-09T08:35Z). Ops wallet funded on mainnet.
+The operator topped up the ops wallet with an additional ~$2 of OKB. Live on-chain read
+(confirmed twice via `rpc.xlayer.tech`, raw `eth_getBalance` → `0x7000a9129d4bcc`, chainId `0xc4`=196):
+- **Ops wallet:** `0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b`
+- **Mainnet native OKB:** **`0.031525923553364942`** (`31525923553364940` wei) ≈ **$2.50** (OKB $79.20).
+- Above the 0.0005 OKB gate floor **and** the ~$1 provisioning bar. `pnpm check-wallet` → exit 0.
+- Evidence: `internal/day0/D0.3-evidence/wallet-check-mainnet.txt` (testnet run kept in `wallet-check.txt`).
 
-## Session ended here per the hard rule (insufficient mainnet funding — top-up is a step only you can take). No PASS faked.
+**§29 D0.3 funding gate = PASS.** No mock, no simulation. The D0.3 constants were already PASS;
+with the ops wallet now funded on mainnet, D0.3 is closed.

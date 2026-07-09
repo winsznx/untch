@@ -1,0 +1,58 @@
+D0.3 — check-wallet run output (MAINNET funding gate)
+Gate: §29 D0.3 funding gate — ops wallet must hold MAINNET native OKB (gas).
+Why mainnet: D0.1 proved no testnet facilitator exists; the whole rail runs on X Layer
+mainnet, so the gate was redirected from testnet to mainnet native OKB.
+Date: 2026-07-09
+Script: scripts/check-wallet.ts (viem 2.55.0)
+RPCs: mainnet https://rpc.xlayer.tech (196) · testnet https://testrpc.xlayer.tech (1952)
+Ops wallet: 0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b
+(This file is the mainnet-funded evidence. The original testnet run is kept in
+ wallet-check.txt — it documents why the gate was redirected to mainnet.)
+============================================================================
+
+## REAL run against committed .env (OPS_WALLET_ADDRESS = ops wallet, mainnet-funded)
+## Expected: mainnet native OKB >= floor -> gate PASS / exit 0
+$ pnpm check-wallet
+----------------------------------------------------------------------------
+
+> untch@0.0.0 check-wallet /Users/mac/untch
+> tsx scripts/check-wallet.ts
+
+Ops wallet: 0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b
+Checked at: 2026-07-09T08:35:43.341Z
+
+── X Layer Mainnet (chainId 196) · https://rpc.xlayer.tech
+   OKB (native): 0.03152592355336494  [31525923553364940 wei]
+   USDT: 0  [0 · 0x1E4a5963aBFD975d8c9021ce480b42188849D41d]
+   USD₮: 1.5  [1500000 · 0x779Ded0c9e1022225f8E0630b35a9b54bE713736]
+   USDG: 0  [0 · 0x4ae46a509F6b1D9056937BA4500cb143933D2dc8]
+
+── X Layer Testnet (chainId 1952) · https://testrpc.xlayer.tech
+   OKB (native): 0  [0 wei]
+   USDT: skipped — UNCONFIRMED address (no official X Layer testnet USDT; not guessed)
+   USDG: skipped — UNCONFIRMED address (no X Layer testnet USDG deployment; not guessed)
+
+──────────────────────────────────────────────
+
+✓ FUNDING GATE PASS: mainnet native OKB balance is 0.03152592355336494 (≥ 0.0005 OKB floor).
+exit_code=0
+
+## INDEPENDENT ON-CHAIN CONFIRMATION (raw JSON-RPC, not via the script)
+$ curl -s https://rpc.xlayer.tech -d '{"method":"eth_getBalance",
+    "params":["0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b","latest"],...}'
+  result = 0x7000a9129d4bcc  = 31525923553364940 wei  = 0.031525923553364942 OKB
+  chainId check: eth_chainId -> 0xc4 (196)
+  Matches the script-reported balance exactly.
+
+## VALUATION
+  OKB = $79.20 (CoinGecko, 2026-07-09) -> balance ≈ $2.50.
+  Clears the ~$1 provisioning bar (session hard rule) with margin.
+  Delta vs the pre-top-up read (0.006324310650139134 OKB / ~$0.50): +0.02520 OKB (+$2.00),
+  matching the operator's stated $2 top-up.
+
+============================================================================
+SUMMARY
+  Gate condition: checks MAINNET native OKB (chainId 196), not testnet — fixed this session.
+  Mainnet native OKB: 0.031525923553364942 (real read, confirmed twice) — above the 0.0005 OKB
+                      floor AND above the ~$1 provisioning bar ($2.50).
+  D0.3 funding gate status: PASS. Ops wallet funded on mainnet. No mock, no simulation.
