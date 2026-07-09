@@ -1,0 +1,19 @@
+{
+  "chainId": 31337,
+  "registry": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "deployTx": "0x33703222b99edc7f38197c3dc2bd06ffdb071ef2c270e1455e24e4dcd769f5b7",
+  "addWriterTx": "0x517a6de911be8132bbb8d0eeb3bc3b23e34c03e223280b6dc0be8afd23b8c264",
+  "registerTx": "0x1f65598c6903da48c87cf16b8dad69f8725ca3091a8e4d8325ede9d6bae3264d",
+  "setStatusTx": "0x3da2e3feafc8d386f85144ab3dcb97eadbda1fd7b962fd6794a5da11b28cfa69",
+  "intentHash": "0x6e0398bb516405f2b3f5a389920d750f808b1613cdd9ab372182f63e66165b99",
+  "intentHashSource": "@untch/canon hashSpendIntent(demo §8.1 intent) == on-chain IntentHash.hashIntent == previewIntentHash",
+  "policyId": "43689584780193288224528649685930235207374048247885169918877241264404980193079",
+  "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
+  "owner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "maxAmount": "1000000",
+  "deadline": "1786212342",
+  "status": "APPROVED",
+  "usable": true,
+  "roundTripOk": true,
+  "note": "Local anvil proof of the full deploy -> addWriter -> registerIntent(PENDING) -> setStatus(APPROVED) -> readback path, incl. live on-chain==off-chain intentHash equality. Mirrors PolicyRegistry's anvil-proof-receipt.json. verifyCmd: (local chain — no explorer verification)"
+}
