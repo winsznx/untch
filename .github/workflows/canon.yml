@@ -1,0 +1,67 @@
+# Untch canonicalization suite (PRD §9 / §28 item 5 / Day-0 gate D0.5). Permanent CI from D0.5
+# onward. This job covers Surface A end-to-end (RFC 8785 canonical-JSON vectors + §9 domain
+# rules + cross-process determinism) and the TS half of Surface B (SpendIntent hash corpus),
+# then proves the committed fixture hashes are an honest, reproducible function of the code.
+# The Solidity half of the Surface-B differential runs in contracts.yml; the shared corpus at
+# fixtures/ is the contract between the two jobs.
+name: canon
+
+on:
+  push:
+    paths:
+      - "packages/canon/**"
+      - "packages/shared/**"
+      - "fixtures/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/canon.yml"
+  pull_request:
+    paths:
+      - "packages/canon/**"
+      - "packages/shared/**"
+      - "fixtures/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/canon.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  canon:
+    name: RFC 8785 vectors + §9 domain rules + Surface B corpus
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm before setup-node so the pnpm cache is available. Version resolves from the
+      # `packageManager` field in package.json (pnpm@10.33.0).
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Canon suite (RFC 8785 vectors, §9 domain rules, cross-process determinism, Surface B corpus)
+        run: pnpm test:canon
+
+      # Regenerate the committed SpendIntent hashes and fail on any drift. This proves
+      # fixtures/intents.hashes.json — the file the Solidity differential trusts — is a
+      # deterministic function of fixtures/intents.json + the TS hashing code, and was not
+      # hand-edited.
+      - name: Fixture hashes are up-to-date
+        run: |
+          pnpm gen:fixtures
+          git diff --exit-code fixtures/intents.hashes.json

@@ -58,6 +58,13 @@ deny = "warnings"
 # an X Layer testnet fork.
 evm_version = "paris"
 
+# --- FS access for the D0.5 canonicalization differential (PRD §28 item 5) ---
+# IntentHash.t.sol reads the shared fixture corpus at the repo root (a sibling of contracts/):
+# fixtures/intents.json (hand-authored cases) + fixtures/intents.hashes.json (TS-generated
+# Surface-B hashes). Foundry sandboxes filesystem access, so grant read-only to ../fixtures/.
+# Read-only and path-scoped by design — the test never writes.
+fs_permissions = [{ access = "read", path = "../fixtures" }]
+
 # --- Formatter (used by `forge fmt --check`, the first CI gate) ---
 [profile.default.fmt]
 line_length = 100

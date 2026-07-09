@@ -1,4 +1,7 @@
-lib/
-out/
-cache/
-node_modules/
+# Anchored to the contracts/ root so these only ignore the Foundry deps + build dirs — a bare
+# `lib/` also matches src/lib/ (gitignore semantics), which would silently exclude first-class
+# library sources like src/lib/IntentHash.sol from the §28 solhint gate.
+/lib/
+/out/
+/cache/
+/node_modules/

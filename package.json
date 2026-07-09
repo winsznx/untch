@@ -9,9 +9,12 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "check-wallet": "tsx scripts/check-wallet.ts"
+    "check-wallet": "tsx scripts/check-wallet.ts",
+    "gen:fixtures": "tsx packages/canon/scripts/gen-fixture-hashes.ts",
+    "test:canon": "node --import tsx --test packages/canon/test/*.test.ts"
   },
   "dependencies": {
+    "canonicalize": "^3.0.0",
     "viem": "^2.55.0"
   },
   "devDependencies": {

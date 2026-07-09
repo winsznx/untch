@@ -8,10 +8,14 @@ on:
   push:
     paths:
       - "contracts/**"
+      # The D0.5 canonicalization differential (test/IntentHash.t.sol) reads the shared
+      # corpus at the repo root, so a fixtures change must re-run forge test here too.
+      - "fixtures/**"
       - ".github/workflows/contracts.yml"
   pull_request:
     paths:
       - "contracts/**"
+      - "fixtures/**"
       - ".github/workflows/contracts.yml"
 
 # forge-std is vendored under contracts/lib (committed, no submodule), so a plain

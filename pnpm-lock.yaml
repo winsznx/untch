@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      canonicalize:
+        specifier: ^3.0.0
+        version: 3.0.0
       viem:
         specifier: ^2.55.0
         version: 2.55.0(typescript@5.9.3)
@@ -218,6 +221,11 @@ packages:
       zod:
         optional: true
 
+  canonicalize@3.0.0:
+    resolution: {integrity: sha512-yYLfHyDMIXRyRqsKBRLX023riFLpXY2YOfdtqKXZRZy9qsfOJ9U+4F9YZL7MEzL5+ziN2x2nlBvY/Voi3EBljA==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   esbuild@0.28.1:
     resolution: {integrity: sha512-HrJrvZv5ayxBzPfwphOoNzkzOIIlifzk0KJrGK2c8R4+LKpMtpYLQeUdjnwjWv/LZlkH2laZk+4w78pi99D4Vw==}
     engines: {node: '>=18'}
@@ -387,6 +395,8 @@ snapshots:
   abitype@1.2.3(typescript@5.9.3):
     optionalDependencies:
       typescript: 5.9.3
+
+  canonicalize@3.0.0: {}
 
   esbuild@0.28.1:
     optionalDependencies:

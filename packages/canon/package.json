@@ -1,0 +1,13 @@
+{
+  "name": "@untch/canon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Untch canonicalization + hashing library (PRD §9). The single deterministic hashing surface shared by server, middleware, and contracts tests — Surface A (RFC 8785 canonical JSON) and Surface B (SpendIntent ABI struct hash).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "canonicalize": "^3.0.0",
+    "viem": "^2.55.0"
+  }
+}
