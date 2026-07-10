@@ -84,13 +84,17 @@ function buildIntent(owner: Hex, runSalt: string): Record<string, unknown> {
   };
 }
 
-/** Independently confirm the receipt is anchored: raw eth_getLogs for ReceiptLogged near the batch
- *  block, matched on receiptId decoded from chain — not read from the service. */
-async function verifyOnChain(receiptId: Hex, blockNumber: bigint): Promise<{ found: boolean; txHash: Hex | null }> {
+/** Independently confirm the receipt is anchored: resolve the batch tx's block by raw RPC, then
+ *  eth_getLogs for ReceiptLogged around it and match the receiptId decoded from chain — never read
+ *  from the service. Works as soon as the batch tx is mined (SUBMITTED), not only once CONFIRMED. */
+async function verifyOnChain(
+  receiptId: Hex,
+  batchTx: Hex,
+): Promise<{ found: boolean; txHash: Hex | null; block: number | null }> {
   const pub = createPublicClient({ chain: xLayerTestnet, transport: http(TESTNET_RPC) });
-  const window = 5n;
-  // Fetch all logs from the contract in the window and decode client-side — matching the receiptId
-  // ourselves rather than trusting an indexed filter or the service.
+  const rcpt = await pub.getTransactionReceipt({ hash: batchTx });
+  const blockNumber = rcpt.blockNumber;
+  const window = 3n;
   const logs = await pub.getLogs({
     address: RECEIPTS_CONTRACT,
     fromBlock: blockNumber > window ? blockNumber - window : 0n,
@@ -102,14 +106,14 @@ async function verifyOnChain(receiptId: Hex, blockNumber: bigint): Promise<{ fou
       if (ev.eventName === "ReceiptLogged") {
         const args = ev.args as unknown as { receiptId: Hex };
         if (args.receiptId.toLowerCase() === receiptId.toLowerCase()) {
-          return { found: true, txHash: log.transactionHash };
+          return { found: true, txHash: log.transactionHash, block: Number(log.blockNumber) };
         }
       }
     } catch {
       /* not our event */
     }
   }
-  return { found: false, txHash: null };
+  return { found: false, txHash: null, block: null };
 }
 
 async function main(): Promise<void> {
@@ -158,34 +162,38 @@ async function main(): Promise<void> {
     fail(`expected receiptRef.status QUEUED, got ${decision.receiptRef?.status}`);
   }
 
-  // 2. Poll the status endpoint until the worker anchors it.
+  // 2. Poll the status endpoint until the worker CONFIRMS the anchor (falling back to the batch tx
+  //    once one exists, so a slow finality-depth confirm still verifies).
   console.log(`[e2e] polling /receipt_status/${receiptId} for CONFIRMED (timeout ${POLL_TIMEOUT_MS}ms) …`);
   const deadline = Date.now() + POLL_TIMEOUT_MS;
-  let status: Record<string, unknown> | null = null;
+  let serviceTx: Hex | null = null;
+  let finalStatus = "QUEUED";
   for (;;) {
     const res = await fetch(`${sellerUrl}/receipt_status/${receiptId}`);
     if (res.ok) {
-      status = (await res.json()) as Record<string, unknown>;
-      console.log(`[e2e]   status=${status.status} tx=${status.txHash ?? "-"} block=${status.blockNumber ?? "-"}`);
-      if (status.status === "CONFIRMED" || status.status === "SUBMITTED") {
-        if (status.blockNumber || status.txHash) break;
-      }
+      const status = (await res.json()) as { status: string; txHash: string | null };
+      finalStatus = status.status;
+      if (status.txHash) serviceTx = status.txHash as Hex;
+      console.log(`[e2e]   status=${status.status} tx=${status.txHash ?? "-"}`);
+      if (status.status === "CONFIRMED") break;
       if (status.status === "DEGRADED_UNANCHORED") {
         fail("receipt DEGRADED_UNANCHORED — anchoring exhausted retries (ledger is still durable, but no proof).");
       }
     }
-    if (Date.now() > deadline) fail(`timed out waiting for anchoring; last status ${JSON.stringify(status)}`);
+    if (Date.now() > deadline) {
+      if (serviceTx) break; // batch tx exists (SUBMITTED) — verifiable on-chain even before finality depth
+      fail(`timed out waiting for a batch tx; last status ${finalStatus}`);
+    }
     await sleep(POLL_INTERVAL_MS);
   }
+  if (!serviceTx) fail("no batch tx hash ever appeared in the receipt status");
 
-  const blockNumber = BigInt((status!.blockNumber as number | null) ?? 0);
-  const serviceTx = (status!.txHash as string | null) ?? null;
-
-  // 3. INDEPENDENT raw-RPC verification (eth_getLogs), not trusting the service's own tx.
+  // 3. INDEPENDENT raw-RPC verification (resolve block from the tx, then eth_getLogs), not trusting
+  //    the service's own claim — the receiptId is matched from decoded chain logs.
   console.log(`[e2e] independently verifying via eth_getLogs (ReceiptLogged) …`);
-  const onchain = await verifyOnChain(receiptId, blockNumber);
+  const onchain = await verifyOnChain(receiptId, serviceTx);
   if (!onchain.found) {
-    fail(`receiptId ${receiptId} NOT found in ReceiptLogged logs near block ${blockNumber} — independent verification failed.`);
+    fail(`receiptId ${receiptId} NOT found in ReceiptLogged logs for batch tx ${serviceTx} — independent verification failed.`);
   }
 
   const proof = {
@@ -204,8 +212,9 @@ async function main(): Promise<void> {
       method: "raw eth_getLogs for ReceiptLogged, receiptId matched from decoded chain logs",
       found: onchain.found,
       txHash: onchain.txHash,
-      block: Number(blockNumber),
+      block: onchain.block,
     },
+    finalStatus,
     result: "PASS",
   };
   const path = save("receipt-writer-e2e-proof.json", proof);
