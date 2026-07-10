@@ -15,6 +15,7 @@
     "test:policy": "node --import tsx --test packages/policy-engine/test/*.test.ts",
     "test:asp": "node --import tsx --test services/asp/test/*.test.ts",
     "test:receipt-writer": "node --import tsx --test packages/receipt-writer/test/*.test.ts",
+    "test:escalation": "node --import tsx --test packages/escalation/test/*.test.ts",
     "gen:writer-wallet": "tsx scripts/gen-writer-wallet.ts",
     "provision:writer": "tsx scripts/provision-receipt-writer.ts"
   },

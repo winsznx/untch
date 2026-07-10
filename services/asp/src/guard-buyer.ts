@@ -2,6 +2,7 @@ import { decodePaymentResponseHeader } from "@okxweb3/x402-fetch";
 import {
   guardedPay,
   type ChallengeBinding,
+  type EscalationResolver,
   type GuardOutcome,
   type PreflightDecision,
   type PreflightFn,
@@ -116,6 +117,14 @@ export interface GuardedCallParams {
   readonly intent: Record<string, unknown>;
   readonly policyId: string;
   readonly onPreflight?: (r: PreflightCallResult) => void;
+  /**
+   * DI: how an ESCALATED hold is resolved when the returned poll handle is polled (§7.2 / §14 Mode B).
+   * Wire `makeEscalationResolver(escalationService)` from @untch/escalation here and the guard's poll()
+   * resolves against the REAL escalation service — an operator's Telegram response (that passes the §27
+   * authority-boundary check) flips the hold to APPROVED; a timeout defaults it to DENIED. Omitted ⇒ the
+   * hold stays PENDING (the prior stub behavior).
+   */
+  readonly escalationResolver?: EscalationResolver;
 }
 
 /** One guarded outbound paid call, fully wired: CBC + real paid preflight + the buyer's own signer. */
@@ -135,6 +144,7 @@ export function guardedBuyerCall(params: GuardedCallParams): Promise<GuardOutcom
         params.onPreflight,
       ),
       signAndPay: makeSignAndPay(params.buyerKey),
+      ...(params.escalationResolver ? { escalationResolver: params.escalationResolver } : {}),
     },
   );
 }
