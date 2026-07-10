@@ -5,6 +5,7 @@ import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import {
   CREATE_INTENT_ROUTE,
   CREATE_POLICY_ROUTE,
+  ESCALATION_STATUS_ROUTE,
   loadSellerConfig,
   NETWORK,
   PAUSE_POLICY_ROUTE,
@@ -27,6 +28,7 @@ import {
 import { createLedgerState } from "./ledger-state";
 import { initReceiptWiring, type ReceiptWiring } from "./receipts";
 import { initPolicyWiring, type PolicyWiring } from "./policy-wiring";
+import { initEscalationWiring, type EscalationWiring } from "./escalation-wiring";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -55,6 +57,7 @@ export function createSellerApp(
   config: SellerConfig = loadSellerConfig(),
   receiptWiring: ReceiptWiring | null = null,
   policyWiring: PolicyWiring | null = null,
+  escalationWiring: EscalationWiring | null = null,
 ): Express {
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey: config.okxApiKey,
@@ -117,6 +120,7 @@ export function createSellerApp(
       ledger: ledgerState.ledger,
       intentStore: ledgerState.intentStore,
       ...(receiptWiring ? { receiptEnqueuer: receiptWiring.enqueuer } : {}),
+      ...(escalationWiring ? { escalationGateway: escalationWiring.gateway } : {}),
     })
       .then((result) => send(res, result))
       .catch(next);
@@ -159,6 +163,21 @@ export function createSellerApp(
       .catch(next);
   });
 
+  // §7.2 escalation status poll — GET /escalation_status/:pollRef. Unpriced; what the guard's poll()
+  // resolves against. Returns the getState() state (PENDING/APPROVED/DENIED) + the record's final fields.
+  app.get(ESCALATION_STATUS_ROUTE, (req, res, next) => {
+    if (!escalationWiring) {
+      res.status(503).json(
+        errorBody("ESCALATION_NOT_CONFIGURED", "escalation service is not wired on this instance (needs DATABASE_URL/REDIS_URL/TELEGRAM_*)"),
+      );
+      return;
+    }
+    escalationWiring
+      .status(req.params.pollRef ?? "")
+      .then((view) => res.json(view))
+      .catch(next);
+  });
+
   // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err instanceof SyntaxError && "body" in err) {
@@ -192,18 +211,25 @@ function send(res: Response, result: HandlerResult): void {
 const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1]);
 if (isMain) {
   const config = loadSellerConfig();
-  Promise.all([initReceiptWiring(), initPolicyWiring()])
-    .then(([receiptWiring, policyWiring]: [ReceiptWiring | null, PolicyWiring | null]) => {
-      createSellerApp(config, receiptWiring, policyWiring).listen(config.port, () => {
-        console.log(`[asp] listening on http://localhost:${config.port}`);
-        console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
-        console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canon hash + real-policy binding)`);
-        console.log(`[asp]   POST ${PREFLIGHT_ROUTE}    ${PREFLIGHT_PRICE}   (real §7.1 preflight vs a real stored policy)`);
-        console.log(`[asp]   POST ${CREATE_POLICY_ROUTE} / ${UPDATE_POLICY_ROUTE} / ${PAUSE_POLICY_ROUTE}  (operator, on-chain)`);
-        console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
-        console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
-      });
-    })
+  Promise.all([initReceiptWiring(), initPolicyWiring(), initEscalationWiring()])
+    .then(
+      ([receiptWiring, policyWiring, escalationWiring]: [
+        ReceiptWiring | null,
+        PolicyWiring | null,
+        EscalationWiring | null,
+      ]) => {
+        createSellerApp(config, receiptWiring, policyWiring, escalationWiring).listen(config.port, () => {
+          console.log(`[asp] listening on http://localhost:${config.port}`);
+          console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
+          console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canon hash + real-policy binding)`);
+          console.log(`[asp]   POST ${PREFLIGHT_ROUTE}    ${PREFLIGHT_PRICE}   (real §7.1 preflight vs a real stored policy)`);
+          console.log(`[asp]   POST ${CREATE_POLICY_ROUTE} / ${UPDATE_POLICY_ROUTE} / ${PAUSE_POLICY_ROUTE}  (operator, on-chain)`);
+          console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
+          console.log(`[asp]   GET  ${ESCALATION_STATUS_ROUTE}  (escalation status poll, §7.2)`);
+          console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
+        });
+      },
+    )
     .catch((err) => {
       console.error(`[asp] failed to init wiring: ${(err as Error).message}`);
       process.exit(1);

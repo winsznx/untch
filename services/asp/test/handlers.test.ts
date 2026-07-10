@@ -275,6 +275,62 @@ test("preflight_payment: over per-call cap with onPerCallCapExceeded=ESCALATE �
   assert.equal((res.body as { decision: string }).decision, "ESCALATED_PER_CALL_CAP");
 });
 
+// ── §7.2 escalation gateway wiring (server-side create on ESCALATED_*) ──────────
+
+test("preflight_payment: an ESCALATED_* decision drives the escalation gateway with the guard's pollRef", async () => {
+  // #given a receiptRef (so pollRef must be receiptRef.receiptId, exactly what the guard poll() computes)
+  const receiptId = b32("f1") as Hex;
+  const calls: Array<{ pollRef: string; reason: string; amount: number; intentHash: string }> = [];
+  const escalationGateway = {
+    async onEscalated(args: {
+      input: { amount: number };
+      decision: { decision: string; intentHash: string };
+      stored: StoredPolicy;
+      pollRef: string;
+    }): Promise<void> {
+      calls.push({
+        pollRef: args.pollRef,
+        reason: args.decision.decision,
+        amount: args.input.amount,
+        intentHash: args.decision.intentHash,
+      });
+    },
+  };
+  const receiptEnqueuer = {
+    async enqueue(): Promise<{ receiptId: Hex; status: "QUEUED" }> {
+      return { receiptId, status: "QUEUED" };
+    },
+  } as unknown as PreflightDeps["receiptEnqueuer"];
+
+  // #when an over-cap intent escalates
+  const res = await handlePreflightPayment(
+    { intent: wireIntent({ amount: 2.0, maxAmount: "5000000" }), policyId: POLICY_ID },
+    freshPreflightDeps({ escalationGateway, ...(receiptEnqueuer ? { receiptEnqueuer } : {}) }),
+  );
+
+  // #then the decision escalated AND the gateway was called once with pollRef == receiptId
+  assert.equal((res.body as { decision: string }).decision, "ESCALATED_PER_CALL_CAP");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.pollRef, receiptId, "pollRef must equal receiptRef.receiptId (guard poll key)");
+  assert.equal(calls[0]!.reason, "ESCALATED_PER_CALL_CAP");
+  assert.equal(calls[0]!.amount, 2.0);
+});
+
+test("preflight_payment: a NON-escalated (APPROVED) decision never calls the escalation gateway", async () => {
+  let called = 0;
+  const escalationGateway = {
+    async onEscalated(): Promise<void> {
+      called++;
+    },
+  };
+  const res = await handlePreflightPayment(
+    { intent: wireIntent(), policyId: POLICY_ID },
+    freshPreflightDeps({ escalationGateway }),
+  );
+  assert.equal((res.body as { decision: string }).decision, "APPROVED");
+  assert.equal(called, 0, "an approval is not an escalation — the gateway must stay untouched");
+});
+
 // ── the stored policy really drives the decision (non-coincidence, like the e2e) ──
 
 test("preflight_payment: the STORED policy's rules drive the outcome, not any default", async () => {

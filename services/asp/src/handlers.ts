@@ -128,6 +128,24 @@ export async function handleCreateSpendIntent(
 // preflight_payment — priced $0.05: load the real policy, run the real engine, surface it verbatim
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * §7.2 / §27 escalation gateway. When preflight yields an `ESCALATED_*` decision, the SERVER creates
+ * the escalation record + fans out to the operator's channel here — so the guard's poll() has a real
+ * escalation to resolve against WITHOUT the operator-side driver having to host the service. The gateway
+ * gets everything it needs off the decision the handler already has in hand: the resolved intent (for
+ * the amount), the decision (reason/intentHash/policyId), the stored policy (approvals config), and the
+ * exact `pollRef` the guard will poll by (`receiptRef.receiptId ?? intentHash`). Kept as a narrow
+ * interface so the handler stays unit-testable with no escalation/Postgres/Telegram dependency.
+ */
+export interface EscalationGateway {
+  onEscalated(args: {
+    readonly input: SpendIntentInput;
+    readonly decision: Decision;
+    readonly stored: StoredPolicy;
+    readonly pollRef: string;
+  }): Promise<void>;
+}
+
 export interface PreflightDeps {
   readonly policyProvider: PolicyProvider;
   readonly ledger: Ledger;
@@ -139,6 +157,10 @@ export interface PreflightDeps {
   /** §7.4 receipt writer. When present, the decision is durably enqueued and a real
    *  {receiptId, status:"QUEUED"} is returned in `receiptRef`. Absent ⇒ `receiptRef` stays null. */
   readonly receiptEnqueuer?: ReceiptEnqueuer;
+  /** §7.2 escalation gateway. When present AND the decision is `ESCALATED_*`, the server creates the
+   *  escalation so the guard's poll() resolves for real. Absent ⇒ no escalation is created (poll stays
+   *  PENDING) — an honest capability boundary, never a fabricated approval. */
+  readonly escalationGateway?: EscalationGateway;
 }
 
 /**
@@ -280,6 +302,20 @@ export async function handlePreflightPayment(
       receiptRef = await deps.receiptEnqueuer.enqueue(resolved.input, decision);
     } catch (err) {
       console.error("[asp] receipt enqueue failed — returning receiptRef: null", err);
+    }
+  }
+
+  // §7.2: if the engine ESCALATED, create the escalation server-side so poll() resolves for real. The
+  // pollRef MUST equal what the x402-guard poll handle computes — `receiptRef.receiptId ?? intentHash`
+  // (see @untch/x402-guard poll.ts) — so the buyer's poll and this record are the same escalation. A
+  // failure here is logged, not fatal: the decision is still returned; poll() then stays PENDING and
+  // times out to DENY (fail-closed), never a fabricated approval.
+  if (deps.escalationGateway && stored && decision.decision.startsWith("ESCALATED")) {
+    const pollRef = receiptRef?.receiptId ?? decision.intentHash;
+    try {
+      await deps.escalationGateway.onEscalated({ input: resolved.input, decision, stored, pollRef });
+    } catch (err) {
+      console.error("[asp] escalation create failed — poll() will stay PENDING until timeout", err);
     }
   }
 

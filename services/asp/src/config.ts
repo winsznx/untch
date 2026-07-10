@@ -28,6 +28,10 @@ export const PREFLIGHT_PRICE = "$0.05" as const;
 /** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
 export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
 
+/** §7.2 escalation status poll (unpriced) — GET /escalation_status/:pollRef. What the guard's poll()
+ *  resolves against: returns the getState() state + the escalation record's final fields. */
+export const ESCALATION_STATUS_ROUTE = "/escalation_status/:pollRef" as const;
+
 /**
  * Operator-facing policy tools (§11 create/update/pause_policy). These sign real PolicyRegistry
  * (§10.1) txs with the operator wallet. §11 prices them (0.50 / 0.10), but pricing is deliberately

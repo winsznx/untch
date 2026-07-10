@@ -108,6 +108,34 @@ export function makePaidPreflight(
   };
 }
 
+/**
+ * An `EscalationResolver` that resolves the guard's poll() against the LIVE seller's public
+ * `GET /escalation_status/:pollRef` endpoint (§7.2). This is the real production resolve path — the
+ * buyer holds no database, only polls HTTP — the server owns the escalation state and the §27 authority
+ * boundary. Any transport error resolves to PENDING (fail-safe: the guard keeps holding, never settles
+ * on an unreachable status).
+ */
+export function makeHttpEscalationResolver(sellerUrl: string): EscalationResolver {
+  const base = sellerUrl.replace(/\/$/, "");
+  return async ({ id, reason }) => {
+    try {
+      const res = await fetch(`${base}/escalation_status/${encodeURIComponent(id)}`);
+      if (!res.ok) return { status: "PENDING", reason };
+      const body = (await res.json()) as {
+        state?: { status?: string; reason?: string; decision?: PreflightDecision };
+      };
+      const state = body.state;
+      if (state?.status === "APPROVED" && state.decision) {
+        return { status: "APPROVED", decision: state.decision };
+      }
+      if (state?.status === "DENIED") return { status: "DENIED", reason: state.reason ?? "ESCALATION_DENIED" };
+      return { status: "PENDING", reason: state?.reason ?? reason };
+    } catch {
+      return { status: "PENDING", reason };
+    }
+  };
+}
+
 export interface GuardedCallParams {
   readonly buyerKey: `0x${string}`;
   readonly sellerUrl: string;

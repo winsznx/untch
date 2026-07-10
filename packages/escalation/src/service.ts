@@ -99,6 +99,12 @@ export class EscalationService {
   // ── CREATE → FAN_OUT → PENDING ──────────────────────────────────────────────────────────────────
 
   async createEscalation(req: EscalationRequest): Promise<CreatedEscalation> {
+    // Idempotent by pollRef: a retried preflight (or a duplicate ESCALATED decision) must NOT mint a
+    // fresh code and re-notify — the stored code hash would no longer match the new plaintext, breaking
+    // a legitimate approval. The first escalation for a poll ref wins; a repeat returns it untouched.
+    const prior = await this.repo.getByPollRef(req.pollRef);
+    if (prior) return { record: prior, code: "" };
+
     const now = this.clock();
     const timeoutMin = clamp(
       req.approvals.escalationTimeoutMin ?? this.defaultTimeoutMin,

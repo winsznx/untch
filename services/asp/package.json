@@ -13,6 +13,7 @@
     "preflight:proof": "tsx --env-file=../../.env --env-file=.env src/run-preflight-proof.ts",
     "guarded:e2e": "tsx --env-file=../../.env --env-file=.env src/run-guarded-e2e-proof.ts",
     "escalation:e2e": "tsx --env-file=../../.env --env-file=.env src/run-escalation-e2e-proof.ts",
+    "escalation:live": "tsx --env-file=../../.env --env-file=.env src/run-escalation-live-proof.ts",
     "receipt:e2e": "tsx --env-file=../../.env --env-file=.env src/run-receipt-e2e-proof.ts",
     "policy:e2e": "tsx --env-file=../../.env --env-file=.env src/run-policy-e2e-proof.ts",
     "test": "node --import tsx --test test/*.test.ts",
