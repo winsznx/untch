@@ -1,36 +1,40 @@
 {
-  "proof": "§7.2 / §27 escalation service — server-side gateway LIVE in production (D0.7-adjacent)",
-  "status": "PARTIAL — gateway + endpoint deployed and live-verified; the real Telegram tap → APPROVED leg is BLOCKED by an invalid TELEGRAM_BOT_TOKEN (see telegramTokenBlocker). No fabricated PASS.",
-  "capturedAt": "2026-07-10T22:13:05Z",
-  "seller": "https://untch-asp-production.up.railway.app",
-  "gitCommits": {
-    "serverSideGateway": "9f55de7 feat(escalation): server-side gateway + live public-endpoint proof path",
-    "receiverHardening": "c28b61e (fix: back off Telegram receiver on non-ok getUpdates)"
+  "meta": {
+    "proof": "§7.2 / §27 escalation service — LIVE e2e THROUGH THE PUBLIC ENDPOINT (also D0.7 evidence)",
+    "buyer": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "seller": "https://untch-asp-production.up.railway.app",
+    "network": "eip155:196",
+    "capturedAt": "2026-07-10T22:37:18.095Z",
+    "note": "The entire escalation lifecycle (create, Telegram fan-out, §27 authority boundary, resolve) ran on the deployed seller. The buyer only called public HTTP endpoints and polled."
   },
-  "deployVerified": {
-    "buildAndDeploy": "railway up --ci → Deploy complete (image sha256:d1c2112615f1…)",
-    "pingRoute": { "GET /ping_untch": 402, "note": "402 = app up, paid route gated" },
-    "escalationStatusEndpointLive": {"state":{"status":"PENDING","reason":"escalation not yet created"},"record":null},
-    "bootLogs": [
-      "[asp] escalation migrations applied: 003_escalations.sql",
-      "[asp] escalation service wired — Telegram bound chat 6668785182; timeouts on shared Redis.",
-      "[asp]   GET  /escalation_status/:pollRef  (escalation status poll, §7.2)",
-      "[asp] listening on http://localhost:8080"
-    ],
-    "provenLive": [
-      "server-side EscalationGateway wired into handlePreflightPayment (creates escalation on ESCALATED_*)",
-      "public GET /escalation_status/:pollRef endpoint responding (guard poll() resolve path)",
-      "escalations table (003) migrated into the shared Railway Postgres",
-      "BullMQ timeout worker + Telegram receiver started on the shared Redis"
-    ]
+  "policy": {
+    "policyId": "99741098567322735879080960265861163310897663663332765358624117521512656062382",
+    "policyHash": "0xa37e92806729e5c3cd9593d5568722639179efcaecf449d6a116ef65ccd46a13",
+    "registerTx": "0x1dd427932efc350fba93033cf6610f1911ac366491318a21008d7fe06f0a8928",
+    "escalateAbove": 5
   },
-  "telegramTokenBlocker": {
-    "problem": "The configured TELEGRAM_BOT_TOKEN is rejected by Telegram — the bot cannot send the escalation message or receive the operator's tap.",
-    "evidence_getMe": {"ok":true,"result":{"id":8901894729,"is_bot":true,"first_name":"Test","username":"testuntch_bot","can_join_groups":true,"can_read_all_group_messages":false,"supports_inline_queries":false,"supports_guest_queries":false,"can_connect_to_business":false,"has_main_web_app":false,"has_topics_enabled":false,"allows_users_to_create_topics":false,"can_manage_bots":false,"supports_join_request_queries":false}},
-    "control_bogusTokenSameError": {"request": "GET /bot123:BOGUS/getMe", "response": {"ok": false, "error_code": 401, "description": "Unauthorized"}, "meaning": "identical 401 shape ⇒ this is auth rejection, not a network/egress problem"},
-    "control_egressHealthy": "GET https://api.telegram.org/ → 302 (reachable); Telegram returns well-formed Bot-API JSON, so connectivity is fine",
-    "tokenShape": "structurally valid (<11-digit id>:<35-char secret>, 47 chars, no quotes/whitespace) ⇒ likely revoked or mistyped, not a format issue",
-    "fix": "Regenerate the bot token via @BotFather (/newbot or /token), set it in root .env AND on Railway (railway variable set TELEGRAM_BOT_TOKEN=<new>), confirm TELEGRAM_CHAT_ID is the numeric operator chat id. Then: pnpm --filter @untch/asp escalation:live  (tap APPROVE in Telegram)."
+  "intentAmount": 8,
+  "preflightDecision": "ESCALATED_THRESHOLD",
+  "preflightSettlementTx": "0xb72376821b523bc75921f49a6870584b0677b62b123639f5b24cc26bdd7952c4",
+  "pollRef": "0x3726c3112556c734ec2207d1f8460061dacaf42bc1800a90cb05e37f289ea4fa",
+  "escalationRecordInitial": {
+    "id": "esc_28be893b6254",
+    "status": "PENDING",
+    "reason": "ESCALATED_THRESHOLD",
+    "resolvedBy": null,
+    "resolvedAt": null
   },
-  "remainingForFullPass": "One live run of escalation:live through the public endpoint with a VALID bot token: real preflight escalate → real Telegram tap → guard poll() APPROVED, independently confirmed via /escalation_status. The harness + wiring are deployed and ready; only the valid token + a human tap remain."
+  "guardPollBefore": "PENDING",
+  "guardPollAfter": "APPROVED",
+  "escalationRecordFinal": {
+    "id": "esc_28be893b6254",
+    "status": "APPROVED",
+    "reason": "ESCALATED_THRESHOLD",
+    "resolvedBy": {
+      "handle": "6668785182",
+      "channel": "telegram"
+    },
+    "resolvedAt": "2026-07-10T22:37:16.047Z"
+  },
+  "independentlyConfirmed": true
 }
