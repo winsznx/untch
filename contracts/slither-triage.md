@@ -29,7 +29,7 @@ contract (`PolicyRegistry`) produced its first finding, Slither crashed with
 The fix is the correct shape for a triage database: machine-format only, and **empty** because
 there is nothing Medium/High to accept. All human documentation lives in this `.md` instead.
 
-## Current dispositions (PolicyRegistry + SpendIntentRegistry + UntchReceipts)
+## Current dispositions (PolicyRegistry + SpendIntentRegistry + UntchReceipts + UntchVault)
 
 | # | Finding | Tool | Impact | Disposition |
 |---|---------|------|--------|-------------|
@@ -40,12 +40,42 @@ there is nothing Medium/High to accept. All human documentation lives in this `.
 | 5 | `timestamp` — `SpendIntentRegistry.isExpired` computes `block.timestamp > deadline` | Slither | **Low** | Accepted — this IS the derived-expiry rule PRD §10.2 requires: expiry is computed at read time, never a stored/transitioned `EXPIRED` state. Non-blocking (Low). |
 | 6 | `timestamp` — `SpendIntentRegistry.isUsable` computes `block.timestamp <= deadline` (with `status == APPROVED`) | Slither | **Low** | Accepted — the derived usability rule the vault (§7.5) turns on, the intent analogue of PolicyRegistry's `isUsable`. Non-blocking (Low). |
 | 7 | `timestamp` — `UntchReceipts.execute` compares `nowTs < eta` | Slither | **Low** | Accepted — intentional. This IS the §10.3 admin timelock: an op cannot execute before `eta = proposeTime + timelockDelay`. The comparison is the enforcement point of judgment call 3 (proven by the adversarially-fuzzed `invariant_TimelockNeverExecutesEarly`). Second-scale validator skew is immaterial to a timelock delay of minutes/days. `propose` uses `block.timestamp` only in the arithmetic `eta = now + delay` (not a comparison), so Slither does not flag it — consistent. Non-blocking (Low). |
+| 8 | `timestamp` — `UntchVault.spend` compares `nowTs > expiry` and `wouldBe > epochBudget` | Slither | **Low** | Accepted — the §7.5 signature-expiry and epoch-budget guards. Expiry is a wall-clock deadline the oracle sets (≤10min per §16); the epoch-budget comparison is arithmetic on an amount, flagged only because `wouldBe` derives from the timestamp-selected `rolledSpent`. Second-scale skew is immaterial to a minutes-scale sig expiry. Non-blocking (Low). |
+| 9 | `timestamp` — `UntchVault.spendFallback` compares `wouldBe > epochBudget` | Slither | **Low** | Accepted — same epoch-budget guard as #8 on the fallback path (shared epoch accounting). Non-blocking (Low). |
+| 10 | `timestamp` — `UntchVault._epochView` computes the epoch index and `epoch > currentEpoch` | Slither | **Low** | Accepted — the derived epoch-rollover rule (§10.4 epoch accounting): `epoch = (now - epochGenesis) / epochLen`, reset iff a strictly later epoch. This is the vault analogue of the registries' derived-expiry `isUsable`. Non-blocking (Low). |
+| 11 | `missing-inheritance` — `SpendIntentRegistry` "should inherit from `ISpendIntentStatus`" | Slither | **Informational** | Accepted — coincidental signature match. `ISpendIntentStatus` (declared in `UntchVault.sol`) is the narrow typed view of the registry the vault calls (`isUsable(bytes32)`); the deployed `SpendIntentRegistry` happens to expose the same signature. Making the shipped, testnet-verified registry `is ISpendIntentStatus` would add a backwards `SpendIntentRegistry → UntchVault` source dependency and change a deployed contract for no behavioral gain. Informational, non-blocking. |
+| 12 | `missing-zero-check` — `UntchVault.transferOwnership(newOwner)` sets `pendingOwner = newOwner` without a zero-check | Slither | **Low** | Accepted — intentional. Passing the zero address is the documented way to **cancel** a pending ownership transfer (`pendingOwner = 0` ⇒ nobody can `acceptOwnership`). A zero-check would remove that useful semantics for no safety benefit: this is a two-step transfer, so even a wrong NON-zero `newOwner` cannot take ownership unless it actively calls `acceptOwnership` — there is no "accidentally burned to a dead address" failure mode the check would prevent. Tested by `test_TransferOwnership_ZeroCancelsPending`. Non-blocking (Low). |
 
-Slither total: **0 High, 0 Medium, 7 Low** — CI passes under `--fail-medium`, nothing to triage.
+Slither total (standard detectors, as CI runs them): **0 High, 0 Medium, 11 Low, 1 Informational** —
+CI passes under `--fail-medium`, nothing to triage in the machine database.
 
-All seven are the same `timestamp` (block-timestamp) detector class: a deliberate, dispositioned
-wall-clock comparison, read into a `uint64 nowTs` local first so it is uniform across every
-time-using function and satisfies the Foundry v1.7.1 block-timestamp build lint at the same time.
+Findings #8–#10 are the same `timestamp` (block-timestamp) detector class as #1–#7: deliberate,
+dispositioned wall-clock comparisons, each read into a `uint256 nowTs` local first for uniformity and
+to satisfy the Foundry v1.7.1 block-timestamp build lint. The earlier `incorrect-equality` (Medium)
+Slither raised on `_epochView`'s original `epoch == currentEpoch` was **removed by refactor**, not
+triaged: because `block.timestamp` is monotonic, `epoch(now) >= currentEpoch` always holds, so the
+equivalent `epoch > currentEpoch ? 0 : epochSpent` is an inequality on epoch indices — keeping the
+repo's clean **0 Medium** record rather than accepting a Medium.
+
+### Local-only third-party plugin detectors (NOT in the CI gate — recorded to prevent confusion)
+
+A reviewer running Slither locally may have the `tryanneal` detector plugin
+(`github.com/winsznx/tryanneal`) installed, which adds non-standard detectors absent from CI's clean
+`pipx install slither-analyzer==0.11.5`. Two fire on `UntchVault` and are documented here as
+**false positives**, not accepted findings:
+
+- **`signature-replay-bypass` (plugin, High)** — claims `spend` "has no nonce tracking." **False.**
+  `spend` does `if (nonceUsed[nonce]) revert NonceReplay(nonce)` then `nonceUsed[nonce] = true`, and the
+  EIP-712 digest binds the `nonce` field, `block.chainid`, and `address(this)` (verifying contract), so
+  a signature cannot be replayed across nonces, chains, or contracts. The heuristic greps for a
+  `nonces[` naming pattern and misses the `nonceUsed` mapping. Rejected — the property is directly
+  proven by `test_RevertWhen_Spend_NonceReplay`, `test_Spend_CrossChainReplayRejected`, and the
+  invariant suite.
+- **`operator-fee-outlier` (plugin, Low)** — a gas-heuristic on the constructor's token-allowlist
+  loop. Not a correctness finding; Low; irrelevant to the §28 gate.
+
+Neither is present in CI. Verified: `slither . --triage-database slither.triage.json --fail-medium
+--exclude signature-replay-bypass,operator-fee-outlier` (the CI-equivalent detector set) exits **0**.
 
 ## solhint dispositions in UntchReceipts (inline, cross-referenced here)
 
@@ -65,9 +95,31 @@ reason at the deviation (the same discipline PolicyRegistry/SpendIntentRegistry 
 
 ## Cross-check vs Aderyn
 
-Aderyn (v0.6.x, via the pinned `Cyfrin/aderyn-ci@v0` npm binary) reports **0 High, 0 Low** across
-all five source files (`PolicyRegistry`, `SpendIntentRegistry`, `IntentHash`, `AuthorizedWriters`,
-`UntchReceipts`). There is **no** High/Medium finding either tool raises that the other misses. The
-`timestamp` (block-timestamp) class above — 7 Slither Lows, including UntchReceipts.execute's
-timelock comparison — has no Aderyn High/Medium counterpart: expected, and consistent with both
-tools' severity models.
+Aderyn (v0.6.x, via the pinned `Cyfrin/aderyn-ci@v0` npm binary) reports **0 High** across the
+source set (`PolicyRegistry`, `SpendIntentRegistry`, `IntentHash`, `AuthorizedWriters`,
+`UntchReceipts`, and now `UntchVault`); the CI gate is `fail-on: high`. The `timestamp`
+(block-timestamp) class above — now 10 Slither Lows — has no Aderyn High counterpart: expected, and
+consistent with both tools' severity models.
+
+On `UntchVault`, Aderyn 0.6.8 (the exact `@cyfrin/aderyn@0.6` version the CI action installs, run
+locally to reproduce CI) reports **0 High, 2 Low**:
+
+- **Low — "Centralization Risk for trusted owners"** on the `onlyOwner` entry points. **By design, not a
+  defect**: §16 I4 makes the `owner` the fund sovereign — it is *supposed* to be able to pause and
+  withdraw unconditionally. Accepted (Low, non-blocking; the whole custody model rests on it).
+- **Low — "Address State Variable Set Without Checks"** on `transferOwnership`'s `pendingOwner = newOwner`.
+  The Aderyn analogue of Slither disposition #12: passing the zero address intentionally cancels a pending
+  transfer, and the two-step handshake means a wrong non-zero target cannot take ownership without calling
+  `acceptOwnership`. Accepted (Low).
+
+> **One Aderyn 0.6.8 finding was FIXED, not triaged.** The first CI run flagged **High — "Reentrancy:
+> State change after external call"** on `spend()`: the anchored-intent read
+> `intentRegistry.isUsable(intentHash)` (an external call) was in the checks phase, with the epoch/nonce
+> state writes following it. It was a *false positive for reentrancy* (`isUsable` is `view` ⇒ a
+> `STATICCALL` that cannot reenter or mutate, plus the `nonReentrant` guard, plus the value transfer is
+> strictly last) — but rather than suppress a reentrancy High on a fund-holding contract, `spend()` was
+> restructured to **strict CEI**: all state is now committed *before any external call*, with the intent
+> read moved into the interactions phase alongside the transfer. Aderyn 0.6.8 then reports **0 High**.
+> The behavior is identical (a failed intent check still reverts the whole spend, rolling back the
+> effects — proven by the unchanged `test_CrossContract_*_FailsClosed` and CEI tests); only the ordering
+> is tightened. This is the deployed + verified bytecode (redeployed after the fix).

@@ -169,3 +169,85 @@ forge verify-contract 0x0c64997277b7d94d2999dea22a123cac56334863 src/UntchReceip
   --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET
 ```
 
+---
+
+# UntchVault — deploy runbook (X Layer **testnet only**)
+
+Driver: [`scripts/deploy-untch-vault.ts`](../../scripts/deploy-untch-vault.ts) (repo root, run with
+`tsx`). It deploys the vault (§10.4) with a **plain constructor** — no factory / CREATE2 (that is the
+next, separate prompt) — binds it to the **real, already-deployed §10.2 `SpendIntentRegistry`**
+(`0xf87e…1372`) with `requireAnchoredIntent = true`, deposits real tokens, executes a real
+**oracle-signed `spend`** that references the registry's **real APPROVED demo intent** (so the vault's
+cross-contract `isUsable` check actually runs against live §10.2 state on-chain), a real
+**`spendFallback`**, a deliberately-**invalid over-cap spend** (confirmed reverted via read-only
+`eth_call`), and a real **`ownerWithdraw`**; then reads everything back and **measures real gas** for
+both spend paths.
+
+> **Settlement token.** [`packages/shared/chains.ts`](../../packages/shared/src/chains.ts) has **no
+> confirmed X Layer *testnet* USDT0 address** (only mainnet USDT0 is confirmed; the testnet faucet
+> issues native OKB only). So the demo deploys a standard-compliant test ERC20 (the same `MockERC20`
+> the unit suite uses) as the settlement token — a real, transferable token to exercise
+> deposit/spend/withdraw on-chain. The vault uses **SafeERC20** precisely so the identical code also
+> handles the eventual (possibly non-standard) mainnet token; the demo just needs *a* real ERC20.
+
+> **Mainnet is deliberately deferred.** The driver refuses `chainId 196`. Nothing touches X Layer
+> **mainnet** until the full contract set (incl. the vault factory) clears §28's mainnet checklist
+> together (§22.4). The `UntchVaultFactory` / CREATE2 is the **next, separate prompt**.
+
+## Status (2026-07-10) — ✅ LIVE ON X LAYER TESTNET
+
+| Item | Value |
+|------|-------|
+| **Vault** | [`0x42e699ffd8215d48397a049b4f7a176db06f4848`](https://www.oklink.com/x-layer-testnet/address/0x42e699ffd8215d48397a049b4f7a176db06f4848) (chainId 1952) |
+| **Source verified** | ✅ OKLink — "Pass - Verified" (`forge verify-check` → `Pass - Verified`) |
+| **Demo token (MockERC20)** | `0xf202ce41d76ee1a2aec72e7a9180331d437ddd41` (6-dec standard ERC20; testnet demo token — see note above) |
+| **Owner** | `0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b` (fund sovereign, §16 I4) |
+| **Oracle (demo)** | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` (throwaway demo key, distinct from owner) |
+| **IntentRegistry (real §10.2)** | `0xf87e50f83172c2dace7d274e4c701212caeb1372`, `requireAnchoredIntent = true` |
+| **Anchored intent** | `0xc557…de09a` — the real APPROVED demo intent; `isUsable = true` re-checked on-chain by the vault |
+| **Caps** | perTxCap `100e6`, epochBudget `250e6`, epochLen `86400s` |
+| **Vault deploy tx** | `0x32de3cf48537e28e0e503866951fe59b1ce9d89d2e8f8d0758a1c1b2acc06b68` (status `0x1`, block 35195314) |
+| **deposit tx** | `0x4b3e414cbfb7848bc3d03932355e0c28f44dfad2bff113a53621bb6003ca987a` (500e6) |
+| **spend tx (oracle path, anchored)** | `0x78df082ef84fe80705368c741e6b32b15bf09b116dd93dbf92e4cacfd1251d70` (40e6 → payee; `gasUsed 123,751`) |
+| **spendFallback tx** | `0x60627036b65f6bbc099db06e97a7cda9b66eff2157b2bd2713b9c32ff439d4db` (10e6 → fallbackee; `gasUsed 76,036`) |
+| **invalid over-cap spend** | reverts (read-only `eth_call`) — `CapExceeded`, the §7.5 cap enforced on-chain |
+| **ownerWithdraw tx** | `0x28008dee041abb7e994d6b4a716227ed3cd236bba354c721a60d61f61575c94b` (100e6 → owner, unconditional) |
+| **two-step ownership (raw cast)** | `transferOwnership(deployer)` → `pendingOwner` = deployer → `acceptOwnership()` → `owner` = deployer, `pendingOwner` = 0 (judgment call 4 owner-rotation, proven on-chain) |
+| **Readback** | owner ✓, oracle ✓, perTxCap 100e6, epochBudget 250e6, **epochSpent 50e6** (40 spend + 10 fallback), requireAnchoredIntent true, tokenAllowed true, paused false; balances **payee 40e6 / fallbackee 10e6 / vault 350e6** (500 − 40 − 10 − 100) |
+
+**Independently re-read** from `https://testrpc.xlayer.tech` via raw `cast` (`owner`/`oracle`/
+`perTxCap`/`epochBudget`/`epochSpent`/`requireAnchoredIntent`/`tokenAllowed`/`paused`, the three token
+balances, the real registry's `isUsable`, and all five tx statuses = `0x1`) — not taken on the driver's
+own word. Machine receipt: [`untch-vault-testnet-receipt.json`](untch-vault-testnet-receipt.json).
+
+## Measured gas (real X Layer testnet txs — §7/§28 gas stage)
+
+| Operation | gasUsed |
+|-----------|--------:|
+| `spend` (oracle path: EIP-712 recover + cross-contract `isUsable` + SafeERC20 transfer) | **123,751** |
+| `spendFallback` (owner path: allowlist + epoch + SafeERC20 transfer) | **76,036** |
+
+The oracle path costs ~50k more than the fallback path — the difference is the ECDSA recovery and the
+external `isUsable` call to the real registry, both of which the fallback path substitutes with a
+single owner-preapproved allowlist read.
+
+## How it was deployed (reproducible)
+
+```bash
+# ops wallet 0x98F43e… funded with testnet OKB (chainId 1952). DEPLOYER_PRIVATE_KEY = ops key from
+# services/asp/.env (BUYER_PRIVATE_KEY on this wallet); never printed. ORACLE_PRIVATE_KEY defaults to a
+# throwaway demo key; INTENT_REGISTRY/DEMO_INTENT_HASH default to the live §10.2 registry + its intent.
+RPC_URL=https://testrpc.xlayer.tech DEPLOYER_PRIVATE_KEY=<ops-key> BROADCAST=1 \
+  pnpm exec tsx scripts/deploy-untch-vault.ts
+
+# verify source on OKLink (constructor is the full 8-arg tuple):
+forge verify-contract 0x42e699ffd8215d48397a049b4f7a176db06f4848 src/UntchVault.sol:UntchVault \
+  --chain 1952 \
+  --constructor-args $(cast abi-encode "constructor(address,address,address,uint256,uint256,uint64,address[],bool)" \
+    0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 \
+    0xf87e50f83172c2dace7d274e4c701212caeb1372 100000000 250000000 86400 \
+    "[0xf202ce41d76ee1a2aec72e7a9180331d437ddd41]" true) \
+  --verifier oklink \
+  --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET
+```
+

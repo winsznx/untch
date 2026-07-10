@@ -2,10 +2,11 @@
 
 Solidity contracts for Untch, built with [Foundry](https://book.getfoundry.sh/) and gated by the
 PRD §28 audit & test pipeline. The toolchain was stood up in **D0.4** on a throwaway scaffold; the
-canonicalization differential landed in **D0.5**. This directory now holds the first three **real
+canonicalization differential landed in **D0.5**. This directory now holds the first four **real
 product contracts** — [`PolicyRegistry`](src/PolicyRegistry.sol) (§10.1),
-[`SpendIntentRegistry`](src/SpendIntentRegistry.sol) (§10.2), and
-[`UntchReceipts`](src/UntchReceipts.sol) (§10.3) — plus the shared
+[`SpendIntentRegistry`](src/SpendIntentRegistry.sol) (§10.2),
+[`UntchReceipts`](src/UntchReceipts.sol) (§10.3), and
+[`UntchVault`](src/UntchVault.sol) (§10.4 — the first fund-holding contract) — plus the shared
 [`AuthorizedWriters`](src/AuthorizedWriters.sol) access-control base, each taken through the full §28
 pipeline for real and deployed + verified on X Layer testnet.
 
@@ -18,13 +19,18 @@ pipeline for real and deployed + verified on X Layer testnet.
 | [`src/PolicyRegistry.sol`](src/PolicyRegistry.sol) | PRD §10.1 — on-chain anchor: a committed ruleset (`policyHash`) governed a given agent at a given time. Owner-gated register / update / pause / resume, event per mutation. | **Real & LIVE on X Layer testnet** at [`0xe1d7…3532`](https://www.oklink.com/x-layer-testnet/address/0xe1d74c90801db0fa806c72eb818b7671b8233532) (verified source; one demo policy registered + read back). Full §28 pipeline green. See [`deploy/README.md`](deploy/README.md). |
 | [`src/SpendIntentRegistry.sol`](src/SpendIntentRegistry.sol) | PRD §10.2 — on-chain lifecycle anchor: `intentHash ⇒ {policyId, maxAmount, deadline, status}`. `intentHash` derived on-chain from the §8.1 struct via `IntentHash`; **authorized-writer-set** register / setStatus; status ∈ {PENDING, APPROVED, BLOCKED, SETTLED, DISPUTED} with derived expiry. | **Real & LIVE on X Layer testnet** at [`0xf87e…1372`](https://www.oklink.com/x-layer-testnet/address/0xf87e50f83172c2dace7d274e4c701212caeb1372) (verified source; one demo intent registered + transitioned + read back). Full §28 pipeline green. See [`deploy/README.md`](deploy/README.md). |
 | [`src/UntchReceipts.sol`](src/UntchReceipts.sol) | PRD §10.3 — the versioned, **events-only** public receipt log: `logReceipts` (batch), `anchorScore`, `anchorAudit`, all writer-gated; admin writer-set changes behind a **timelock**. On-chain carries hashes/metadata only. | **Real & LIVE on X Layer testnet** at [`0x0c64…4863`](https://www.oklink.com/x-layer-testnet/address/0x0c64997277b7d94d2999dea22a123cac56334863) (verified source; a real 3-receipt batch logged, one score + one audit anchored, writer authorized through the real timelock, independently read back via raw RPC). Full §28 pipeline green. **Measured gas/receipt published** (see below). |
+| [`src/UntchVault.sol`](src/UntchVault.sol) | PRD §10.4 / §7.5 — the **first fund-holding contract**: Mode C on-chain spend enforcement. `deposit`, EIP-712 oracle-signed `spend` (with a cross-contract APPROVED-intent check against the real §10.2 registry when required), owner `spendFallback`, **unconditional** `ownerWithdraw`, `setOracle`, `pause`/`unpause`, `setFallbackAllowlist`, two-step `transferOwnership`/`acceptOwnership`. Plain constructor — **no factory/CREATE2** (that is the next, separate prompt). | **Real & LIVE on X Layer testnet** at [`0x42e6…4848`](https://www.oklink.com/x-layer-testnet/address/0x42e699ffd8215d48397a049b4f7a176db06f4848) (verified source; real deposit + oracle spend anchored to the real APPROVED §10.2 intent + fallback spend + reverted over-cap attempt + ownerWithdraw, all independently re-read via raw RPC). Full §28 pipeline green; **100% branch coverage**; measured gas per spend published. See [`deploy/README.md`](deploy/README.md). |
 | [`src/AuthorizedWriters.sol`](src/AuthorizedWriters.sol) | Shared admin-managed authorized-writer allowlist (admin/writer roles, add/remove/transfer, events, errors, modifiers) — **extracted** from SpendIntentRegistry. Internal-only mutators so each derived contract chooses its surface (immediate vs timelocked). | Real base. Used by `SpendIntentRegistry` (immediate admin) and `UntchReceipts` (timelocked admin). |
 | [`src/lib/IntentHash.sol`](src/lib/IntentHash.sol) | PRD §8.1 SpendIntent struct hash; the Solidity half of the D0.5 canonicalization differential. Reused by `SpendIntentRegistry` to derive `intentHash` on-chain. | Real library. |
 | `src/Scaffold.sol` | The D0.4 throwaway ownable/pausable stub. | **Removed** — a real contract (`PolicyRegistry`) now exercises the same CI, so the scaffold's only remaining effect was analyzer noise. (Same call Step-1b made about `ping_untch`.) |
 
-> **No fund custody (I4).** `PolicyRegistry`, `SpendIntentRegistry`, and `UntchReceipts` hold no funds
-> — no `payable`, no `receive`, no `fallback`, no deposit/withdraw. They store hashes and metadata
-> only, by construction. All three are pure registries/logs.
+> **Fund custody (I4).** `PolicyRegistry`, `SpendIntentRegistry`, and `UntchReceipts` hold no funds —
+> no `payable`, no `receive`, no `fallback`, no deposit/withdraw; they are pure registries/logs.
+> `UntchVault` is the **one contract that deliberately does hold funds** (ERC20 balances only — still no
+> `payable`/`receive`/`fallback`; it never touches native value). Its entire design is §16 I4: the
+> oracle key can only authorize spends already bounded by cap / epoch budget / token allowlist /
+> single-use nonce / expiry / (APPROVED anchored intent when required), and the **owner can `pause` and
+> `ownerWithdraw` unconditionally** with nothing from Untch.
 
 > **Mainnet is deliberately deferred.** Nothing here touches X Layer **mainnet** until `UntchVault`
 > also exists and the full contract set clears §28's mainnet checklist together (PRD §22.4).
@@ -198,6 +204,152 @@ are kept **verbatim / non-indexed** per the spec (the `gas-indexed-events` lint 
 just those two — see [`slither-triage.md`](slither-triage.md)); `ReceiptLogged`'s three
 §10.3-specified indexed topics (`policyId`, `agentId`, `vendorId`) are honored.
 
+## Six judgment calls in UntchVault (§10.4) — resolved, not defaulted
+
+§10.4 leaves six genuinely open calls. Each was resolved deliberately (not by a "more security is
+always better" reflex), argued at the definition site in the contract, and summarized here. **One-line
+answers first**, reasoning below.
+
+1. **Timelock on `setOracle`/`pause`? → NO — plain owner-gating.**
+2. **Hand-rolled ecrecover or a library? → OpenZeppelin `ECDSA` (vendored).**
+3. **Naive `transfer` or `SafeERC20`? → `SafeERC20`.**
+4. **Is `intentRegistry` mutable? → NO. Is `owner`? → YES, via a two-step transfer.**
+5. **Can the cross-contract intent check ever fail open? → NO — it fails closed, no try/catch.**
+6. **Where does the token transfer sit? → strictly last (checks-effects-interactions).**
+
+### 1 — No timelock on `setOracle`/`pause` (unlike §10.3 UntchReceipts)
+
+UntchReceipts timelocks its admin because a compromised admin key there had **no other** way to cause
+damage than the writer set — the timelock was its only damage-limiter. The vault is different:
+`ownerWithdraw` is **unconditional by spec** (§7.5 / I4), so a compromised **owner** key already has an
+instant, undelayed path to drain everything. A timelock on `setOracle` closes **nothing** against that —
+the same key just calls `ownerWithdraw`. The only remaining argument is protecting the *legitimate*
+owner from their own hasty misconfiguration, and that argument is weak here: a wrong oracle **cannot
+move funds** (it can only authorize spends already bounded by cap/allowlist/nonce/expiry/intent), the
+owner can `pause` instantly and re-`setOracle`, so the mistake is fully recoverable. And `pause` is an
+**emergency brake** — timelocking it would be a safety *regression* (you cannot delay a stop). So:
+plain owner-gating, matching PolicyRegistry's simplicity. Least complexity = smallest attack surface,
+which a fund-holding contract prizes most. (Documented as correctable if the deployment's threat model
+ever makes owner-key misconfiguration the dominant risk.)
+
+### 2 & 3 — The first external dependency: vendored OpenZeppelin `ECDSA` + `SafeERC20`
+
+This is a deliberate, reasoned reversal of the §10.3 posture — **not** a contradiction of it. §10.3
+rejected OpenZeppelin's `TimelockController` under a specific evaluative test: *does the dependency
+hold/receive value or add receive-hooks, and is its scope wildly beyond what's needed?* TimelockController
+failed that test hard (it inherits `ERC721Holder`+`ERC1155Holder` — inbound-token callbacks that
+contradict I4 — and is a general arbitrary-`(target,value,calldata)` executor with a 4-role model). The
+**same test** was applied to `ECDSA` and `SafeERC20`, from reading the actual v5.6.1 source:
+
+- **`ECDSA.sol`** — 284 lines, **zero imports**, a stateless `library`, no `receive`/`fallback`/`payable`,
+  no token-receive hook, no value custody. Scoped to exactly one problem: signature recovery. It carries
+  the audited **malleability guard** (`s ≤ secp256k1n/2`) — and hand-rolled `ecrecover` is one of the
+  most common sources of real, exploited signature bugs in this ecosystem (a valid `(r,s,v)` has a second
+  valid malleable twin). Importing it is justified **on the same principle** that rejected the timelock,
+  not against it.
+- **`SafeERC20.sol` + `IERC20`** — a library that moves *other* tokens on the caller's behalf; holds no
+  value, no hooks. USDT0 responds as a standard bool-returning ERC20 on-chain (the LayerZero OFT), but
+  some real ERC20s (the canonical mainnet USDT) return **no bool** and break naive Solidity. SafeERC20 is
+  cheap insurance that removes that entire bug class for any eventual token — same custody-free,
+  single-purpose test.
+
+Both **pass** the test that TimelockController **failed**, so both are imported. They are **vendored as
+committed files** under [`lib/openzeppelin-contracts/`](lib/openzeppelin-contracts) (verbatim v5.6.1,
+commit `5fd1781`, MIT) — **not** a git submodule — so the CI's plain checkout (which relies on the same
+no-submodule vendoring as `forge-std`) needs no change, and `lib/` stays excluded from solhint / Slither
+/ `forge fmt`. A one-line [`remappings.txt`](remappings.txt) maps `@openzeppelin/contracts/`. The
+EIP-712 **digest** itself is built in-contract with the standard `keccak256(0x1901 ‖ domainSeparator ‖
+structHash)` — digest construction is not where malleability bugs live, so no library is needed there.
+
+### 4 — `intentRegistry` + token allowlist immutable; `owner` rotatable (two-step)
+
+§10.4's setter list (`setOracle`, `setFallbackAllowlist`) omits changing which IntentRegistry the vault
+trusts, the token allowlist, and the owner. The right reading is **not** "no setter ⇒ blanket
+immutable" — it's *trust-redirection-prevention*, and that cuts differently for the three:
+
+- **`intentRegistry` and the token allowlist are `immutable`.** A mutable one would let the vault's
+  cross-contract trust (or its spendable-token set) be **silently redirected to a third party** — an
+  attack surface. Immutability there *adds* security. No setter, set once at construction.
+- **`owner` is rotatable, via a two-step transfer** (`transferOwnership` → `acceptOwnership`, with
+  `pendingOwner`). This was a **distinct decision**, not the registry reasoning applied blindly: letting
+  the sovereign rotate its **own** key adds **no** attacker capability — a *compromised* owner key is
+  already total via the unconditional `ownerWithdraw`, so `transferOwnership` hands an attacker nothing.
+  What immutability there would cost is severe and one-directional: a **lost** owner key (a dropped
+  device, not a theft) would permanently strand the vault's principal, with no rotation path. The
+  two-step handshake means ownership can never be transferred to a wrong/dead address that cannot claim
+  it; passing the zero address cancels a pending transfer. (If the owner is a multisig/smart-account that
+  rotates its signers internally, it simply never uses this — the capability costs nothing unused.)
+
+### 5 — The cross-contract check fails **closed**
+
+When `requireAnchoredIntent` is true, `spend` calls `intentRegistry.isUsable(intentHash)` as a **plain
+typed call — never wrapped in try/catch**. Any failure — a revert, a no-code address, short/garbage
+return data — propagates as a **full revert of the entire spend**. This is the single most important
+property in the contract (I2 fail-closed, applied to money). It is fuzzed/asserted against a
+**reverting** registry, an **empty-return** registry, a **dirty-bool-return** registry, and a
+**no-code** address — each confirming the whole spend reverts **and** that funds are unmoved, the nonce
+unused, and epoch accounting untouched (`test_CrossContract_*_FailsClosed`). Because `isUsable` is
+`view`, Solidity compiles it to a `STATICCALL`, so a malicious registry can't even reenter.
+
+### 6 — Checks-effects-interactions
+
+The cross-contract read **and** all state mutations (nonce marked used, epoch accounting committed)
+happen **before** the token transfer, which is **strictly the last operation** in both spend paths. Stated
+as an explicit invariant and tested two ways: the reentrancy-guard test (a reentrant token cannot
+double-spend) **and** a guard-*independent* CEI test (`test_Spend_EffectsCommittedBeforeTransfer_CEI`) —
+a probe token reads the vault's `epochSpent`/`nonceUsed` *during* the transfer (view getters aren't
+guard-blocked) and confirms the effects were already committed, so a CEI regression would be caught even
+if the reentrancy guard were still present.
+
+### Also specified explicitly (not guessed)
+
+- **Dynamic chainId in the EIP-712 domain.** The domain separator binds `block.chainid` (cached at
+  construction, **recomputed on fork** if `block.chainid` changes) and `address(this)` — never a
+  hardcoded chainId that would enable cross-chain signature replay once the same bytecode is deployed to
+  mainnet. Domain name is **`UntchVault`** (not the older AgentSpendVault); domain is
+  `UntchVault(chainId, vault)` per §10.4 (name + chainId + verifying contract, no `version`). Tested by
+  `test_DomainSeparator_RecomputesOnChainIdChange` and `test_Spend_CrossChainReplayRejected`.
+- **Nonce uniqueness on the signed `nonce` FIELD** (`nonceUsed[nonce]`), never derived from signature
+  bytes — so signature malleability cannot mint a second usable authorization.
+- **Epoch rollover** is fuzzed at the exact boundary (`ts == genesis + epochLen`), not just inside an
+  epoch; `epochSpent` resets exactly on rollover, monotone within an epoch.
+
+### The fallback path (`spendFallback`) — exact guard enumeration (NOT an addendum)
+
+`spendFallback` is a **second, mostly-parallel spend path** for when the oracle is offline, with its own
+full test battery. It is **owner-only**: it grants no capability the owner doesn't already have via the
+unconditional `ownerWithdraw`, so gating it to the owner preserves I4 exactly while adding
+allowlist/budget/token discipline and an auditable `VaultSpend` receipt to owner contingency spends.
+
+| Guard | Oracle path (`spend`) | Fallback path (`spendFallback`) |
+|-------|----------------------|--------------------------------|
+| **paused** blocks it | ✅ yes (`VaultPaused`) | ✅ **yes** (`VaultPaused`) |
+| **token allowlist** | ✅ yes (`TokenNotAllowed`) | ✅ **yes** (`TokenNotAllowed`) |
+| **epoch budget** (shared `epochSpent`) | ✅ yes (`BudgetExceeded`) | ✅ **yes** (`BudgetExceeded`) |
+| oracle EIP-712 signature | ✅ required | ⛔ **substituted** |
+| single-use nonce | ✅ required | ⛔ **substituted** |
+| signature expiry | ✅ required | ⛔ **substituted** |
+| APPROVED anchored intent | ✅ when required | ⛔ **substituted** |
+| per-tx bound | global `perTxCap` | **per-recipient** `fallbackPerTxMax` (owner-preset) |
+| caller | permissionless (sig is the capability) | **owner-only** |
+
+The oracle signature / nonce / expiry / intent-approval are replaced by the **owner-pre-committed
+per-recipient allowlist cap** — the oracle being offline is the whole premise of this path existing. Both
+paths share one `epochSpent`, so the epoch budget bounds total outflow across **both**
+(`test_Fallback_SharesEpochBudgetWithOraclePath`). Confirmed: **pause blocks both spend paths but never
+`ownerWithdraw`** (`test_OwnerWithdraw_WorksWhilePaused`).
+
+### The master invariant (§10.4 verbatim, as ONE property)
+
+> No token leaves the vault under any circumstance **except**: a valid unexpired unused oracle sig **∧**
+> caps hold **∧** (anchored-intent APPROVED if required), **OR** `ownerWithdraw`, **OR** a fallback spend
+> within its own bounds.
+
+Stated as a single adversarially-fuzzed equation `vault balance == netDeposited − totalLegitOut` (any
+illicit outflow — including a reentrant double-spend — breaks it), with a handler that hammers bad-sig /
+over-cap / unapproved-intent / non-owner attempts and an armed reentrant token, plus an `afterInvariant`
+liveness gate so it can't pass vacuously.
+
 ### Compiler note: `via_ir` was turned ON here
 
 The `foundry.toml` comment reserved `via_ir` for "the first real contract that hits stack-too-deep."
@@ -270,6 +422,25 @@ aderyn --src src/ -o report.json .                             # 6. Aderyn (gate
 | **Gas** | ✅ [`forge snapshot`](.gas-snapshot) committed, **plus measured real testnet gas/receipt** (below) |
 | **Testnet deploy + verify + readback** | ✅ **DONE** — deployed to X Layer testnet (`0x0c64…4863`), source verified on OKLink ("Pass - Verified"), writer authorized through the real timelock (execute-before-delay reverted on-chain, then executed after a real 60s wait), a 3-receipt batch logged, one score + one audit anchored, all independently re-read via raw RPC. [`deploy/README.md`](deploy/README.md), [`deploy/untch-receipts-testnet-receipt.json`](deploy/untch-receipts-testnet-receipt.json). |
 
+### UntchVault §28 results
+
+| Tier | Result |
+|------|--------|
+| **Unit** (every function; every §7.5 revert path as its OWN named test: VaultPaused, SigExpired, NonceReplay, BadOracle, CapExceeded, BudgetExceeded, TokenNotAllowed, IntentNotApproved; constructor guards; deposit/withdraw/setOracle/pause/fallback/allowlist; two-step ownership transfer + retarget/cancel/non-owner/non-pending) | ✅ green (74 tests) |
+| **Fuzz** (valid-within-bounds spends; wrong-signer rejection over random keys; per-tx cap boundary; epoch boundary AT the rollover second; expiry boundary; **signature malleability** — high-s twin rejected, nonce not consumed; **chainId dynamism** + cross-chain replay) | ✅ green |
+| **Cross-contract fail-closed** (judgment call 5 — reverting / empty-return / dirty-bool-return / no-code registry each reverts the WHOLE spend, funds unmoved, nonce unused, epoch untouched) | ✅ green |
+| **Reentrancy / CEI** (reentrant token cannot double-spend; **guard-independent CEI probe** proving effects committed before the transfer) | ✅ green |
+| **Invariant / stateful** (the §10.4 master no-fund-movement equation, adversarially fuzzed; epoch monotone + resets on rollover; pause blocks spend never withdraw; reentrancy never succeeds) + an `afterInvariant()` **liveness gate** so none pass vacuously | ✅ green — 128k calls/run, 0 illicit outflows, 0 reentries |
+| **Static — Slither** | ✅ 0 High, 0 Medium (the original `incorrect-equality` Medium on `epoch == currentEpoch` was **removed by refactor** to `epoch > currentEpoch`, not triaged); `timestamp` **Low** ×3 + `missing-zero-check` **Low** (intentional: `transferOwnership(0)` cancels a pending transfer) + `missing-inheritance` **Informational**, dispositioned in [`slither-triage.md`](slither-triage.md). Two local-only third-party plugin detectors are documented there as false positives (absent from CI). |
+| **Static — Aderyn** (0.6.8, the CI version) | ✅ 0 High, 2 Low. A first pass flagged a High "Reentrancy: state change after external call" on `spend()` (a false positive — the intent read is a `view` STATICCALL that can't reenter) — **fixed, not triaged**, by tightening `spend()` to strict CEI (all effects before any external call; intent read moved into the interactions phase). Remaining Lows: "Centralization Risk" (by design — §16 I4) and the `transferOwnership(0)`-cancels zero-check (intentional). See [`slither-triage.md`](slither-triage.md). |
+| **Coverage** | ✅ **100% branch** (27/27), 100% lines (113/113), 100% functions (20/20) on `UntchVault.sol` — meets §28's "100% branch on UntchVault" (see [`coverage-summary.txt`](coverage-summary.txt)) |
+| **Gas** | ✅ [`forge snapshot`](.gas-snapshot) committed, **plus measured real testnet gas per spend** (`spend` 123,751 · `spendFallback` 73,936) |
+| **Testnet deploy + verify + readback** | ✅ **DONE** — deployed to X Layer testnet ([`0x42e6…4848`](https://www.oklink.com/x-layer-testnet/address/0x42e699ffd8215d48397a049b4f7a176db06f4848)), source verified on OKLink ("Pass - Verified"), real deposit → oracle spend anchored to the **real APPROVED §10.2 intent** (cross-contract `isUsable` executed on-chain) → fallback spend → reverted over-cap attempt → ownerWithdraw, all independently re-read via raw `cast`. [`deploy/README.md`](deploy/README.md), [`deploy/untch-vault-testnet-receipt.json`](deploy/untch-vault-testnet-receipt.json). |
+
+> **`UntchVaultFactory` / CREATE2 is the next, separate prompt.** This is the plain-constructor,
+> direct-unit-tested `UntchVault`. The per-agent deterministic factory (`deployVault(...)`, §10.4) is
+> deliberately not in this change.
+
 ### Measured gas/receipt (real X Layer testnet txs) — fulfilling §17 / §25 / §10.4
 
 This is the contract §10.4 was waiting on: *"anchoring cost is designed-to-be-minimal (events-only,
@@ -311,8 +482,14 @@ Testnet-only. See [`deploy/README.md`](deploy/README.md),
 src/PolicyRegistry.sol           first real product contract (PRD §10.1)
 src/SpendIntentRegistry.sol      second real product contract (PRD §10.2)
 src/UntchReceipts.sol            third real product contract (PRD §10.3) — receipts log + admin timelock
+src/UntchVault.sol               fourth real product contract (PRD §10.4/§7.5) — fund-holding spend vault
 src/AuthorizedWriters.sol        shared admin/writer allowlist base (§10.2 + §10.3)
 src/lib/IntentHash.sol           D0.5 SpendIntent hash (canonicalization differential; reused by §10.2)
+lib/openzeppelin-contracts/      vendored OZ v5.6.1 (ECDSA + SafeERC20 + IERC20 closure), committed, no submodule
+test/UntchVault.t.sol            unit + per-function fuzz + malleability/CEI/cross-contract-fail-closed
+test/UntchVault.invariant.t.sol  adversarial master-invariant + epoch + reentrancy + liveness gate
+test/mocks/VaultMocks.sol        ERC20 (standard / no-return / reentrant / CEI-probe) + registry mocks
+remappings.txt                   @openzeppelin/contracts/ → lib/openzeppelin-contracts/contracts/
 test/PolicyRegistry.t.sol        unit + per-function fuzz
 test/PolicyRegistry.invariant.t.sol       handler-based stateful invariants
 test/SpendIntentRegistry.t.sol            unit + per-function fuzz

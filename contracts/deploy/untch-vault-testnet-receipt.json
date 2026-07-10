@@ -1,0 +1,41 @@
+{
+  "chainId": 1952,
+  "token": "0xf202ce41d76ee1a2aec72e7a9180331d437ddd41",
+  "vault": "0x42e699ffd8215d48397a049b4f7a176db06f4848",
+  "intentRegistry": "0xf87e50f83172c2dace7d274e4c701212caeb1372",
+  "intentHash": "0xc55751e84cd9ae642d583e70c868672ccf8c51ca6d93e884dd82373c0c4de09a",
+  "oracle": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "owner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+  "tokenDeployTx": "0xa87c4b4137ff23ae57eebfcc0a39a307dd94b488a0f9c9f51c5adf7a02fc4c7f",
+  "vaultDeployTx": "0x32de3cf48537e28e0e503866951fe59b1ce9d89d2e8f8d0758a1c1b2acc06b68",
+  "depositTx": "0x4b3e414cbfb7848bc3d03932355e0c28f44dfad2bff113a53621bb6003ca987a",
+  "spendTx": "0x78df082ef84fe80705368c741e6b32b15bf09b116dd93dbf92e4cacfd1251d70",
+  "fallbackTx": "0x60627036b65f6bbc099db06e97a7cda9b66eff2157b2bd2713b9c32ff439d4db",
+  "withdrawTx": "0x28008dee041abb7e994d6b4a716227ed3cd236bba354c721a60d61f61575c94b",
+  "overCapReverted": true,
+  "gas": {
+    "spend": "123751",
+    "fallback": "76036"
+  },
+  "readback": {
+    "owner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "oracle": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "perTxCap": "100000000",
+    "epochBudget": "250000000",
+    "epochSpent": "50000000",
+    "currentEpoch": "0",
+    "nonceUsed": true,
+    "tokenAllowed": true,
+    "requireAnchoredIntent": true,
+    "payeeBalance": "40000000",
+    "fallbackeeBalance": "10000000",
+    "vaultBalance": "350000000"
+  },
+  "roundTripOk": true,
+  "verifyCmd": "forge verify-contract 0x42e699ffd8215d48397a049b4f7a176db06f4848 src/UntchVault.sol:UntchVault --chain 1952 --constructor-args $(cast abi-encode \"constructor(address,address,address,uint256,uint256,uint64,address[],bool)\" 0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 0xf87e50f83172c2dace7d274e4c701212caeb1372 100000000 250000000 86400 \"[0xf202ce41d76ee1a2aec72e7a9180331d437ddd41]\" true) --verifier oklink --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET",
+  "ownershipTwoStepDemo": {
+    "note": "two-step transfer proven on-chain via raw cast",
+    "ownerAfterAccept": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "pendingOwnerAfterAccept": "0x0000000000000000000000000000000000000000"
+  }
+}
