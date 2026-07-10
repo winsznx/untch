@@ -1,0 +1,59 @@
+# Untch receipt-writer suite (PRD §7.4). Covers the batching triggers (N receipts / T seconds), the
+# retry/backoff → DEGRADED_UNANCHORED path, the reorg re-verify/resubmit → CONFIRMED path, and the
+# decision → §10.3 receipt / §8 ledger mapping — all driven through the ReceiptsRepo + ChainAnchor
+# interfaces with an in-memory repo and a fake chain, so no Postgres/Redis/RPC is needed in CI. (The
+# real-Postgres integration test skips itself unless DATABASE_URL is set.)
+name: receipt-writer
+
+on:
+  push:
+    paths:
+      - "packages/receipt-writer/**"
+      - "packages/policy-engine/**"
+      - "packages/canon/**"
+      - "packages/shared/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/receipt-writer.yml"
+  pull_request:
+    paths:
+      - "packages/receipt-writer/**"
+      - "packages/policy-engine/**"
+      - "packages/canon/**"
+      - "packages/shared/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/receipt-writer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  receipt-writer:
+    name: batching triggers + retry/backoff + reorg-resubmit + mapping
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Receipt-writer suite
+        run: pnpm test:receipt-writer

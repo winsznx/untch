@@ -207,8 +207,13 @@ async function main() {
   // 5) independent raw-RPC readback of the deployed vault's immutables
   console.log("[5/7] independent raw-RPC readback of the deployed vault …");
   const vaultCall = { address: predicted, abi: VAULT_READ_ABI } as const;
-  const read = async (fn: string, args: unknown[] = []) =>
-    pub.readContract({ ...vaultCall, functionName: fn, args });
+  // Dynamic-functionName reader: viem's readContract types functionName as the ABI's literal union
+  // and can't accept a plain `string`, so the params are passed through a single localized assertion.
+  // Every call site below uses the correct arity, and each result is narrowed with an `as` at use.
+  const read = async (fn: string, args: readonly unknown[] = []): Promise<unknown> =>
+    pub.readContract({ ...vaultCall, functionName: fn, args } as Parameters<
+      typeof pub.readContract
+    >[0]);
   const [ownerR, oracleR, regR, perTxCapR, epochBudgetR, epochLenR, requireR, tokenAllowedR] =
     await Promise.all([
       read("owner"),
