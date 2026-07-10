@@ -2,11 +2,13 @@
 
 Solidity contracts for Untch, built with [Foundry](https://book.getfoundry.sh/) and gated by the
 PRD §28 audit & test pipeline. The toolchain was stood up in **D0.4** on a throwaway scaffold; the
-canonicalization differential landed in **D0.5**. This directory now holds the first four **real
-product contracts** — [`PolicyRegistry`](src/PolicyRegistry.sol) (§10.1),
+canonicalization differential landed in **D0.5**. This directory now holds the **complete set of five
+real product contracts** — [`PolicyRegistry`](src/PolicyRegistry.sol) (§10.1),
 [`SpendIntentRegistry`](src/SpendIntentRegistry.sol) (§10.2),
-[`UntchReceipts`](src/UntchReceipts.sol) (§10.3), and
-[`UntchVault`](src/UntchVault.sol) (§10.4 — the first fund-holding contract) — plus the shared
+[`UntchReceipts`](src/UntchReceipts.sol) (§10.3),
+[`UntchVault`](src/UntchVault.sol) (§10.4 — the first fund-holding contract), and
+[`UntchVaultFactory`](src/UntchVaultFactory.sol) (§10.4 — the CREATE2 factory that deploys vaults at
+per-`(owner, agent)` deterministic addresses) — plus the shared
 [`AuthorizedWriters`](src/AuthorizedWriters.sol) access-control base, each taken through the full §28
 pipeline for real and deployed + verified on X Layer testnet.
 
@@ -19,7 +21,8 @@ pipeline for real and deployed + verified on X Layer testnet.
 | [`src/PolicyRegistry.sol`](src/PolicyRegistry.sol) | PRD §10.1 — on-chain anchor: a committed ruleset (`policyHash`) governed a given agent at a given time. Owner-gated register / update / pause / resume, event per mutation. | **Real & LIVE on X Layer testnet** at [`0xe1d7…3532`](https://www.oklink.com/x-layer-testnet/address/0xe1d74c90801db0fa806c72eb818b7671b8233532) (verified source; one demo policy registered + read back). Full §28 pipeline green. See [`deploy/README.md`](deploy/README.md). |
 | [`src/SpendIntentRegistry.sol`](src/SpendIntentRegistry.sol) | PRD §10.2 — on-chain lifecycle anchor: `intentHash ⇒ {policyId, maxAmount, deadline, status}`. `intentHash` derived on-chain from the §8.1 struct via `IntentHash`; **authorized-writer-set** register / setStatus; status ∈ {PENDING, APPROVED, BLOCKED, SETTLED, DISPUTED} with derived expiry. | **Real & LIVE on X Layer testnet** at [`0xf87e…1372`](https://www.oklink.com/x-layer-testnet/address/0xf87e50f83172c2dace7d274e4c701212caeb1372) (verified source; one demo intent registered + transitioned + read back). Full §28 pipeline green. See [`deploy/README.md`](deploy/README.md). |
 | [`src/UntchReceipts.sol`](src/UntchReceipts.sol) | PRD §10.3 — the versioned, **events-only** public receipt log: `logReceipts` (batch), `anchorScore`, `anchorAudit`, all writer-gated; admin writer-set changes behind a **timelock**. On-chain carries hashes/metadata only. | **Real & LIVE on X Layer testnet** at [`0x0c64…4863`](https://www.oklink.com/x-layer-testnet/address/0x0c64997277b7d94d2999dea22a123cac56334863) (verified source; a real 3-receipt batch logged, one score + one audit anchored, writer authorized through the real timelock, independently read back via raw RPC). Full §28 pipeline green. **Measured gas/receipt published** (see below). |
-| [`src/UntchVault.sol`](src/UntchVault.sol) | PRD §10.4 / §7.5 — the **first fund-holding contract**: Mode C on-chain spend enforcement. `deposit`, EIP-712 oracle-signed `spend` (with a cross-contract APPROVED-intent check against the real §10.2 registry when required), owner `spendFallback`, **unconditional** `ownerWithdraw`, `setOracle`, `pause`/`unpause`, `setFallbackAllowlist`, two-step `transferOwnership`/`acceptOwnership`. Plain constructor — **no factory/CREATE2** (that is the next, separate prompt). | **Real & LIVE on X Layer testnet** at [`0x42e6…4848`](https://www.oklink.com/x-layer-testnet/address/0x42e699ffd8215d48397a049b4f7a176db06f4848) (verified source; real deposit + oracle spend anchored to the real APPROVED §10.2 intent + fallback spend + reverted over-cap attempt + ownerWithdraw, all independently re-read via raw RPC). Full §28 pipeline green; **100% branch coverage**; measured gas per spend published. See [`deploy/README.md`](deploy/README.md). |
+| [`src/UntchVault.sol`](src/UntchVault.sol) | PRD §10.4 / §7.5 — the **first fund-holding contract**: Mode C on-chain spend enforcement. `deposit`, EIP-712 oracle-signed `spend` (with a cross-contract APPROVED-intent check against the real §10.2 registry when required), owner `spendFallback`, **unconditional** `ownerWithdraw`, `setOracle`, `pause`/`unpause`, `setFallbackAllowlist`, two-step `transferOwnership`/`acceptOwnership`. Its constructor is arg'd and immutable-setting; instances are deployed by `UntchVaultFactory` (below). | **Real & LIVE on X Layer testnet** at [`0x42e6…4848`](https://www.oklink.com/x-layer-testnet/address/0x42e699ffd8215d48397a049b4f7a176db06f4848) (verified source; real deposit + oracle spend anchored to the real APPROVED §10.2 intent + fallback spend + reverted over-cap attempt + ownerWithdraw, all independently re-read via raw RPC). Full §28 pipeline green; **100% branch coverage**; measured gas per spend published. See [`deploy/README.md`](deploy/README.md). |
+| [`src/UntchVaultFactory.sol`](src/UntchVaultFactory.sol) | PRD §10.4 — the **CREATE2 factory** for `UntchVault`. `deployVault(owner, agent, oracle, perTxCap, epochBudget, epochLenSecs, tokenAllow[], requireAnchoredIntent)` (spec signature **verbatim**) at an address deterministic per `(owner, agent)`; `computeVaultAddress(...)` predicts it before deployment. Holds ONE canonical immutable `intentRegistry` injected into every vault (decision B). **Holds no funds, moves no money** — it only deploys vaults. | **Real; full §28 pipeline green LOCALLY** (17 unit + 256-run address-prediction fuzz, adversarial review clean, statics 0 High, **100% branch coverage**, gas snapshot). Testnet broadcast + source-verify + predict→deploy→readback demo is **staged** (driver [`scripts/deploy-untch-vault-factory.ts`](../scripts/deploy-untch-vault-factory.ts), preflight-validated against the live testnet RPC) and runs on the next broadcast with the deployer key. See [`deploy/README.md`](deploy/README.md). |
 | [`src/AuthorizedWriters.sol`](src/AuthorizedWriters.sol) | Shared admin-managed authorized-writer allowlist (admin/writer roles, add/remove/transfer, events, errors, modifiers) — **extracted** from SpendIntentRegistry. Internal-only mutators so each derived contract chooses its surface (immediate vs timelocked). | Real base. Used by `SpendIntentRegistry` (immediate admin) and `UntchReceipts` (timelocked admin). |
 | [`src/lib/IntentHash.sol`](src/lib/IntentHash.sol) | PRD §8.1 SpendIntent struct hash; the Solidity half of the D0.5 canonicalization differential. Reused by `SpendIntentRegistry` to derive `intentHash` on-chain. | Real library. |
 | `src/Scaffold.sol` | The D0.4 throwaway ownable/pausable stub. | **Removed** — a real contract (`PolicyRegistry`) now exercises the same CI, so the scaffold's only remaining effect was analyzer noise. (Same call Step-1b made about `ping_untch`.) |
@@ -360,6 +363,90 @@ from one config, so it stays **constant across test / static-analysis / deploy**
 already-deployed PolicyRegistry / SpendIntentRegistry were built + verified under `via_ir = false`
 and are not being rebuilt or redeployed.
 
+## `UntchVaultFactory` (§10.4) — one reconciled spec-drift + two judgment calls
+
+The factory is small and single-purpose: it deploys `UntchVault` instances via CREATE2 and predicts
+their addresses. It **holds no funds and introduces no money-movement** — there is no
+deposit/spend/withdraw path in it; those live only in the vault. Three things needed a real decision,
+each resolved deliberately and reflected in the code + tests.
+
+### The spec-drift: §10.4's `deployVault` signature predates the IntentRegistry integration
+
+§10.4 writes the signature as
+`deployVault(owner, agent, oracle, perTxCap, epochBudget, epochLenSecs, tokenAllow[], requireAnchoredIntent)`.
+That text predates the cross-contract wiring the as-built `UntchVault` constructor now requires: its
+constructor is
+`(owner, oracle, intentRegistry, perTxCap, epochBudget, epochLenSecs, tokenAllow[], requireAnchoredIntent)`
+— an **immutable `intentRegistry`** the spec's `deployVault` list never mentions, and it takes **no
+`agent`** at all. Two ways to get this wrong: silently bolt `intentRegistry` on as a new `deployVault`
+parameter (a signature change), or blindly follow the stale signature and never wire `intentRegistry`
+through (a factory that deploys a **broken** vault whose anchored-intent check reverts).
+
+**Reconciliation (neither):** the factory holds ONE canonical `intentRegistry` (below) and injects it
+into every vault, so **`deployVault`'s external signature stays byte-for-byte as §10.4 wrote it** — no
+new parameter. And `agent`, which the vault constructor doesn't take, is given its real job: the
+CREATE2 **salt seed** ("deterministic per agent"). So the reconciliation *adds nothing* to the spec
+signature and *loses nothing* the vault needs.
+
+### Judgment call 1 — `intentRegistry` is factory-canonical & immutable (not a per-call parameter)
+
+There is one canonical `SpendIntentRegistry` (§10.2) for the whole system. A per-call `intentRegistry`
+would let any caller point a vault at a **rogue registry** — redirecting the vault's cross-contract
+trust, the exact attack `UntchVault`'s own judgment call 4 made `intentRegistry` immutable to prevent.
+So the factory takes `intentRegistry` **once, at its own construction**, stores it `immutable`, and
+uses it for every vault. This lifts "the rules of the game aren't alterable per-instance" from one
+vault to the whole fleet a factory mints. A vault deployed with `requireAnchoredIntent == false` still
+receives the canonical registry — it simply never calls it. (`test_DeployVault_WiresEveryImmutableFromInputs`
+reads the deployed vault's `intentRegistry()` back and asserts it equals the factory's canonical one,
+never a caller value.)
+
+### Judgment call 2 — salt = `keccak256(owner, agent)`, and access = permissionless but `owner == msg.sender`
+
+**Salt.** §10.4 says "deterministic per agent," and the hard rule names the **`(owner, agent)` pair**
+as the uniqueness key. `agent` in this system is a namespacing seed, not part of the intent identity
+(the §8.1 `SpendIntent` identifies agents by `uint256` `buyerAgentId` / `workerAgentId`, and the
+vault's sovereign is the `owner` operator wallet). The same `agent` address can legitimately be
+operated under **different owners**, so the salt binds both: `keccak256(abi.encode(owner, agent))`.
+Same agent, different owner ⇒ distinct vaults (`test_Salt_SameAgentDifferentOwnerGivesDistinctVaults`);
+same owner, different agent ⇒ distinct vaults.
+
+**Access control.** §10.4 doesn't restrict who may call `deployVault`, so the open reading is right for
+a self-service product: **permissionless — no allowlist, no admin, no fee.** But `owner` must equal the
+caller. That one constraint is what makes the deterministic `(owner, agent)` address **non-griefable**:
+without it, anyone could deploy *your* vault at *your* address with immutable caps you never chose
+(you'd keep custody via `ownerWithdraw`, but you could never place your own config at that address —
+it's occupied). Requiring `owner == msg.sender` means only you can ever occupy or vary your own slot
+(`test_DeployVault_RevertsWhenOwnerIsNotCaller`, `test_DeployVault_PermissionlessForOnesOwnVault`).
+This matches §5.2's "operator deploys UntchVault via factory" — the operator *is* the deployer.
+
+### Double-deployment, and an honest note on what CREATE2 can and can't enforce
+
+Redeploying the same `(owner, agent)` with the **same config** reverts through CREATE2's own behavior:
+the target address already holds code, so the EVM's `create2` returns the zero address (no bespoke
+pre-check). The factory classifies that zero-return *after the fact* — occupied target ⇒ a clear,
+named `VaultAlreadyDeployed(owner, agent)`; otherwise a vault-constructor revert ⇒ `VaultDeploymentFailed`
+(`test_DeployVault_DoubleDeploySamePairReverts`).
+
+The honest nuance, surfaced not papered over: a CREATE2 address is
+`keccak256(0xff, factory, salt, keccak256(initCode))`, and the vault stores its config as constructor
+**immutables**, so the config is part of `initCode`. That means the same `(owner, agent)` with a
+**different** config lands at a **different** address — CREATE2 cannot collide distinct initcode, and
+no salt scheme can change that while the vault is immutable-configured (a constructor-less clone can't
+carry per-instance immutables). This is not a griefing surface: because `owner == msg.sender`, only the
+owner itself could ever create such a variant of its own vault
+(`test_DeployVault_SamePairDifferentConfigLandsElsewhere` documents the real behavior). Off-chain the
+system deploys one canonical config per pair, so "the vault for `(owner, agent)`" stays well-defined.
+
+**Prediction == deployment (no tampering).** `deployVault` and `computeVaultAddress` build the initcode
+through a **single shared `_vaultInitCode(...)` helper**, so a prediction can never diverge from where
+the deployment lands. `testFuzz_ComputeVaultAddressMatchesDeployment` proves it across 256 random
+`(owner, agent, oracle, caps, epochLen, token, requireAnchoredIntent)` tuples, and
+`test_ComputeVaultAddress_CommitsToConstructorArgs` proves the address commits to every arg (so you
+can't predict with one config and have a differently-configured vault land there). One CREATE2
+characteristic worth stating plainly: a *mistaken* same-config redeploy burns most of the caller's
+forwarded gas before the guard's clear revert (the EVM consumes the create's gas on an address
+collision) — the caller's own gas on a mistake path the deploy driver avoids by predicting first.
+
 ## Compiler settings (single source of truth: [`foundry.toml`](foundry.toml))
 
 | Setting | Value | Why |
@@ -437,9 +524,24 @@ aderyn --src src/ -o report.json .                             # 6. Aderyn (gate
 | **Gas** | ✅ [`forge snapshot`](.gas-snapshot) committed, **plus measured real testnet gas per spend** (`spend` 123,751 · `spendFallback` 73,936) |
 | **Testnet deploy + verify + readback** | ✅ **DONE** — deployed to X Layer testnet ([`0x42e6…4848`](https://www.oklink.com/x-layer-testnet/address/0x42e699ffd8215d48397a049b4f7a176db06f4848)), source verified on OKLink ("Pass - Verified"), real deposit → oracle spend anchored to the **real APPROVED §10.2 intent** (cross-contract `isUsable` executed on-chain) → fallback spend → reverted over-cap attempt → ownerWithdraw, all independently re-read via raw `cast`. [`deploy/README.md`](deploy/README.md), [`deploy/untch-vault-testnet-receipt.json`](deploy/untch-vault-testnet-receipt.json). |
 
-> **`UntchVaultFactory` / CREATE2 is the next, separate prompt.** This is the plain-constructor,
-> direct-unit-tested `UntchVault`. The per-agent deterministic factory (`deployVault(...)`, §10.4) is
-> deliberately not in this change.
+### UntchVaultFactory §28 results
+
+| Tier | Result |
+|------|--------|
+| **Unit** (constructor sets canonical registry + rejects zero registry; `deployVault` wires EVERY vault immutable, read back and MATCHED to inputs; `requireAnchoredIntent == false` still wires the canonical registry; `computeVaultAddress` == real deployed address; address commits to every constructor arg; double-deploy same pair reverts `VaultAlreadyDeployed`; same pair different config lands elsewhere; `owner != caller` reverts `OwnerMustBeSender`; permissionless-for-own-vault; zero-agent reverts; salt distinguishes owner and agent; invalid vault args revert `VaultDeploymentFailed`) | ✅ green (17 tests) |
+| **Fuzz** (`computeVaultAddress` == `deployVault` result across 256 random `(owner, agent, oracle, perTxCap, epochBudget, epochLen, token, requireAnchoredIntent)` tuples — address prediction correctness, the §10.4 step-4 property) | ✅ green (256 runs) |
+| **Static — Slither** | ✅ 0 High, 0 Medium — factory adds only `assembly` (the deliberate `create2`) + `too-many-digits` (false positive on the embedded vault `creationCode`), both **Informational**, dispositioned in [`slither-triage.md`](slither-triage.md). CI-equivalent detector set exits 0. |
+| **Static — Aderyn** (0.6.8, the CI version) | ✅ 0 High. A first pass flagged a High "`abi.encodePacked()` Hash Collision" on the initcode build — a false positive (fixed-length `creationCode` prefix + self-delimiting `abi.encode`) — **fixed, not triaged**, by switching to `bytes.concat` (byte-identical output; every predicted/deployed address unchanged, proven by the fuzz test). See [`slither-triage.md`](slither-triage.md). |
+| **Coverage** | ✅ **100% branch** (5/5), 100% functions (6/6), 96.15% statements (25/26), 95.83% lines (23/24) on `UntchVaultFactory.sol` — the single uncovered line is the `create2` opcode **inside the `assembly` block**, which `forge coverage` cannot instrument (it is exercised by every deploy test). Exceeds §28's ≥95% branch bar (see [`coverage-summary.txt`](coverage-summary.txt)). |
+| **Gas** | ✅ [`forge snapshot`](.gas-snapshot) committed |
+| **Testnet deploy + verify + readback** | ⏳ **Staged** — the [`scripts/deploy-untch-vault-factory.ts`](../scripts/deploy-untch-vault-factory.ts) driver runs the exact **predict → deploy → prediction-match → independent raw-RPC readback of the deployed vault's immutables → double-deploy-reverts + owner≠caller-reverts** sequence and emits the OKLink `verify-contract` command; it is preflight-validated against the live X Layer testnet RPC (chainId 1952) and broadcasts on the next run with the deployer key. The receipt lands at `deploy/untch-vault-factory-testnet-receipt.json`. |
+
+> **The on-chain contract set is now code-complete.** `UntchVaultFactory` is the fifth and final contract
+> in PRD §10 (PolicyRegistry §10.1 · SpendIntentRegistry §10.2 · UntchReceipts §10.3 · UntchVault §10.4 ·
+> UntchVaultFactory §10.4). The first four are built, tested through the full §28 pipeline, and live +
+> verified on X Layer **testnet**; the factory is built + full-pipeline-green locally with its testnet
+> broadcast staged. **Mainnet remains deliberately deferred** (PRD §22.4): nothing touches X Layer
+> mainnet until all five clear §28's mainnet checklist **together**.
 
 ### Measured gas/receipt (real X Layer testnet txs) — fulfilling §17 / §25 / §10.4
 
@@ -473,8 +575,10 @@ stores `policyHash` as an opaque `bytes32`; it never recomputes it.
 
 Testnet-only. See [`deploy/README.md`](deploy/README.md),
 [`scripts/deploy-policy-registry.ts`](../scripts/deploy-policy-registry.ts),
-[`scripts/deploy-spend-intent-registry.ts`](../scripts/deploy-spend-intent-registry.ts), and
-[`scripts/deploy-untch-receipts.ts`](../scripts/deploy-untch-receipts.ts).
+[`scripts/deploy-spend-intent-registry.ts`](../scripts/deploy-spend-intent-registry.ts),
+[`scripts/deploy-untch-receipts.ts`](../scripts/deploy-untch-receipts.ts),
+[`scripts/deploy-untch-vault.ts`](../scripts/deploy-untch-vault.ts), and
+[`scripts/deploy-untch-vault-factory.ts`](../scripts/deploy-untch-vault-factory.ts).
 
 ## Layout
 
@@ -483,11 +587,13 @@ src/PolicyRegistry.sol           first real product contract (PRD §10.1)
 src/SpendIntentRegistry.sol      second real product contract (PRD §10.2)
 src/UntchReceipts.sol            third real product contract (PRD §10.3) — receipts log + admin timelock
 src/UntchVault.sol               fourth real product contract (PRD §10.4/§7.5) — fund-holding spend vault
+src/UntchVaultFactory.sol        fifth real product contract (PRD §10.4) — CREATE2 factory for UntchVault
 src/AuthorizedWriters.sol        shared admin/writer allowlist base (§10.2 + §10.3)
 src/lib/IntentHash.sol           D0.5 SpendIntent hash (canonicalization differential; reused by §10.2)
 lib/openzeppelin-contracts/      vendored OZ v5.6.1 (ECDSA + SafeERC20 + IERC20 closure), committed, no submodule
 test/UntchVault.t.sol            unit + per-function fuzz + malleability/CEI/cross-contract-fail-closed
 test/UntchVault.invariant.t.sol  adversarial master-invariant + epoch + reentrancy + liveness gate
+test/UntchVaultFactory.t.sol     unit (wiring readback, double-deploy, access control) + address-prediction fuzz
 test/mocks/VaultMocks.sol        ERC20 (standard / no-return / reentrant / CEI-probe) + registry mocks
 remappings.txt                   @openzeppelin/contracts/ → lib/openzeppelin-contracts/contracts/
 test/PolicyRegistry.t.sol        unit + per-function fuzz

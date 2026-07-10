@@ -29,7 +29,7 @@ contract (`PolicyRegistry`) produced its first finding, Slither crashed with
 The fix is the correct shape for a triage database: machine-format only, and **empty** because
 there is nothing Medium/High to accept. All human documentation lives in this `.md` instead.
 
-## Current dispositions (PolicyRegistry + SpendIntentRegistry + UntchReceipts + UntchVault)
+## Current dispositions (PolicyRegistry + SpendIntentRegistry + UntchReceipts + UntchVault + UntchVaultFactory)
 
 | # | Finding | Tool | Impact | Disposition |
 |---|---------|------|--------|-------------|
@@ -45,8 +45,10 @@ there is nothing Medium/High to accept. All human documentation lives in this `.
 | 10 | `timestamp` — `UntchVault._epochView` computes the epoch index and `epoch > currentEpoch` | Slither | **Low** | Accepted — the derived epoch-rollover rule (§10.4 epoch accounting): `epoch = (now - epochGenesis) / epochLen`, reset iff a strictly later epoch. This is the vault analogue of the registries' derived-expiry `isUsable`. Non-blocking (Low). |
 | 11 | `missing-inheritance` — `SpendIntentRegistry` "should inherit from `ISpendIntentStatus`" | Slither | **Informational** | Accepted — coincidental signature match. `ISpendIntentStatus` (declared in `UntchVault.sol`) is the narrow typed view of the registry the vault calls (`isUsable(bytes32)`); the deployed `SpendIntentRegistry` happens to expose the same signature. Making the shipped, testnet-verified registry `is ISpendIntentStatus` would add a backwards `SpendIntentRegistry → UntchVault` source dependency and change a deployed contract for no behavioral gain. Informational, non-blocking. |
 | 12 | `missing-zero-check` — `UntchVault.transferOwnership(newOwner)` sets `pendingOwner = newOwner` without a zero-check | Slither | **Low** | Accepted — intentional. Passing the zero address is the documented way to **cancel** a pending ownership transfer (`pendingOwner = 0` ⇒ nobody can `acceptOwnership`). A zero-check would remove that useful semantics for no safety benefit: this is a two-step transfer, so even a wrong NON-zero `newOwner` cannot take ownership unless it actively calls `acceptOwnership` — there is no "accidentally burned to a dead address" failure mode the check would prevent. Tested by `test_TransferOwnership_ZeroCancelsPending`. Non-blocking (Low). |
+| 13 | `assembly` — `UntchVaultFactory.deployVault` uses an inline-assembly `create2` | Slither | **Informational** | Accepted — deliberate and minimal. CREATE2 with a runtime-built initcode blob is expressed with one `create2` opcode over `_vaultInitCode(...)`'s bytes (`create2(0, add(initCode,0x20), mload(initCode), salt)`); high-level Solidity has no equivalent that returns the raw zero-on-collision signal the double-deployment guard classifies. The block is annotated with a written reason and a `solhint-disable-next-line no-inline-assembly`. Informational, non-blocking. |
+| 14 | `too-many-digits` — `UntchVaultFactory._vaultInitCode` | Slither | **Informational** | Accepted — false positive. The "literal with too many digits" is `type(UntchVault).creationCode` (the vault's full creation bytecode), not a hand-typed magic number. It is unavoidable — the factory must embed the vault bytecode to CREATE2-deploy it. Informational, non-blocking. |
 
-Slither total (standard detectors, as CI runs them): **0 High, 0 Medium, 11 Low, 1 Informational** —
+Slither total (standard detectors, as CI runs them): **0 High, 0 Medium, 11 Low, 3 Informational** —
 CI passes under `--fail-medium`, nothing to triage in the machine database.
 
 Findings #8–#10 are the same `timestamp` (block-timestamp) detector class as #1–#7: deliberate,
@@ -97,9 +99,22 @@ reason at the deviation (the same discipline PolicyRegistry/SpendIntentRegistry 
 
 Aderyn (v0.6.x, via the pinned `Cyfrin/aderyn-ci@v0` npm binary) reports **0 High** across the
 source set (`PolicyRegistry`, `SpendIntentRegistry`, `IntentHash`, `AuthorizedWriters`,
-`UntchReceipts`, and now `UntchVault`); the CI gate is `fail-on: high`. The `timestamp`
-(block-timestamp) class above — now 10 Slither Lows — has no Aderyn High counterpart: expected, and
-consistent with both tools' severity models.
+`UntchReceipts`, `UntchVault`, and now `UntchVaultFactory`); the CI gate is `fail-on: high`. The
+`timestamp` (block-timestamp) class above — now 10 Slither Lows — has no Aderyn High counterpart:
+expected, and consistent with both tools' severity models.
+
+> **One Aderyn 0.6.8 finding on `UntchVaultFactory` was FIXED, not triaged.** The first local run
+> flagged **High — "`abi.encodePacked()` Hash Collision"** on `_vaultInitCode`, which built the CREATE2
+> initcode as `abi.encodePacked(type(UntchVault).creationCode, abi.encode(args))`. It was a *false
+> positive* for a collision hazard (the creationCode prefix is a compile-time-constant length and
+> `abi.encode` is self-delimiting, so no boundary ambiguity exists — this is the canonical CREATE2
+> initcode every factory builds) — but rather than carry a High on a fund-adjacent contract, the code was
+> changed to `bytes.concat(creationCode, abi.encode(args))`, Aderyn's own recommended form for
+> all-`bytes` operands. The output is **byte-identical** (so every predicted/deployed address is
+> unchanged — proven by the unchanged `testFuzz_ComputeVaultAddressMatchesDeployment` across 256 random
+> inputs), and Aderyn 0.6.8 then reports **0 High**. The remaining `abi.encodePacked` in
+> `_computeAddress` (`0xff ++ factory ++ salt ++ initCodeHash`) is NOT flagged — all four operands are
+> fixed-width, so there is no collision surface; it is the standard EIP-1014 address preimage.
 
 On `UntchVault`, Aderyn 0.6.8 (the exact `@cyfrin/aderyn@0.6` version the CI action installs, run
 locally to reproduce CI) reports **0 High, 2 Low**:

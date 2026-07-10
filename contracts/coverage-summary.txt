@@ -5,15 +5,25 @@
 | src/SpendIntentRegistry.sol              | 100.00% (38/38)   | 100.00% (41/41)   | 100.00% (7/7)   | 100.00% (10/10) |
 | src/UntchReceipts.sol                    | 100.00% (41/41)   | 100.00% (51/51)   | 100.00% (14/14) | 100.00% (8/8)   |
 | src/UntchVault.sol                       | 100.00% (113/113) | 100.00% (136/136) | 100.00% (27/27) | 100.00% (20/20) |
+| src/UntchVaultFactory.sol                | 95.83% (23/24)    | 96.15% (25/26)    | 100.00% (5/5)   | 100.00% (6/6)   |
 | src/lib/IntentHash.sol                   | 100.00% (2/2)     | 100.00% (2/2)     | 100.00% (0/0)   | 100.00% (1/1)   |
 ╰------------------------------------------+-------------------+-------------------+-----------------+-----------------╯
 
 Branch coverage per source file is 100% — target was ≥95% (PRD §28 item 8). §28 requires **100%
-branch on UntchVault** specifically: met (26/26). Regenerated with `forge coverage --ir-minimum
+branch on UntchVault** specifically: met (27/27). Regenerated with `forge coverage --ir-minimum
 --report summary` (via_ir is on for the set — coverage disables it, so --ir-minimum re-enables it at
 minimum optimization to avoid stack-too-deep on UntchReceipts' 16-field event).
 
-UntchVault is the first fund-holding contract; its 26 branches cover every §7.5 revert path, both spend
-paths, the cross-contract fail-closed modes, CEI/reentrancy, and the epoch rollover boundary. The
-`Total` row forge prints also counts test-harness/mock files (VaultMocks.sol's branches, the invariant
-handlers) and so reads lower than 100%; the per-source-file numbers above are the ones §28 gates on.
+UntchVault is the first fund-holding contract; its 27 branches cover every §7.5 revert path, both spend
+paths, the cross-contract fail-closed modes, CEI/reentrancy, and the epoch rollover boundary.
+
+UntchVaultFactory (§10.4, CREATE2) is **100% branch (5/5), 100% functions (6/6)** — every access-control
+and double-deploy/failure-classification branch is hit. Its lines read 95.83% (23/24) and statements
+96.15% (25/26) for ONE reason: the single uncovered line is the `create2` opcode INSIDE the inline-
+`assembly` block, which `forge coverage` cannot instrument (coverage works on Solidity statements, not
+raw assembly). That line is exercised by every successful and reverting deploy test — the "gap" is a
+tool limitation, not an untested path. Branch coverage (what §28 gates on, ≥95%) is 100%.
+
+The `Total` row forge prints also counts test-harness/mock files (VaultMocks.sol's branches, the
+invariant handlers) and so reads lower than 100%; the per-source-file numbers above are the ones §28
+gates on.
