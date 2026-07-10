@@ -46,10 +46,12 @@ export function makeTimeoutScheduler(
 ): TimeoutScheduler {
   return async (escalationId, fireAtMs) => {
     const delay = Math.max(0, fireAtMs - clock());
+    // BullMQ forbids ':' in a custom jobId ("Custom Id cannot contain :"), and escalation ids are
+    // safe already — but keep a hyphen prefix so the id de-duplicates re-schedules of the same escalation.
     await queue.add(
       "timeout",
       { escalationId },
-      { delay, jobId: `to:${escalationId}`, removeOnComplete: true, removeOnFail: 1000 },
+      { delay, jobId: `to-${escalationId}`, removeOnComplete: true, removeOnFail: 1000 },
     );
   };
 }
