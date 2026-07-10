@@ -167,15 +167,24 @@ pnpm --filter @untch/asp typecheck
 pnpm --filter @untch/asp gen-buyer-wallet      # writes BUYER_PRIVATE_KEY to services/asp/.env
 pnpm --filter @untch/asp pay                    # D0.1 ping_untch $0.01 paid call
 pnpm --filter @untch/asp preflight:proof        # Step-2: create intent → pay $0.05 preflight
+pnpm --filter @untch/asp guarded:e2e            # §14 Mode B: paid call through @untch/x402-guard
 
 # policy store: real create_spend_policy tx → real preflight against the stored policy (task 5 proof):
 pnpm --filter @untch/policy-store migrate        # applies 002_policies.sql to the Railway Postgres
 pnpm --filter @untch/asp policy:e2e              # needs OPERATOR_PRIVATE_KEY + DATABASE_URL
 ```
 
-The buyer proof scripts (`preflight:proof`, `receipt:e2e`) bind their intents to a real stored policy
-via `DEMO_POLICY_ID` + `DEMO_POLICY_HASH` (printed by `policy:e2e`, recorded in
+The buyer proof scripts (`preflight:proof`, `receipt:e2e`, `guarded:e2e`) bind their intents to a real
+stored policy via `DEMO_POLICY_ID` + `DEMO_POLICY_HASH` (printed by `policy:e2e`, recorded in
 `contracts/deploy/policy-store-testnet-receipt.json`) — no fixture is reintroduced.
+
+### Buyer-side middleware — §14 Mode B (real dogfood, I5)
+
+The buyer no longer signs whatever 402 it receives. `src/guard-buyer.ts` routes every outbound paid
+call through **`@untch/x402-guard`**: on a 402 it runs the Challenge Binding Check against what the
+buyer independently authorized, calls the real `preflight_payment`, and only on **APPROVE** does the
+buyer's own signer (`makeBuyerFetch`, the sole holder of the key) run. BLOCK ⇒ structured refusal;
+ESCALATE ⇒ a non-blocking poll handle. `guarded:e2e` is the live end-to-end proof of this path.
 
 ## Evidence
 

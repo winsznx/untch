@@ -101,6 +101,18 @@ importers:
 
   packages/shared: {}
 
+  packages/x402-guard:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   services/asp:
     dependencies:
       '@okxweb3/x402-core':
@@ -127,6 +139,9 @@ importers:
       '@untch/receipt-writer':
         specifier: workspace:*
         version: link:../../packages/receipt-writer
+      '@untch/x402-guard':
+        specifier: workspace:*
+        version: link:../../packages/x402-guard
       express:
         specifier: ^4.21.2
         version: 4.22.2

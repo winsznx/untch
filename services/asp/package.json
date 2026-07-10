@@ -11,6 +11,7 @@
     "pay": "tsx --env-file=../../.env --env-file=.env src/run-paid-call.ts",
     "pay:remote": "tsx --env-file=.env src/pay-remote.ts",
     "preflight:proof": "tsx --env-file=../../.env --env-file=.env src/run-preflight-proof.ts",
+    "guarded:e2e": "tsx --env-file=../../.env --env-file=.env src/run-guarded-e2e-proof.ts",
     "receipt:e2e": "tsx --env-file=../../.env --env-file=.env src/run-receipt-e2e-proof.ts",
     "policy:e2e": "tsx --env-file=../../.env --env-file=.env src/run-policy-e2e-proof.ts",
     "test": "node --import tsx --test test/*.test.ts",
@@ -25,6 +26,7 @@
     "@untch/policy-engine": "workspace:*",
     "@untch/policy-store": "workspace:*",
     "@untch/receipt-writer": "workspace:*",
+    "@untch/x402-guard": "workspace:*",
     "express": "^4.21.2",
     "tsx": "^4.19.2",
     "viem": "^2.55.0"
