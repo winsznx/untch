@@ -9,10 +9,10 @@
       "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
       "decimals": 6
     },
-    "policyId": "1",
-    "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
-    "runSalt": "1783714221962",
-    "capturedAt": "2026-07-10T20:10:28.562Z"
+    "policyId": "60857684564038047174277665130531299196547049270835523655077624958943947360678",
+    "policyHash": "0x2bff1b1dfdf6067eb34062622e547fc0881c1a65bc37955c88b0121353222035",
+    "runSalt": "1783715930910",
+    "capturedAt": "2026-07-10T20:38:57.526Z"
   },
   "authorizedBinding": {
     "recipient": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
@@ -30,22 +30,22 @@
     "workerAgentId": "0",
     "token": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
     "maxAmount": "10000",
-    "taskHash": "0x130d8c762e24398f72b23fb3a16dd92ac974f095de37e96c40c35cf4b6ff2c6b",
-    "acceptanceHash": "0xbef2c43e1b6b7cfc30c9ef462b85f803c86fddaad86629a5c8364b8a6d896ca9",
-    "schemaHash": "0xe6a3533ff707e8a37499af1623bf490bf5e29995d9397731cbad72594b03eacf",
-    "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
+    "taskHash": "0x6c04aa0a08ce1477b542c83dd2a93f25691837891c9218db45004de921906761",
+    "acceptanceHash": "0x908d708409ca76808682dc324aeac7a77846a37246781397dbec5c79e10c2f92",
+    "schemaHash": "0x905c5c66ee5c65d2df50f952939f59a5bd193ada9e9270619c43d0670905716a",
+    "policyHash": "0x2bff1b1dfdf6067eb34062622e547fc0881c1a65bc37955c88b0121353222035",
     "deadline": "9999999999",
-    "nonce": "1783714221962",
+    "nonce": "1783715930910",
     "endpoint": "http://untch-asp-production.up.railway.app/ping_untch",
-    "paramsHash": "0xd75f4d4ffd58eec6e3b22b3d4414f5bc10e4b85adffb2f36f20798be6f09bd40",
+    "paramsHash": "0x7b6bc64f00f5a688676d752e92985300f0726410c38730dbb1533a216f80b9c1",
     "recipientAddress": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
-    "category": "market-data",
+    "category": "compute",
     "amount": 0.01
   },
   "guardStatus": "APPROVED",
   "preflight": {
     "decision": "APPROVED",
-    "settlementTx": "0x86b5d0ced53937b128c6ecfd0fa075ba2e9f1dd49f8d99d5e8c3b1d8aa0ce00d",
+    "settlementTx": "0x2a263b40339d1313c6cb1c069355f3ca5b3dd4fa3e9357b77a6ed3c49d87efe9",
     "raw": {
       "decision": "APPROVED",
       "reasons": [
@@ -85,7 +85,7 @@
         {
           "rule": "category.allow",
           "result": "PASS",
-          "observed": "market-data"
+          "observed": "compute"
         },
         {
           "rule": "vendor.lcbFloor",
@@ -104,14 +104,14 @@
           "rule": "perCall.cap",
           "result": "PASS",
           "observed": "0.01",
-          "limit": "1.00",
+          "limit": "2.00",
           "token": "USDT"
         },
         {
           "rule": "budget.daily",
           "result": "PASS",
-          "observed": "0.51",
-          "limit": "25.00",
+          "observed": "0.01",
+          "limit": "50.00",
           "token": "USDT"
         },
         {
@@ -130,16 +130,16 @@
           "rule": "escalate.aboveThreshold",
           "result": "PASS",
           "observed": "0.01",
-          "limit": "5.00",
+          "limit": "10.00",
           "token": "USDT"
         }
       ],
-      "intentHash": "0xc38aa782f5524ffbc8a07b29099013e115167bad9093b26696ba0d1e3b941300",
-      "policyId": "1",
+      "intentHash": "0x0f62333a600098cad8d07970e29351892c22a5f65c08a6cd72f514da2709078f",
+      "policyId": "60857684564038047174277665130531299196547049270835523655077624958943947360678",
       "policyVersion": 1,
-      "evaluatedAt": "2026-07-10T20:10:25Z",
+      "evaluatedAt": "2026-07-10T20:38:55Z",
       "receiptRef": {
-        "receiptId": "0x1ec1669671956cd1d6091cf707ab0abb26f81fcffc6bb43e3de697acaa3d6aa2",
+        "receiptId": "0xf2ea7dbebf26f85bb2e0282ab48c0194cd3d57ca31a7ec91104cf9ec2bb7c620",
         "status": "QUEUED"
       },
       "sig": null
@@ -149,7 +149,7 @@
     "status": "APPROVED",
     "response": {
       "status": 200,
-      "body": "{\"ok\":true,\"tool\":\"ping_untch\",\"ts\":\"2026-07-10T20:10:27.847Z\"}",
+      "body": "{\"ok\":true,\"tool\":\"ping_untch\",\"ts\":\"2026-07-10T20:38:56.808Z\"}",
       "settlement": {
         "amount": null,
         "errorMessage": null,
@@ -158,15 +158,15 @@
         "payer": "0x98f43eabcad380f4f1f0587ae945bc8c79e43c0b",
         "status": "success",
         "success": true,
-        "transaction": "0xfc45c18a1245494b186eaa9f0b48bb904cbfea3d7aeb2615c3c0e7912ed2485d"
+        "transaction": "0x8c43a2e3dafa8ab3c806099063cf83e9c2bbcc01b579138ae6df2e7d6d761412"
       },
-      "settlementTx": "0xfc45c18a1245494b186eaa9f0b48bb904cbfea3d7aeb2615c3c0e7912ed2485d",
-      "paymentSignature": "eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDk4RjQzZUFCY2FEMzgwZjRmMUYwNTg3YUU5NDVCYzhjNzlFNDNjMGIiLCJ0byI6IjB4OThGNDNlQUJjYUQzODBmNGYxRjA1ODdhRTk0NUJjOGM3OUU0M2MwYiIsInZhbHVlIjoiMTAwMDAiLCJ2YWxpZEFmdGVyIjoiMTc4MzcxNDIyMSIsInZhbGlkQmVmb3JlIjoiMTc4MzcxNDUyNiIsIm5vbmNlIjoiMHgzYjYwOTBiNzk2YWViMTkxMmY2ZjhkN2YwYTdjODBmZDg2MDFhMTA2MDc1NThjOGU2OWYyY2QyMmYzYTU1MjFiIn0sInNpZ25hdHVyZSI6IjB4YjAxNGIwMTI5OGQ5OWNlZTg0MzZlNmM3MDVhN2ViNjkwYzlmMzE3MWRlMTk2ZGJhZGRlNzg2NTE1NzY3MGRmNjQ1NThiYTA4ZDU0MDQ0NDc3ZDAzM2VkNWZiMDYyNzc2NTUwODRiOTJkZGNhMWNlZGQ2MzIyOTg3Mzg0YWY2MDExYyJ9LCJyZXNvdXJjZSI6eyJ1cmwiOiJodHRwOi8vdW50Y2gtYXNwLXByb2R1Y3Rpb24udXAucmFpbHdheS5hcHAvcGluZ191bnRjaCIsImRlc2NyaXB0aW9uIjoiVW50Y2ggaGVsbG8td29ybGQgcGluZyDigJQgRDAuMSBwcm9vZi1vZi1yYWlsIGhlYWx0aCBjaGVjayIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRlZCI6eyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJlaXAxNTU6MTk2IiwiYW1vdW50IjoiMTAwMDAiLCJhc3NldCI6IjB4Nzc5ZGVkMGM5ZTEwMjIyMjVmOGUwNjMwYjM1YTliNTRiZTcxMzczNiIsInBheVRvIjoiMHg5OEY0M2VBQmNhRDM4MGY0ZjFGMDU4N2FFOTQ1QmM4Yzc5RTQzYzBiIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsibmFtZSI6IlVTROKCrjAiLCJ2ZXJzaW9uIjoiMSJ9fX0="
+      "settlementTx": "0x8c43a2e3dafa8ab3c806099063cf83e9c2bbcc01b579138ae6df2e7d6d761412",
+      "paymentSignature": "eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDk4RjQzZUFCY2FEMzgwZjRmMUYwNTg3YUU5NDVCYzhjNzlFNDNjMGIiLCJ0byI6IjB4OThGNDNlQUJjYUQzODBmNGYxRjA1ODdhRTk0NUJjOGM3OUU0M2MwYiIsInZhbHVlIjoiMTAwMDAiLCJ2YWxpZEFmdGVyIjoiMTc4MzcxNTkzMCIsInZhbGlkQmVmb3JlIjoiMTc4MzcxNjIzNSIsIm5vbmNlIjoiMHhlZmY5YTU1YjY0ZDMxZWY2NzY3YzkwY2MyYWNjNzBiZWQzNzUyNTNhYTBmNGQzYjc5NGJhNzZmMjU0ODI3NWI2In0sInNpZ25hdHVyZSI6IjB4MzExMzE5MDVhMzYwNjc1NjFkMmFlOTExMDU3YjQ4MGFmNDk5MjMzMjQ2YzRlN2Y5YWEzMWI5MGRhZGMxNDc3NDMwNTJhYjk4ZjBmMTlmYzdlZjkyMjkwNjUxNTMzOWJjMTZmY2VlMWJiYTVhMjRkN2NiMjdiN2RhNzEwZWRlNGMxYyJ9LCJyZXNvdXJjZSI6eyJ1cmwiOiJodHRwOi8vdW50Y2gtYXNwLXByb2R1Y3Rpb24udXAucmFpbHdheS5hcHAvcGluZ191bnRjaCIsImRlc2NyaXB0aW9uIjoiVW50Y2ggaGVsbG8td29ybGQgcGluZyDigJQgRDAuMSBwcm9vZi1vZi1yYWlsIGhlYWx0aCBjaGVjayIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRlZCI6eyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJlaXAxNTU6MTk2IiwiYW1vdW50IjoiMTAwMDAiLCJhc3NldCI6IjB4Nzc5ZGVkMGM5ZTEwMjIyMjVmOGUwNjMwYjM1YTliNTRiZTcxMzczNiIsInBheVRvIjoiMHg5OEY0M2VBQmNhRDM4MGY0ZjFGMDU4N2FFOTQ1QmM4Yzc5RTQzYzBiIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsibmFtZSI6IlVTROKCrjAiLCJ2ZXJzaW9uIjoiMSJ9fX0="
     },
     "decision": {
       "decision": "APPROVED",
       "receiptRef": {
-        "receiptId": "0x1ec1669671956cd1d6091cf707ab0abb26f81fcffc6bb43e3de697acaa3d6aa2",
+        "receiptId": "0xf2ea7dbebf26f85bb2e0282ab48c0194cd3d57ca31a7ec91104cf9ec2bb7c620",
         "status": "QUEUED"
       },
       "ruleTrace": [
@@ -203,7 +203,7 @@
         {
           "rule": "category.allow",
           "result": "PASS",
-          "observed": "market-data"
+          "observed": "compute"
         },
         {
           "rule": "vendor.lcbFloor",
@@ -222,14 +222,14 @@
           "rule": "perCall.cap",
           "result": "PASS",
           "observed": "0.01",
-          "limit": "1.00",
+          "limit": "2.00",
           "token": "USDT"
         },
         {
           "rule": "budget.daily",
           "result": "PASS",
-          "observed": "0.51",
-          "limit": "25.00",
+          "observed": "0.01",
+          "limit": "50.00",
           "token": "USDT"
         },
         {
@@ -248,15 +248,15 @@
           "rule": "escalate.aboveThreshold",
           "result": "PASS",
           "observed": "0.01",
-          "limit": "5.00",
+          "limit": "10.00",
           "token": "USDT"
         }
       ],
       "reasons": [
         "all implemented rules passed; stubbed rules not yet enforced (see trace implemented:false)"
       ],
-      "intentHash": "0xc38aa782f5524ffbc8a07b29099013e115167bad9093b26696ba0d1e3b941300",
-      "policyId": "1"
+      "intentHash": "0x0f62333a600098cad8d07970e29351892c22a5f65c08a6cd72f514da2709078f",
+      "policyId": "60857684564038047174277665130531299196547049270835523655077624958943947360678"
     },
     "binding": {
       "recipient": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
@@ -270,7 +270,7 @@
     }
   },
   "settlementTxs": {
-    "preflight": "0x86b5d0ced53937b128c6ecfd0fa075ba2e9f1dd49f8d99d5e8c3b1d8aa0ce00d",
-    "guardedCall": "0xfc45c18a1245494b186eaa9f0b48bb904cbfea3d7aeb2615c3c0e7912ed2485d"
+    "preflight": "0x2a263b40339d1313c6cb1c069355f3ca5b3dd4fa3e9357b77a6ed3c49d87efe9",
+    "guardedCall": "0x8c43a2e3dafa8ab3c806099063cf83e9c2bbcc01b579138ae6df2e7d6d761412"
   }
 }
