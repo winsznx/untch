@@ -10,10 +10,12 @@ import {
   PING_ROUTE,
   PREFLIGHT_PRICE,
   PREFLIGHT_ROUTE,
+  RECEIPT_STATUS_ROUTE,
   type SellerConfig,
 } from "./config";
 import { handleCreateSpendIntent, handlePreflightPayment, type HandlerResult } from "./handlers";
 import { createFixtureState } from "./policy-fixture";
+import { initReceiptWiring, type ReceiptWiring } from "./receipts";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -38,7 +40,10 @@ import { createFixtureState } from "./policy-fixture";
  * process must reach https://web3.okx.com at boot. `syncSettle:true` makes the facilitator wait
  * for on-chain confirmation so `PAYMENT-RESPONSE` carries the settlement tx hash.
  */
-export function createSellerApp(config: SellerConfig = loadSellerConfig()): Express {
+export function createSellerApp(
+  config: SellerConfig = loadSellerConfig(),
+  receiptWiring: ReceiptWiring | null = null,
+): Express {
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey: config.okxApiKey,
     secretKey: config.okxSecretKey,
@@ -94,8 +99,45 @@ export function createSellerApp(config: SellerConfig = loadSellerConfig()): Expr
       policy: fixture.policy,
       ledger: fixture.ledger,
       intentStore: fixture.intentStore,
+      ...(receiptWiring ? { receiptEnqueuer: receiptWiring.enqueuer } : {}),
     })
       .then((result) => send(res, result))
+      .catch(next);
+  });
+
+  // §7.4 status poll — GET /receipt_status/:receiptId. Unpriced (a minimal slice of §11 get_ledger:
+  // one receipt's lifecycle). Reads Postgres, so it reflects the durable source of truth.
+  app.get(RECEIPT_STATUS_ROUTE, (req, res, next) => {
+    if (!receiptWiring) {
+      res.status(503).json({
+        code: "RECEIPTS_NOT_CONFIGURED",
+        message: "receipt writer is not wired on this instance (no DATABASE_URL/REDIS_URL)",
+        retryable: false,
+        docsUrl: null,
+      });
+      return;
+    }
+    receiptWiring
+      .status(req.params.receiptId ?? "")
+      .then((result) => {
+        if (result === "invalid") {
+          res.status(400).json({
+            code: "BAD_RECEIPT_ID",
+            message: "receiptId must be a 0x-prefixed 32-byte hex string",
+            retryable: false,
+            docsUrl: null,
+          });
+        } else if (result === null) {
+          res.status(404).json({
+            code: "RECEIPT_NOT_FOUND",
+            message: `no receipt with id ${req.params.receiptId}`,
+            retryable: false,
+            docsUrl: null,
+          });
+        } else {
+          res.json(result);
+        }
+      })
       .catch(next);
   });
 
@@ -123,11 +165,19 @@ function send(res: Response, result: HandlerResult): void {
 const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1]);
 if (isMain) {
   const config = loadSellerConfig();
-  createSellerApp(config).listen(config.port, () => {
-    console.log(`[asp] listening on http://localhost:${config.port}`);
-    console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
-    console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canonicalize + hash a SpendIntent)`);
-    console.log(`[asp]   POST ${PREFLIGHT_ROUTE}    ${PREFLIGHT_PRICE}   (real §7.1 policy preflight)`);
-    console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
-  });
+  initReceiptWiring()
+    .then((receiptWiring: ReceiptWiring | null) => {
+      createSellerApp(config, receiptWiring).listen(config.port, () => {
+        console.log(`[asp] listening on http://localhost:${config.port}`);
+        console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
+        console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canonicalize + hash a SpendIntent)`);
+        console.log(`[asp]   POST ${PREFLIGHT_ROUTE}    ${PREFLIGHT_PRICE}   (real §7.1 policy preflight)`);
+        console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
+        console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
+      });
+    })
+    .catch((err) => {
+      console.error(`[asp] failed to init receipt wiring: ${(err as Error).message}`);
+      process.exit(1);
+    });
 }

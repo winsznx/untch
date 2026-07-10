@@ -25,6 +25,9 @@ export const CREATE_INTENT_ROUTE = "/create_spend_intent" as const;
 export const PREFLIGHT_ROUTE = "/preflight_payment" as const;
 export const PREFLIGHT_PRICE = "$0.05" as const;
 
+/** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
+export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
+
 export const DEFAULT_PORT = 4021;
 
 export const CHAIN: Chain = defineChain({

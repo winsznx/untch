@@ -6,6 +6,7 @@ import {
   type Policy,
   type SpendIntentInput,
 } from "@untch/policy-engine";
+import type { ReceiptEnqueuer } from "@untch/receipt-writer";
 import type { Hex } from "viem";
 import {
   IntentValidationError,
@@ -84,6 +85,9 @@ export interface PreflightDeps {
   readonly now?: () => number;
   /** Injectable per-agent lock (isolate tests); defaults to the engine's module singleton. */
   readonly lock?: PerAgentLock;
+  /** §7.4 receipt writer. When present, the decision is durably enqueued and a real
+   *  {receiptId, status:"QUEUED"} is returned in `receiptRef`. Absent ⇒ `receiptRef` stays null. */
+  readonly receiptEnqueuer?: ReceiptEnqueuer;
 }
 
 /**
@@ -165,11 +169,12 @@ function isHandlerResult(x: { input: SpendIntentInput } | HandlerResult): x is H
  * the fixture policy + in-memory ledger. Returns the §8.2 decision record VERBATIM — decision,
  * reasons, and ruleTrace are the engine's own, unmodified.
  *
- * `receiptRef` and `sig` are explicitly null:
- *   • receiptRef — the receipt writer (§7.4 UntchReceipts) does not exist yet, so no receipt is
- *     anchored/queued. Null, not a fabricated ref.
- *   • sig — the EIP-712 oracle signature (§7.5, Mode C) is produced by a signer service that does
- *     not exist yet, and preflight here is advisory (Mode A), which never signs. Null, not faked.
+ * `receiptRef` (§7.4): when a receipt writer is wired (`deps.receiptEnqueuer`), the decision is
+ * durably enqueued and `receiptRef` is a real {receiptId, status:"QUEUED"} returned IMMEDIATELY — the
+ * response never blocks on batching or on-chain confirmation (HARD RULE §7.4). When no writer is
+ * wired, or the durable enqueue itself fails, `receiptRef` is null — an honest "not queued", never a
+ * fabricated ref. `sig` stays null: the EIP-712 oracle signer (§7.5, Mode C) does not exist yet and
+ * preflight is advisory (Mode A), which never signs.
  */
 export async function handlePreflightPayment(
   body: unknown,
@@ -189,6 +194,18 @@ export async function handlePreflightPayment(
     opts,
   );
 
+  // §7.4: durably enqueue the decision receipt and return its ref immediately. The enqueue writes the
+  // receipt + ledger row to Postgres and signals the worker — it never awaits a batch or a chain
+  // confirmation. A failure here (e.g. Postgres down) leaves receiptRef null rather than lying.
+  let receiptRef: { receiptId: Hex; status: "QUEUED" } | null = null;
+  if (deps.receiptEnqueuer) {
+    try {
+      receiptRef = await deps.receiptEnqueuer.enqueue(resolved.input, decision);
+    } catch (err) {
+      console.error("[asp] receipt enqueue failed — returning receiptRef: null", err);
+    }
+  }
+
   return {
     status: 200,
     body: {
@@ -201,8 +218,8 @@ export async function handlePreflightPayment(
       policyId: decision.policyId,
       policyVersion: decision.policyVersion,
       evaluatedAt: decision.evaluatedAt,
-      // Explicitly null — subsystems not built yet (see doc comment above). Never faked.
-      receiptRef: null,
+      // §7.4 real receipt ref (or null when unwired / enqueue failed). sig stays null (§7.5 unbuilt).
+      receiptRef,
       sig: null,
     },
   };

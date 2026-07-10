@@ -1,0 +1,43 @@
+import type { Decision, SpendIntentInput } from "@untch/policy-engine";
+import type { Queue } from "bullmq";
+import { draftFromDecision } from "./mapping";
+import type { ReceiptsRepo } from "./repo";
+import type { TickJob } from "./queue";
+import type { EnqueueResult } from "./types";
+
+/**
+ * The seller-facing enqueue path. This is the ONLY thing preflight_payment calls, and it MUST NOT
+ * block on batching or chain confirmation (HARD RULE): it durably writes the receipt + ledger row to
+ * Postgres, best-effort signals the worker via a BullMQ tick, and returns {receiptId, status:"QUEUED"}
+ * immediately. Everything downstream (batch, submit, confirm) is the worker's job.
+ *
+ * Durability does NOT depend on Redis: if the tick add fails, the receipt is already committed and the
+ * worker's periodic safety sweep will pick it up. The tick is a latency optimization, not the record.
+ */
+export class ReceiptEnqueuer {
+  constructor(
+    private readonly repo: ReceiptsRepo,
+    private readonly tickQueue: Queue<TickJob>,
+    private readonly onSignalError: (err: unknown) => void = () => {},
+  ) {}
+
+  async enqueue(input: SpendIntentInput, decision: Decision): Promise<EnqueueResult> {
+    const draft = draftFromDecision(input, decision);
+
+    // 1. DURABLE first — receipt (QUEUED) + ledger entry, one transaction. Source of truth.
+    await this.repo.insertDraft(draft);
+
+    // 2. Best-effort signal. Never let a Redis hiccup fail the request or delay the response.
+    try {
+      await this.tickQueue.add(
+        "tick",
+        { receiptId: draft.onchain.receiptId },
+        { removeOnComplete: true, removeOnFail: 1000 },
+      );
+    } catch (err) {
+      this.onSignalError(err);
+    }
+
+    return { receiptId: draft.onchain.receiptId, status: "QUEUED" };
+  }
+}
