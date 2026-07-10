@@ -29,9 +29,29 @@ export {
   type EscalationMessage,
 } from "./channel";
 export { TelegramChannel, parseCallbackData, parseTextCommand } from "./telegram";
+export { DiscordChannel, type DiscordChannelOptions } from "./discord";
+export { SlackChannel, type SlackChannelOptions } from "./slack";
+export {
+  parseButtonPayload,
+  approvePayload,
+  denyPayload,
+  renderApprovalText,
+  type ParsedCommand,
+} from "./wire-format";
+export {
+  type WebSocketLike,
+  type WebSocketFactory,
+  defaultWebSocketFactory,
+  frameToString,
+} from "./ws";
 export { makeEscalationResolver } from "./resolver";
 export { readApprovalsConfig } from "./approvals";
-export { interimTelegramBinding, combineBindings } from "./binding";
+export {
+  interimTelegramBinding,
+  interimDiscordBinding,
+  interimSlackBinding,
+  combineBindings,
+} from "./binding";
 export { generateCode, hashCode, codeMatchesHash } from "./codes";
 export {
   type EscalationsRepo,
@@ -44,9 +64,16 @@ export { createPool, runMigrations, type Pool } from "./db";
 export {
   loadStorageConfig,
   loadTelegramConfig,
+  loadDiscordConfig,
+  loadSlackConfig,
+  hasTelegramEnv,
+  hasDiscordEnv,
+  hasSlackEnv,
   MissingEnvError,
   type StorageConfig,
   type TelegramConfig,
+  type DiscordConfig,
+  type SlackConfig,
 } from "./config";
 export {
   createRedis,

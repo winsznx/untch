@@ -1,11 +1,21 @@
 import type { TelegramConfig } from "./config";
 import type { Channel, ChannelReceiver, ChannelSendResult, EscalationMessage } from "./channel";
 import type { InboundResponse } from "./types";
+import {
+  approvePayload,
+  denyPayload,
+  parseButtonPayload,
+  parseTextCommand,
+  renderApprovalText,
+} from "./wire-format";
+
+export { parseButtonPayload as parseCallbackData, parseTextCommand };
 
 /**
- * The one real `Channel` implementation: Telegram.
+ * The first real `Channel` implementation: Telegram (Discord and Slack are the other two — same seam,
+ * same reply grammar, different transport).
  *
- * It does the two transport jobs and nothing else — sends an escalation with inline APPROVE/DENY
+ * It does the two transport jobs and nothing else — sends an escalation with inline Approve/Deny
  * buttons that carry the single-use code, and long-polls `getUpdates` to turn button callbacks (and the
  * "APPROVE <code>" / "DENY <code>" text baseline, §27) into transport-neutral `InboundResponse`s. It
  * makes NO authority decision: the service runs every response it emits through the §27 check. Swapping
@@ -79,12 +89,12 @@ export class TelegramChannel implements Channel {
   }
 
   async send(message: EscalationMessage): Promise<ChannelSendResult> {
-    const text = renderMessage(message);
+    const text = renderApprovalText(message);
     const reply_markup = {
       inline_keyboard: [
         [
-          { text: "✅ Approve", callback_data: `a:${message.escalationId}:${message.code}` },
-          { text: "⛔ Deny", callback_data: `d:${message.escalationId}:${message.code}` },
+          { text: "Approve", callback_data: approvePayload(message) },
+          { text: "Deny", callback_data: denyPayload(message) },
         ],
       ],
     };
@@ -95,7 +105,6 @@ export class TelegramChannel implements Channel {
         body: JSON.stringify({
           chat_id: this.cfg.chatId,
           text,
-          parse_mode: "Markdown",
           reply_markup,
         }),
       });
@@ -171,7 +180,7 @@ export class TelegramChannel implements Channel {
   parseUpdate(update: TgUpdate): InboundResponse | null {
     if (update.callback_query) {
       const cq = update.callback_query;
-      const parsed = parseCallbackData(cq.data);
+      const parsed = parseButtonPayload(cq.data);
       if (!parsed) return null;
       const chat = cq.message?.chat.id;
       return {
@@ -206,49 +215,6 @@ export class TelegramChannel implements Channel {
       body: JSON.stringify({ callback_query_id: callbackQueryId, text: "Received." }),
     });
   }
-}
-
-function renderMessage(m: EscalationMessage): string {
-  const deadline = new Date(m.expiresAt).toISOString().replace("T", " ").slice(0, 19);
-  return [
-    `*Untch approval needed* — the agent asked to spend money the policy escalated.`,
-    ``,
-    `• Amount: *${m.amount} ${m.token}*`,
-    `• Reason: \`${m.reason}\``,
-    `• Policy: \`${m.policyId}\``,
-    `• Intent: \`${m.intentId}\``,
-    ``,
-    `Approve or deny below. Expires *${deadline} UTC* — after that it defaults to DENY.`,
-    `The model never touched the money; you decide.`,
-  ].join("\n");
-}
-
-interface ParsedCommand {
-  readonly action: "APPROVE" | "DENY";
-  readonly code: string;
-  readonly escalationRef?: string;
-}
-
-/** `a:<escId>:<code>` / `d:<escId>:<code>` (button) — the id lets the service resolve directly. */
-export function parseCallbackData(data: string | undefined): ParsedCommand | null {
-  if (!data) return null;
-  const parts = data.split(":");
-  if (parts.length !== 3) return null;
-  const [tag, escalationRef, code] = parts;
-  if (!escalationRef || !code) return null;
-  if (tag === "a") return { action: "APPROVE", code, escalationRef };
-  if (tag === "d") return { action: "DENY", code, escalationRef };
-  return null;
-}
-
-/** `APPROVE <code>` / `DENY <code>` (§27 text baseline). Case-insensitive; no id, resolved by hash. */
-export function parseTextCommand(text: string): ParsedCommand | null {
-  const m = text.trim().match(/^(approve|deny)\s+([0-9a-fA-F]{8,})$/i);
-  if (!m) return null;
-  return {
-    action: m[1]!.toUpperCase() === "APPROVE" ? "APPROVE" : "DENY",
-    code: m[2]!,
-  };
 }
 
 function sleep(ms: number): Promise<void> {

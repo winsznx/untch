@@ -29,7 +29,7 @@ import type {
  * intent is still active, the channel + sender's binding tuple match, the single-use code is valid and
  * unexpired and unredeemed, the channel cap is respected, and the dual-channel rule is satisfied. Any
  * failure is IGNORED and logged as a failed control event — never silently accepted. This is enforced
- * here, identically, for Telegram now and Photon later.
+ * here, identically, for Telegram, Discord, and Slack today and Photon later.
  */
 
 /** Binding verifier — does this (channel, senderHandle) belong to a bound operator? (§27 pt3.) */

@@ -3,8 +3,12 @@
 When the deterministic policy engine escalates a spend instead of approving or blocking it, **this
 service carries the decision to a human and carries the human's answer back — without ever letting the
 channel decide.** It owns the §7.2 escalation lifecycle and the §27 authority-boundary check, exposes a
-channel-agnostic seam (Telegram now, Photon later), and wires x402-guard's `poll()` so an `ESCALATED`
-decision resolves for real once the operator responds.
+channel-agnostic seam (three real channels today: **Telegram, Discord, and Slack**; Photon later), and
+wires x402-guard's `poll()` so an `ESCALATED` decision resolves for real once the operator responds.
+
+One operator, three reachable surfaces — not three approvers. Each channel binds to the SAME operator
+identity through its own handle (Telegram chat id, Discord user id, Slack user id); any bound channel can
+approve that operator's escalations, and an amount above `dualChannelAbove` requires two DISTINCT ones.
 
 ```
 Policy decides → channel notifies & captures → THIS service validates → guard sees the resolved state
@@ -88,7 +92,24 @@ reaches the guard — only the resolved state does.
 A `Channel` does exactly two transport things and nothing else — `send` an escalation carrying the code,
 and `startReceiving` inbound responses normalized to a transport-neutral `InboundResponse`. The service
 runs every response through the same §27 check regardless of origin. Implementing a new channel is
-implementing that one interface; **the core state machine does not change.**
+implementing that one interface; **the core state machine does not change.** Discord and Slack are the
+proof: each is one `implements Channel` file, and neither touched a line of the state machine or the §27
+check.
+
+### The three real channels + their transport choices
+
+| Channel | Send | Receive | Why this receive path |
+|---------|------|---------|-----------------------|
+| **Telegram** | Bot API `sendMessage` (inline buttons) | long-poll `getUpdates` | no public endpoint; outbound only |
+| **Discord** | REST `POST /users/@me/channels` → DM with buttons | **gateway** (WebSocket) | interactions-webhook needs a PUBLIC endpoint + Ed25519 signature checks — a new inbound attack surface; the gateway is outbound-only, matching Telegram |
+| **Slack** | `conversations.open` → `chat.postMessage` (Block Kit buttons) | **Socket Mode** (WebSocket) | the Events API needs a public endpoint + signing-secret verification; Socket Mode opens an outbound socket from an app-level token, no public endpoint |
+
+Both new channels are **DM to one bound operator** (never a public server/team channel — a broadcast
+surface has a different trust model than a private DM to a single bound identity), both carry the code in
+the same `a:<escId>:<code>` button payload and accept the same `APPROVE <code>` text baseline, and both
+use Node's built-in `WebSocket` (Node 22+) rather than a heavy client SDK — so, like Telegram, they are
+unit-tested with an injected socket and no network. See
+[`src/discord.ts`](src/discord.ts) and [`src/slack.ts`](src/slack.ts) for the full choice rationale.
 
 ### Deliberate scope limits — documented, not silent gaps
 
@@ -97,24 +118,32 @@ implementing that one interface; **the core state machine does not change.**
 roundtrip — has no PASS evidence. Building the escalation service against Photon now would repeat the
 mistake of building on an unvalidated external dependency. So the Photon channel is deferred: this ships
 a **clean `Channel` interface Photon (Spectrum) implements later** without touching the core. **Next
-step: run D0.6, then add a `PhotonChannel implements Channel`.** Until then, Telegram is the one real
-implementation.
+step: run D0.6, then add a `PhotonChannel implements Channel`.** Telegram, Discord, and Slack are the
+real implementations today; Photon is the one deferred channel, pending its own D0.6 validation.
 
-**2. Dual-channel enforcement is correct but currently inert.**
-`policy.approvals.dualChannelAbove` is implemented at the logic level (`AWAITING_SECOND_CHANNEL` requires
-a second **distinct** channel — see the passing `dual-channel` tests). But with only Telegram live there
-is no second channel to satisfy it, so above-threshold amounts stay `AWAITING_SECOND_CHANNEL` until they
-time out to DENY. This is **correct once Photon (or the dashboard channel) exists** — we did not fake a
-second channel to make it "work." Below the threshold, a single Telegram approval resolves normally.
+**2. Dual-channel enforcement is genuinely proven — no longer inert.**
+`policy.approvals.dualChannelAbove` requires a second **distinct** channel (`AWAITING_SECOND_CHANNEL` →
+`APPROVED`). Step 7 shipped this logic but noted it as inert, because with only Telegram live there was no
+second channel to satisfy it. That is no longer true: with three real channels, the rule is enforced for
+real. [`test/dual-channel.test.ts`](test/dual-channel.test.ts) proves both directions against the same
+compare-and-set repo semantics Postgres enforces —
+  * **positive:** an above-threshold escalation approved on one channel (e.g. telegram) holds at
+    `AWAITING_SECOND_CHANNEL`, and a tap on a DISTINCT channel (e.g. discord) transitions it to
+    `APPROVED`;
+  * **negative:** the SAME channel approving twice (a second tap or a retry) is rejected as a reused code
+    (`IGNORED_BAD_CODE`) and never counts as the distinct second channel — it stays held.
 
-**3. Handle-binding is an interim env binding.**
+Below the threshold, a single bound channel approves normally.
+
+**3. Handle-binding is an interim env binding — for all three channels.**
 There is no onboarding/binding UI yet (no dashboard exists), so the real §27 binding tuple (channel +
 provider + spaceId/conversation + sender handle + verified operator wallet + last-verified-at, set by a
-code roundtrip) is not yet capturable. The interim is a single configured **`TELEGRAM_CHAT_ID` bound to
-the same demo operator this whole build has used** (the Step-5 demo wallet), clearly labeled temporary —
-the same pattern as the demo wallet elsewhere. **Real requirement (named future step): a proper
-onboarding/binding flow, presumably via the eventual dashboard (§15).** The check is strict: only the
-exact bound chat id on the `telegram` channel counts; any other sender is `IGNORED_UNBOUND`.
+code roundtrip) is not yet capturable. The interim is one configured id per channel, all bound to the
+**same demo operator this whole build has used** (the Step-5 demo wallet): `TELEGRAM_CHAT_ID`,
+`DISCORD_USER_ID`, `SLACK_USER_ID`. This is the "one operator, three surfaces" model — combined with
+`combineBindings`, a bound approval on ANY channel authorizes the operator, while any other sender on any
+channel is `IGNORED_UNBOUND`. Clearly labeled temporary. **Real requirement (named future step): a proper
+onboarding/binding flow, presumably via the eventual dashboard (§15).**
 
 ---
 
@@ -134,35 +163,52 @@ pnpm --filter @untch/escalation timeout-worker
 pnpm --filter @untch/escalation telegram-receiver
 ```
 
-### The real end-to-end proof (task 6)
+The **deployed seller** wires every configured channel automatically: on boot it registers Telegram,
+Discord, and/or Slack (whichever env is set), binds them all to the same operator via `combineBindings`,
+starts each receiver, and fans an escalation out across all of them (∩ `policy.approvals.channels`). No
+channel is faked — one that isn't configured simply isn't registered.
+
+### The real end-to-end proofs (task 5)
 
 ```bash
-pnpm --filter @untch/asp escalation:e2e
+pnpm --filter @untch/asp escalation:e2e            # Telegram, in-process service (D0.7)
+pnpm --filter @untch/asp escalation:live           # Telegram, through the live public endpoint (D0.7)
+pnpm --filter @untch/asp escalation:proof discord  # Discord solo, through the live public endpoint
+pnpm --filter @untch/asp escalation:proof slack    # Slack solo, through the live public endpoint
+pnpm --filter @untch/asp escalation:proof dual     # two DISTINCT channels resolve one above-threshold escalation
 ```
 
-Drives one real cycle: a real over-threshold intent → real paid `preflight_payment` → `ESCALATED` →
-real Telegram message with APPROVE/DENY buttons → **operator taps APPROVE** → §27 check → the guard's
-`poll()` reflects `APPROVED` for real. It needs the real secrets (`BUYER_PRIVATE_KEY`, `PAY_TO_ADDRESS`,
-`DEMO_POLICY_ID`/`HASH`, `DATABASE_URL`, `REDIS_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) and a
-human tap; missing any prints a precise PREREQ report and exits non-zero — **it never fabricates a
-PASS.** `TELEGRAM_*` is the D0.7 gate; until that runs, this is the ready harness and the adversarial
-offline battery is the correctness proof.
+Each drives one real cycle: a real over-threshold intent → real paid `preflight_payment` → `ESCALATED`
+→ real DM(s) with Approve/Deny buttons → **operator taps Approve** → §27 check → the guard's `poll()`
+reflects `APPROVED` for real. The channel proofs run entirely through the deployed seller's public
+endpoints and confirm the result INDEPENDENTLY by reading the escalation record's own `status`,
+`approved_channels`, and `channel_log` off `GET /escalation_status/:pollRef` — never by trusting the
+script's own success message.
+
+The buyer side needs only `BUYER_PRIVATE_KEY` + `PAY_TO_ADDRESS`. Everything channel-side (bot tokens,
+the bound operator ids, Postgres, Redis, the §27 check) is the **seller's**. If the deployed seller has
+not been configured for the target channel (`DISCORD_*` / `SLACK_*`), the driver prints a precise PREREQ
+report and exits non-zero — **it never fabricates a PASS.** This is the exact honest boundary the
+Telegram e2e held before its D0.7 token was live: the adversarial offline battery below is the standing
+correctness proof; each live proof is the one real human tap on top of it.
 
 ---
 
 ## Tests
 
 ```bash
-pnpm --filter @untch/escalation test        # 32 tests: state machine + adversarial authority boundary
+pnpm --filter @untch/escalation test        # 56 tests: state machine + adversarial boundary + all 3 channels
 ```
 
-Covers every §7.2 transition, the three named adversarial cases (wrong sender, replayed code, expired
-code) plus wrong-channel / bad-code / channel-cap, the dual-channel logic (with a synthetic second
-channel to prove correctness — the live system has only Telegram), timeout → default DENY, the
-fail-closed derived-expiry, the not-found path, Telegram callback/text parsing + send, and the code
-hashing (single-use, constant-time). The in-memory repo mirrors the Postgres repo's compare-and-set
-transition semantics, so "first valid decision wins" is exercised against the same guard the database
-enforces.
+Covers every §7.2 transition; the three named adversarial cases (wrong sender, replayed code, expired
+code) run against Telegram AND across Discord and Slack; wrong-channel / bad-code / channel-cap; the
+**dual-channel rule proven with three real channels** — positive (two distinct channels → APPROVED) and
+negative (same channel twice → `IGNORED_BAD_CODE`, still held); timeout → default DENY; the fail-closed
+derived-expiry; the not-found path; each channel's send + pure event→`InboundResponse` normalizer + its
+gateway/socket lifecycle (identify, heartbeat, ack, reconnect/backoff) driven by an injected fake
+WebSocket with no network; and the code hashing (single-use, constant-time). The in-memory repo mirrors
+the Postgres repo's compare-and-set transition semantics, so "first valid decision wins" and the
+dual-channel distinctness check are exercised against the same guard the database enforces.
 
 ---
 

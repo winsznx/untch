@@ -79,3 +79,70 @@ export function loadTelegramConfig(): TelegramConfig {
     apiBase: process.env.TELEGRAM_API_BASE?.trim() || "https://api.telegram.org",
   };
 }
+
+/**
+ * Discord channel config.
+ *
+ * `userId` is the SAME interim handle binding pattern as Telegram's `chatId`: a single configured Discord
+ * user id bound to the one demo operator this whole build has used (the Step-5 demo wallet). It is one
+ * person reachable on another surface, NOT a second approver — the real onboarding/binding flow (§15) is a
+ * named future step. Until it exists, an inbound Discord approval is bound iff its sender id equals this
+ * value. `gatewayUrl` is overridable for a mock gateway in tests.
+ */
+export interface DiscordConfig {
+  readonly botToken: string;
+  readonly userId: string;
+  readonly apiBase: string;
+  readonly gatewayUrl: string;
+}
+
+export function loadDiscordConfig(): DiscordConfig {
+  return {
+    botToken: requireEnv("DISCORD_BOT_TOKEN"),
+    userId: requireEnv("DISCORD_USER_ID"),
+    apiBase: process.env.DISCORD_API_BASE?.trim() || "https://discord.com/api/v10",
+    gatewayUrl: process.env.DISCORD_GATEWAY_URL?.trim() || "wss://gateway.discord.gg/",
+  };
+}
+
+/** True iff all Discord env is present — lets the wiring register Discord only when configured. */
+export function hasDiscordEnv(): boolean {
+  return !!process.env.DISCORD_BOT_TOKEN?.trim() && !!process.env.DISCORD_USER_ID?.trim();
+}
+
+/**
+ * Slack channel config.
+ *
+ * `botToken` (xoxb-) sends DMs; `appToken` (xapp-) opens the Socket Mode connection. `userId` is the SAME
+ * interim handle binding as the other two channels: a single configured Slack user id bound to the one
+ * demo operator (one person, another surface, not a second approver). `apiBase` is overridable for tests.
+ */
+export interface SlackConfig {
+  readonly botToken: string;
+  readonly appToken: string;
+  readonly userId: string;
+  readonly apiBase: string;
+}
+
+export function loadSlackConfig(): SlackConfig {
+  return {
+    botToken: requireEnv("SLACK_BOT_TOKEN"),
+    appToken: requireEnv("SLACK_APP_TOKEN"),
+    userId: requireEnv("SLACK_USER_ID"),
+    apiBase: process.env.SLACK_API_BASE?.trim() || "https://slack.com/api",
+  };
+}
+
+/** True iff all Slack env is present — lets the wiring register Slack only when configured. */
+export function hasSlackEnv(): boolean {
+  return (
+    !!process.env.SLACK_BOT_TOKEN?.trim() &&
+    !!process.env.SLACK_APP_TOKEN?.trim() &&
+    !!process.env.SLACK_USER_ID?.trim()
+  );
+}
+
+/** True iff all Telegram env is present. */
+export function hasTelegramEnv(): boolean {
+  return !!process.env.TELEGRAM_BOT_TOKEN?.trim() && !!process.env.TELEGRAM_CHAT_ID?.trim();
+}

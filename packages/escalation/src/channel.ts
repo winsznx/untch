@@ -9,8 +9,9 @@ import type { InboundResponse } from "./types";
  *
  * It never decides anything about the money. Every inbound response a channel emits is run by the
  * service through the SAME §27 authority-boundary check before it counts — a channel cannot approve a
- * spend, only carry a response the engine already asked for. Telegram implements this now; Photon
- * (Spectrum) implements the same two methods later, without the core state machine changing at all.
+ * spend, only carry a response the engine already asked for. Telegram, Discord, and Slack implement this
+ * today; Photon (Spectrum) implements the same two methods later, without the core state machine changing
+ * at all.
  */
 
 /** What the service hands a channel to render + deliver. The channel decides presentation, never policy. */

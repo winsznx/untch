@@ -168,7 +168,7 @@ export function createSellerApp(
   app.get(ESCALATION_STATUS_ROUTE, (req, res, next) => {
     if (!escalationWiring) {
       res.status(503).json(
-        errorBody("ESCALATION_NOT_CONFIGURED", "escalation service is not wired on this instance (needs DATABASE_URL/REDIS_URL/TELEGRAM_*)"),
+        errorBody("ESCALATION_NOT_CONFIGURED", "escalation service is not wired on this instance (needs DATABASE_URL/REDIS_URL + at least one of TELEGRAM_*/DISCORD_*/SLACK_*)"),
       );
       return;
     }
