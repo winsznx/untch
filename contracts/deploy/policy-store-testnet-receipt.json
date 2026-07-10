@@ -1,0 +1,63 @@
+{
+  "proof": "policy-store §6.2/§8/§10.1 end-to-end",
+  "network": "X Layer testnet",
+  "chainId": 1952,
+  "policyRegistry": "0xe1d74c90801db0fa806c72eb818b7671b8233532",
+  "operatorWallet": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+  "operatorWalletNote": "INTERIM demo/burner wallet — TEMPORARY stand-in for the operator's own dashboard-connected wallet (§15). NOT the permanent design. See services/asp/README.md → 'Operator signing'.",
+  "policyId": "76029468409583827837911952142544939415519701741486856172509180373326388092012",
+  "policyIdDerivation": "uint256(keccak256(abi.encodePacked(owner, ownerNonce))) — read from the confirmed PolicyRegistered event, not an off-chain counter",
+  "policyHash": "0x308ec9d3a4059f28305277eaf33d45d35422cd8542d762fe3727c5cfed5aad3b",
+  "registerTx": "0x7f71579cabe5cabca30701bb46d58812170bcd38a0fe627c77437d8483998e6f",
+  "registerBlock": 35251415,
+  "version": 1,
+  "agent": "0x000000000000000000000000000000000000a9e7",
+  "rules": {
+    "budgets": {
+      "daily": 50,
+      "token": "USDT"
+    },
+    "perCallCap": 2,
+    "onPerCallCapExceeded": "BLOCK",
+    "escalateAbove": 10,
+    "categories": {
+      "allow": [
+        "logistics"
+      ],
+      "deny": []
+    },
+    "recipients": {
+      "allow": [],
+      "deny": []
+    },
+    "agents": {
+      "allowWorkerIds": [],
+      "denyWorkerIds": []
+    },
+    "duplicates": {
+      "ttlMin": 60,
+      "keys": [
+        "taskHash",
+        "endpoint",
+        "paramsHash"
+      ]
+    },
+    "cooldowns": {
+      "sameServiceMin": 5
+    },
+    "rateLimit": {
+      "callsPerHour": 40
+    },
+    "expiry": "2026-12-31T00:00:00Z"
+  },
+  "onchainReadbackMatches": true,
+  "preflightDecision": "APPROVED",
+  "fixtureContrastDecision": "BLOCKED_CATEGORY",
+  "nonCoincidence": "The new policy allows category 'logistics'; the fixture allow-list did not. preflight APPROVED via the real stored policy while the same intent under the fixture rules is BLOCKED_CATEGORY — the stored policy provably drove the decision.",
+  "storedPolicyUsed": true,
+  "capturedAt": "2026-07-10T19:04:15.091Z",
+  "demoEnvForProofScripts": {
+    "DEMO_POLICY_ID": "76029468409583827837911952142544939415519701741486856172509180373326388092012",
+    "DEMO_POLICY_HASH": "0x308ec9d3a4059f28305277eaf33d45d35422cd8542d762fe3727c5cfed5aad3b"
+  }
+}

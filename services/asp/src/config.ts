@@ -28,6 +28,18 @@ export const PREFLIGHT_PRICE = "$0.05" as const;
 /** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
 export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
 
+/**
+ * Operator-facing policy tools (§11 create/update/pause_policy). These sign real PolicyRegistry
+ * (§10.1) txs with the operator wallet. §11 prices them (0.50 / 0.10), but pricing is deliberately
+ * DEFERRED with the dashboard wallet-connect flow (§15): in this interim build they are UNPRICED admin
+ * routes signed by the demo/burner operator wallet — a TEMPORARY stand-in for the operator's own
+ * connected wallet (see README → "Operator signing"). They are not buyer x402 calls.
+ */
+export const CREATE_POLICY_ROUTE = "/create_spend_policy" as const;
+export const UPDATE_POLICY_ROUTE = "/update_policy" as const;
+export const PAUSE_POLICY_ROUTE = "/pause_policy" as const;
+export const RESUME_POLICY_ROUTE = "/resume_policy" as const;
+
 export const DEFAULT_PORT = 4021;
 
 export const CHAIN: Chain = defineChain({

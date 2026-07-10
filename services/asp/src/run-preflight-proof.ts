@@ -10,7 +10,7 @@ import {
   readSettlementBalance,
 } from "./buyer";
 import { MissingEnvError, NETWORK, PREFLIGHT_PRICE, SETTLEMENT_TOKEN } from "./config";
-import { FIXTURE_POLICY_HASH } from "./policy-fixture";
+import { loadDemoPolicyRef } from "./demo-policy";
 
 /**
  * Step-2 END-TO-END PROOF (continuation of the D0.1 proof line).
@@ -62,9 +62,10 @@ function fail(code: number, message: string): never {
   process.exit(code);
 }
 
-/** A real, unique-per-run intent that APPROVES under the demo fixture policy. Unique taskHash +
- *  nonce so a re-run is not a duplicate against the seller's in-memory ledger (60-min TTL). */
-function buildIntent(owner: `0x${string}`, runSalt: string): Record<string, unknown> {
+/** A real, unique-per-run intent that APPROVES under the real stored demo policy. Unique taskHash +
+ *  nonce so a re-run is not a duplicate against the seller's in-memory ledger (60-min TTL). Bound to
+ *  the real policy by `policyHash` — the seller enforces intent.policyHash == stored policyHash. */
+function buildIntent(owner: `0x${string}`, runSalt: string, policyHash: string): Record<string, unknown> {
   const taskHash = keccak256(toHex(`untch-step2-preflight-task:${runSalt}`));
   const paramsHash = keccak256(toHex(`untch-step2-preflight-params:${runSalt}`));
   const acceptanceHash = keccak256(toHex("untch-step2-acceptance:schema=marketdata.v1;deadline<=T+1h"));
@@ -78,13 +79,13 @@ function buildIntent(owner: `0x${string}`, runSalt: string): Record<string, unkn
     taskHash,
     acceptanceHash,
     schemaHash,
-    policyHash: FIXTURE_POLICY_HASH, // bind to the exact demo policy this seller enforces
+    policyHash, // bind to the exact real stored policy this seller enforces
     deadline: "9999999999",
     nonce: runSalt,
     endpoint: "https://api.vendor.example/v1/market-data?symbol=OKB",
     paramsHash,
     recipientAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-    category: "market-data", // in the fixture allow-list → passes
+    category: "market-data", // in the demo policy allow-list → passes
     amount: 0.5, // the $0.50 spend being preflighted (distinct from the $0.05 preflight fee)
   };
 }
@@ -98,10 +99,12 @@ async function main(): Promise<void> {
   }
   buyerKey = raw as `0x${string}`;
 
+  const demoPolicy = loadDemoPolicyRef();
   const owner = buyerAddress(buyerKey);
   const runSalt = String(Date.now());
   console.log(`[proof] buyer/owner : ${owner}`);
   console.log(`[proof] seller      : ${sellerUrl}`);
+  console.log(`[proof] policyId    : ${demoPolicy.policyId} (real stored policy; hash ${demoPolicy.policyHash})`);
   console.log(`[proof] preflight   : ${PREFLIGHT_PRICE} in ${SETTLEMENT_TOKEN.symbol} on ${NETWORK}`);
 
   // Funding precheck — STOP if unfunded (never simulate).
@@ -113,11 +116,11 @@ async function main(): Promise<void> {
   if (balance < PRICE_ATOMIC) fail(2, "buyer wallet unfunded for a $0.05 preflight");
 
   // ── Step A: create_spend_intent (unpriced) ──────────────────────────────────
-  const intent = buildIntent(owner, runSalt);
+  const intent = buildIntent(owner, runSalt, demoPolicy.policyHash);
   const createRes = await fetch(`${sellerUrl}/create_spend_intent`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(intent),
+    body: JSON.stringify({ ...intent, policyId: demoPolicy.policyId }),
   });
   const createBody = (await createRes.json()) as { intentHash?: string; onchain?: unknown };
   if (createRes.status !== 200 || !createBody.intentHash) {
@@ -132,7 +135,7 @@ async function main(): Promise<void> {
   // Send intentHash + inline intent: the seller cross-checks the hash matches (create→preflight
   // binding) AND can evaluate the intent regardless of its in-memory store state — a robust
   // one-shot paid proof. (The store-lookup-by-hash path is covered by the unit tests.)
-  const payload = JSON.stringify({ intentHash, intent });
+  const payload = JSON.stringify({ intentHash, intent, policyId: demoPolicy.policyId });
 
   // 1. Raw 402 challenge (unpaid).
   const unpaid = await fetch(url, {

@@ -15,7 +15,7 @@ import {
 import { UNTCH_RECEIPTS_ABI } from "@untch/receipt-writer";
 import { buyerAddress, makeBuyerFetch, makeRecordingFetch, readSettlementBalance } from "./buyer";
 import { MissingEnvError, PREFLIGHT_PRICE, SETTLEMENT_TOKEN } from "./config";
-import { FIXTURE_POLICY_HASH } from "./policy-fixture";
+import { loadDemoPolicyRef } from "./demo-policy";
 
 /**
  * §7.4 RECEIPT WRITER END-TO-END PROOF — the one that matters most.
@@ -63,7 +63,7 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
-function buildIntent(owner: Hex, runSalt: string): Record<string, unknown> {
+function buildIntent(owner: Hex, runSalt: string, policyHash: string): Record<string, unknown> {
   return {
     owner,
     buyerAgentId: "1",
@@ -73,7 +73,7 @@ function buildIntent(owner: Hex, runSalt: string): Record<string, unknown> {
     taskHash: keccak256(toHex(`untch-receipt-e2e-task:${runSalt}`)),
     acceptanceHash: keccak256(toHex("untch-receipt-e2e-acceptance")),
     schemaHash: keccak256(toHex("untch-receipt-e2e-schema")),
-    policyHash: FIXTURE_POLICY_HASH,
+    policyHash,
     deadline: "9999999999",
     nonce: runSalt,
     endpoint: "https://api.vendor.example/v1/market-data?symbol=OKB",
@@ -121,10 +121,12 @@ async function main(): Promise<void> {
   const buyerKey = process.env.BUYER_PRIVATE_KEY?.trim() as Hex | undefined;
   if (!buyerKey) fail(new MissingEnvError("BUYER_PRIVATE_KEY").message + " — run gen-buyer-wallet");
 
+  const demoPolicy = loadDemoPolicyRef();
   const owner = buyerAddress(buyerKey);
   const runSalt = String(Date.now());
   console.log(`[e2e] buyer   : ${owner}`);
   console.log(`[e2e] seller  : ${sellerUrl}`);
+  console.log(`[e2e] policy  : ${demoPolicy.policyId} (real stored; hash ${demoPolicy.policyHash})`);
   console.log(`[e2e] receipts: ${RECEIPTS_CONTRACT} @ ${TESTNET_RPC}`);
 
   const balance = await readSettlementBalance(owner);
@@ -133,11 +135,11 @@ async function main(): Promise<void> {
   }
 
   // 1. create_spend_intent + paid preflight_payment.
-  const intent = buildIntent(owner, runSalt);
+  const intent = buildIntent(owner, runSalt, demoPolicy.policyHash);
   const createRes = await fetch(`${sellerUrl}/create_spend_intent`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(intent),
+    body: JSON.stringify({ ...intent, policyId: demoPolicy.policyId }),
   });
   const created = (await createRes.json()) as { intentHash?: string };
   if (!created.intentHash) fail(`create_spend_intent failed (${createRes.status})`);
@@ -146,7 +148,7 @@ async function main(): Promise<void> {
   const paid = await payFetch(`${sellerUrl}/preflight_payment`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ intentHash: created.intentHash, intent }),
+    body: JSON.stringify({ intentHash: created.intentHash, intent, policyId: demoPolicy.policyId }),
   });
   const decision = (await paid.json()) as {
     decision?: string;
