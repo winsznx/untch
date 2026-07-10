@@ -54,6 +54,7 @@ function buildIntent(
   resourceUrl: string,
   runSalt: string,
   policyHash: string,
+  category: string,
 ): Record<string, unknown> {
   return {
     owner,
@@ -62,15 +63,17 @@ function buildIntent(
     token: SETTLEMENT_TOKEN.address,
     maxAmount: PING_PRICE_ATOMIC, // exact $0.01 — the guarded call's price
     taskHash: keccak256(toHex(`untch-guard-e2e-task:${runSalt}`)),
-    acceptanceHash: keccak256(toHex("untch-guard-e2e-acceptance:logistics.v1")),
-    schemaHash: keccak256(toHex("untch-guard-e2e-schema:logistics.v1")),
+    acceptanceHash: keccak256(toHex(`untch-guard-e2e-acceptance:${category}.v1`)),
+    schemaHash: keccak256(toHex(`untch-guard-e2e-schema:${category}.v1`)),
     policyHash,
     deadline: "9999999999",
     nonce: runSalt,
     endpoint: resourceUrl,
     paramsHash: keccak256(toHex(`untch-guard-e2e-params:${runSalt}`)),
     recipientAddress: payTo,
-    category: "logistics", // allowed by the stored demo policy
+    // The category the intent commits to — must be allowed by the policy the deployed seller enforces.
+    // Overridable via GUARD_CATEGORY so this proof targets whichever policy the live seller runs.
+    category,
     amount: 0.01,
   };
 }
@@ -108,11 +111,12 @@ async function main(): Promise<void> {
     expiry: "", // and no explicit expiry
   };
 
-  const intent = buildIntent(owner, payTo, advertisedResource, runSalt, demoPolicy.policyHash);
+  const category = process.env.GUARD_CATEGORY?.trim() || "market-data";
+  const intent = buildIntent(owner, payTo, advertisedResource, runSalt, demoPolicy.policyHash, category);
 
   console.log(`[guard-e2e] buyer/owner : ${owner}`);
   console.log(`[guard-e2e] seller      : ${sellerUrl}`);
-  console.log(`[guard-e2e] authorized  : $0.01 → ${payTo} for ${invokedEndpoint} (category logistics)`);
+  console.log(`[guard-e2e] authorized  : $0.01 → ${payTo} for ${invokedEndpoint} (category ${category})`);
   console.log(`[guard-e2e] policyId    : ${demoPolicy.policyId} (real stored policy; hash ${demoPolicy.policyHash})`);
 
   const balance = await readSettlementBalance(owner);

@@ -1,0 +1,276 @@
+{
+  "meta": {
+    "proof": "§14 Mode B — @untch/x402-guard real dogfood e2e (buyer routes a paid call through the middleware)",
+    "buyer": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "seller": "https://untch-asp-production.up.railway.app",
+    "network": "eip155:196",
+    "settlementToken": {
+      "symbol": "USD₮0",
+      "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "decimals": 6
+    },
+    "policyId": "1",
+    "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
+    "runSalt": "1783714221962",
+    "capturedAt": "2026-07-10T20:10:28.562Z"
+  },
+  "authorizedBinding": {
+    "recipient": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "token": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+    "amount": "10000",
+    "resourceUrl": "http://untch-asp-production.up.railway.app/ping_untch",
+    "endpoint": "https://untch-asp-production.up.railway.app/ping_untch",
+    "method": "GET",
+    "nonce": "",
+    "expiry": ""
+  },
+  "intent": {
+    "owner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "buyerAgentId": "1",
+    "workerAgentId": "0",
+    "token": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+    "maxAmount": "10000",
+    "taskHash": "0x130d8c762e24398f72b23fb3a16dd92ac974f095de37e96c40c35cf4b6ff2c6b",
+    "acceptanceHash": "0xbef2c43e1b6b7cfc30c9ef462b85f803c86fddaad86629a5c8364b8a6d896ca9",
+    "schemaHash": "0xe6a3533ff707e8a37499af1623bf490bf5e29995d9397731cbad72594b03eacf",
+    "policyHash": "0x640bdb4c3a438728839abd08b38361df44db3acb60503307214a34b28407384d",
+    "deadline": "9999999999",
+    "nonce": "1783714221962",
+    "endpoint": "http://untch-asp-production.up.railway.app/ping_untch",
+    "paramsHash": "0xd75f4d4ffd58eec6e3b22b3d4414f5bc10e4b85adffb2f36f20798be6f09bd40",
+    "recipientAddress": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "category": "market-data",
+    "amount": 0.01
+  },
+  "guardStatus": "APPROVED",
+  "preflight": {
+    "decision": "APPROVED",
+    "settlementTx": "0x86b5d0ced53937b128c6ecfd0fa075ba2e9f1dd49f8d99d5e8c3b1d8aa0ce00d",
+    "raw": {
+      "decision": "APPROVED",
+      "reasons": [
+        "all implemented rules passed; stubbed rules not yet enforced (see trace implemented:false)"
+      ],
+      "ruleTrace": [
+        {
+          "rule": "policy.active",
+          "result": "PASS",
+          "observed": "ACTIVE"
+        },
+        {
+          "rule": "duplicate.taskHash_endpoint_paramsHash",
+          "result": "PASS"
+        },
+        {
+          "rule": "cooldown.sameService",
+          "result": "PASS",
+          "limit": 300
+        },
+        {
+          "rule": "replay.contextBinding",
+          "result": "PASS",
+          "implemented": false,
+          "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+        },
+        {
+          "rule": "recipient.allowDeny",
+          "result": "PASS",
+          "observed": "0x98f43eabcad380f4f1f0587ae945bc8c79e43c0b"
+        },
+        {
+          "rule": "agent.workerAllowDeny",
+          "result": "PASS",
+          "observed": "0"
+        },
+        {
+          "rule": "category.allow",
+          "result": "PASS",
+          "observed": "market-data"
+        },
+        {
+          "rule": "vendor.lcbFloor",
+          "result": "PASS",
+          "implemented": false,
+          "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+        },
+        {
+          "rule": "intent.maxAmountBound",
+          "result": "PASS",
+          "observed": "0.01",
+          "limit": "0.01",
+          "token": "USDT"
+        },
+        {
+          "rule": "perCall.cap",
+          "result": "PASS",
+          "observed": "0.01",
+          "limit": "1.00",
+          "token": "USDT"
+        },
+        {
+          "rule": "budget.daily",
+          "result": "PASS",
+          "observed": "0.51",
+          "limit": "25.00",
+          "token": "USDT"
+        },
+        {
+          "rule": "rate.limit",
+          "result": "PASS",
+          "observed": 1,
+          "limit": 40
+        },
+        {
+          "rule": "proof.tierRequired",
+          "result": "PASS",
+          "implemented": false,
+          "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+        },
+        {
+          "rule": "escalate.aboveThreshold",
+          "result": "PASS",
+          "observed": "0.01",
+          "limit": "5.00",
+          "token": "USDT"
+        }
+      ],
+      "intentHash": "0xc38aa782f5524ffbc8a07b29099013e115167bad9093b26696ba0d1e3b941300",
+      "policyId": "1",
+      "policyVersion": 1,
+      "evaluatedAt": "2026-07-10T20:10:25Z",
+      "receiptRef": {
+        "receiptId": "0x1ec1669671956cd1d6091cf707ab0abb26f81fcffc6bb43e3de697acaa3d6aa2",
+        "status": "QUEUED"
+      },
+      "sig": null
+    }
+  },
+  "outcome": {
+    "status": "APPROVED",
+    "response": {
+      "status": 200,
+      "body": "{\"ok\":true,\"tool\":\"ping_untch\",\"ts\":\"2026-07-10T20:10:27.847Z\"}",
+      "settlement": {
+        "amount": null,
+        "errorMessage": null,
+        "errorReason": null,
+        "network": "eip155:196",
+        "payer": "0x98f43eabcad380f4f1f0587ae945bc8c79e43c0b",
+        "status": "success",
+        "success": true,
+        "transaction": "0xfc45c18a1245494b186eaa9f0b48bb904cbfea3d7aeb2615c3c0e7912ed2485d"
+      },
+      "settlementTx": "0xfc45c18a1245494b186eaa9f0b48bb904cbfea3d7aeb2615c3c0e7912ed2485d",
+      "paymentSignature": "eyJ4NDAyVmVyc2lvbiI6MiwicGF5bG9hZCI6eyJhdXRob3JpemF0aW9uIjp7ImZyb20iOiIweDk4RjQzZUFCY2FEMzgwZjRmMUYwNTg3YUU5NDVCYzhjNzlFNDNjMGIiLCJ0byI6IjB4OThGNDNlQUJjYUQzODBmNGYxRjA1ODdhRTk0NUJjOGM3OUU0M2MwYiIsInZhbHVlIjoiMTAwMDAiLCJ2YWxpZEFmdGVyIjoiMTc4MzcxNDIyMSIsInZhbGlkQmVmb3JlIjoiMTc4MzcxNDUyNiIsIm5vbmNlIjoiMHgzYjYwOTBiNzk2YWViMTkxMmY2ZjhkN2YwYTdjODBmZDg2MDFhMTA2MDc1NThjOGU2OWYyY2QyMmYzYTU1MjFiIn0sInNpZ25hdHVyZSI6IjB4YjAxNGIwMTI5OGQ5OWNlZTg0MzZlNmM3MDVhN2ViNjkwYzlmMzE3MWRlMTk2ZGJhZGRlNzg2NTE1NzY3MGRmNjQ1NThiYTA4ZDU0MDQ0NDc3ZDAzM2VkNWZiMDYyNzc2NTUwODRiOTJkZGNhMWNlZGQ2MzIyOTg3Mzg0YWY2MDExYyJ9LCJyZXNvdXJjZSI6eyJ1cmwiOiJodHRwOi8vdW50Y2gtYXNwLXByb2R1Y3Rpb24udXAucmFpbHdheS5hcHAvcGluZ191bnRjaCIsImRlc2NyaXB0aW9uIjoiVW50Y2ggaGVsbG8td29ybGQgcGluZyDigJQgRDAuMSBwcm9vZi1vZi1yYWlsIGhlYWx0aCBjaGVjayIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRlZCI6eyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJlaXAxNTU6MTk2IiwiYW1vdW50IjoiMTAwMDAiLCJhc3NldCI6IjB4Nzc5ZGVkMGM5ZTEwMjIyMjVmOGUwNjMwYjM1YTliNTRiZTcxMzczNiIsInBheVRvIjoiMHg5OEY0M2VBQmNhRDM4MGY0ZjFGMDU4N2FFOTQ1QmM4Yzc5RTQzYzBiIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsibmFtZSI6IlVTROKCrjAiLCJ2ZXJzaW9uIjoiMSJ9fX0="
+    },
+    "decision": {
+      "decision": "APPROVED",
+      "receiptRef": {
+        "receiptId": "0x1ec1669671956cd1d6091cf707ab0abb26f81fcffc6bb43e3de697acaa3d6aa2",
+        "status": "QUEUED"
+      },
+      "ruleTrace": [
+        {
+          "rule": "policy.active",
+          "result": "PASS",
+          "observed": "ACTIVE"
+        },
+        {
+          "rule": "duplicate.taskHash_endpoint_paramsHash",
+          "result": "PASS"
+        },
+        {
+          "rule": "cooldown.sameService",
+          "result": "PASS",
+          "limit": 300
+        },
+        {
+          "rule": "replay.contextBinding",
+          "result": "PASS",
+          "implemented": false,
+          "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+        },
+        {
+          "rule": "recipient.allowDeny",
+          "result": "PASS",
+          "observed": "0x98f43eabcad380f4f1f0587ae945bc8c79e43c0b"
+        },
+        {
+          "rule": "agent.workerAllowDeny",
+          "result": "PASS",
+          "observed": "0"
+        },
+        {
+          "rule": "category.allow",
+          "result": "PASS",
+          "observed": "market-data"
+        },
+        {
+          "rule": "vendor.lcbFloor",
+          "result": "PASS",
+          "implemented": false,
+          "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+        },
+        {
+          "rule": "intent.maxAmountBound",
+          "result": "PASS",
+          "observed": "0.01",
+          "limit": "0.01",
+          "token": "USDT"
+        },
+        {
+          "rule": "perCall.cap",
+          "result": "PASS",
+          "observed": "0.01",
+          "limit": "1.00",
+          "token": "USDT"
+        },
+        {
+          "rule": "budget.daily",
+          "result": "PASS",
+          "observed": "0.51",
+          "limit": "25.00",
+          "token": "USDT"
+        },
+        {
+          "rule": "rate.limit",
+          "result": "PASS",
+          "observed": 1,
+          "limit": 40
+        },
+        {
+          "rule": "proof.tierRequired",
+          "result": "PASS",
+          "implemented": false,
+          "note": "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule"
+        },
+        {
+          "rule": "escalate.aboveThreshold",
+          "result": "PASS",
+          "observed": "0.01",
+          "limit": "5.00",
+          "token": "USDT"
+        }
+      ],
+      "reasons": [
+        "all implemented rules passed; stubbed rules not yet enforced (see trace implemented:false)"
+      ],
+      "intentHash": "0xc38aa782f5524ffbc8a07b29099013e115167bad9093b26696ba0d1e3b941300",
+      "policyId": "1"
+    },
+    "binding": {
+      "recipient": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+      "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+      "amount": "10000",
+      "resourceUrl": "http://untch-asp-production.up.railway.app/ping_untch",
+      "endpoint": "https://untch-asp-production.up.railway.app/ping_untch",
+      "method": "GET",
+      "nonce": "",
+      "expiry": ""
+    }
+  },
+  "settlementTxs": {
+    "preflight": "0x86b5d0ced53937b128c6ecfd0fa075ba2e9f1dd49f8d99d5e8c3b1d8aa0ce00d",
+    "guardedCall": "0xfc45c18a1245494b186eaa9f0b48bb904cbfea3d7aeb2615c3c0e7912ed2485d"
+  }
+}
