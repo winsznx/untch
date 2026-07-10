@@ -1,0 +1,52 @@
+{
+  "chainId": 1952,
+  "factory": "0x1562c6eb1813016c8562cf6771cbf715007bb7e9",
+  "intentRegistry": "0xf87e50f83172c2dace7d274e4c701212caeb1372",
+  "factoryDeployTx": "0x2a8a9974126138540da7ca9894f01ee5a077740e9d9acc422e612364550ae666",
+  "factoryDeployBlock": 35213461,
+  "factoryVerified": "Pass - Verified (OKLink)",
+  "demo": {
+    "owner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "agent": "0x000000000000000000000000000000000000a9e7",
+    "oracle": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "token": "0xf202ce41d76ee1a2aec72e7a9180331d437ddd41",
+    "perTxCap": "100000000",
+    "epochBudget": "250000000",
+    "epochLen": "86400",
+    "requireAnchoredIntent": true,
+    "predictedVault": "0x84BA33d61d47881876f9AD5Ed88ed3e129c78975",
+    "deployVaultTx": "0xdcb75034df2c2baa10ba6d1d2827f9789da07e1110ddf47e92651053f1beccf9",
+    "deployVaultBlock": 35213533,
+    "deployVaultGasUsed": "1161751",
+    "deployedVaultCodeSize": 4940,
+    "predictionMatch": true
+  },
+  "vaultReadbackViaRawRpc": {
+    "note": "read via `cast call` against the deployed vault — NOT the deploy script's own report",
+    "owner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "oracle": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "intentRegistry": "0xF87E50f83172c2Dace7D274E4C701212CaEB1372",
+    "perTxCap": "100000000",
+    "epochBudget": "250000000",
+    "epochLen": "86400",
+    "requireAnchoredIntent": true,
+    "tokenAllowed": true,
+    "allMatchInputs": true
+  },
+  "guardsProvenOnChain": {
+    "doubleDeploySamePairReverts": {
+      "expected": "VaultAlreadyDeployed(owner, agent)",
+      "revertSelector": "0x9771b235",
+      "reverted": true
+    },
+    "ownerNotCallerReverts": {
+      "expected": "OwnerMustBeSender(owner, caller)",
+      "revertSelector": "0xa33c0f06",
+      "reverted": true
+    }
+  },
+  "explorer": "https://www.oklink.com/x-layer-testnet/address/0x1562c6eb1813016c8562cf6771cbf715007bb7e9",
+  "verifyCmd": "forge verify-contract 0x1562c6eb1813016c8562cf6771cbf715007bb7e9 src/UntchVaultFactory.sol:UntchVaultFactory --chain 1952 --constructor-args $(cast abi-encode \"constructor(address)\" 0xf87e50f83172c2dace7d274e4c701212caeb1372) --verifier oklink --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET",
+  "roundTripOk": true,
+  "testnetOnly": true
+}

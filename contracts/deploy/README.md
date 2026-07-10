@@ -251,3 +251,49 @@ forge verify-contract 0x42e699ffd8215d48397a049b4f7a176db06f4848 src/UntchVault.
   --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET
 ```
 
+
+---
+
+# UntchVaultFactory — deploy runbook (X Layer **testnet only**)
+
+PRD §10.4 — the CREATE2 factory that deploys `UntchVault` at addresses deterministic per
+`(owner, agent)`. Holds no funds; only deploys vaults. This is the **fifth and final** §10 contract.
+
+> **Mainnet is deferred (§22.4).** The full five-contract set clears §28's mainnet checklist
+> **together**; nothing here touches X Layer mainnet.
+
+## Status (2026-07-10) — ✅ LIVE ON X LAYER TESTNET
+
+- **Factory:** [`0x1562c6eb1813016c8562cf6771cbf715007bb7e9`](https://www.oklink.com/x-layer-testnet/address/0x1562c6eb1813016c8562cf6771cbf715007bb7e9)
+  — source **verified** on OKLink ("Pass - Verified"). Deploy tx `0x2a8a…e666` (block 35213461).
+- **Canonical `intentRegistry` (immutable, decision B):** `0xf87e50f83172c2dace7d274e4c701212caeb1372`
+  (the live §10.2 registry) — read back on-chain from the factory.
+- **Real predict → deploy → readback demo** (`deploy/untch-vault-factory-testnet-receipt.json`):
+  - `computeVaultAddress(owner, agent, …)` predicted `0x84BA33d61d47881876f9AD5Ed88ed3e129c78975`
+    (0 code before deploy).
+  - `deployVault(…)` (tx `0xdcb75034…f1beccf9`, block 35213533, **gasUsed 1,161,751**) landed the vault
+    at **exactly** that address (0 → 4940 bytes) — prediction matched.
+  - The deployed vault's immutables, read back independently via raw `cast` (not the driver's report):
+    `owner` = the deployer/caller, `oracle` = `0x7099…79C8`, `intentRegistry` = the factory's canonical
+    `0xF87E…1372`, `perTxCap` 100000000, `epochBudget` 250000000, `epochLen` 86400,
+    `requireAnchoredIntent` true, `tokenAllowed(token)` true — **every value matches what was passed in**.
+  - Guards proven on-chain via `eth_call`: a second `deployVault(owner, agent, …)` reverts
+    **`VaultAlreadyDeployed`** (`0x9771b235`); `deployVault` with `owner != caller` reverts
+    **`OwnerMustBeSender`** (`0xa33c0f06`).
+
+## How it was deployed (reproducible)
+
+```bash
+# ops wallet 0x98F43e… funded with testnet OKB (chainId 1952). DEPLOYER_PRIVATE_KEY = ops key from
+# services/asp/.env (BUYER_PRIVATE_KEY on this wallet); never printed. INTENT_REGISTRY/DEMO_AGENT/
+# DEMO_TOKEN default to the live §10.2 registry + fixed demo salt seed + the live demo ERC20.
+RPC_URL=https://testrpc.xlayer.tech DEPLOYER_PRIVATE_KEY=<ops-key> BROADCAST=1 \
+  pnpm exec tsx scripts/deploy-untch-vault-factory.ts
+
+# verify source on OKLink (constructor is the single canonical intentRegistry address):
+forge verify-contract 0x1562c6eb1813016c8562cf6771cbf715007bb7e9 src/UntchVaultFactory.sol:UntchVaultFactory \
+  --chain 1952 \
+  --constructor-args $(cast abi-encode "constructor(address)" 0xf87e50f83172c2dace7d274e4c701212caeb1372) \
+  --verifier oklink \
+  --verifier-url https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER_TESTNET
+```
