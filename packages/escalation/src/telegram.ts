@@ -24,6 +24,9 @@ export interface TelegramChannelOptions {
   readonly fetchImpl?: FetchImpl;
   /** getUpdates long-poll timeout, seconds. */
   readonly pollTimeoutSec?: number;
+  /** Backoff (ms) after a transport error OR a non-ok Bot API response (invalid token, 429). Prevents a
+   *  revoked/expired token from hot-looping getUpdates. Default 3000. */
+  readonly errorBackoffMs?: number;
   /** DI clock (unix ms). Defaults to Date.now. */
   readonly clock?: () => number;
 }
@@ -60,12 +63,14 @@ export class TelegramChannel implements Channel {
   private readonly cfg: TelegramConfig;
   private readonly fetchImpl: FetchImpl;
   private readonly pollTimeoutSec: number;
+  private readonly errorBackoffMs: number;
   private readonly clock: () => number;
 
   constructor(opts: TelegramChannelOptions) {
     this.cfg = opts.config;
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
     this.pollTimeoutSec = opts.pollTimeoutSec ?? 25;
+    this.errorBackoffMs = opts.errorBackoffMs ?? 3000;
     this.clock = opts.clock ?? Date.now;
   }
 
@@ -123,11 +128,18 @@ export class TelegramChannel implements Channel {
               allowed_updates: ["message", "callback_query"],
             }),
           });
-          const json = (await res.json()) as { ok: boolean; result?: TgUpdate[] };
-          updates = json.ok && json.result ? json.result : [];
+          const json = (await res.json()) as { ok: boolean; result?: TgUpdate[]; description?: string };
+          if (!json.ok) {
+            // A non-ok Bot API response (invalid/revoked token → 401, rate-limit → 429, etc.). This
+            // returns IMMEDIATELY (no long-poll hold), so re-polling at once would hot-loop and hammer
+            // the API. Back off. The escalation is safe in Postgres; the timeout still fails it closed.
+            await sleep(this.errorBackoffMs);
+            continue;
+          }
+          updates = json.result ?? [];
         } catch {
-          // Transient poll failure — back off briefly and retry; the escalation is safe in Postgres.
-          await sleep(1000);
+          // Transient transport failure — back off and retry; the escalation is safe in Postgres.
+          await sleep(this.errorBackoffMs);
           continue;
         }
 

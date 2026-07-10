@@ -105,6 +105,29 @@ test("parseUpdate normalizes a callback_query into a transport-neutral InboundRe
   assert.equal(inbound!.receivedAtMs, 2000);
 });
 
+test("startReceiving backs off on a non-ok getUpdates (invalid token) — never hot-loops", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls++;
+    // The exact shape Telegram returns for a revoked/invalid token.
+    return new Response(JSON.stringify({ ok: false, error_code: 401, description: "Unauthorized" }), {
+      status: 401,
+    });
+  }) as unknown as typeof fetch;
+
+  let inboundCount = 0;
+  const channel = new TelegramChannel({ config, fetchImpl, errorBackoffMs: 20 });
+  const receiver = await channel.startReceiving(async () => {
+    inboundCount++;
+  });
+  await new Promise((r) => setTimeout(r, 120));
+  await receiver.stop();
+
+  assert.equal(inboundCount, 0, "a 401 yields no inbound approvals");
+  // With a 20ms backoff over ~120ms, calls must be a small handful — NOT hundreds/thousands (hot loop).
+  assert.ok(calls > 0 && calls < 15, `expected bounded polling under backoff, got ${calls} calls`);
+});
+
 test("parseUpdate normalizes a text-baseline message and ignores non-commands", () => {
   const channel = new TelegramChannel({ config, clock: () => 3000 });
   const inbound = channel.parseUpdate({
