@@ -155,18 +155,20 @@ export function SiteHeader() {
             {PRIMARY_CTA.label}
           </Link>
 
-          {/* DECISION 4 — mobile trigger (< 768px). */}
+          {/* DECISION 4 — mobile trigger (< 768px). 44px tap target (bars stay 24px). */}
           <button
             type="button"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             aria-controls="site-mobile-menu"
             onClick={() => setOpen((value) => !value)}
-            className={`relative h-6 w-6 md:hidden ${FOCUS_RING}`}
+            className={`-mr-2 flex h-11 w-11 items-center justify-center md:hidden ${FOCUS_RING}`}
           >
-            <span className={barClass(open, "top")} />
-            <span className={barClass(open, "middle")} />
-            <span className={barClass(open, "bottom")} />
+            <span className="relative block h-6 w-6">
+              <span className={barClass(open, "top")} />
+              <span className={barClass(open, "middle")} />
+              <span className={barClass(open, "bottom")} />
+            </span>
           </button>
         </div>
       </div>

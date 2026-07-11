@@ -86,11 +86,13 @@ export function DashboardNav() {
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className={`relative h-6 w-6 ${FOCUS}`}
+          className={`-mr-2 flex h-11 w-11 items-center justify-center ${FOCUS}`}
         >
-          <span className="absolute left-0 right-0 top-1.5 h-0.5 bg-cloud-white" />
-          <span className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-cloud-white" />
-          <span className="absolute left-0 right-0 bottom-1.5 h-0.5 bg-cloud-white" />
+          <span className="relative block h-6 w-6">
+            <span className="absolute left-0 right-0 top-1.5 h-0.5 bg-cloud-white" />
+            <span className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-cloud-white" />
+            <span className="absolute left-0 right-0 bottom-1.5 h-0.5 bg-cloud-white" />
+          </span>
         </button>
       </div>
 
