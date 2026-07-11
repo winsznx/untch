@@ -10,6 +10,8 @@ import {
   createRedis,
   createTimeoutQueue,
   createTimeoutWorker,
+  DEMO_OPERATOR_ID,
+  PgOperatorsRepo,
   hasDiscordEnv,
   hasSlackEnv,
   hasTelegramEnv,
@@ -74,6 +76,8 @@ export interface EscalationWiring {
 interface RegisteredChannel {
   readonly channel: Channel;
   readonly binding: BindingVerifier;
+  /** The bound operator handle on this channel — provisioned into the operator-identity readiness table. */
+  readonly handle: string;
   readonly label: string;
 }
 
@@ -85,6 +89,7 @@ function configuredChannels(): RegisteredChannel[] {
     out.push({
       channel: new TelegramChannel({ config: cfg }),
       binding: interimTelegramBinding(cfg.chatId),
+      handle: cfg.chatId,
       label: `telegram (chat ${cfg.chatId})`,
     });
   }
@@ -93,6 +98,7 @@ function configuredChannels(): RegisteredChannel[] {
     out.push({
       channel: new DiscordChannel({ config: cfg }),
       binding: interimDiscordBinding(cfg.userId),
+      handle: cfg.userId,
       label: `discord (user ${cfg.userId})`,
     });
   }
@@ -101,6 +107,7 @@ function configuredChannels(): RegisteredChannel[] {
     out.push({
       channel: new SlackChannel({ config: cfg }),
       binding: interimSlackBinding(cfg.userId),
+      handle: cfg.userId,
       label: `slack (user ${cfg.userId})`,
     });
   }
@@ -128,6 +135,15 @@ export async function initEscalationWiring(): Promise<EscalationWiring | null> {
   const registry = new ChannelRegistry();
   for (const c of channelsCfg) registry.register(c.channel);
   const binding = combineBindings(...channelsCfg.map((c) => c.binding));
+
+  // Operator-identity readiness (migration 004): mirror today's single operator + its channel handles into
+  // the (channel, handle) → operator table. This is provisioning only — the live §27 check above still uses
+  // `binding`; nothing reads these tables for authority yet. A second approver later is an INSERT, not a
+  // migration. See @untch/escalation operators.ts.
+  const operators = new PgOperatorsRepo(pool);
+  for (const c of channelsCfg) {
+    await operators.ensureBinding(DEMO_OPERATOR_ID, c.channel.name, c.handle);
+  }
 
   // Separate connections for the Queue vs the Worker: a BullMQ Worker holds a blocking command on its
   // connection, so sharing one with the Queue would stall the scheduler's add(). (The receipt writer
@@ -174,6 +190,10 @@ export async function initEscalationWiring(): Promise<EscalationWiring | null> {
 
   const gateway: EscalationGateway = {
     async onEscalated({ input, decision, stored, pollRef }) {
+      // Readiness: ensure this policy has its (single, today) approver row. v1 = one row per policy.
+      await operators.ensurePolicyApprover(decision.policyId, DEMO_OPERATOR_ID).catch((err) =>
+        console.warn(`[asp] policy_approvers ensure failed (readiness only, non-fatal): ${(err as Error).message}`),
+      );
       const created = await service.createEscalation({
         pollRef,
         intentId: decision.intentHash,

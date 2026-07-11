@@ -60,6 +60,13 @@ export {
 } from "./repo";
 export { PgEscalationsRepo } from "./repo-pg";
 export { InMemoryEscalationsRepo } from "./repo-memory";
+export {
+  type OperatorsRepo,
+  type OperatorBinding,
+  PgOperatorsRepo,
+  InMemoryOperatorsRepo,
+  DEMO_OPERATOR_ID,
+} from "./operators";
 export { createPool, runMigrations, type Pool } from "./db";
 export {
   loadStorageConfig,

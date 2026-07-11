@@ -145,6 +145,15 @@ code roundtrip) is not yet capturable. The interim is one configured id per chan
 channel is `IGNORED_UNBOUND`. Clearly labeled temporary. **Real requirement (named future step): a proper
 onboarding/binding flow, presumably via the eventual dashboard (§15).**
 
+**Schema-readiness for multiple operators is in place ([`migrations/004_operators.sql`](migrations/004_operators.sql)),
+but no logic reads it yet.** The live binding above is still the env-derived `combineBindings`. In parallel,
+three tables persist the operator identity so a second approver later is an INSERT, not a migration:
+`escalation_operators` (the identity), `escalation_operator_bindings` (the `(channel, handle) → operator`
+map — the persisted form of the env bindings), and `policy_approvers(policy_id, operator_id)` (which
+operators may approve a policy). They are provisioned with exactly today's one operator: its channel
+handles at boot, a `policy_approvers` row per policy when it escalates. This is deliberately readiness
+only — nothing consults these tables for authority until the §15 flow wires them.
+
 ---
 
 ## Run it
