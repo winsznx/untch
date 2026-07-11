@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  images: {
+    // Serve AVIF first (then WebP), so next/image's responsive variants stay tiny.
+    formats: ["image/avif", "image/webp"],
+  },
   transpilePackages: [
     "@untch/design-tokens",
     "@untch/canon",
