@@ -218,5 +218,5 @@ export function draftFromVerify(input: SpendIntentInput, ctx: VerifyReceiptConte
     metadataHash: metadataHashOfVerify(input, ctx),
   };
 
-  return { onchain, kind: "VERIFY" };
+  return { onchain, kind: "VERIFY", provenance: ctx.provenance };
 }

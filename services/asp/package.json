@@ -32,6 +32,7 @@
     "@untch/policy-store": "workspace:*",
     "@untch/proof-engine": "workspace:*",
     "@untch/receipt-writer": "workspace:*",
+    "@untch/trust-bureau": "workspace:*",
     "@untch/x402-guard": "workspace:*",
     "express": "^4.21.2",
     "tsx": "^4.19.2",

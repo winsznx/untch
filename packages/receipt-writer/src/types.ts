@@ -64,6 +64,11 @@ export interface ReceiptDraft {
   readonly onchain: ReceiptOnchain;
   readonly kind: ReceiptKind;
   readonly ledger?: LedgerEntryInput;
+  /** VERIFY receipts only: whether T0 verified the seller's committed stored intent
+   *  ("store-committed", authoritative) or caller-supplied inline data on a store miss
+   *  ("caller-supplied", lower confidence). Persisted as a queryable column so the §12 Bureau's
+   *  `delivery_consistency` can weight the two differently. Absent on DECISION receipts. */
+  readonly provenance?: "store-committed" | "caller-supplied";
 }
 
 /** What a status poll returns (a minimal slice of the eventual §11 get_ledger tool). */

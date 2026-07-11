@@ -67,8 +67,8 @@ export class PgReceiptsRepo implements ReceiptsRepo {
         `INSERT INTO receipts (
            receipt_id, kind, status, intent_hash, policy_id, policy_hash, agent_id, vendor_id,
            amount, token, category, pay_type, task_hash, decision, verify_result, proof_tier,
-           metadata_hash
-         ) VALUES ($1,$2,'QUEUED',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           metadata_hash, provenance
+         ) VALUES ($1,$2,'QUEUED',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          ON CONFLICT (receipt_id) DO NOTHING`,
         [
           o.receiptId,
@@ -87,6 +87,7 @@ export class PgReceiptsRepo implements ReceiptsRepo {
           o.verifyResult,
           o.proofTier,
           o.metadataHash,
+          draft.provenance ?? null,
         ],
       );
       // A VERIFY receipt moves no money — it has no ledger entry. Only DECISION receipts do.

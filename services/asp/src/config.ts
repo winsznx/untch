@@ -30,6 +30,12 @@ export const PREFLIGHT_PRICE = "$0.05" as const;
 export const VERIFY_ROUTE = "/verify_delivery" as const;
 export const VERIFY_PRICE = "$0.10" as const;
 
+/** §11 Untch Bureau tools — priced $0.20 each, settled the same way as preflight/verify (real USDT0 via
+ *  the OKX x402 facilitator). Deterministic §12 weighted scoring with LCB enforcement; no LLM (I1). */
+export const SCORE_VENDOR_ROUTE = "/score_vendor" as const;
+export const SCORE_BUYER_ROUTE = "/score_buyer" as const;
+export const SCORE_PRICE = "$0.20" as const;
+
 /** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
 export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
 

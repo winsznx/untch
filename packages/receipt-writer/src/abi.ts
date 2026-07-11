@@ -141,6 +141,26 @@ export const UNTCH_RECEIPTS_ABI = [
       { name: "writer", type: "address", indexed: true },
     ],
   },
+  {
+    type: "function",
+    name: "anchorScore",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "merkleRoot", type: "bytes32" },
+      { name: "epoch", type: "uint64" },
+      { name: "subjectKind", type: "uint8" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "ScoreAnchored",
+    inputs: [
+      { name: "merkleRoot", type: "bytes32", indexed: false },
+      { name: "epoch", type: "uint64", indexed: false },
+      { name: "subjectKind", type: "uint8", indexed: false },
+    ],
+  },
 ] as const;
 
 /** UntchReceipts.OpKind — NONE=0, ADD_WRITER=1, REMOVE_WRITER=2, TRANSFER_ADMIN=3. */
