@@ -16,6 +16,7 @@ export {
   amountBaseUnits,
   DECISION_NA,
   type VerifyReceiptContext,
+  type VerifyIntentProvenance,
 } from "./mapping";
 export {
   loadStorageConfig,

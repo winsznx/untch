@@ -92,6 +92,7 @@ test("draftFromVerify builds a VERIFY receipt with a REAL verifyResult/proofTier
     proofTier: 0,
     payloadHash: keccak256(toHex("delivered-payload")),
     verifiedAt: "2026-07-11T12:00:00Z",
+    provenance: "store-committed",
   });
   // #then it is a VERIFY-kind receipt carrying the real result (not the default 0)
   assert.equal(draft.kind, "VERIFY");
@@ -116,6 +117,7 @@ test("a FAIL verification records verifyResult=FAIL (2), never a silent pass", (
     proofTier: 0,
     payloadHash: keccak256(toHex("bad-payload")),
     verifiedAt: "2026-07-11T12:00:00Z",
+    provenance: "caller-supplied",
   });
   assert.equal(draft.onchain.verifyResult, 2);
   assert.notEqual(draft.onchain.verifyResult, VERIFY_RESULT_CODE.PASS);

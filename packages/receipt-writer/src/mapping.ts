@@ -148,6 +148,11 @@ export function draftFromDecision(input: SpendIntentInput, decision: Decision): 
   return { onchain, kind: "DECISION", ledger };
 }
 
+/** Whether the verified intent came from the seller's committed store or from caller-supplied inline
+ *  data (a store miss) — committed into the receipt's metadata so it is tamper-evident and available
+ *  to Trust Bureau as a confidence weight. Mirrors the seller's `IntentProvenance`. */
+export type VerifyIntentProvenance = "store-committed" | "caller-supplied";
+
 /** The verification context a VERIFY receipt records — the real result of a `verify_delivery` call.
  *  `verifyResultCode` / `proofTier` come straight from `@untch/proof-engine`'s `VerifyOutcome`. */
 export interface VerifyReceiptContext {
@@ -162,9 +167,12 @@ export interface VerifyReceiptContext {
   readonly payloadHash: Hex;
   /** ISO-8601 UTC verify time — the day rollup key + receiptId salt. */
   readonly verifiedAt: string;
+  /** Whether the intent was the committed store record or caller-supplied inline data (store miss). */
+  readonly provenance: VerifyIntentProvenance;
 }
 
-/** Hash the (off-chain) verify context this receipt stands for — on-chain carries hashes only (§10.3). */
+/** Hash the (off-chain) verify context this receipt stands for — on-chain carries hashes only (§10.3).
+ *  Includes `provenance` so a caller-supplied (lower-confidence) result is committed as such. */
 function metadataHashOfVerify(input: SpendIntentInput, ctx: VerifyReceiptContext): Hex {
   const redacted = JSON.stringify({
     intentHash: ctx.intentHash,
@@ -172,6 +180,7 @@ function metadataHashOfVerify(input: SpendIntentInput, ctx: VerifyReceiptContext
     proofTier: ctx.proofTier,
     payloadHash: ctx.payloadHash,
     verifiedAt: ctx.verifiedAt,
+    provenance: ctx.provenance,
     category: input.category,
   });
   return keccak256(toHex(redacted));

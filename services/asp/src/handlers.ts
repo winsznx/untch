@@ -364,6 +364,119 @@ export interface VerifyDeps {
   readonly receiptEnqueuer?: ReceiptEnqueuer;
 }
 
+/**
+ * Where the intent T0 verified against came from:
+ *   • `store-committed` — the intent this instance actually cached from a prior `create_spend_intent`
+ *     (the authoritative committed record). Its `acceptanceHash` is what T0 bound against.
+ *   • `caller-supplied` — no cached record existed (never created here, or lost on restart), so T0 ran
+ *     against intent data the CALLER supplied inline. Lower confidence: nothing on our side proves this
+ *     is the intent that was originally committed. Trust Bureau (built next) weights it accordingly.
+ */
+export type IntentProvenance = "store-committed" | "caller-supplied";
+
+interface ResolvedForVerify {
+  readonly input: SpendIntentInput;
+  readonly provenance: IntentProvenance;
+}
+
+/**
+ * Intent resolution for verify_delivery — UNLIKE preflight's `resolveIntent`, the cached record is
+ * AUTHORITATIVE for T0. When the supplied `intentHash` hits the store, T0 verifies against the STORED
+ * intent's committed `acceptanceHash`, never whatever the caller also sent inline. If an inline intent
+ * is supplied alongside a store hit, it must match the stored record EXACTLY (its recomputed hash must
+ * equal both the stored record's hash AND the `intentHash` parameter) — otherwise the call is rejected
+ * with `ACCEPTANCE_MISMATCH`, never a silent preference for either side. Inline data is used for T0
+ * ONLY on a genuine store miss, and the outcome is then labeled `caller-supplied`.
+ */
+function resolveIntentForVerify(
+  body: unknown,
+  store: InMemoryIntentStore,
+): ResolvedForVerify | HandlerResult {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const hasInlineWrapper = b.intent !== undefined && b.intent !== null;
+  const topLevelLooksInline =
+    !hasInlineWrapper && typeof b.owner === "string" && b.taskHash !== undefined;
+  const inlineSource = hasInlineWrapper ? b.intent : topLevelLooksInline ? b : undefined;
+  const intentHashParam = typeof b.intentHash === "string" ? b.intentHash : undefined;
+
+  let parsedInline: { input: SpendIntentInput; intentHash: Hex } | null = null;
+  if (inlineSource !== undefined) {
+    try {
+      parsedInline = parseFullIntent(inlineSource);
+    } catch (err) {
+      if (err instanceof IntentValidationError) {
+        return { status: 400, body: errorEnvelope(err.code, err.message) };
+      }
+      throw err;
+    }
+  }
+
+  if (intentHashParam) {
+    const stored = store.get(intentHashParam);
+    if (stored) {
+      // Store hit — the cached record is AUTHORITATIVE. If inline was also supplied, it must match the
+      // stored record exactly; a tampered acceptanceHash (or any struct field) changes the recomputed
+      // hash and is rejected here rather than silently preferred.
+      if (parsedInline) {
+        const storedHash = intentHashOf(stored);
+        const inlineHash = parsedInline.intentHash;
+        const matches =
+          inlineHash.toLowerCase() === storedHash.toLowerCase() &&
+          inlineHash.toLowerCase() === intentHashParam.toLowerCase() &&
+          parsedInline.input.acceptanceHash.toLowerCase() === stored.acceptanceHash.toLowerCase();
+        if (!matches) {
+          return {
+            status: 400,
+            body: errorEnvelope(
+              "ACCEPTANCE_MISMATCH",
+              `inline intent does not match the stored record for ${intentHashParam}: ` +
+                `inline hash ${inlineHash} / acceptanceHash ${parsedInline.input.acceptanceHash} vs ` +
+                `stored hash ${storedHash} / acceptanceHash ${stored.acceptanceHash}. ` +
+                `The stored (committed) intent is authoritative for T0 — resubmit matching data or omit the inline intent.`,
+            ),
+          };
+        }
+      }
+      return { input: stored, provenance: "store-committed" };
+    }
+
+    // Store miss. Inline may stand in, but only if it binds to the supplied hash — and the result is
+    // labeled caller-supplied (lower confidence).
+    if (parsedInline) {
+      if (intentHashParam.toLowerCase() !== parsedInline.intentHash.toLowerCase()) {
+        return {
+          status: 400,
+          body: errorEnvelope(
+            "INTENT_HASH_MISMATCH",
+            `provided intentHash ${intentHashParam} does not match the recomputed hash ${parsedInline.intentHash} of the inline intent`,
+          ),
+        };
+      }
+      return { input: parsedInline.input, provenance: "caller-supplied" };
+    }
+    return {
+      status: 404,
+      body: errorEnvelope(
+        "INTENT_NOT_FOUND",
+        `intentHash ${intentHashParam} is not in this instance's in-memory store (created on another instance, or lost on restart — there is no SpendIntentRegistry yet). Resubmit with the inline intent (it will be verified as caller-supplied, lower confidence).`,
+      ),
+    };
+  }
+
+  // No intentHash parameter — a pure inline verify. There is no committed reference to be authoritative
+  // against, so the intent is caller-supplied by definition.
+  if (parsedInline) {
+    return { input: parsedInline.input, provenance: "caller-supplied" };
+  }
+  return {
+    status: 400,
+    body: errorEnvelope(
+      "INTENT_REQUIRED",
+      "provide either `intentHash` (from create_spend_intent) or an inline `intent` with the §8.1 struct + operational fields",
+    ),
+  };
+}
+
 /** Read the acceptance-criteria doc from the request body (optional; the proof engine FAILs a
  *  committed-but-unpresented spec rather than passing it). Must be a JSON object when present. */
 function readCriteria(body: unknown): AcceptanceCriteria | undefined | HandlerResult {
@@ -423,7 +536,7 @@ export async function handleVerifyDelivery(body: unknown, deps: VerifyDeps): Pro
     return { status: 400, body: errorEnvelope("POLICY_ID_REQUIRED", "a `policyId` (uint256 decimal string) is required") };
   }
 
-  const resolved = resolveIntent(body, deps.intentStore);
+  const resolved = resolveIntentForVerify(body, deps.intentStore);
   if (isHandlerResult(resolved)) return resolved;
 
   const stored = await deps.policyProvider.loadStored(policyId);
@@ -466,6 +579,7 @@ export async function handleVerifyDelivery(body: unknown, deps: VerifyDeps): Pro
         proofTier: outcome.proofTier,
         payloadHash: outcome.payloadHash,
         verifiedAt: outcome.verifiedAt,
+        provenance: resolved.provenance,
       });
     } catch (err) {
       console.error("[asp] verify receipt enqueue failed — returning receiptRef: null", err);
@@ -488,6 +602,9 @@ export async function handleVerifyDelivery(body: unknown, deps: VerifyDeps): Pro
       hygieneEvent: outcome.hygieneEvent,
       payloadHash: outcome.payloadHash,
       verifiedAt: outcome.verifiedAt,
+      // Whether T0 verified the STORED committed intent or CALLER-supplied inline data (lower
+      // confidence). Labeled so a store miss is never silently treated as a committed-intent result.
+      intentProvenance: resolved.provenance,
       // §7.4 real receipt ref (or null when unwired / enqueue failed).
       receiptRef,
     },

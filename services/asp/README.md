@@ -80,9 +80,20 @@ Response:
   "receiptRef": { "receiptId": "0x…", "status": "QUEUED" } // or null when the §7.4 writer is unwired
 }
 ```
+**The cached intent is authoritative for T0.** When the supplied `intentHash` hits this instance's
+store (a prior `create_spend_intent`), T0 verifies against the **stored committed** intent's
+`acceptanceHash` — never whatever the caller also sent inline. If an inline intent is supplied
+alongside a store hit, it must match the stored record **exactly** (its recomputed hash must equal both
+the stored record's hash and the `intentHash` parameter), else `400 ACCEPTANCE_MISMATCH` — a tampered
+`acceptanceHash` is rejected, never silently preferred. Inline data drives T0 **only on a genuine store
+miss**, and the response then carries `"intentProvenance": "caller-supplied"` (vs `"store-committed"`)
+— committed into the VERIFY receipt's metadata hash so a store-miss result is never mistaken for a
+committed-intent one, and Trust Bureau (built next) can weight it as lower-confidence.
+
 Resolution / errors: missing `policyId` → `400`; unknown `policyId` → `404 POLICY_NOT_FOUND`; an intent
-bound to a different policy hash → `400 POLICY_BINDING_MISMATCH`; no `payload`/`payloadHash` → `400
-DELIVERY_REQUIRED`. **REQUIRED_TIER is T0** in this build — a policy requiring a higher tier returns
+bound to a different policy hash → `400 POLICY_BINDING_MISMATCH`; inline ≠ the stored committed record →
+`400 ACCEPTANCE_MISMATCH`; store miss with only an `intentHash` → `404 INTENT_NOT_FOUND` (fail closed —
+T0 never runs); no `payload`/`payloadHash` → `400 DELIVERY_REQUIRED`. **REQUIRED_TIER is T0** in this build — a policy requiring a higher tier returns
 `VERIFY_TIER_NOT_IMPLEMENTED` (WITHHOLD), never a silent pass, because T1–T4 are honest stubs
 (`@untch/proof-engine` README). A `0x0` committed `acceptanceHash` returns `VERIFY_SKIPPED_UNCOMMITTED`
 — a logged buyer-hygiene event (§7.3), not a pass. On success the VERIFY receipt is durably enqueued
