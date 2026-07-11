@@ -67,10 +67,16 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 const ESCALATE_ABOVE = 5;
 const CALL_AMOUNT = 8; // > escalateAbove(5), < perCallCap(500) ⇒ ESCALATED_THRESHOLD (not blocked)
 
+/** For `dual`, which two (or more) DISTINCT channels must confirm. Override with a 2nd CLI arg, e.g.
+ *  `escalation:proof dual telegram,slack`. Defaults to the two channels that reliably DM one operator. */
+const DUAL_CHANNELS = (process.argv[3]?.trim() || "telegram,slack")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 /** Rules that (a) escalate a modest call before any BLOCK rule and (b) authorize the target channels. */
 function escalateRules(mode: Mode): Record<string, unknown> {
-  const channels =
-    mode === "discord" ? ["discord"] : mode === "slack" ? ["slack"] : ["telegram", "discord", "slack"];
+  const channels = mode === "discord" ? ["discord"] : mode === "slack" ? ["slack"] : DUAL_CHANNELS;
   const channelCaps: Record<string, number> = {};
   for (const c of channels) channelCaps[c] = 100;
   return {
@@ -143,7 +149,7 @@ async function main(): Promise<void> {
   if (mode !== "discord" && mode !== "slack" && mode !== "dual") {
     fail(2, `usage: escalation:proof <discord|slack|dual> (got ${JSON.stringify(process.argv[2] ?? "")})`);
   }
-  const targets = mode === "discord" ? ["discord"] : mode === "slack" ? ["slack"] : ["telegram", "discord", "slack"];
+  const targets = mode === "discord" ? ["discord"] : mode === "slack" ? ["slack"] : DUAL_CHANNELS;
 
   const sellerUrl = (process.env.SELLER_URL?.trim() || DEFAULT_SELLER).replace(/\/$/, "");
   const buyerKeyRaw = process.env.BUYER_PRIVATE_KEY?.trim();

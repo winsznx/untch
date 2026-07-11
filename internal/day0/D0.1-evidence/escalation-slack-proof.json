@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "proof": "§7.2 / §27 escalation — LIVE SLACK proof through the public endpoint",
+    "mode": "slack",
+    "buyer": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "seller": "https://untch-asp-production.up.railway.app",
+    "network": "eip155:196",
+    "capturedAt": "2026-07-11T05:19:19.893Z",
+    "note": "The whole escalation lifecycle (create, fan-out, §27 authority boundary, resolve) ran on the deployed seller. The buyer only called public HTTP and polled."
+  },
+  "policy": {
+    "policyId": "63318375489949832638826612097930642094952192405791194654995539926836350582589",
+    "policyHash": "0x4796b4bcbe6d169260086a5985535e8b11519855872fd674da3907bf4c0a193f",
+    "registerTx": "0xcf6be03bc7158c9821b892a8039ddb79a25b9d39675dbf66aa589858dbd37e17"
+  },
+  "intentAmount": 8,
+  "preflightDecision": "ESCALATED_THRESHOLD",
+  "preflightSettlementTx": "0xd42e31fb0c26f9bf365fbce3a1ef384e510fb2fb59fd7b557f3abe24dd716d34",
+  "pollRef": "0x55113b9652693bf0df79c33b5c8d9615f0273e0395fadd156784c9b615a2f0df",
+  "fannedOutTo": [
+    "slack"
+  ],
+  "guardPollBefore": "PENDING",
+  "guardPollAfter": "APPROVED",
+  "recordFinalStatus": "APPROVED",
+  "approvedChannels": [
+    "slack"
+  ],
+  "resolvedBy": {
+    "handle": "U0AMY10U0QK",
+    "channel": "slack"
+  },
+  "channelLog": [
+    {
+      "at": "2026-07-11T05:16:17.277Z",
+      "kind": "FANOUT",
+      "channel": "slack",
+      "latencyMs": 650
+    },
+    {
+      "at": "2026-07-11T05:19:16.601Z",
+      "kind": "INBOUND",
+      "detail": "resolved APPROVED via slack",
+      "handle": "U0AMY10U0QK",
+      "channel": "slack",
+      "outcome": "APPROVED",
+      "latencyMs": 4
+    }
+  ],
+  "independentlyConfirmed": true
+}
