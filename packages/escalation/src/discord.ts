@@ -36,11 +36,19 @@ import {
 
 type FetchImpl = typeof fetch;
 
-/** Gateway intents: DIRECT_MESSAGES (receive DMs) | MESSAGE_CONTENT (read their text — privileged). Button
- *  interactions arrive regardless of intents; MESSAGE_CONTENT is only needed for the text baseline. */
+/**
+ * Gateway intents. GUILDS (non-privileged) is REQUIRED: without it the bot's session reports zero guilds
+ * and Discord refuses DMs to guild members ("no mutual guilds"), and it also gates DM-eligibility. DIRECT
+ * MESSAGES lets the bot receive DM events. Button interactions (the primary approve/deny path) arrive
+ * regardless of intents. MESSAGE_CONTENT (1<<15) is PRIVILEGED and is deliberately NOT requested here: a
+ * bot that identifies with a privileged intent it hasn't been granted is disconnected with close code 4014
+ * ("Disallowed intent(s)") and never connects at all. The "APPROVE <code>" DM text baseline is the only
+ * thing that needs message content; enable the Message Content privileged intent in the Developer Portal
+ * and OR it in via `opts.intents` if you want that path. Buttons do not need it.
+ */
+const INTENT_GUILDS = 1 << 0;
 const INTENT_DIRECT_MESSAGES = 1 << 12;
-const INTENT_MESSAGE_CONTENT = 1 << 15;
-const DEFAULT_INTENTS = INTENT_DIRECT_MESSAGES | INTENT_MESSAGE_CONTENT;
+const DEFAULT_INTENTS = INTENT_GUILDS | INTENT_DIRECT_MESSAGES;
 
 const OP_DISPATCH = 0;
 const OP_HEARTBEAT = 1;

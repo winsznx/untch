@@ -152,7 +152,10 @@ test("gateway: on HELLO it IDENTIFYs with the token + intents, answers server he
   const identify = ws.sentJson().find((f) => f.op === 2);
   assert.ok(identify, "IDENTIFY sent after HELLO");
   assert.equal((identify!.d as { token: string }).token, "BOTTOKEN");
-  assert.ok(((identify!.d as { intents: number }).intents & (1 << 12)) !== 0, "DIRECT_MESSAGES intent set");
+  const intents = (identify!.d as { intents: number }).intents;
+  assert.ok((intents & (1 << 12)) !== 0, "DIRECT_MESSAGES intent set");
+  assert.ok((intents & (1 << 0)) !== 0, "GUILDS intent set (required for DMs / mutual-guild)");
+  assert.equal(intents & (1 << 15), 0, "MESSAGE_CONTENT (privileged) NOT requested by default — avoids 4014");
 
   // A server-initiated heartbeat (op 1) is answered immediately.
   ws.receive({ op: 1 });
