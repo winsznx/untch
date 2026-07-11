@@ -173,18 +173,31 @@ export async function initEscalationWiring(): Promise<EscalationWiring | null> {
     if (expired) console.log(`[asp] escalation ${job.data.escalationId} timed out → EXPIRED (default DENY)`);
   });
 
-  // Start every channel's inbound receiver; each inbound runs through the §27 authority boundary.
+  // Start every channel's inbound receiver; each inbound runs through the §27 authority boundary. A
+  // receiver that fails to start (e.g. a bad token, or a runtime without a global WebSocket) is logged
+  // and SKIPPED — never fatal. A notification channel must not be able to take down the money/preflight
+  // plane; the seller stays up and serves preflight with whatever channels did start.
   const receivers: ChannelReceiver[] = [];
+  const receiving: string[] = [];
   for (const c of channelsCfg) {
-    const receiver = await c.channel.startReceiving(async (r) => {
-      const res = await service.handleInbound(r);
-      console.log(`[asp] escalation inbound ${res.outcome} — escalation=${res.escalationId ?? "?"} status=${res.status ?? "-"} via ${r.channel}`);
-    });
-    receivers.push(receiver);
+    try {
+      const receiver = await c.channel.startReceiving(async (r) => {
+        const res = await service.handleInbound(r);
+        console.log(`[asp] escalation inbound ${res.outcome} — escalation=${res.escalationId ?? "?"} status=${res.status ?? "-"} via ${r.channel}`);
+      });
+      receivers.push(receiver);
+      receiving.push(c.channel.name);
+    } catch (err) {
+      console.error(
+        `[asp] ${c.channel.name} receiver failed to start — continuing WITHOUT inbound on it ` +
+          `(send still works): ${(err as Error).message}`,
+      );
+    }
   }
 
   console.log(
-    `[asp] escalation service wired — channels: ${channelsCfg.map((c) => c.label).join(", ")}; ` +
+    `[asp] escalation service wired (node ${process.version}) — registered: ` +
+      `${channelsCfg.map((c) => c.label).join(", ")}; receiving on: [${receiving.join(", ") || "none"}]; ` +
       "timeouts on shared Redis.",
   );
 
