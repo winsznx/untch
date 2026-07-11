@@ -56,7 +56,7 @@ export function Hero() {
 
           <div className="flex justify-center lg:justify-end">
             <Image
-              src="/untchflow.avif"
+              src="/untch-flow.avif"
               alt="Untch decision flow: an agent's payments checked against policy, one approved, a duplicate blocked, and a larger one escalated for approval."
               width={1024}
               height={1536}
