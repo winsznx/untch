@@ -1,6 +1,8 @@
 import { DashCard, SectionTitle } from "../../../components/dashboard/ui";
+import { NoHistory } from "../../../components/dashboard/no-history";
 import { LedgerExport } from "../../../components/dashboard/ledger-export";
 import { getLedgerEntries } from "../../../lib/dashboard/data";
+import { getScope } from "../../../lib/dashboard/scope";
 import { txUrl } from "../../../lib/onchain";
 
 const TYPE_COLOR: Record<string, string> = {
@@ -10,7 +12,16 @@ const TYPE_COLOR: Record<string, string> = {
   REFUND: "var(--color-positive)",
 };
 
-export default function Ledger() {
+export default async function Ledger() {
+  const scope = await getScope();
+  if (!scope.isDemoOperator) {
+    return (
+      <div className="flex flex-col gap-8">
+        <SectionTitle kicker="Ledger" title="Ledger explorer" />
+        <NoHistory authenticated={scope.authenticated} address={scope.address} what="ledger entries" />
+      </div>
+    );
+  }
   const entries = getLedgerEntries();
   return (
     <div className="flex flex-col gap-8">

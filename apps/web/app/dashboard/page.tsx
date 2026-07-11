@@ -1,10 +1,37 @@
 import Link from "next/link";
 import { DashCard, SectionTitle, StatTile, Meter, DecisionChip } from "../../components/dashboard/ui";
+import { NoHistory } from "../../components/dashboard/no-history";
 import { getSavings, getProofTiers, getIntentStream } from "../../lib/dashboard/data";
+import { getScope } from "../../lib/dashboard/scope";
 
 const usd = (n: number) => n.toFixed(2);
 
-export default function Overview() {
+export default async function Overview() {
+  const scope = await getScope();
+  if (!scope.isDemoOperator) {
+    return (
+      <div className="flex flex-col gap-10">
+        <SectionTitle kicker="Overview" title="Proof surface" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatTile label="Waste blocked" value="0.00 USDT" sub="0 payments stopped" accent="signal" />
+          <StatTile label="Spent" value="0.00 USDT" sub="0 approved" accent="text" />
+          <StatTile label="Escalated" value="0.00 USDT" sub="0 held for approval" accent="data" />
+          <StatTile label="Verified deliveries" value="0" sub="T0 schema proof" accent="positive" />
+        </div>
+        <NoHistory
+          authenticated={scope.authenticated}
+          address={scope.address}
+          what="activity"
+          cta={
+            <Link href="/dashboard/policies" className="text-body-sm underline-offset-4 hover:underline" style={{ color: "var(--color-data)" }}>
+              Create your first policy →
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+
   const s = getSavings();
   const proof = getProofTiers();
   const stream = getIntentStream();

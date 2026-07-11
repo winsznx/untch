@@ -1,12 +1,15 @@
 import { DashCard, SectionTitle, Mono } from "../../../components/dashboard/ui";
 import { EscalationDecision } from "../../../components/dashboard/escalation-decision";
 import { listDashboardEscalations, type DashboardEscalationView } from "../../../lib/dashboard/escalation-runtime";
+import { getScope } from "../../../lib/dashboard/scope";
 
 /** The in-process escalation state changes on approve/deny, so this reads live per request. */
 export const dynamic = "force-dynamic";
 
 export default async function Escalations() {
-  const escalations = await listDashboardEscalations();
+  const scope = await getScope();
+  // The seeded escalation belongs to the demo operator; any other signed-in wallet has none of its own.
+  const escalations = scope.isDemoOperator ? await listDashboardEscalations() : [];
   return (
     <div className="flex flex-col gap-8">
       <SectionTitle kicker="Approvals" title="Escalation inbox" />

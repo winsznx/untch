@@ -1,6 +1,7 @@
 import { DashCard, SectionTitle, Mono } from "../../../components/dashboard/ui";
 import { PolicyActions } from "../../../components/dashboard/policy-actions";
 import { getPolicy } from "../../../lib/dashboard/data";
+import { getScope } from "../../../lib/dashboard/scope";
 import { addressUrl, txUrl } from "../../../lib/onchain";
 
 const REGISTRY = "0xe1d74c90801db0fa806c72eb818b7671b8233532";
@@ -8,9 +9,10 @@ const ANCHORED_POLICY_ID = "7602946840958382783791195214254493941551970174148685
 const ANCHORED_POLICY_HASH = "0x308ec9d3a4059f28305277eaf33d45d35422cd8542d762fe3727c5cfed5aad3b";
 const REGISTER_TX = "0x7f71579cabe5cabca30701bb46d58812170bcd38a0fe627c77437d8483998e6f";
 
-export default function Policies() {
+export default async function Policies() {
   const p = getPolicy();
   const r = p.rules;
+  const scope = await getScope();
   return (
     <div className="flex flex-col gap-8">
       <SectionTitle kicker="Policy builder" title="Spend policy" />
@@ -19,13 +21,13 @@ export default function Policies() {
         Create, update, and pause are real transactions signed by your connected wallet against the deployed
         PolicyRegistry on X Layer testnet. Reading and canonical hashing are the same @untch/policy-store and
         @untch/canon surfaces the MCP preflight uses, so the ruleset you commit here is the ruleset your agent
-        is checked against.
+        is checked against.{scope.isDemoOperator ? "" : " The rules below are a starting template; Create registers your own policy."}
       </p>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <DashCard>
           <div className="flex flex-col gap-4">
-            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Guided rules</span>
+            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>{scope.isDemoOperator ? "Guided rules" : "Starting template"}</span>
             <KV k="Daily budget" v={`${r.budgets.daily} ${r.budgets.token}`} />
             <KV k="Per-call cap" v={`${r.perCallCap} · on exceed ${r.onPerCallCapExceeded}`} />
             <KV k="Escalate above" v={`${r.escalateAbove}`} />

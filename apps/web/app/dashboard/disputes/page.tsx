@@ -1,10 +1,21 @@
 import { DashCard, SectionTitle, Mono, DecisionChip } from "../../../components/dashboard/ui";
+import { NoHistory } from "../../../components/dashboard/no-history";
 import { getDispute } from "../../../lib/dashboard/data";
+import { getScope } from "../../../lib/dashboard/scope";
 import { txUrl } from "../../../lib/onchain";
 
 const DISPUTE_ANCHOR = "0xcb577c8e55f7f7a4777d2d0eb04d84b2422dcd2016f7e0291c12872caefcb699";
 
-export default function Disputes() {
+export default async function Disputes() {
+  const scope = await getScope();
+  if (!scope.isDemoOperator) {
+    return (
+      <div className="flex flex-col gap-8">
+        <SectionTitle kicker="Disputes" title="Dispute packet" />
+        <NoHistory authenticated={scope.authenticated} address={scope.address} what="disputes" />
+      </div>
+    );
+  }
   const d = getDispute();
   const cat = d.decision.category ?? "ESCALATED";
   return (

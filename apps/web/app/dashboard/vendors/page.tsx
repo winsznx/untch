@@ -1,7 +1,18 @@
 import { DashCard, SectionTitle, BandChip, Mono } from "../../../components/dashboard/ui";
+import { NoHistory } from "../../../components/dashboard/no-history";
 import { getVendors, type VendorView } from "../../../lib/dashboard/data";
+import { getScope } from "../../../lib/dashboard/scope";
 
 export default async function Vendors() {
+  const scope = await getScope();
+  if (!scope.isDemoOperator) {
+    return (
+      <div className="flex flex-col gap-8">
+        <SectionTitle kicker="Trust Bureau" title="Vendor directory" />
+        <NoHistory authenticated={scope.authenticated} address={scope.address} what="vendor history" />
+      </div>
+    );
+  }
   const vendors = await getVendors();
   return (
     <div className="flex flex-col gap-8">

@@ -1,9 +1,20 @@
 import { DashCard, SectionTitle, DecisionChip, Mono } from "../../../components/dashboard/ui";
+import { NoHistory } from "../../../components/dashboard/no-history";
 import { getIntentStream, type IntentRow } from "../../../lib/dashboard/data";
+import { getScope } from "../../../lib/dashboard/scope";
 
 const OUTCOME_LABEL = (o: string) => o.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
-export default function IntentStream() {
+export default async function IntentStream() {
+  const scope = await getScope();
+  if (!scope.isDemoOperator) {
+    return (
+      <div className="flex flex-col gap-8">
+        <SectionTitle kicker="Live" title="Intent stream" />
+        <NoHistory authenticated={scope.authenticated} address={scope.address} what="intents" />
+      </div>
+    );
+  }
   const stream = getIntentStream();
   return (
     <div className="flex flex-col gap-8">
