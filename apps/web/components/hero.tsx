@@ -28,7 +28,7 @@ import { WordHighlight } from "./word-highlight";
 export function Hero() {
   return (
     <section className="bg-canvas">
-      <div className="mx-auto max-w-page px-6 py-16 lg:py-24">
+      <div className="mx-auto flex min-h-[calc(100dvh-80px)] max-w-page flex-col justify-center px-6 py-16 lg:py-20">
         <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
           <div className="flex flex-col gap-8">
             <span className="text-caption uppercase" style={{ color: "var(--color-data)", letterSpacing: "0.24px" }}>
