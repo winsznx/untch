@@ -161,6 +161,26 @@ export const UNTCH_RECEIPTS_ABI = [
       { name: "subjectKind", type: "uint8", indexed: false },
     ],
   },
+  {
+    type: "function",
+    name: "anchorAudit",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "reportHash", type: "bytes32" },
+      { name: "agentId", type: "bytes32" },
+      { name: "period", type: "uint64" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "AuditAnchored",
+    inputs: [
+      { name: "reportHash", type: "bytes32", indexed: false },
+      { name: "agentId", type: "bytes32", indexed: false },
+      { name: "period", type: "uint64", indexed: false },
+    ],
+  },
 ] as const;
 
 /** UntchReceipts.OpKind — NONE=0, ADD_WRITER=1, REMOVE_WRITER=2, TRANSFER_ADMIN=3. */

@@ -36,6 +36,19 @@ export const SCORE_VENDOR_ROUTE = "/score_vendor" as const;
 export const SCORE_BUYER_ROUTE = "/score_buyer" as const;
 export const SCORE_PRICE = "$0.20" as const;
 
+/** §11 report tools — deterministic aggregation over durable receipt/ledger/escalation history, hashed
+ *  and anchored via UntchReceipts.anchorAudit (§10.3 AuditAnchored). No LLM (I1).
+ *  • generate_dispute_packet — $0.50 (§11), per intentRef.
+ *  • reconcile_agent_spend   — §11 lists $0.25/day · $1.00/wk. The x402 middleware prices one static
+ *    value per route, so this build charges the $0.25 base rate for BOTH day and week reports; the
+ *    day/week differentiated (discounted-week) pricing is DEFERRED with the dashboard wallet-connect
+ *    flow, the SAME honest posture the policy tools already take (see "Reconcile pricing" in README).
+ *    The tool still produces day OR week reports correctly — only the differentiated price is deferred. */
+export const DISPUTE_ROUTE = "/generate_dispute_packet" as const;
+export const DISPUTE_PRICE = "$0.50" as const;
+export const RECONCILE_ROUTE = "/reconcile_agent_spend" as const;
+export const RECONCILE_PRICE = "$0.25" as const;
+
 /** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
 export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
 

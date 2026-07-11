@@ -16,6 +16,8 @@ real stored policies by `policyId`; `create/update/pause_policy` write them.
 | `create_spend_intent` | `POST /create_spend_intent` | **bundled** | validate + **hash** a §8.1 SpendIntent, **bound to a real stored policy** | `@untch/canon` + `@untch/policy-store` |
 | `preflight_payment` | `POST /preflight_payment` | `$0.05` | real **§7.1 decision** against a **real stored policy** | `@untch/policy-engine` + `@untch/policy-store` |
 | `verify_delivery` | `POST /verify_delivery` | `$0.10` | real **§13/§7.3 T0** verification → a **real VERIFY receipt** | `@untch/proof-engine` + `@untch/receipt-writer` |
+| `generate_dispute_packet` | `POST /generate_dispute_packet` | `$0.50` | assemble an intent's **real evidence bundle** (decision/verify/receipts/escalation/timeline) → hash → **`AuditAnchored`** | `@untch/reports` |
+| `reconcile_agent_spend` | `POST /reconcile_agent_spend` | `$0.25`² | assemble an agent's **real spend/blocked-waste report** over a period → hash → **`AuditAnchored`** | `@untch/reports` |
 | `create_spend_policy` | `POST /create_spend_policy` | unpriced¹ | **real `PolicyRegistry.registerPolicy` tx** + durable store | `@untch/policy-store` |
 | `update_policy` | `POST /update_policy` | unpriced¹ | **real `updatePolicy` tx** (version bump) + sync | `@untch/policy-store` |
 | `pause_policy` / `resume_policy` | `POST /pause_policy` · `/resume_policy` | unpriced¹ | **real `pausePolicy`/`resumePolicy` tx** + sync | `@untch/policy-store` |
@@ -24,6 +26,13 @@ real stored policies by `policyId`; `create/update/pause_policy` write them.
 dashboard wallet-connect flow (§15): these are operator-admin actions signed by the operator's own
 wallet, not buyer x402 calls. In this interim build they are **unpriced admin routes** signed by the
 demo/burner operator wallet — see **Operator signing** below.
+
+² §11 prices `reconcile_agent_spend` at $0.25/day · $1.00/wk. The x402 middleware prices one static value
+per route, so this build charges the **$0.25 base rate for both** day and week reports; the differentiated
+week price is deferred (same posture as ¹). Both report tools assemble+hash from durable history and reuse
+`UntchReceipts.anchorAudit` (§10.3 `AuditAnchored`) — see `packages/reports/README.md` for the reuse
+decision, output shapes, honest gaps, and the two real testnet anchor proofs. Per-call seller-side
+anchoring is off unless `REPORT_ANCHOR_WRITER_KEY` is set (the seller holds no writer key by default).
 
 Buyer tools settle in **USDT0** (`0x779Ded0c9e1022225f8E0630b35a9b54bE713736`, 6dp) via x402 v2:
 `PAYMENT-REQUIRED` 402 challenge → EIP-3009 `PAYMENT-SIGNATURE` → `PAYMENT-RESPONSE` (settlement tx).

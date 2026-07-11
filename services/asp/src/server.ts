@@ -5,6 +5,8 @@ import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import {
   CREATE_INTENT_ROUTE,
   CREATE_POLICY_ROUTE,
+  DISPUTE_PRICE,
+  DISPUTE_ROUTE,
   ESCALATION_STATUS_ROUTE,
   loadSellerConfig,
   NETWORK,
@@ -14,6 +16,8 @@ import {
   PREFLIGHT_PRICE,
   PREFLIGHT_ROUTE,
   RECEIPT_STATUS_ROUTE,
+  RECONCILE_PRICE,
+  RECONCILE_ROUTE,
   RESUME_POLICY_ROUTE,
   SCORE_BUYER_ROUTE,
   SCORE_PRICE,
@@ -36,11 +40,13 @@ import {
   handleUpdatePolicy,
 } from "./policy-handlers";
 import { handleScoreVendor, handleScoreBuyer } from "./score-handlers";
+import { handleGenerateDisputePacket, handleReconcileAgentSpend } from "./report-handlers";
 import { createLedgerState } from "./ledger-state";
 import { initReceiptWiring, type ReceiptWiring } from "./receipts";
 import { initPolicyWiring, type PolicyWiring } from "./policy-wiring";
 import { initEscalationWiring, type EscalationWiring } from "./escalation-wiring";
 import { initScoreWiring, type ScoreWiring } from "./score-wiring";
+import { initReportWiring, type ReportWiring } from "./report-wiring";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -71,6 +77,7 @@ export function createSellerApp(
   policyWiring: PolicyWiring | null = null,
   escalationWiring: EscalationWiring | null = null,
   scoreWiring: ScoreWiring | null = null,
+  reportWiring: ReportWiring | null = null,
 ): Express {
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey: config.okxApiKey,
@@ -117,6 +124,16 @@ export function createSellerApp(
         [`POST ${SCORE_BUYER_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SCORE_PRICE },
           description: "Untch score_buyer — deterministic §12 buyer-hygiene score (fully receipt-backed, LCB, no LLM)",
+          mimeType: "application/json",
+        },
+        [`POST ${DISPUTE_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: DISPUTE_PRICE },
+          description: "Untch generate_dispute_packet — assemble an intent's evidence bundle from durable history, anchor via AuditAnchored (§10.3, no LLM)",
+          mimeType: "application/json",
+        },
+        [`POST ${RECONCILE_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: RECONCILE_PRICE },
+          description: "Untch reconcile_agent_spend — assemble an agent's spend/blocked-waste report over a period, anchor via AuditAnchored (§10.3, no LLM)",
           mimeType: "application/json",
         },
       },
@@ -181,6 +198,27 @@ export function createSellerApp(
     handleScoreBuyer(req.body, {
       dataSource: scoreWiring.dataSource,
       walletProvider: scoreWiring.walletProvider,
+    })
+      .then((result) => send(res, result))
+      .catch(next);
+  });
+
+  // §11 report tools. `reportWiring` is null when DATABASE_URL is unset → 503 (no report store).
+  app.post(DISPUTE_ROUTE, (req, res, next) => {
+    if (!reportWiring) return send(res, reportStoreUnconfigured());
+    handleGenerateDisputePacket(req.body, {
+      dataSource: reportWiring.dataSource,
+      anchorer: reportWiring.anchorer,
+    })
+      .then((result) => send(res, result))
+      .catch(next);
+  });
+
+  app.post(RECONCILE_ROUTE, (req, res, next) => {
+    if (!reportWiring) return send(res, reportStoreUnconfigured());
+    handleReconcileAgentSpend(req.body, {
+      dataSource: reportWiring.dataSource,
+      anchorer: reportWiring.anchorer,
     })
       .then((result) => send(res, result))
       .catch(next);
@@ -274,6 +312,16 @@ function scoreStoreUnconfigured(): HandlerResult {
   };
 }
 
+function reportStoreUnconfigured(): HandlerResult {
+  return {
+    status: 503,
+    body: errorBody(
+      "REPORT_STORE_NOT_CONFIGURED",
+      "no report store on this instance (DATABASE_URL unset) — generate_dispute_packet/reconcile_agent_spend need the shared Postgres receipt/ledger/escalation history",
+    ),
+  };
+}
+
 function send(res: Response, result: HandlerResult): void {
   res.status(result.status).json(result.body);
 }
@@ -281,21 +329,30 @@ function send(res: Response, result: HandlerResult): void {
 const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1]);
 if (isMain) {
   const config = loadSellerConfig();
-  Promise.all([initReceiptWiring(), initPolicyWiring(), initEscalationWiring(), initScoreWiring()])
+  Promise.all([
+    initReceiptWiring(),
+    initPolicyWiring(),
+    initEscalationWiring(),
+    initScoreWiring(),
+    initReportWiring(),
+  ])
     .then(
-      ([receiptWiring, policyWiring, escalationWiring, scoreWiring]: [
+      ([receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring]: [
         ReceiptWiring | null,
         PolicyWiring | null,
         EscalationWiring | null,
         ScoreWiring | null,
+        ReportWiring | null,
       ]) => {
-        createSellerApp(config, receiptWiring, policyWiring, escalationWiring, scoreWiring).listen(config.port, () => {
+        createSellerApp(config, receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring).listen(config.port, () => {
           console.log(`[asp] listening on http://localhost:${config.port}`);
           console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
           console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canon hash + real-policy binding)`);
           console.log(`[asp]   POST ${PREFLIGHT_ROUTE}    ${PREFLIGHT_PRICE}   (real §7.1 preflight vs a real stored policy)`);
           console.log(`[asp]   POST ${VERIFY_ROUTE}     ${VERIFY_PRICE}   (real §13/§7.3 T0 delivery verification)`);
           console.log(`[asp]   POST ${SCORE_VENDOR_ROUTE} / ${SCORE_BUYER_ROUTE}  ${SCORE_PRICE}   (real §12 Bureau scoring, LCB)`);
+          console.log(`[asp]   POST ${DISPUTE_ROUTE} ${DISPUTE_PRICE}   (dispute packet: assemble+hash+AuditAnchored)`);
+          console.log(`[asp]   POST ${RECONCILE_ROUTE} ${RECONCILE_PRICE}   (reconcile spend/waste: assemble+hash+AuditAnchored)`);
           console.log(`[asp]   POST ${CREATE_POLICY_ROUTE} / ${UPDATE_POLICY_ROUTE} / ${PAUSE_POLICY_ROUTE}  (operator, on-chain)`);
           console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
           console.log(`[asp]   GET  ${ESCALATION_STATUS_ROUTE}  (escalation status poll, §7.2)`);
