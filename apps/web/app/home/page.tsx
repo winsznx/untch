@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "../../components/site-header";
 import { Hero } from "../../components/hero";
+import { Problem } from "../../components/landing/problem";
+import { HowItWorks } from "../../components/landing/how-it-works";
+import { Modes } from "../../components/landing/modes";
+import { LiveProof } from "../../components/landing/live-proof";
 import { SocialProof } from "../../components/social-proof";
 import { CtaBand } from "../../components/cta-band";
 import { SiteFooter } from "../../components/site-footer";
@@ -20,6 +24,10 @@ export default function Home() {
     <>
       <SiteHeader />
       <Hero />
+      <Problem />
+      <HowItWorks />
+      <Modes />
+      <LiveProof />
       <SocialProof />
       <CtaBand />
       <SiteFooter />
