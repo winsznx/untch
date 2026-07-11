@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { headers } from "next/headers";
 import { DashboardNav } from "../../components/dashboard/nav";
 import { AuthBar } from "../../components/wallet/auth-bar";
 import { Providers } from "../../components/wallet/providers";
@@ -9,9 +10,12 @@ export const metadata: Metadata = {
   description: "Operator dashboard — the proof surface for agent spend governance.",
 };
 
-export default function DashboardLayout({ children }: { children: ReactNode }) {
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  // The wagmi connection cookie hydrates the client's initial wallet state (see providers.tsx).
+  const cookie = (await headers()).get("cookie");
+
   return (
-    <Providers>
+    <Providers cookie={cookie}>
       <div className="min-h-screen bg-canvas">
         <DashboardNav />
         <div className="lg:pl-64">

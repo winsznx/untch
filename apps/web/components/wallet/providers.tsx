@@ -9,9 +9,8 @@ import {
   RainbowKitProvider,
   type AuthenticationStatus,
 } from "@rainbow-me/rainbowkit";
-import { WagmiProvider } from "wagmi";
+import { cookieToInitialState, WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { xLayerTestnet } from "../../lib/chain/chains";
 import { buildSiweMessage } from "../../lib/wallet/siwe";
 import { wagmiConfig } from "../../lib/wallet/wagmi";
 import { AuthStatusContext } from "./wallet-context";
@@ -32,8 +31,12 @@ import { AuthStatusContext } from "./wallet-context";
 
 const queryClient = new QueryClient();
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children, cookie }: { children: ReactNode; cookie: string | null }) {
   const [status, setStatus] = useState<AuthenticationStatus>("loading");
+  // Hydrate wagmi's React state from the connection cookie on the very first render, so a wallet that is
+  // already connected reads as connected immediately (matching the browser extension) instead of flashing
+  // "disconnected" — which would leave RainbowKit's SIWE step with no connector and hang "Preparing message".
+  const initialState = cookieToInitialState(wagmiConfig, cookie ?? undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,9 +60,10 @@ export function Providers({ children }: { children: ReactNode }) {
           const res = await fetch("/api/auth/nonce");
           return ((await res.json()) as { nonce: string }).nonce;
         },
-        createMessage: ({ nonce, address }) =>
+        createMessage: ({ nonce, address, chainId }) =>
           buildSiweMessage({
             address,
+            chainId,
             domain: window.location.host,
             uri: window.location.origin,
             nonce,
@@ -85,11 +89,10 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiProvider config={wagmiConfig} initialState={initialState}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitAuthenticationProvider adapter={adapter} status={status}>
           <RainbowKitProvider
-            initialChain={xLayerTestnet}
             theme={darkTheme({ accentColor: "#5350cc", accentColorForeground: "white", borderRadius: "large" })}
           >
             <AuthStatusContext.Provider value={status}>{children}</AuthStatusContext.Provider>

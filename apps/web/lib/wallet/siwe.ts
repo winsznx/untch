@@ -1,6 +1,5 @@
 import type { Address } from "viem";
 import { createSiweMessage } from "viem/siwe";
-import { X_LAYER_TESTNET_ID } from "../chain/chains";
 
 /**
  * SIWE (EIP-4361) message construction, shared by the client that signs and the server that verifies.
@@ -18,6 +17,8 @@ export const SIWE_STATEMENT =
 
 export interface SiweParams {
   readonly address: Address;
+  /** The chain the wallet is actually on when it signs — SIWE identity is chain-agnostic. */
+  readonly chainId: number;
   readonly domain: string;
   readonly uri: string;
   readonly nonce: string;
@@ -29,7 +30,7 @@ export interface SiweParams {
 export function buildSiweMessage(p: SiweParams): string {
   return createSiweMessage({
     address: p.address,
-    chainId: X_LAYER_TESTNET_ID,
+    chainId: p.chainId,
     domain: p.domain,
     nonce: p.nonce,
     uri: p.uri,
