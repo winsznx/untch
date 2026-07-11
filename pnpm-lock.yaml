@@ -31,9 +31,33 @@ importers:
 
   apps/web:
     dependencies:
+      '@untch/canon':
+        specifier: workspace:*
+        version: link:../../packages/canon
       '@untch/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
+      '@untch/policy-engine':
+        specifier: workspace:*
+        version: link:../../packages/policy-engine
+      '@untch/policy-store':
+        specifier: workspace:*
+        version: link:../../packages/policy-store
+      '@untch/proof-engine':
+        specifier: workspace:*
+        version: link:../../packages/proof-engine
+      '@untch/receipt-writer':
+        specifier: workspace:*
+        version: link:../../packages/receipt-writer
+      '@untch/reports':
+        specifier: workspace:*
+        version: link:../../packages/reports
+      '@untch/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@untch/trust-bureau':
+        specifier: workspace:*
+        version: link:../../packages/trust-bureau
       next:
         specifier: 16.2.10
         version: 16.2.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7)

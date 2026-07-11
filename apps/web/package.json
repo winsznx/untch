@@ -11,7 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@untch/canon": "workspace:*",
     "@untch/design-tokens": "workspace:*",
+    "@untch/policy-engine": "workspace:*",
+    "@untch/policy-store": "workspace:*",
+    "@untch/proof-engine": "workspace:*",
+    "@untch/receipt-writer": "workspace:*",
+    "@untch/reports": "workspace:*",
+    "@untch/shared": "workspace:*",
+    "@untch/trust-bureau": "workspace:*",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"
