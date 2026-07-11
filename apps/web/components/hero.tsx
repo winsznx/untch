@@ -28,7 +28,7 @@ import { HeroIllustration } from "./hero-illustration";
 export function Hero() {
   return (
     <section className="relative bg-canvas">
-      <div className="mx-auto max-w-page px-6 pt-16 pb-28 lg:pt-24 lg:pb-40">
+      <div className="mx-auto max-w-page px-6 pt-16 pb-12 lg:pt-24 lg:pb-16">
         <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-3">
           <div className="hidden justify-center lg:flex">
             <HeroIllustration className="max-w-[280px]" />
@@ -66,7 +66,7 @@ export function Hero() {
         </div>
       </div>
 
-      <div className="relative z-10 mx-auto -mb-20 max-w-[640px] px-6 lg:-mb-28">
+      <div className="relative z-10 mx-auto max-w-[640px] px-6 pb-20 lg:pb-28">
         <HeroPreviewCard />
       </div>
     </section>

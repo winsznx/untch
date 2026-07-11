@@ -14,7 +14,7 @@ export function Problem() {
               The gap
             </span>
             <h2 className="text-heading-lg" style={{ color: "var(--color-canvas)" }}>
-              The question is not whether an agent can pay. It is whether it can pay safely.
+              Paying is solved. Paying safely is not.
             </h2>
           </div>
           <div className="flex flex-col gap-6">
