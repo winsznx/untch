@@ -33,7 +33,8 @@
   "pnpm": {
     "onlyBuiltDependencies": ["esbuild"],
     "overrides": {
-      "ioredis": "5.10.1"
+      "ioredis": "5.10.1",
+      "postcss": "^8.5.16"
     }
   }
 }
