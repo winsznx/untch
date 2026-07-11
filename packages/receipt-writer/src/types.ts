@@ -37,6 +37,12 @@ export interface ReceiptOnchain {
   readonly metadataHash: Hex;
 }
 
+/** §8 `receipts.kind`. This slice produces DECISION (preflight) and VERIFY (delivery verification)
+ *  receipts; the other §8 kinds (SCORE_ROOT, AUDIT, VAULT_SPEND, BROKER_SETTLE) arrive with their
+ *  subsystems. Distinguishing kind is what lets a VERIFY receipt legitimately carry a real
+ *  verifyResult/proofTier while a DECISION receipt carries the real decision. */
+export type ReceiptKind = "DECISION" | "VERIFY";
+
 /** A ledger entry written at decision time — authoritative regardless of chain state (§8). */
 export interface LedgerEntryInput {
   readonly agentId: Hex;
@@ -50,11 +56,14 @@ export interface LedgerEntryInput {
   readonly vendorKey: string | null;
 }
 
-/** Everything needed to durably enqueue one receipt: the on-chain payload + the ledger entry it
- *  produces. Written together in one Postgres transaction. */
+/** Everything needed to durably enqueue one receipt: the on-chain payload, its §8 `kind`, and the
+ *  ledger entry it produces (if any). A DECISION receipt carries a ledger entry (a spend or a
+ *  blocked-and-saved event); a VERIFY receipt moves no money, so its `ledger` is absent. Receipt +
+ *  ledger (when present) are written together in one Postgres transaction. */
 export interface ReceiptDraft {
   readonly onchain: ReceiptOnchain;
-  readonly ledger: LedgerEntryInput;
+  readonly kind: ReceiptKind;
+  readonly ledger?: LedgerEntryInput;
 }
 
 /** What a status poll returns (a minimal slice of the eventual §11 get_ledger tool). */

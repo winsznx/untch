@@ -25,6 +25,11 @@ export const CREATE_INTENT_ROUTE = "/create_spend_intent" as const;
 export const PREFLIGHT_ROUTE = "/preflight_payment" as const;
 export const PREFLIGHT_PRICE = "$0.05" as const;
 
+/** §11 verify_delivery — priced $0.10, settled the same way as preflight (real USDT0 via the OKX x402
+ *  facilitator). Runs the real §13/§7.3 T0 Proof Engine and writes a real VERIFY receipt. */
+export const VERIFY_ROUTE = "/verify_delivery" as const;
+export const VERIFY_PRICE = "$0.10" as const;
+
 /** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
 export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
 

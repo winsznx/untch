@@ -9,7 +9,14 @@
  */
 
 export * from "./types";
-export { draftFromDecision, decisionToUint8, amountBaseUnits } from "./mapping";
+export {
+  draftFromDecision,
+  draftFromVerify,
+  decisionToUint8,
+  amountBaseUnits,
+  DECISION_NA,
+  type VerifyReceiptContext,
+} from "./mapping";
 export {
   loadStorageConfig,
   loadWorkerConfig,

@@ -68,10 +68,11 @@ export class PgReceiptsRepo implements ReceiptsRepo {
            receipt_id, kind, status, intent_hash, policy_id, policy_hash, agent_id, vendor_id,
            amount, token, category, pay_type, task_hash, decision, verify_result, proof_tier,
            metadata_hash
-         ) VALUES ($1,'DECISION','QUEUED',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         ) VALUES ($1,$2,'QUEUED',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          ON CONFLICT (receipt_id) DO NOTHING`,
         [
           o.receiptId,
+          draft.kind,
           o.intentHash,
           o.policyId.toString(),
           o.policyHash,
@@ -88,22 +89,25 @@ export class PgReceiptsRepo implements ReceiptsRepo {
           o.metadataHash,
         ],
       );
-      await client.query(
-        `INSERT INTO ledger_entries (
-           receipt_id, agent_id, type, amount, token, counterparty, day_key, category_key, vendor_key
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [
-          o.receiptId,
-          l.agentId,
-          l.type,
-          l.amount,
-          l.token,
-          l.counterparty,
-          l.dayKey,
-          l.categoryKey,
-          l.vendorKey,
-        ],
-      );
+      // A VERIFY receipt moves no money — it has no ledger entry. Only DECISION receipts do.
+      if (l) {
+        await client.query(
+          `INSERT INTO ledger_entries (
+             receipt_id, agent_id, type, amount, token, counterparty, day_key, category_key, vendor_key
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [
+            o.receiptId,
+            l.agentId,
+            l.type,
+            l.amount,
+            l.token,
+            l.counterparty,
+            l.dayKey,
+            l.categoryKey,
+            l.vendorKey,
+          ],
+        );
+      }
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");

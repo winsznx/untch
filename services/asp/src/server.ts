@@ -16,9 +16,16 @@ import {
   RECEIPT_STATUS_ROUTE,
   RESUME_POLICY_ROUTE,
   UPDATE_POLICY_ROUTE,
+  VERIFY_PRICE,
+  VERIFY_ROUTE,
   type SellerConfig,
 } from "./config";
-import { handleCreateSpendIntent, handlePreflightPayment, type HandlerResult } from "./handlers";
+import {
+  handleCreateSpendIntent,
+  handlePreflightPayment,
+  handleVerifyDelivery,
+  type HandlerResult,
+} from "./handlers";
 import {
   handleCreateSpendPolicy,
   handlePausePolicy,
@@ -91,6 +98,11 @@ export function createSellerApp(
           description: "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
           mimeType: "application/json",
         },
+        [`POST ${VERIFY_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
+          description: "Untch verify_delivery — deterministic §13/§7.3 T0 proof of a delivery vs committed acceptance criteria",
+          mimeType: "application/json",
+        },
       },
       resourceServer,
     ),
@@ -121,6 +133,17 @@ export function createSellerApp(
       intentStore: ledgerState.intentStore,
       ...(receiptWiring ? { receiptEnqueuer: receiptWiring.enqueuer } : {}),
       ...(escalationWiring ? { escalationGateway: escalationWiring.gateway } : {}),
+    })
+      .then((result) => send(res, result))
+      .catch(next);
+  });
+
+  app.post(VERIFY_ROUTE, (req, res, next) => {
+    if (!policyWiring) return send(res, policyStoreUnconfigured());
+    handleVerifyDelivery(req.body, {
+      policyProvider: policyWiring.provider,
+      intentStore: ledgerState.intentStore,
+      ...(receiptWiring ? { receiptEnqueuer: receiptWiring.enqueuer } : {}),
     })
       .then((result) => send(res, result))
       .catch(next);
@@ -223,6 +246,7 @@ if (isMain) {
           console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
           console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canon hash + real-policy binding)`);
           console.log(`[asp]   POST ${PREFLIGHT_ROUTE}    ${PREFLIGHT_PRICE}   (real §7.1 preflight vs a real stored policy)`);
+          console.log(`[asp]   POST ${VERIFY_ROUTE}     ${VERIFY_PRICE}   (real §13/§7.3 T0 delivery verification)`);
           console.log(`[asp]   POST ${CREATE_POLICY_ROUTE} / ${UPDATE_POLICY_ROUTE} / ${PAUSE_POLICY_ROUTE}  (operator, on-chain)`);
           console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
           console.log(`[asp]   GET  ${ESCALATION_STATUS_ROUTE}  (escalation status poll, §7.2)`);

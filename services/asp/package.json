@@ -16,6 +16,7 @@
     "escalation:live": "tsx --env-file=../../.env --env-file=.env src/run-escalation-live-proof.ts",
     "escalation:proof": "tsx --env-file=../../.env --env-file=.env src/run-escalation-channel-proof.ts",
     "receipt:e2e": "tsx --env-file=../../.env --env-file=.env src/run-receipt-e2e-proof.ts",
+    "verify:e2e": "tsx --env-file=../../.env --env-file=.env src/run-verify-e2e-proof.ts",
     "policy:e2e": "tsx --env-file=../../.env --env-file=.env src/run-policy-e2e-proof.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
@@ -29,6 +30,7 @@
     "@untch/escalation": "workspace:*",
     "@untch/policy-engine": "workspace:*",
     "@untch/policy-store": "workspace:*",
+    "@untch/proof-engine": "workspace:*",
     "@untch/receipt-writer": "workspace:*",
     "@untch/x402-guard": "workspace:*",
     "express": "^4.21.2",

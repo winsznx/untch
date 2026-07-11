@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Decision, SpendIntentInput } from "@untch/policy-engine";
 import { keccak256, toHex } from "viem";
-import { amountBaseUnits, decisionToUint8, draftFromDecision } from "../src/mapping";
+import {
+  DECISION_NA,
+  amountBaseUnits,
+  decisionToUint8,
+  draftFromDecision,
+  draftFromVerify,
+} from "../src/mapping";
+import { VERIFY_RESULT_CODE } from "@untch/proof-engine";
 
 /** The decision → §10.3 receipt + §8 ledger mapping (field discipline the on-chain writer relies on). */
 
@@ -56,15 +63,17 @@ test("draftFromDecision builds a §10.3-shaped receipt + a SPEND ledger entry", 
   assert.equal(draft.onchain.verifyResult, 0, "no delivery verification in the preflight-only path");
   assert.equal(draft.onchain.intentHash, decision.intentHash);
 
-  assert.equal(draft.ledger.type, "SPEND", "APPROVED → SPEND");
-  assert.equal(draft.ledger.amount, "500000");
-  assert.equal(draft.ledger.dayKey, "2026-07-10");
+  assert.equal(draft.kind, "DECISION");
+  assert.ok(draft.ledger, "a decision receipt carries a ledger entry");
+  assert.equal(draft.ledger?.type, "SPEND", "APPROVED → SPEND");
+  assert.equal(draft.ledger?.amount, "500000");
+  assert.equal(draft.ledger?.dayKey, "2026-07-10");
 });
 
 test("a BLOCKED decision produces a BLOCK_SAVED ledger entry", () => {
   const blocked: Decision = { ...decision, decision: "BLOCKED_BUDGET" };
   const draft = draftFromDecision(input, blocked);
-  assert.equal(draft.ledger.type, "BLOCK_SAVED", "withheld spend is recorded as saved");
+  assert.equal(draft.ledger?.type, "BLOCK_SAVED", "withheld spend is recorded as saved");
   assert.equal(draft.onchain.decision, decisionToUint8("BLOCKED_BUDGET"));
 });
 
@@ -72,4 +81,42 @@ test("two identical evaluations get distinct receiptIds (salted, collision-proof
   const a = draftFromDecision(input, decision);
   const b = draftFromDecision(input, decision);
   assert.notEqual(a.onchain.receiptId, b.onchain.receiptId);
+});
+
+test("draftFromVerify builds a VERIFY receipt with a REAL verifyResult/proofTier and NO ledger entry", () => {
+  // #given a real T0 PASS verification context
+  const draft = draftFromVerify(input, {
+    policyId: "42",
+    intentHash: decision.intentHash,
+    verifyResultCode: VERIFY_RESULT_CODE.PASS,
+    proofTier: 0,
+    payloadHash: keccak256(toHex("delivered-payload")),
+    verifiedAt: "2026-07-11T12:00:00Z",
+  });
+  // #then it is a VERIFY-kind receipt carrying the real result (not the default 0)
+  assert.equal(draft.kind, "VERIFY");
+  assert.equal(draft.onchain.verifyResult, VERIFY_RESULT_CODE.PASS);
+  assert.equal(draft.onchain.verifyResult, 1);
+  assert.equal(draft.onchain.proofTier, 0);
+  // #and `decision` is the N/A sentinel — a verify never re-decides the §7.1 outcome
+  assert.equal(draft.onchain.decision, DECISION_NA);
+  assert.equal(draft.onchain.decision, 0);
+  // #and it commits to the same intent, with policyId + intentHash threaded through
+  assert.equal(draft.onchain.intentHash, decision.intentHash);
+  assert.equal(draft.onchain.policyId, 42n);
+  // #and it moves no money — no ledger entry
+  assert.equal(draft.ledger, undefined);
+});
+
+test("a FAIL verification records verifyResult=FAIL (2), never a silent pass", () => {
+  const draft = draftFromVerify(input, {
+    policyId: "42",
+    intentHash: decision.intentHash,
+    verifyResultCode: VERIFY_RESULT_CODE.FAIL,
+    proofTier: 0,
+    payloadHash: keccak256(toHex("bad-payload")),
+    verifiedAt: "2026-07-11T12:00:00Z",
+  });
+  assert.equal(draft.onchain.verifyResult, 2);
+  assert.notEqual(draft.onchain.verifyResult, VERIFY_RESULT_CODE.PASS);
 });

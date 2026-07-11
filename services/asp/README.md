@@ -15,6 +15,7 @@ real stored policies by `policyId`; `create/update/pause_policy` write them.
 | `ping_untch` | `GET /ping_untch` | `$0.01` | proof-of-rail health check (D0.1) | — |
 | `create_spend_intent` | `POST /create_spend_intent` | **bundled** | validate + **hash** a §8.1 SpendIntent, **bound to a real stored policy** | `@untch/canon` + `@untch/policy-store` |
 | `preflight_payment` | `POST /preflight_payment` | `$0.05` | real **§7.1 decision** against a **real stored policy** | `@untch/policy-engine` + `@untch/policy-store` |
+| `verify_delivery` | `POST /verify_delivery` | `$0.10` | real **§13/§7.3 T0** verification → a **real VERIFY receipt** | `@untch/proof-engine` + `@untch/receipt-writer` |
 | `create_spend_policy` | `POST /create_spend_policy` | unpriced¹ | **real `PolicyRegistry.registerPolicy` tx** + durable store | `@untch/policy-store` |
 | `update_policy` | `POST /update_policy` | unpriced¹ | **real `updatePolicy` tx** (version bump) + sync | `@untch/policy-store` |
 | `pause_policy` / `resume_policy` | `POST /pause_policy` · `/resume_policy` | unpriced¹ | **real `pausePolicy`/`resumePolicy` tx** + sync | `@untch/policy-store` |
@@ -46,6 +47,51 @@ Resolution: missing `policyId` → `400`; unknown `policyId` → the engine fail
 `BLOCKED_NO_ACTIVE_POLICY` (I2); an intent bound to a different policy hash → `400
 POLICY_BINDING_MISMATCH`. `sig` is always `null` (§7.5 oracle signer unbuilt); `receiptRef` is a real
 queued ref when the §7.4 writer is wired, else `null`.
+
+### `verify_delivery` ($0.10)
+The first tool that produces a **real delivery-verification receipt** — one whose `verifyResult` /
+`proofTier` finally reflect what happened, not the default `0` every prior (decision-kind) receipt has
+carried. Accepts a `policyId`, an intent (`{ intentHash }` from a prior create on this instance, an
+inline `{ intent }`, or both — the same resolver preflight uses), the committed `acceptanceCriteria`
+document, and the `delivery` (`{ payload }` and/or `{ payloadHash }`). It resolves the intent, recovers
+the **committed §8.1 `acceptanceHash`**, and runs the **real, deterministic** `@untch/proof-engine` T0
+(no LLM, I1) — ajv schema + required-field / size / regex / enum checks + exact-hash for deterministic
+deliverables, all gated behind acceptance-criteria binding (the presented criteria must hash back to
+the committed `acceptanceHash`, so a buyer cannot swap the spec after delivery).
+
+Response:
+```jsonc
+{
+  "intentHash": "0x…",
+  "final": "VERIFY_PASSED",            // | VERIFY_FAILED | VERIFY_SKIPPED_UNCOMMITTED | VERIFY_TIER_NOT_IMPLEMENTED
+  "recommendation": "RELEASE",         // | WITHHOLD | NONE
+  "requiredTier": 0, "achievedTier": 0, "proofTier": 0,
+  "verifyResult": 1,                   // proof-engine code: 1=PASS 2=FAIL 3=SKIPPED_UNCOMMITTED 4=NOT_IMPLEMENTED
+  "tierResults": [                     // the FULL §13 ladder — T1–T4 present as NOT_IMPLEMENTED, never absent
+    { "tier": "T0", "result": "PASS" },
+    { "tier": "T1", "result": "NOT_IMPLEMENTED", "implemented": false, "note": "…" },
+    { "tier": "T2", "result": "NOT_IMPLEMENTED", "implemented": false, "note": "…" },
+    { "tier": "T3", "result": "NOT_IMPLEMENTED", "implemented": false, "note": "…" },
+    { "tier": "T4", "result": "NOT_IMPLEMENTED", "implemented": false, "note": "…" }
+  ],
+  "diffs": [],                         // machine-readable §7.3 diffs on a FAIL
+  "hygieneEvent": false,               // true only on VERIFY_SKIPPED_UNCOMMITTED
+  "payloadHash": "0x…",
+  "receiptRef": { "receiptId": "0x…", "status": "QUEUED" } // or null when the §7.4 writer is unwired
+}
+```
+Resolution / errors: missing `policyId` → `400`; unknown `policyId` → `404 POLICY_NOT_FOUND`; an intent
+bound to a different policy hash → `400 POLICY_BINDING_MISMATCH`; no `payload`/`payloadHash` → `400
+DELIVERY_REQUIRED`. **REQUIRED_TIER is T0** in this build — a policy requiring a higher tier returns
+`VERIFY_TIER_NOT_IMPLEMENTED` (WITHHOLD), never a silent pass, because T1–T4 are honest stubs
+(`@untch/proof-engine` README). A `0x0` committed `acceptanceHash` returns `VERIFY_SKIPPED_UNCOMMITTED`
+— a logged buyer-hygiene event (§7.3), not a pass. On success the VERIFY receipt is durably enqueued
+(§7.4) and anchored by the worker to `UntchReceipts` (§10.3) carrying the real `verifyResult`/`proofTier`.
+
+**End-to-end proof:** `pnpm --filter @untch/asp verify:e2e` (`src/run-verify-e2e-proof.ts`) — a real
+paid `verify_delivery` on the live seller → real T0 PASS → anchored VERIFY receipt, with the
+`verifyResult` + `proofTier` **decoded from the chain log via raw `eth_getLogs`** (not read from the
+service), same independent-verification standard as every prior on-chain proof.
 
 ## What is real vs fixture vs null vs open
 

@@ -1,6 +1,7 @@
 import type { Decision, SpendIntentInput } from "@untch/policy-engine";
 import type { Queue } from "bullmq";
-import { draftFromDecision } from "./mapping";
+import { draftFromDecision, draftFromVerify, type VerifyReceiptContext } from "./mapping";
+import type { ReceiptDraft } from "./types";
 import type { ReceiptsRepo } from "./repo";
 import type { TickJob } from "./queue";
 import type { EnqueueResult } from "./types";
@@ -21,10 +22,20 @@ export class ReceiptEnqueuer {
     private readonly onSignalError: (err: unknown) => void = () => {},
   ) {}
 
+  /** §7.4 — enqueue a DECISION receipt from a preflight decision. */
   async enqueue(input: SpendIntentInput, decision: Decision): Promise<EnqueueResult> {
-    const draft = draftFromDecision(input, decision);
+    return this.persist(draftFromDecision(input, decision));
+  }
 
-    // 1. DURABLE first — receipt (QUEUED) + ledger entry, one transaction. Source of truth.
+  /** §7.3/§7.4 — enqueue a VERIFY receipt from a real delivery-verification result. This is the path
+   *  that finally records a non-default verifyResult/proofTier on-chain. Same durability contract as
+   *  a decision receipt: durable write first, best-effort tick, immediate {receiptId, QUEUED}. */
+  async enqueueVerify(input: SpendIntentInput, ctx: VerifyReceiptContext): Promise<EnqueueResult> {
+    return this.persist(draftFromVerify(input, ctx));
+  }
+
+  private async persist(draft: ReceiptDraft): Promise<EnqueueResult> {
+    // 1. DURABLE first — receipt (QUEUED) + ledger entry (if any), one transaction. Source of truth.
     await this.repo.insertDraft(draft);
 
     // 2. Best-effort signal. Never let a Redis hiccup fail the request or delay the response.

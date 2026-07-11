@@ -3,6 +3,7 @@ import type { ClaimedBatch, ReceiptsRepo } from "./repo";
 import type {
   BatchRow,
   BatchStatus,
+  LedgerEntryInput,
   ReceiptDraft,
   ReceiptOnchain,
   ReceiptStatus,
@@ -39,7 +40,7 @@ export class InMemoryReceiptsRepo implements ReceiptsRepo {
   private readonly batches = new Map<number, StoredBatch>();
   private seq = 0;
   private batchSeq = 0;
-  readonly ledger: ReceiptDraft["ledger"][] = [];
+  readonly ledger: LedgerEntryInput[] = [];
 
   async insertDraft(draft: ReceiptDraft): Promise<void> {
     if (this.receipts.has(draft.onchain.receiptId)) return;
@@ -51,7 +52,8 @@ export class InMemoryReceiptsRepo implements ReceiptsRepo {
       blockNumber: null,
       createdAt: this.seq++,
     });
-    this.ledger.push(draft.ledger);
+    // A VERIFY receipt has no ledger entry (moves no money); only DECISION receipts do.
+    if (draft.ledger) this.ledger.push(draft.ledger);
   }
 
   async claimQueuedBatch(limit: number): Promise<ClaimedBatch | null> {

@@ -7,9 +7,16 @@ import {
 } from "@untch/policy-engine";
 import { toEnginePolicy, type PolicyProvider, type StoredPolicy } from "@untch/policy-store";
 import type { ReceiptEnqueuer } from "@untch/receipt-writer";
+import {
+  verifyDelivery,
+  type AcceptanceCriteria,
+  type Delivery,
+  type VerifyOutcome,
+} from "@untch/proof-engine";
 import type { Hex } from "viem";
 import {
   IntentValidationError,
+  intentHashOf,
   parseFullIntent,
   parseStruct,
   toCanonicalView,
@@ -341,4 +348,148 @@ export async function handlePreflightPayment(
 /** Exposed for a symmetry check in tests: recompute an intent's hash without evaluating. */
 export function hashOnly(body: unknown): Hex {
   return parseStruct(body).intentHash;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// verify_delivery — priced $0.10: resolve the intent, run REAL T0, write a REAL verify receipt
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface VerifyDeps {
+  readonly policyProvider: PolicyProvider;
+  readonly intentStore: InMemoryIntentStore;
+  /** Injectable clock for deterministic tests; defaults to the proof engine's `Date.now`. */
+  readonly now?: () => number;
+  /** §7.4 receipt writer. When present, the verify result is durably enqueued as a VERIFY-kind receipt
+   *  carrying the REAL verifyResult/proofTier (§10.3). Absent ⇒ `receiptRef` stays null (honest). */
+  readonly receiptEnqueuer?: ReceiptEnqueuer;
+}
+
+/** Read the acceptance-criteria doc from the request body (optional; the proof engine FAILs a
+ *  committed-but-unpresented spec rather than passing it). Must be a JSON object when present. */
+function readCriteria(body: unknown): AcceptanceCriteria | undefined | HandlerResult {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const raw = b.acceptanceCriteria ?? b.criteria;
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { status: 400, body: errorEnvelope("CRITERIA_MALFORMED", "acceptanceCriteria must be a JSON object") };
+  }
+  return raw as AcceptanceCriteria;
+}
+
+/** Read the delivery (`{payload?, payloadHash?}`) — accepts a `delivery` wrapper or top-level fields.
+ *  At least one of payload / payloadHash must be present. */
+function readDelivery(body: unknown): Delivery | HandlerResult {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const wrapper = (b.delivery ?? null) as Record<string, unknown> | null;
+  const payload = wrapper && "payload" in wrapper ? wrapper.payload : b.payload;
+  const payloadHashRaw = wrapper && "payloadHash" in wrapper ? wrapper.payloadHash : b.payloadHash;
+
+  let payloadHash: Hex | undefined;
+  if (payloadHashRaw !== undefined && payloadHashRaw !== null) {
+    if (typeof payloadHashRaw !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(payloadHashRaw)) {
+      return { status: 400, body: errorEnvelope("DELIVERY_MALFORMED", "payloadHash must be a 0x-prefixed 32-byte hex string") };
+    }
+    payloadHash = payloadHashRaw.toLowerCase() as Hex;
+  }
+
+  if (payload === undefined && payloadHash === undefined) {
+    return {
+      status: 400,
+      body: errorEnvelope("DELIVERY_REQUIRED", "provide a delivery `payload` (for schema checks) and/or a `payloadHash` (for exact-hash checks)"),
+    };
+  }
+  const out: Delivery = {};
+  return { ...out, ...(payload !== undefined ? { payload } : {}), ...(payloadHash !== undefined ? { payloadHash } : {}) };
+}
+
+/**
+ * `verify_delivery` ($0.10, priced x402 — §11). Resolves the intent named by the request (inline or by
+ * `intentHash`, the SAME resolver preflight uses), recovers the COMMITTED §8.1 `acceptanceHash`, and
+ * runs the REAL, deterministic `@untch/proof-engine` T0 (no LLM — invariant I1) against the presented
+ * acceptance criteria + delivery. It then writes a REAL VERIFY receipt whose `verifyResult`/`proofTier`
+ * finally reflect what happened (PASS/FAIL/skipped/tier-0), not the default 0 every prior receipt held.
+ *
+ * REQUIRED_TIER is T0 (0) in this build: policy-driven tier escalation (`proof.requireTierAbove`) rides
+ * with the still-stubbed `proof.tierRequired` policy rule and the T1+ tiers themselves, so a higher
+ * required tier would return VERIFY_TIER_NOT_IMPLEMENTED — an honest unmet result, never a silent pass.
+ *
+ * `receiptRef` (§7.4): when a receipt writer is wired, the VERIFY receipt is durably enqueued and its
+ * {receiptId, status:"QUEUED"} returned immediately; when unwired or the enqueue fails, `receiptRef` is
+ * null — an honest "not queued", never a fabricated ref.
+ */
+export async function handleVerifyDelivery(body: unknown, deps: VerifyDeps): Promise<HandlerResult> {
+  const policyId = readPolicyId(body);
+  if (!policyId) {
+    return { status: 400, body: errorEnvelope("POLICY_ID_REQUIRED", "a `policyId` (uint256 decimal string) is required") };
+  }
+
+  const resolved = resolveIntent(body, deps.intentStore);
+  if (isHandlerResult(resolved)) return resolved;
+
+  const stored = await deps.policyProvider.loadStored(policyId);
+  if (!stored) {
+    return { status: 404, body: errorEnvelope("POLICY_NOT_FOUND", `no stored policy with id ${policyId}`) };
+  }
+  if (!intentBoundToPolicy(resolved.input, stored)) {
+    return {
+      status: 400,
+      body: errorEnvelope(
+        "POLICY_BINDING_MISMATCH",
+        `intent.policyHash ${resolved.input.policyHash} does not equal stored policy ${policyId}'s policyHash ${stored.policyHash}`,
+      ),
+    };
+  }
+
+  const criteria = readCriteria(body);
+  if (criteria && "status" in criteria) return criteria;
+  const delivery = readDelivery(body);
+  if ("status" in delivery) return delivery;
+
+  const intentHash = intentHashOf(resolved.input);
+  const outcome: VerifyOutcome = verifyDelivery({
+    intentHash,
+    acceptanceHash: resolved.input.acceptanceHash,
+    ...(criteria ? { criteria } : {}),
+    delivery,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+
+  // §7.4: durably enqueue the VERIFY receipt (real verifyResult/proofTier) and return its ref. A failure
+  // here (e.g. Postgres down) leaves receiptRef null rather than lying.
+  let receiptRef: { receiptId: Hex; status: "QUEUED" } | null = null;
+  if (deps.receiptEnqueuer) {
+    try {
+      receiptRef = await deps.receiptEnqueuer.enqueueVerify(resolved.input, {
+        policyId: stored.id,
+        intentHash,
+        verifyResultCode: outcome.verifyResultCode,
+        proofTier: outcome.proofTier,
+        payloadHash: outcome.payloadHash,
+        verifiedAt: outcome.verifiedAt,
+      });
+    } catch (err) {
+      console.error("[asp] verify receipt enqueue failed — returning receiptRef: null", err);
+    }
+  }
+
+  return {
+    status: 200,
+    body: {
+      // §7.3 verification result — surfaced verbatim from the proof engine.
+      intentHash,
+      final: outcome.final,
+      recommendation: outcome.recommendation,
+      requiredTier: outcome.requiredTier,
+      achievedTier: outcome.achievedTier,
+      proofTier: outcome.proofTier,
+      verifyResult: outcome.verifyResultCode,
+      tierResults: outcome.tierResults,
+      diffs: outcome.diffs,
+      hygieneEvent: outcome.hygieneEvent,
+      payloadHash: outcome.payloadHash,
+      verifiedAt: outcome.verifiedAt,
+      // §7.4 real receipt ref (or null when unwired / enqueue failed).
+      receiptRef,
+    },
+  };
 }

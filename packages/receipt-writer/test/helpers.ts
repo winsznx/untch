@@ -106,6 +106,7 @@ export function makeDraft(): ReceiptDraft {
   };
   return {
     onchain,
+    kind: "DECISION",
     ledger: {
       agentId,
       type: "SPEND",
