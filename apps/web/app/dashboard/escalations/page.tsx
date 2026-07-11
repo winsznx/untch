@@ -1,17 +1,22 @@
-import { DashCard, SectionTitle, StandInBanner, Mono } from "../../../components/dashboard/ui";
-import { getEscalations, type EscalationView } from "../../../lib/dashboard/data";
+import { DashCard, SectionTitle, Mono } from "../../../components/dashboard/ui";
+import { EscalationDecision } from "../../../components/dashboard/escalation-decision";
+import { listDashboardEscalations, type DashboardEscalationView } from "../../../lib/dashboard/escalation-runtime";
 
-export default function Escalations() {
-  const escalations = getEscalations();
+/** The in-process escalation state changes on approve/deny, so this reads live per request. */
+export const dynamic = "force-dynamic";
+
+export default async function Escalations() {
+  const escalations = await listDashboardEscalations();
   return (
     <div className="flex flex-col gap-8">
       <SectionTitle kicker="Approvals" title="Escalation inbox" />
 
-      <StandInBanner>
-        The live escalation service (@untch/escalation) runs on BullMQ + Redis with a timeout worker, which the
-        dashboard has no running instance of. The records below use the package's real status and approvals
-        shapes but are seeded; approve and deny are shown disabled.
-      </StandInBanner>
+      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
+        Dashboard is a real fourth control channel alongside Telegram, Discord, and Slack. Approve or deny
+        runs through the same @untch/escalation §27 authority-boundary check, authorized by your signed-in
+        session identity. There is no separate signature per click: proving you control the wallet is what
+        authorizes the approval, exactly as a bound Telegram handle does.
+      </p>
 
       {escalations.length === 0 ? (
         <DashCard>
@@ -24,7 +29,7 @@ export default function Escalations() {
   );
 }
 
-function EscalationCard({ e }: { e: EscalationView }) {
+function EscalationCard({ e }: { e: DashboardEscalationView }) {
   return (
     <DashCard>
       <div className="flex flex-col gap-5">
@@ -40,14 +45,11 @@ function EscalationCard({ e }: { e: EscalationView }) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Channels" value={e.channels.join(", ")} />
-          <Field label="Dual-channel above" value={`${e.dualChannelAbove} ${e.token}`} />
-          <Field label="Per-channel caps" value={Object.entries(e.channelCaps).map(([c, v]) => `${c} ${v}`).join(", ")} />
+          <Field label="Dual-channel above" value={e.dualChannelAbove !== null ? `${e.dualChannelAbove} ${e.token}` : "not required"} />
+          <Field label="Per-channel caps" value={Object.entries(e.channelCaps).map(([c, v]) => `${c} ${v}`).join(", ") || "none"} />
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <Disabled label="Approve" />
-          <Disabled label="Deny" />
-        </div>
+        <EscalationDecision escalationId={e.id} status={e.status} />
       </div>
     </DashCard>
   );
@@ -59,13 +61,5 @@ function Field({ label, value }: { label: string; value: string }) {
       <span className="text-caption uppercase" style={{ color: "var(--color-inverse-muted)", letterSpacing: "0.24px" }}>{label}</span>
       <span className="text-body-sm" style={{ color: "var(--color-text)" }}>{value}</span>
     </div>
-  );
-}
-
-function Disabled({ label }: { label: string }) {
-  return (
-    <span aria-disabled="true" className="rounded-buttons px-6 py-3 text-body-sm" style={{ border: "1px solid var(--color-border)", color: "var(--color-inverse-muted)", opacity: 0.6 }}>
-      {label} · needs live service
-    </span>
   );
 }

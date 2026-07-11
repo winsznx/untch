@@ -1,4 +1,5 @@
 import { DashCard, SectionTitle } from "../../../components/dashboard/ui";
+import { LedgerExport } from "../../../components/dashboard/ledger-export";
 import { getLedgerEntries } from "../../../lib/dashboard/data";
 import { txUrl } from "../../../lib/onchain";
 
@@ -16,13 +17,21 @@ export default function Ledger() {
       <SectionTitle kicker="Ledger" title="Ledger explorer" />
       <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
         Append-only money record. SPEND rows are payments that moved; BLOCK_SAVED rows are prevented spend.
-        Anchored rows link to their on-chain receipt. Export is shown disabled (the demo dataset is in-memory).
+        Anchored rows link to their on-chain receipt. Export downloads the exact rows shown, in the browser.
       </p>
 
-      <div className="flex flex-wrap gap-3">
-        <Disabled label="Export CSV" />
-        <Disabled label="Export JSON" />
-      </div>
+      <LedgerExport
+        rows={entries.map((e) => ({
+          type: e.type,
+          amount: e.amount,
+          token: e.token,
+          vendor: e.vendor,
+          category: e.category,
+          createdAt: e.createdAt,
+          txHash: e.txHash,
+          receiptId: e.receiptId,
+        }))}
+      />
 
       <DashCard pad={false}>
         <div className="overflow-x-auto">
@@ -58,13 +67,5 @@ export default function Ledger() {
         </div>
       </DashCard>
     </div>
-  );
-}
-
-function Disabled({ label }: { label: string }) {
-  return (
-    <span aria-disabled="true" className="rounded-buttons px-5 py-2 text-body-sm" style={{ border: "1px solid var(--color-border)", color: "var(--color-inverse-muted)", opacity: 0.6 }}>
-      {label}
-    </span>
   );
 }

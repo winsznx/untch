@@ -1,5 +1,6 @@
 import {
   ChannelRegistry,
+  DashboardChannel,
   DiscordChannel,
   EscalationService,
   PgEscalationsRepo,
@@ -12,12 +13,15 @@ import {
   createTimeoutWorker,
   DEMO_OPERATOR_ID,
   PgOperatorsRepo,
+  hasDashboardEnv,
   hasDiscordEnv,
   hasSlackEnv,
   hasTelegramEnv,
+  interimDashboardBinding,
   interimDiscordBinding,
   interimSlackBinding,
   interimTelegramBinding,
+  loadDashboardConfig,
   loadDiscordConfig,
   loadSlackConfig,
   loadStorageConfig,
@@ -109,6 +113,15 @@ function configuredChannels(): RegisteredChannel[] {
       binding: interimSlackBinding(cfg.userId),
       handle: cfg.userId,
       label: `slack (user ${cfg.userId})`,
+    });
+  }
+  if (hasDashboardEnv()) {
+    const cfg = loadDashboardConfig();
+    out.push({
+      channel: new DashboardChannel({}),
+      binding: interimDashboardBinding(cfg.operatorWallet),
+      handle: cfg.operatorWallet,
+      label: `dashboard (wallet ${cfg.operatorWallet})`,
     });
   }
   return out;

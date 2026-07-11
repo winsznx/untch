@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
     "@untch/receipt-writer",
     "@untch/trust-bureau",
     "@untch/reports",
+    "@untch/escalation",
+    "@untch/x402-guard",
   ],
   // These are only pulled in transitively (repo-pg / queue / anchorers) and are never
   // constructed in the dashboard, which uses the pure and in-memory paths only. Externalizing

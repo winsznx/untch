@@ -1,4 +1,5 @@
-import { DashCard, SectionTitle, Meter, StandInBanner, Mono } from "../../../components/dashboard/ui";
+import { DashCard, SectionTitle, Meter, Mono } from "../../../components/dashboard/ui";
+import { VaultActions } from "../../../components/dashboard/vault-actions";
 import { getVault } from "../../../lib/dashboard/data";
 import { addressUrl } from "../../../lib/onchain";
 
@@ -8,11 +9,12 @@ export default function Vault() {
     <div className="flex flex-col gap-8">
       <SectionTitle kicker="Mode C" title="Vault" />
 
-      <StandInBanner>
-        The vault, factory, and oracle addresses below are the real UntchVault deployed on X Layer testnet
-        (its spend and withdraw transactions are on its address page). The epoch gauge and caps are seeded, and
-        deploy, deposit, withdraw, and pause need the connected owner wallet.
-      </StandInBanner>
+      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
+        The vault, factory, token, and oracle below are the real UntchVault deployment on X Layer testnet.
+        Deploy, deposit, withdraw, and pause are real transactions signed by your connected owner wallet.
+        The epoch gauge reflects the demo vault instance. Automated day-to-day spend signing (Mode C oracle
+        service) is a separate later piece and is not part of these direct owner actions.
+      </p>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <DashCard>
@@ -42,20 +44,7 @@ export default function Vault() {
       </div>
 
       <DashCard>
-        <div className="flex flex-col gap-4">
-          <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Actions</span>
-          <div className="flex flex-wrap gap-3">
-            {["Deploy", "Deposit", "Withdraw", v.paused ? "Unpause" : "Pause"].map((a) => (
-              <span key={a} aria-disabled="true" className="rounded-buttons px-6 py-3 text-body-sm" style={{ border: "1px solid var(--color-border)", color: "var(--color-inverse-muted)", opacity: 0.6 }}>
-                {a} · needs owner wallet
-              </span>
-            ))}
-          </div>
-          <p className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
-            The oracle key cannot withdraw or transfer funds. Owner withdraw is unconditional and needs nothing
-            from Untch (invariant I4).
-          </p>
-        </div>
+        <VaultActions />
       </DashCard>
     </div>
   );

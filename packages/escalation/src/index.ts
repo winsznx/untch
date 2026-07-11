@@ -32,6 +32,11 @@ export { TelegramChannel, parseCallbackData, parseTextCommand } from "./telegram
 export { DiscordChannel, type DiscordChannelOptions } from "./discord";
 export { SlackChannel, type SlackChannelOptions } from "./slack";
 export {
+  DashboardChannel,
+  type DashboardChannelOptions,
+  type DashboardApprovalInput,
+} from "./dashboard";
+export {
   parseButtonPayload,
   approvePayload,
   denyPayload,
@@ -50,6 +55,7 @@ export {
   interimTelegramBinding,
   interimDiscordBinding,
   interimSlackBinding,
+  interimDashboardBinding,
   combineBindings,
 } from "./binding";
 export { generateCode, hashCode, codeMatchesHash } from "./codes";
@@ -73,14 +79,17 @@ export {
   loadTelegramConfig,
   loadDiscordConfig,
   loadSlackConfig,
+  loadDashboardConfig,
   hasTelegramEnv,
   hasDiscordEnv,
   hasSlackEnv,
+  hasDashboardEnv,
   MissingEnvError,
   type StorageConfig,
   type TelegramConfig,
   type DiscordConfig,
   type SlackConfig,
+  type DashboardConfig,
 } from "./config";
 export {
   createRedis,

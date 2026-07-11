@@ -17,6 +17,8 @@
     "test:asp": "node --import tsx --test services/asp/test/*.test.ts",
     "test:receipt-writer": "node --import tsx --test packages/receipt-writer/test/*.test.ts",
     "test:escalation": "node --import tsx --test packages/escalation/test/*.test.ts",
+  "test:web": "node --import tsx --test apps/web/test/*.test.ts",
+  "prove:policy-ui": "tsx scripts/prove-policy-onchain.ts",
     "test:trust-bureau": "node --import tsx --test packages/trust-bureau/test/*.test.ts",
     "gen:writer-wallet": "tsx scripts/gen-writer-wallet.ts",
     "provision:writer": "tsx scripts/provision-receipt-writer.ts"

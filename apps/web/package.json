@@ -8,11 +8,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@untch/canon": "workspace:*",
     "@untch/design-tokens": "workspace:*",
+    "@untch/escalation": "workspace:*",
     "@untch/policy-engine": "workspace:*",
     "@untch/policy-store": "workspace:*",
     "@untch/proof-engine": "workspace:*",
@@ -20,6 +22,7 @@
     "@untch/reports": "workspace:*",
     "@untch/shared": "workspace:*",
     "@untch/trust-bureau": "workspace:*",
+    "@untch/x402-guard": "workspace:*",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"

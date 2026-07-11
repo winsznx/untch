@@ -146,3 +146,27 @@ export function hasSlackEnv(): boolean {
 export function hasTelegramEnv(): boolean {
   return !!process.env.TELEGRAM_BOT_TOKEN?.trim() && !!process.env.TELEGRAM_CHAT_ID?.trim();
 }
+
+/**
+ * Dashboard channel config.
+ *
+ * `operatorWallet` is the SAME interim single-operator binding as the other channels, one surface further
+ * in: the operator's SIWE-verified wallet, bound to the one demo operator this whole build has used. It is
+ * the same person authenticated in their own dashboard session, NOT a second approver; the real self-serve
+ * binding flow (§15) is a named future step. There is no token or endpoint here because the dashboard is a
+ * PULL surface (it reads escalation records from the shared repo), so the wallet is the only thing to bind.
+ */
+export interface DashboardConfig {
+  readonly operatorWallet: string;
+}
+
+export function loadDashboardConfig(): DashboardConfig {
+  return {
+    operatorWallet: requireEnv("DASHBOARD_OPERATOR_WALLET"),
+  };
+}
+
+/** True iff the dashboard operator wallet is set — lets the wiring register the dashboard only when bound. */
+export function hasDashboardEnv(): boolean {
+  return !!process.env.DASHBOARD_OPERATOR_WALLET?.trim();
+}

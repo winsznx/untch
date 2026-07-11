@@ -34,6 +34,22 @@ export function interimSlackBinding(userId: string): BindingVerifier {
   return interimHandleBinding("slack", userId);
 }
 
+/**
+ * Dashboard's interim binding: the operator's SIWE-verified wallet address on the `dashboard` channel.
+ * Same one demo operator as the other three, reached on their own authenticated dashboard session, NOT a
+ * second approver. The real self-serve binding flow (§15) is the named future step; until then it is the
+ * one configured operator wallet.
+ *
+ * Compared CASE-INSENSITIVELY, unlike the exact-match handle binding above: an EVM address is the same
+ * address regardless of EIP-55 checksum casing, so a session presenting the lowercased form must match a
+ * configured mixed-case (or all-caps) wallet, and vice versa. Any other address is unbound ⇒ IGNORED_UNBOUND.
+ */
+export function interimDashboardBinding(walletAddress: string): BindingVerifier {
+  const boundHandle = walletAddress.trim().toLowerCase();
+  return (ch, senderHandle) =>
+    ch === "dashboard" && senderHandle.trim().toLowerCase() === boundHandle;
+}
+
 /** One strict channel+handle binding — the shared interim shape until the real §15 onboarding flow exists. */
 function interimHandleBinding(channel: string, handle: string): BindingVerifier {
   const boundChannel = channel;

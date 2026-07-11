@@ -14,6 +14,7 @@ const LINKS: { href: string; label: string }[] = [
   { href: "/dashboard/vendors", label: "Vendors" },
   { href: "/dashboard/reports", label: "Reports" },
   { href: "/dashboard/disputes", label: "Disputes" },
+  { href: "/dashboard/settings", label: "Settings" },
   { href: "/explorer", label: "Public explorer" },
 ];
 
