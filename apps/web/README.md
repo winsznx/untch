@@ -1,14 +1,12 @@
 # @untch/web
 
-Untch web app. Review routes, one per component/screen:
+Untch web app. Routes:
 
-- `/` — the design-token specimen (the token-foundation checkpoint).
-- `/header` — site header / navigation.
-- `/hero` — landing hero.
-- `/cta` — the three pill button variants + the closing CTA band.
-- `/social-proof` — the on-chain proof section.
-- `/footer` — the footer.
-- `/home` — the assembled landing page (header + hero + social proof + CTA + footer).
+- `/` — the assembled homepage (header, hero, problem, loop, modes, live proof, social proof, CTA, footer).
+- `/dashboard` — operator dashboard (sidebar links to all §15 screens).
+- `/explorer` — public receipts explorer.
+- `/internal/tokens` — the design-token specimen (internal reference, not product navigation).
+- `/header` `/hero` `/cta` `/social-proof` `/footer` — per-component review routes.
 
 The full decision log (what's faithful to spec, every new decision and its reasoning, what's real
 data vs placeholder, per component) lives in the master review document at

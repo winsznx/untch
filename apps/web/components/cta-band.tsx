@@ -23,7 +23,7 @@ export function CtaBand() {
           on X Layer.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-5">
-          <PillButton variant="primary" href="/app">
+          <PillButton variant="primary" href="/dashboard">
             Create a spend policy
           </PillButton>
           <a

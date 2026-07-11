@@ -12,8 +12,8 @@ import { WordHighlight } from "./word-highlight";
  *
  * NEW DECISIONS (confirm):
  *  - Headline copy: the PRD's primary tagline "The model never touches the money." WordHighlight on "never".
- *  - Eyebrow + sub-copy + the two CTAs are the PRD's own website-hero copy. Destinations /app and /explorer
- *    are structural (see README).
+ *  - Eyebrow + sub-copy + the two CTAs are the PRD's own website-hero copy. Destinations /dashboard and
+ *    /explorer are both real, working routes.
  *  - Visual: an owner-supplied product-flow illustration (untchflow.avif) showing the real loop — agent,
  *    policy checks, an approval, a blocked duplicate, an escalation. It floats on the Deep Iris canvas as a
  *    product mockup (its background is transparent). This is a deliberate product-shot, distinct from the
@@ -45,7 +45,7 @@ export function Hero() {
             </p>
 
             <div className="flex flex-wrap gap-4">
-              <PillButton variant="primary" href="/app">
+              <PillButton variant="primary" href="/dashboard">
                 Create a spend policy
               </PillButton>
               <PillButton variant="ghost" href="/explorer">

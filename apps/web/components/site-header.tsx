@@ -30,12 +30,11 @@ import { layout } from "@untch/design-tokens";
  * FIVE OPEN DECISIONS — Impilo's spec does not answer these. Each is a real, reasoned proposal,
  * flagged here and in apps/web/README.md, NEVER presented as if the spec covered it:
  *   1. LOGO      → text wordmark "Untch" as an explicit placeholder; no real mark exists yet.
- *   2. NAV LINKS → Product / Receipts / Docs / Pricing — grounded in what is true about Untch
- *                  (the product, the public receipts explorer S6, Mintlify docs, real per-call
- *                  + audit-SKU pricing). Not generic About/Contact filler. Hrefs are structural;
- *                  destination pages do not exist yet.
+ *   2. NAV LINKS → Product / Receipts / Docs / Pricing. Receipts points at the real /explorer
+ *                  (the public receipts explorer, S6). Product / Docs / Pricing are structural
+ *                  placeholders — those pages do not exist yet. Not generic About/Contact filler.
  *   3. CTA       → "Create a spend policy" (the PRD's own canonical primary CTA), not Impilo's
- *                  "Request Demo" (Untch has no demo-booking flow). Points at the product.
+ *                  "Request Demo" (Untch has no demo-booking flow). Points at /dashboard.
  *   4. MOBILE    → collapse below 768px (Tailwind `md`) to a hamburger + token-styled menu.
  *   5. MOTION    → snappy 150ms transitions; nav links lift on hover (opacity), CTA lifts
  *                  (brightness); reduced-motion respected. Nothing specified in the source docs.
@@ -62,7 +61,7 @@ type NavLink = { label: string; href: string };
  */
 const NAV_LINKS: readonly NavLink[] = [
   { label: "Product", href: "/product" },
-  { label: "Receipts", href: "/receipts" },
+  { label: "Receipts", href: "/explorer" },
   { label: "Docs", href: "/docs" },
   { label: "Pricing", href: "/pricing" },
 ];
@@ -70,10 +69,9 @@ const NAV_LINKS: readonly NavLink[] = [
 /**
  * NEW DECISION (confirm) — primary CTA. Copy is the PRD's own canonical primary CTA
  * ("Create a spend policy"), replacing Impilo's "Request Demo" (Untch has no demo-booking
- * flow). Destination is the product itself; /app is a structural placeholder (dashboard S5
- * is not built yet).
+ * flow). Destination is /dashboard, the working operator dashboard.
  */
-const PRIMARY_CTA = { label: "Create a spend policy", href: "/app" } as const;
+const PRIMARY_CTA = { label: "Create a spend policy", href: "/dashboard" } as const;
 
 /** Shared focus ring in the system's interactive/link color (Clinical Cyan). */
 const FOCUS_RING =

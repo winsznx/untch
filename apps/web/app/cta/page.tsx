@@ -34,7 +34,7 @@ export default function CtaReview() {
               On the Deep Iris canvas
             </span>
             <div className="flex flex-wrap gap-5">
-              <PillButton variant="primary" href="/app">
+              <PillButton variant="primary" href="/dashboard">
                 Create a spend policy
               </PillButton>
               <PillButton variant="ghost" href="/explorer">
@@ -51,7 +51,7 @@ export default function CtaReview() {
               On a raised violet surface (light variant)
             </span>
             <div className="flex flex-wrap gap-5">
-              <PillButton variant="light" href="/app">
+              <PillButton variant="light" href="/dashboard">
                 Create a spend policy
               </PillButton>
             </div>

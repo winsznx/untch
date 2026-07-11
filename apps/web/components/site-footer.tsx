@@ -23,7 +23,7 @@ const COLUMNS: { heading: string; links: FooterLink[] }[] = [
       { label: "Product", href: "/product" },
       { label: "Public receipts", href: "/explorer" },
       { label: "Pricing", href: "/pricing" },
-      { label: "Open dashboard", href: "/app" },
+      { label: "Open dashboard", href: "/dashboard" },
     ],
   },
   {
