@@ -58,6 +58,24 @@ const OP_INVALID_SESSION = 9;
 const OP_HELLO = 10;
 const OP_HEARTBEAT_ACK = 11;
 
+/** Gateway close codes that are NON-RECOVERABLE — reconnecting can never succeed, and looping on them is
+ *  what triggers Discord's "connected 1000+ times" abuse token-reset. On these we stop, not retry.
+ *  4004 auth failed · 4010 invalid shard · 4011 sharding required · 4012 invalid API version ·
+ *  4013 invalid intent(s) · 4014 disallowed intent(s). */
+const FATAL_CLOSE_CODES = new Set([4004, 4010, 4011, 4012, 4013, 4014]);
+function fatalReason(code: number): string {
+  return (
+    {
+      4004: "authentication failed (bad token)",
+      4010: "invalid shard",
+      4011: "sharding required",
+      4012: "invalid API version",
+      4013: "invalid intent(s)",
+      4014: "disallowed (privileged) intent(s)",
+    }[code] ?? "fatal"
+  );
+}
+
 const INTERACTION_MESSAGE_COMPONENT = 3;
 const CALLBACK_MESSAGE_EPHEMERAL = { type: 4, data: { content: "Got it.", flags: 64 } };
 
@@ -193,10 +211,22 @@ export class DiscordChannel implements Channel {
       lastSeq = null;
       acked = true;
 
-      const reconnect = (): void => {
+      const reconnect = (closeCode?: number): void => {
         clearHeartbeat();
         if (ws === socket) ws = null;
         if (!running) return;
+        if (closeCode !== undefined && FATAL_CLOSE_CODES.has(closeCode)) {
+          // A NON-RECOVERABLE close (bad token 4004, disallowed/invalid intents 4013/4014, bad shard/API
+          // 4010/4011/4012). Reconnecting cannot succeed and re-identifying in a loop is exactly what gets
+          // a bot's token reset for abuse — so STOP. The escalation is safe in Postgres and the §7.2
+          // timeout still fails it closed; this channel is simply down until the config is fixed + restarted.
+          console.error(
+            `[discord] gateway closed with FATAL code ${closeCode} (${fatalReason(closeCode)}) — not ` +
+              `reconnecting. Fix the token/intents and restart. Inbound Discord approvals are down; send ` +
+              `(REST) is unaffected.`,
+          );
+          return;
+        }
         setTimeout(connect, this.reconnectBackoffMs).unref();
       };
 
@@ -265,7 +295,7 @@ export class DiscordChannel implements Channel {
         }
       });
 
-      socket.addEventListener("close", reconnect);
+      socket.addEventListener("close", (ev) => reconnect(ev.code));
       socket.addEventListener("error", () => socket.close(4000, "socket error"));
     };
 

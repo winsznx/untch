@@ -192,3 +192,22 @@ test("gateway: a close reconnects after the backoff (never gives up while runnin
 
   await receiver.stop();
 });
+
+test("gateway: a FATAL close (4014 disallowed intent) does NOT reconnect — prevents the abuse token-reset", async () => {
+  const { factory, sockets } = fakeWsFactory();
+  const channel = new DiscordChannel({
+    config,
+    fetchImpl: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+    wsFactory: factory,
+    reconnectBackoffMs: 10,
+  });
+  const receiver = await channel.startReceiving(async () => {});
+
+  assert.equal(sockets.length, 1);
+  // Discord's exact close for identifying with a privileged intent you weren't granted.
+  sockets[0]!.serverClose(4014, "Disallowed intent(s).");
+  await sleep(60);
+  assert.equal(sockets.length, 1, "no reconnect on a fatal close — the loop that got the token reset is gone");
+
+  await receiver.stop();
+});
