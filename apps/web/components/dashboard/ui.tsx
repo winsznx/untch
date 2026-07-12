@@ -56,7 +56,9 @@ const mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 export function Mono({ children, color = "var(--color-inverse-muted)" }: { children: ReactNode; color?: string }) {
   return (
-    <span style={{ fontFamily: mono, fontSize: 13, color }}>{children}</span>
+    <span style={{ fontFamily: mono, fontSize: 13, color, overflowWrap: "anywhere", wordBreak: "break-word", minWidth: 0, maxWidth: "100%" }}>
+      {children}
+    </span>
   );
 }
 

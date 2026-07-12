@@ -6,6 +6,13 @@
 }
 
 body {
+  /* A long unbreakable hash/address must never make the page wider than the viewport (which is what let
+     mobile pinch-pan the whole layout sideways). Individual hash/address renders wrap; this clips any
+     residual. `clip` (not `hidden`) so it never becomes a scroll container that would break the sticky nav. */
+  overflow-x: clip;
+}
+
+body {
   background-color: var(--color-canvas);
   color: var(--color-text);
   font-family: var(--font-untch);

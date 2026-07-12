@@ -60,11 +60,22 @@ export function DashboardNav() {
   const pathname = usePathname() ?? "/dashboard";
   const [open, setOpen] = useState(false);
 
+  // Close the drawer on route change.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // While the drawer is open: close on Escape and lock body scroll (a modal surface).
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open]);
 
   return (
@@ -86,12 +97,13 @@ export function DashboardNav() {
         <Wordmark />
         <button
           type="button"
-          aria-label={open ? "Close menu" : "Open menu"}
+          aria-label="Open menu"
           aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
+          aria-controls="dashboard-drawer"
+          onClick={() => setOpen(true)}
           className={`-mr-2 flex h-11 w-11 items-center justify-center ${FOCUS}`}
         >
-          <span className="relative block h-6 w-6">
+          <span className="relative block h-6 w-6" aria-hidden>
             <span className="absolute left-0 right-0 top-1.5 h-0.5 bg-cloud-white" />
             <span className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-cloud-white" />
             <span className="absolute left-0 right-0 bottom-1.5 h-0.5 bg-cloud-white" />
@@ -99,14 +111,42 @@ export function DashboardNav() {
         </button>
       </div>
 
-      {open ? (
-        <div
-          className="sticky top-16 z-40 px-6 py-4 lg:hidden"
-          style={{ background: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}
+      {/* Mobile slide-in drawer + backdrop (off-canvas, above the top bar) */}
+      <div className="lg:hidden" aria-hidden={!open}>
+        <button
+          type="button"
+          aria-label="Close menu"
+          tabIndex={open ? 0 : -1}
+          onClick={() => setOpen(false)}
+          className={`fixed inset-0 z-50 cursor-default transition-opacity duration-200 ease-out motion-reduce:transition-none ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
+          style={{ background: "rgba(3, 2, 14, 0.6)", backdropFilter: "blur(2px)" }}
+        />
+        <aside
+          id="dashboard-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Dashboard menu"
+          className={`fixed inset-y-0 left-0 z-50 flex w-[280px] max-w-[85vw] flex-col gap-6 overflow-y-auto px-5 py-6 transition-transform duration-200 ease-out motion-reduce:transition-none ${open ? "translate-x-0" : "-translate-x-full"} ${open ? "" : "pointer-events-none"}`}
+          style={{ background: "var(--color-surface)", borderRight: "1px solid var(--color-border)" }}
         >
+          <div className="flex items-center justify-between">
+            <Wordmark />
+            <button
+              type="button"
+              aria-label="Close menu"
+              tabIndex={open ? 0 : -1}
+              onClick={() => setOpen(false)}
+              className={`-mr-1 flex h-10 w-10 items-center justify-center ${FOCUS}`}
+            >
+              <span className="relative block h-5 w-5" aria-hidden>
+                <span className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rotate-45 bg-cloud-white" />
+                <span className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 -rotate-45 bg-cloud-white" />
+              </span>
+            </button>
+          </div>
           <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
-        </div>
-      ) : null}
+        </aside>
+      </div>
     </>
   );
 }

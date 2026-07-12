@@ -129,8 +129,8 @@ export function ChannelBindings() {
         ) : (
           bindings.map((b) => (
             <div key={b.channel} className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-body-sm" style={{ color: "var(--color-text)" }}>
-                {b.channel} · <span style={{ fontFamily: "ui-monospace, monospace" }}>{b.handle}</span>
+              <span className="text-body-sm" style={{ color: "var(--color-text)", minWidth: 0, overflowWrap: "anywhere" }}>
+                {b.channel} · <span style={{ fontFamily: "ui-monospace, monospace", overflowWrap: "anywhere" }}>{b.handle}</span>
               </span>
               <div className="flex items-center gap-3">
                 <span className="rounded-tags px-3 py-1 text-caption-lg" style={{ border: `1px solid ${b.status === "verified" ? "var(--color-positive)" : "var(--color-signal)"}`, color: b.status === "verified" ? "var(--color-positive)" : "var(--color-signal)" }}>

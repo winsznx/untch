@@ -83,9 +83,9 @@ export function PolicyActions({ initialRules }: { initialRules: PolicyRules }) {
         style={{ background: "var(--color-canvas)", border: `1px solid ${ok ? "var(--color-border-soft)" : "var(--color-signal)"}`, color: "var(--color-inverse-canvas)", fontFamily: "ui-monospace, monospace" }}
       />
 
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
+      <div className="flex flex-col gap-1">
         <span className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>Policy hash (live)</span>
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 13, color: ok ? "var(--color-data)" : "var(--color-signal)" }}>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 13, color: ok ? "var(--color-data)" : "var(--color-signal)", overflowWrap: "anywhere", wordBreak: "break-all", minWidth: 0 }}>
           {ok ? parsed.hash : parsed.error}
         </span>
       </div>

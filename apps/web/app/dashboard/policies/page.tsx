@@ -95,16 +95,16 @@ function PolicyCard({ p }: { p: PolicyView }) {
 
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-3">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <span className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>{k}</span>
-      <span className="text-body-sm" style={{ color: "var(--color-text)" }}>{v}</span>
+      <span className="text-body-sm sm:text-right" style={{ color: "var(--color-text)", minWidth: 0, maxWidth: "100%", overflowWrap: "anywhere" }}>{v}</span>
     </div>
   );
 }
 
 function Link({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>
+    <a href={href} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace", fontSize: 13, overflowWrap: "anywhere", wordBreak: "break-all" }}>
       {children}
     </a>
   );
