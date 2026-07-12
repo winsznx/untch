@@ -54,4 +54,6 @@ export interface EscalationsRepo {
   transition(id: string, t: StatusTransition): Promise<EscalationRecord | null>;
   /** Rows still open past their code expiry — the timeout worker's safety sweep. */
   findExpirable(nowMs: number, limit: number): Promise<EscalationRecord[]>;
+  /** All escalations for a set of intent ids, newest first — the dashboard's owner-scoped inbox read. */
+  listByIntentIds(intentIds: readonly string[]): Promise<EscalationRecord[]>;
 }

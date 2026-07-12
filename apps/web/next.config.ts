@@ -18,9 +18,12 @@ const nextConfig: NextConfig = {
     "@untch/escalation",
     "@untch/x402-guard",
   ],
-  // These are only pulled in transitively (repo-pg / queue / anchorers) and are never
-  // constructed in the dashboard, which uses the pure and in-memory paths only. Externalizing
-  // them keeps them out of the bundle and loading them has no connection side effect.
+  // `pg` IS now constructed server-side: the dashboard reads its policy/intent/ledger/escalation/score
+  // data from the shared production Postgres via the real pg repos (see lib/dashboard/db.ts), scoped to the
+  // signed-in wallet. It stays externalized because `pg` is a Node-only package that must not be bundled for
+  // the client — externalizing keeps it a server-side `require` (the read modules are server-only). `bullmq`
+  // / `ioredis` remain transitive-only: the dashboard reads but never enqueues, so no Redis queue is
+  // constructed here; externalizing keeps them out of the bundle with no connection side effect.
   serverExternalPackages: ["pg", "bullmq", "ioredis"],
 };
 

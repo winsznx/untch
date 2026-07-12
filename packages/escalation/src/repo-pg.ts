@@ -163,4 +163,14 @@ export class PgEscalationsRepo implements EscalationsRepo {
     );
     return res.rows.map(rowToRecord);
   }
+
+  async listByIntentIds(intentIds: readonly string[]): Promise<EscalationRecord[]> {
+    if (intentIds.length === 0) return [];
+    const res = await this.pool.query<EscalationDbRow>(
+      `SELECT ${SELECT_COLS} FROM escalations
+        WHERE intent_id = ANY($1::text[]) ORDER BY created_at DESC`,
+      [intentIds.map((i) => i.toLowerCase())],
+    );
+    return res.rows.map(rowToRecord);
+  }
 }

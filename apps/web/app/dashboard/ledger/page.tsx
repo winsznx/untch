@@ -1,7 +1,7 @@
 import { DashCard, SectionTitle } from "../../../components/dashboard/ui";
 import { NoHistory } from "../../../components/dashboard/no-history";
 import { LedgerExport } from "../../../components/dashboard/ledger-export";
-import { getLedgerEntries } from "../../../lib/dashboard/data";
+import { liveLedger } from "../../../lib/dashboard/live";
 import { getScope } from "../../../lib/dashboard/scope";
 import { txUrl } from "../../../lib/onchain";
 
@@ -12,9 +12,13 @@ const TYPE_COLOR: Record<string, string> = {
   REFUND: "var(--color-positive)",
 };
 
+/** Reads the operator's real ledger entries from the shared Postgres per request. */
+export const dynamic = "force-dynamic";
+
 export default async function Ledger() {
   const scope = await getScope();
-  if (!scope.isDemoOperator) {
+  const entries = scope.authenticated ? await liveLedger(scope.address) : [];
+  if (!scope.authenticated || entries.length === 0) {
     return (
       <div className="flex flex-col gap-8">
         <SectionTitle kicker="Ledger" title="Ledger explorer" />
@@ -22,7 +26,6 @@ export default async function Ledger() {
       </div>
     );
   }
-  const entries = getLedgerEntries();
   return (
     <div className="flex flex-col gap-8">
       <SectionTitle kicker="Ledger" title="Ledger explorer" />

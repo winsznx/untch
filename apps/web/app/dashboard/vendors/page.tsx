@@ -1,11 +1,17 @@
 import { DashCard, SectionTitle, BandChip, Mono } from "../../../components/dashboard/ui";
 import { NoHistory } from "../../../components/dashboard/no-history";
-import { getVendors, type VendorView } from "../../../lib/dashboard/data";
+import { liveVendors, liveBuyerScores, type VendorView, type BuyerScoreView } from "../../../lib/dashboard/live";
 import { getScope } from "../../../lib/dashboard/scope";
+
+/** Scores the operator's real counterparties + agents live from the shared receipts store per request. */
+export const dynamic = "force-dynamic";
 
 export default async function Vendors() {
   const scope = await getScope();
-  if (!scope.isDemoOperator) {
+  const [vendors, buyers] = scope.authenticated
+    ? await Promise.all([liveVendors(scope.address), liveBuyerScores(scope.address)])
+    : [[] as VendorView[], [] as BuyerScoreView[]];
+  if (!scope.authenticated || (vendors.length === 0 && buyers.length === 0)) {
     return (
       <div className="flex flex-col gap-8">
         <SectionTitle kicker="Trust Bureau" title="Vendor directory" />
@@ -13,18 +19,35 @@ export default async function Vendors() {
       </div>
     );
   }
-  const vendors = await getVendors();
   return (
     <div className="flex flex-col gap-8">
       <SectionTitle kicker="Trust Bureau" title="Vendor directory" />
       <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        Scores are computed live by @untch/trust-bureau. Enforcement uses the lower-confidence bound (LCB),
-        never the raw score. Each feature is marked observed (receipt-backed) or cold-start prior, exactly as
-        the Bureau reports it. Scores are operational signals, not legal or financial determinations.
+        Scores are computed live by @untch/trust-bureau over your real receipts. Enforcement uses the
+        lower-confidence bound (LCB), never the raw score. Each feature is marked observed (receipt-backed) or
+        cold-start prior, exactly as the Bureau reports it. Scores are operational signals, not determinations.
       </p>
+
+      {buyers.length > 0 ? (
+        <DashCard>
+          <div className="flex flex-col gap-3">
+            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Your agents — buyer reliability</span>
+            {buyers.map((b) => (
+              <div key={b.agentId} className="flex items-center justify-between">
+                <span className="text-body-sm" style={{ color: "var(--color-inverse-canvas)", fontFamily: "ui-monospace, monospace" }}>{b.agentId.slice(0, 12)}…</span>
+                <div className="flex items-center gap-4">
+                  <BandChip band={b.score.band} />
+                  <span className="text-caption-lg" style={{ color: "var(--color-inverse-canvas)" }}>LCB {Math.round(b.score.lcb)} · score {Math.round(b.score.score)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DashCard>
+      ) : null}
+
       <div className="flex flex-col gap-4">
         {vendors.map((v) => (
-          <VendorCard key={v.name} v={v} />
+          <VendorCard key={v.vendorId} v={v} />
         ))}
       </div>
     </div>

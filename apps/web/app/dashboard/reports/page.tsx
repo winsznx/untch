@@ -1,14 +1,18 @@
 import { DashCard, SectionTitle, StatTile, Mono } from "../../../components/dashboard/ui";
 import { NoHistory } from "../../../components/dashboard/no-history";
-import { getReconcile } from "../../../lib/dashboard/data";
+import { liveReconcile } from "../../../lib/dashboard/live";
 import { getScope } from "../../../lib/dashboard/scope";
 import { txUrl } from "../../../lib/onchain";
 
 const RECONCILE_ANCHOR = "0x23b356d5621f94adcb74b66a7beef45ce37e4b7628b83a5fea9dab73bae86494";
 
+/** Assembles the operator's reconcile report live from the shared Postgres per request. */
+export const dynamic = "force-dynamic";
+
 export default async function Reports() {
   const scope = await getScope();
-  if (!scope.isDemoOperator) {
+  const r = scope.authenticated ? await liveReconcile(scope.address) : null;
+  if (!r) {
     return (
       <div className="flex flex-col gap-8">
         <SectionTitle kicker="Reports" title="Reconciliation" />
@@ -16,7 +20,6 @@ export default async function Reports() {
       </div>
     );
   }
-  const r = getReconcile();
   const total = (t: readonly { totalDisplay: string; token: string }[]) => t.map((x) => `${x.totalDisplay} ${x.token}`).join(", ") || "0";
   return (
     <div className="flex flex-col gap-8">

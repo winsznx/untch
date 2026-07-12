@@ -29,6 +29,8 @@ export interface PolicyRepo {
   }): Promise<void>;
   /** All policies governing an agent, newest first. */
   listByAgent(agentId: string): Promise<StoredPolicy[]>;
+  /** All policies registered BY an operator wallet (the on-chain registrant / `owner`), newest first. */
+  listByOwner(owner: string): Promise<StoredPolicy[]>;
 }
 
 /**

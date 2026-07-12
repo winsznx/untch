@@ -57,4 +57,8 @@ export class InMemoryPolicyRepo implements PolicyRepo {
   async listByAgent(agentId: string): Promise<StoredPolicy[]> {
     return [...this.byId.values()].filter((p) => p.agentId.toLowerCase() === agentId.toLowerCase());
   }
+
+  async listByOwner(owner: string): Promise<StoredPolicy[]> {
+    return [...this.byId.values()].filter((p) => p.owner.toLowerCase() === owner.toLowerCase());
+  }
 }

@@ -1,63 +1,95 @@
 import { DashCard, SectionTitle, Mono } from "../../../components/dashboard/ui";
+import { NoHistory } from "../../../components/dashboard/no-history";
 import { PolicyActions } from "../../../components/dashboard/policy-actions";
-import { getPolicy } from "../../../lib/dashboard/data";
+import { DEFAULT_POLICY_RULES } from "../../../lib/dashboard/data";
+import { livePolicies, type PolicyView } from "../../../lib/dashboard/live";
 import { getScope } from "../../../lib/dashboard/scope";
 import { addressUrl, txUrl } from "../../../lib/onchain";
 
 const REGISTRY = "0xe1d74c90801db0fa806c72eb818b7671b8233532";
-const ANCHORED_POLICY_ID = "76029468409583827837911952142544939415519701741486856172509180373326388092012";
-const ANCHORED_POLICY_HASH = "0x308ec9d3a4059f28305277eaf33d45d35422cd8542d762fe3727c5cfed5aad3b";
-const REGISTER_TX = "0x7f71579cabe5cabca30701bb46d58812170bcd38a0fe627c77437d8483998e6f";
+
+/** Reads the operator's real registered policies from the shared Postgres per request. */
+export const dynamic = "force-dynamic";
 
 export default async function Policies() {
-  const p = getPolicy();
-  const r = p.rules;
   const scope = await getScope();
+  const policies = scope.authenticated ? await livePolicies(scope.address) : [];
   return (
     <div className="flex flex-col gap-8">
       <SectionTitle kicker="Policy builder" title="Spend policy" />
 
       <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
         Create, update, and pause are real transactions signed by your connected wallet against the deployed
-        PolicyRegistry on X Layer testnet. Reading and canonical hashing are the same @untch/policy-store and
-        @untch/canon surfaces the MCP preflight uses, so the ruleset you commit here is the ruleset your agent
-        is checked against.{scope.isDemoOperator ? "" : " The rules below are a starting template; Create registers your own policy."}
+        PolicyRegistry on X Layer testnet. The list below is read live from the same @untch/policy-store the
+        MCP preflight enforces against — so a policy your agent was created with (via the seller's
+        create_spend_policy) and one you register here are the same rows, shown here.
       </p>
+
+      {!scope.authenticated ? (
+        <NoHistory authenticated={false} address={scope.address} what="policies" />
+      ) : policies.length === 0 ? (
+        <DashCard>
+          <span className="text-body" style={{ color: "var(--color-inverse-muted)" }}>
+            No policies registered to this wallet yet. Create one below, or have the seller register one for
+            your agent — either way it appears here.
+          </span>
+        </DashCard>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {policies.map((p) => <PolicyCard key={p.id} p={p} />)}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <DashCard>
           <div className="flex flex-col gap-4">
-            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>{scope.isDemoOperator ? "Guided rules" : "Starting template"}</span>
-            <KV k="Daily budget" v={`${r.budgets.daily} ${r.budgets.token}`} />
-            <KV k="Per-call cap" v={`${r.perCallCap} · on exceed ${r.onPerCallCapExceeded}`} />
-            <KV k="Escalate above" v={`${r.escalateAbove}`} />
-            <KV k="Categories" v={r.categories.allow.join(", ")} />
-            <KV k="Duplicate window" v={`${r.duplicates.ttlMin} min`} />
-            <KV k="Cooldown" v={`${r.cooldowns.sameServiceMin} min same service`} />
-            <KV k="Rate limit" v={`${r.rateLimit.callsPerHour}/hour`} />
-            <KV k="Expiry" v={r.expiry} />
+            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Starting template</span>
+            <KV k="Daily budget" v={`${DEFAULT_POLICY_RULES.budgets.daily} ${DEFAULT_POLICY_RULES.budgets.token}`} />
+            <KV k="Per-call cap" v={`${DEFAULT_POLICY_RULES.perCallCap} · on exceed ${DEFAULT_POLICY_RULES.onPerCallCapExceeded}`} />
+            <KV k="Escalate above" v={`${DEFAULT_POLICY_RULES.escalateAbove}`} />
+            <KV k="Categories" v={DEFAULT_POLICY_RULES.categories.allow.join(", ")} />
+            <KV k="Rate limit" v={`${DEFAULT_POLICY_RULES.rateLimit.callsPerHour}/hour`} />
+            <KV k="Expiry" v={DEFAULT_POLICY_RULES.expiry} />
           </div>
         </DashCard>
 
         <DashCard>
-          <PolicyActions initialRules={r} />
+          <PolicyActions initialRules={DEFAULT_POLICY_RULES} />
         </DashCard>
       </div>
 
       <DashCard>
-        <div className="flex flex-col gap-4">
-          <span className="text-title-sm" style={{ color: "var(--color-text)" }}>A committed policy on-chain</span>
-          <p className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
-            The anchored demo policy already registered on X Layer testnet, for reference. Your own Create
-            above commits a new one owned by your wallet.
-          </p>
-          <KV k="PolicyRegistry" v={<Link href={addressUrl("testnet", REGISTRY)}>{REGISTRY}</Link>} />
-          <KV k="Anchored policyId" v={<Mono>{ANCHORED_POLICY_ID.slice(0, 20)}…</Mono>} />
-          <KV k="Anchored policyHash" v={<Mono color="var(--color-data)">{ANCHORED_POLICY_HASH.slice(0, 22)}…</Mono>} />
-          <KV k="registerPolicy tx" v={<Link href={txUrl("testnet", REGISTER_TX)}>{REGISTER_TX.slice(0, 22)}…</Link>} />
-        </div>
+        <KV k="PolicyRegistry (X Layer testnet)" v={<Link href={addressUrl("testnet", REGISTRY)}>{REGISTRY}</Link>} />
       </DashCard>
     </div>
+  );
+}
+
+function PolicyCard({ p }: { p: PolicyView }) {
+  const r = p.rules;
+  const statusColor = p.status === "ACTIVE" ? "var(--color-positive)" : "var(--color-inverse-muted)";
+  return (
+    <DashCard>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Policy <Mono>{p.id.slice(0, 12)}…</Mono></span>
+            <span className="text-caption-lg" style={{ color: "var(--color-inverse-muted)" }}>
+              agent <Mono>{p.agentId.slice(0, 10)}…</Mono> · v{p.version}
+            </span>
+          </div>
+          <span className="rounded-tags px-3 py-1 text-caption-lg" style={{ border: `1px solid ${statusColor}`, color: statusColor }}>
+            {p.status}
+          </span>
+        </div>
+        <KV k="Daily budget" v={`${r.budgets.daily} ${r.budgets.token}`} />
+        <KV k="Per-call cap" v={`${r.perCallCap} · on exceed ${r.onPerCallCapExceeded}`} />
+        <KV k="Escalate above" v={`${r.escalateAbove}`} />
+        <KV k="Categories" v={r.categories.allow.join(", ") || "—"} />
+        <KV k="policyHash" v={<Mono color="var(--color-data)">{p.policyHash.slice(0, 22)}…</Mono>} />
+        <KV k="registerPolicy tx" v={<Link href={txUrl("testnet", p.registerTx)}>{p.registerTx.slice(0, 22)}…</Link>} />
+      </div>
+    </DashCard>
   );
 }
 

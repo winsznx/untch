@@ -92,6 +92,33 @@ arrows are dropped — Untch's links are direct, with no submenus.
   `/product`, `/receipts`, `/docs` (will point at the Mintlify docs site), `/pricing`, and
   `/app` (the CTA target — the operator dashboard, S5). They will 404 until those pages are built.
 
+## Dashboard data — read side (real, shared Postgres) + the write-sync gap
+
+**Read side (wired).** The policy list, intent stream, ledger, escalation inbox, and vendor/buyer scores
+read the SAME shared Railway Postgres the seller (`@untch/asp`), receipt writer, escalation service, and
+Bureau write to in production — via the proven pg repos (`PgPolicyRepo`, `PgReportDataSource`,
+`PgEscalationsRepo`, `PgScoreDataSource`), never a second query implementation. Every read is scoped to the
+signed-in wallet: `getScope()` gives the address, `lib/dashboard/db.ts` resolves that owner's agents from the
+`policies` table, and `lib/dashboard/live.ts` reads per agent. No `DATABASE_URL` (local/CI) ⇒ honest empty
+state, never a global unscoped read. Verified end to end: a policy created via the live seller's
+`create_spend_policy` for the demo operator's wallet appears in the dashboard when signed in as that wallet.
+
+**Still NOT fixed — the write-sync gap (next real item, deliberately out of scope here):** a policy/intent
+created via the dashboard's OWN wallet flow (a `registerPolicy` tx signed directly on-chain, `TxButton` →
+`useWallet.writeContract`) still won't appear anywhere, because nothing records a dashboard-originated write
+into the shared Postgres, and the dashboard doesn't re-read the PolicyRegistry from chain afterward. The read
+path shows what the SELLER's tools persist; a dashboard-only write lands on-chain but not in Postgres, so the
+list won't reflect it until the seller's create/update path (or a chain-indexer) writes it. This is a genuine
+separate problem — the write leg of the same "one durable store" story — and deserves its own scoped change
+(have the dashboard write go through the seller's policy-store path, or index PolicyRegistry events into
+Postgres), not an inline patch.
+
+A related, smaller write-side item: dashboard-native escalation **approve/deny**. The inbox now READS real
+escalations, but resolving one from the dashboard needs the dashboard registered as a §27 control channel
+(its approvals config + session-carried authority at creation) — a seller-created escalation's single-use
+code lives only in the sent message, so the dashboard cannot redeem it today. Resolution currently happens
+through the bound channels (Telegram / Discord / Slack); the inbox shows each escalation's real status.
+
 ## Stack
 
 Next.js 16.2.10, React 19.2.7, Tailwind CSS v4.3.2. Fonts (Manrope primary, Plus Jakarta Sans

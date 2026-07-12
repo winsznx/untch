@@ -96,4 +96,11 @@ export class InMemoryEscalationsRepo implements EscalationsRepo {
       .filter((r) => open.has(r.status) && Date.parse(r.codeExpiresAt) <= nowMs)
       .slice(0, limit);
   }
+
+  async listByIntentIds(intentIds: readonly string[]): Promise<EscalationRecord[]> {
+    const wanted = new Set(intentIds.map((i) => i.toLowerCase()));
+    return [...this.byId.values()]
+      .filter((r) => wanted.has(r.intentId.toLowerCase()))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
 }

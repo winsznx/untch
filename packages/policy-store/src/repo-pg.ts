@@ -119,4 +119,15 @@ export class PgPolicyRepo implements PolicyRepo {
     );
     return res.rows.map(rowToStored);
   }
+
+  async listByOwner(owner: string): Promise<StoredPolicy[]> {
+    // Case-insensitive: session/checksummed addresses must match however the registrant wallet was stored.
+    const res = await this.pool.query<PolicyDbRow>(
+      `SELECT id::text, owner, agent_id, version, status, policy_hash, expiry::text,
+              onchain_ref, rules, created_at, updated_at
+         FROM policies WHERE LOWER(owner) = LOWER($1) ORDER BY created_at DESC`,
+      [owner],
+    );
+    return res.rows.map(rowToStored);
+  }
 }

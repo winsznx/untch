@@ -1,14 +1,18 @@
 import Link from "next/link";
 import { DashCard, SectionTitle, StatTile, Meter, DecisionChip } from "../../components/dashboard/ui";
 import { NoHistory } from "../../components/dashboard/no-history";
-import { getSavings, getProofTiers, getIntentStream } from "../../lib/dashboard/data";
+import { getProofTiers } from "../../lib/dashboard/data";
+import { liveSavings, liveIntentStream } from "../../lib/dashboard/live";
 import { getScope } from "../../lib/dashboard/scope";
 
 const usd = (n: number) => n.toFixed(2);
 
+/** Reads the operator's real spend summary + intent stream from the shared Postgres per request. */
+export const dynamic = "force-dynamic";
+
 export default async function Overview() {
   const scope = await getScope();
-  if (!scope.isDemoOperator) {
+  if (!scope.authenticated) {
     return (
       <div className="flex flex-col gap-10">
         <SectionTitle kicker="Overview" title="Proof surface" />
@@ -32,9 +36,9 @@ export default async function Overview() {
     );
   }
 
-  const s = getSavings();
+  const s = await liveSavings(scope.address);
   const proof = getProofTiers();
-  const stream = getIntentStream();
+  const stream = await liveIntentStream(scope.address);
   const outcomes = stream.reduce<Record<string, number>>((acc, i) => {
     acc[i.decisionCategory] = (acc[i.decisionCategory] ?? 0) + 1;
     return acc;
