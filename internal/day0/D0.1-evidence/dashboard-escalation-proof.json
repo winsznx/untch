@@ -1,0 +1,37 @@
+{
+  "proof": "dashboard-escalation-e2e",
+  "what": "The dashboard is a genuine 4th control channel: a real preflight through the LIVE seller escalated, an APPROVE from the dashboard's session-authorized route resolved the SAME shared Postgres record Telegram/Discord/Slack resolve, confirmed INDEPENDENTLY via the seller's own /escalation_status endpoint (not the dashboard's say-so).",
+  "seller": "https://untch-asp-production.up.railway.app",
+  "dashboard": "https://untch-web-production.up.railway.app",
+  "operatorWallet": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+  "policyId": "37084678407671382856460319016644850021777140164119382616861153317102806902723",
+  "policyRegisterTx": "0x8e5f92bfc867450526e7be22e4102b41f8879085156d020ef193387f6a135ab9",
+  "approvalsChannels": ["telegram", "dashboard"],
+  "preflight": {
+    "decision": "ESCALATED_THRESHOLD",
+    "amount": 8,
+    "escalateAbove": 5,
+    "settlementTx": "0xbc357e4014800fbcdc778ae63234a4364fe452de2c1833bb55a402bce3c7c5f1"
+  },
+  "escalationId": "esc_54f1cf2cc8ee",
+  "pollRef": "0x48f7d88938b6021800e69fa9c320d1fc17277476e24d6e1c6cbfc1de09f7d8b1",
+  "before": "PENDING",
+  "negativeCase": {
+    "actor": "0x1111111111111111111111111111111111111111 (bound to dashboard for itself, NOT the policy owner)",
+    "httpStatus": 403,
+    "outcome": "IGNORED_UNBOUND",
+    "detail": "session identity does not own this escalation's policy",
+    "recordAfter": "PENDING",
+    "note": "§27 authority boundary held: a non-owner cannot resolve, record unchanged."
+  },
+  "positiveCase": {
+    "actor": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b (the policy owner, SIWE session)",
+    "httpStatus": 200,
+    "outcome": "APPROVED"
+  },
+  "afterIndependentSellerRead": {
+    "status": "APPROVED",
+    "resolvedBy": { "channel": "dashboard", "handle": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b" },
+    "source": "GET /escalation_status/:pollRef on the live seller — its OWN read of the shared Postgres, independent of the dashboard"
+  }
+}

@@ -43,7 +43,13 @@ export interface DashboardChannelOptions {
 export interface DashboardApprovalInput {
   readonly senderHandle: string;
   readonly action: "APPROVE" | "DENY";
-  readonly code: string;
+  /**
+   * The single-use §7.1 code, when the dashboard has it (in-process creation). OMITTED on the identity
+   * path: when the service registers `dashboard` as an identity-authorized channel, authority comes from
+   * the SIWE session + policy ownership, and a seller-created escalation's plaintext code is not available
+   * to the dashboard anyway (only its hash is stored). Resolution is then by `escalationRef`.
+   */
+  readonly code?: string;
   readonly escalationRef?: string;
 }
 
@@ -94,7 +100,7 @@ export class DashboardChannel implements Channel {
       channel: CHANNEL_NAME,
       senderHandle: input.senderHandle,
       action: input.action,
-      code: input.code,
+      code: input.code ?? "",
       ...(input.escalationRef ? { escalationRef: input.escalationRef } : {}),
       receivedAtMs: this.clock(),
       meta: { via: CHANNEL_NAME },

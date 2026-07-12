@@ -61,6 +61,21 @@ export interface EscalationServiceDeps {
   readonly maxTimeoutMin?: number;
   /** §27 alert hook — invoked for every failed control event. */
   readonly onFailedControlEvent?: (evt: FailedControlEvent) => void;
+  /**
+   * Channels whose inbound is authorized by a proven SESSION IDENTITY (the dashboard's SIWE-verified
+   * wallet), NOT a single-use code. For these, the §27 pt4 code check is REPLACED by an ownership check
+   * (`verifyOwnership`): the code exists to prove receipt-on-an-external-channel, but a SIWE session already
+   * proves identity more strongly, so the code is redundant — the escalation is instead tied to the sender
+   * by ownership. Empty by default: Telegram/Discord/Slack always use the code path, unchanged.
+   */
+  readonly identityAuthorizedChannels?: ReadonlySet<string>;
+  /**
+   * For an identity-authorized channel: does `senderHandle` (the session's verified wallet) OWN this
+   * escalation — i.e. is it the operator of the escalation's policy? This is the multi-tenant authority
+   * boundary (§27) for the dashboard: a bound wallet can only resolve escalations for policies IT owns.
+   * Required whenever `identityAuthorizedChannels` is non-empty (a channel is never code-waived without it).
+   */
+  readonly verifyOwnership?: (rec: EscalationRecord, senderHandle: string) => Promise<boolean>;
 }
 
 const OPEN_STATES = ["PENDING", "AWAITING_SECOND_CHANNEL", "NOTIFY_FAILED"] as const;
@@ -82,6 +97,8 @@ export class EscalationService {
   private readonly defaultTimeoutMin: number;
   private readonly maxTimeoutMin: number;
   private readonly onFailedControlEvent: (evt: FailedControlEvent) => void;
+  private readonly identityAuthorizedChannels: ReadonlySet<string>;
+  private readonly verifyOwnership: (rec: EscalationRecord, senderHandle: string) => Promise<boolean>;
 
   constructor(deps: EscalationServiceDeps) {
     this.repo = deps.repo;
@@ -94,6 +111,8 @@ export class EscalationService {
     this.defaultTimeoutMin = deps.defaultTimeoutMin ?? 30;
     this.maxTimeoutMin = deps.maxTimeoutMin ?? 1440;
     this.onFailedControlEvent = deps.onFailedControlEvent ?? (() => {});
+    this.identityAuthorizedChannels = deps.identityAuthorizedChannels ?? new Set();
+    this.verifyOwnership = deps.verifyOwnership ?? (async () => false);
   }
 
   // ── CREATE → FAN_OUT → PENDING ──────────────────────────────────────────────────────────────────
@@ -227,15 +246,35 @@ export class EscalationService {
       return result("IGNORED_UNBOUND", rec.status, escId, detail);
     }
 
-    // §27 pt4 — single-use code valid, unexpired (TTL == escalation timeout, already checked), and not
-    // already redeemed on this channel (a same-channel replay is a reused code).
-    const codeOk = codeMatchesHash(r.code, rec.approvalCodeHash);
+    // §27 pt4 — proof this response is a legitimate, single-use resolution of THIS escalation. Two paths:
+    //   • external channels (Telegram/Discord/Slack): a valid single-use code, not already redeemed here.
+    //   • identity-authorized channels (dashboard): the SIWE session proved identity, so the code is
+    //     replaced by an OWNERSHIP check — the sender must be the operator of this escalation's policy. A
+    //     foreign escalation (a policy the sender doesn't own) fails the §27 boundary here, exactly like a
+    //     bad code. Same-channel replay is refused on both paths.
     const replayedOnChannel = rec.approvedChannels.includes(r.channel);
-    if (!codeOk || replayedOnChannel) {
-      const detail = !codeOk ? "code invalid" : "code already redeemed on this channel (replay)";
-      await this.logInbound(escId, r, "IGNORED_BAD_CODE", detail);
-      this.alert(escId, r, "IGNORED_BAD_CODE", detail);
-      return result("IGNORED_BAD_CODE", rec.status, escId, detail);
+    if (this.identityAuthorizedChannels.has(r.channel)) {
+      const owns = await this.verifyOwnership(rec, r.senderHandle);
+      if (!owns) {
+        const detail = "session identity does not own this escalation's policy";
+        await this.logInbound(escId, r, "IGNORED_UNBOUND", detail);
+        this.alert(escId, r, "IGNORED_UNBOUND", detail);
+        return result("IGNORED_UNBOUND", rec.status, escId, detail);
+      }
+      if (replayedOnChannel) {
+        const detail = "already confirmed on this channel (replay)";
+        await this.logInbound(escId, r, "IGNORED_BAD_CODE", detail);
+        this.alert(escId, r, "IGNORED_BAD_CODE", detail);
+        return result("IGNORED_BAD_CODE", rec.status, escId, detail);
+      }
+    } else {
+      const codeOk = codeMatchesHash(r.code, rec.approvalCodeHash);
+      if (!codeOk || replayedOnChannel) {
+        const detail = !codeOk ? "code invalid" : "code already redeemed on this channel (replay)";
+        await this.logInbound(escId, r, "IGNORED_BAD_CODE", detail);
+        this.alert(escId, r, "IGNORED_BAD_CODE", detail);
+        return result("IGNORED_BAD_CODE", rec.status, escId, detail);
+      }
     }
 
     if (r.action === "DENY") {

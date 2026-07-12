@@ -113,11 +113,22 @@ separate problem — the write leg of the same "one durable store" story — and
 (have the dashboard write go through the seller's policy-store path, or index PolicyRegistry events into
 Postgres), not an inline patch.
 
-A related, smaller write-side item: dashboard-native escalation **approve/deny**. The inbox now READS real
-escalations, but resolving one from the dashboard needs the dashboard registered as a §27 control channel
-(its approvals config + session-carried authority at creation) — a seller-created escalation's single-use
-code lives only in the sent message, so the dashboard cannot redeem it today. Resolution currently happens
-through the bound channels (Telegram / Discord / Slack); the inbox shows each escalation's real status.
+**Escalation approve/deny — now a real fourth channel (CLOSED).** Clicking Approve/Deny in the dashboard
+resolves the SAME shared Postgres escalation record Telegram/Discord/Slack resolve, through the SAME
+`@untch/escalation` `EscalationService` + `PgEscalationsRepo` — not a parallel instance. `/api/escalations/
+decision` builds a dashboard-channel inbound and runs it through the real §27 authority-boundary check.
+Authority is the SIWE session (no per-click wallet signature): the dashboard is an *identity-authorized*
+channel, so the §27 pt4 single-use code (a seller-created escalation's plaintext code is never available to
+the dashboard — only its hash is stored) is replaced by an OWNERSHIP check — the signed-in wallet must be
+bound to the dashboard channel AND own the escalation's policy. A wallet that doesn't own the escalation
+fails the §27 boundary (`IGNORED_UNBOUND`), exactly like a bad code — proven live: a foreign wallet gets 403
+and the record stays PENDING; the owner gets APPROVED, confirmed independently via the seller's own
+`/escalation_status` (see `internal/day0/D0.1-evidence/dashboard-escalation-proof.json`). The `EscalationService`
+change (`identityAuthorizedChannels` + `verifyOwnership`) is opt-in and leaves Telegram/Discord/Slack on the
+code path unchanged.
+
+The remaining write-sync gap above (a dashboard-originated on-chain policy/vault write not recorded into the
+shared Postgres) stays open and is a separate, lower-severity item for its own pass.
 
 ## Stack
 

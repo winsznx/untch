@@ -1,6 +1,6 @@
 import { DashCard, SectionTitle, Mono } from "../../../components/dashboard/ui";
 import { NoHistory } from "../../../components/dashboard/no-history";
-import { EscalationResolution } from "../../../components/dashboard/escalation-decision";
+import { EscalationDecision } from "../../../components/dashboard/escalation-decision";
 import { liveEscalations, type EscalationView } from "../../../lib/dashboard/live";
 import { getScope } from "../../../lib/dashboard/scope";
 
@@ -24,8 +24,9 @@ export default async function Escalations() {
 
       <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
         Every escalation the policy engine raised for your agents, read live from the same @untch/escalation
-        store the control channels resolve against. Resolution happens through the bound channels (Telegram,
-        Discord, Slack); each row shows its real status and how it was resolved.
+        store the control channels resolve against. The dashboard is a real fourth control channel: Approve
+        or Deny runs through the same §27 authority-boundary check and resolves the same shared record
+        Telegram, Discord, and Slack do — authorized by your signed-in session, no separate signature.
       </p>
 
       {escalations.length === 0 ? (
@@ -59,7 +60,7 @@ function EscalationCard({ e }: { e: EscalationView }) {
           <Field label="Dual-channel above" value={e.dualChannelAbove !== null ? `${e.dualChannelAbove} ${e.token}` : "not required"} />
         </div>
 
-        <EscalationResolution status={e.status} resolvedBy={e.resolvedBy} approvedChannels={e.approvedChannels} />
+        <EscalationDecision escalationId={e.id} status={e.status} resolvedBy={e.resolvedBy} approvedChannels={e.approvedChannels} />
       </div>
     </DashCard>
   );
