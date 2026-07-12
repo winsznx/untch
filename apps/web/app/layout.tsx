@@ -17,8 +17,26 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Untch design tokens",
-  description: "Token specimen for visual review before any component is built.",
+  metadataBase: new URL("https://untch.xyz"),
+  title: {
+    default: "Untch — Spend governance for autonomous AI agents",
+    template: "%s · Untch",
+  },
+  description:
+    "The model never touches the money. Untch is the policy, escalation, and receipt layer that governs what your AI agents are allowed to spend.",
+  applicationName: "Untch",
+  openGraph: {
+    type: "website",
+    siteName: "Untch",
+    url: "https://untch.xyz",
+    title: "Untch — Spend governance for autonomous AI agents",
+    description: "The model never touches the money. Policy, escalation, and receipts for agent spend.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Untch — Spend governance for autonomous AI agents",
+    description: "The model never touches the money. Policy, escalation, and receipts for agent spend.",
+  },
 };
 
 export default function RootLayout({

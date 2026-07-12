@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { layout } from "@untch/design-tokens";
 
 /**
@@ -124,13 +125,14 @@ export function SiteHeader() {
         className="mx-auto flex items-center justify-between px-6 md:grid md:grid-cols-[1fr_auto_1fr]"
         style={{ maxWidth: layout.pageMaxWidth, height: NAV_HEIGHT_PX }}
       >
-        {/* DECISION 1 — logo placeholder wordmark, settled title role (24px/600). */}
+        {/* DECISION 1 — real logo mark + wordmark (settled title role, 24px/600). */}
         <Link
           href="/"
           aria-label="Untch home"
-          className={`text-title-sm transition-opacity duration-150 ease-out hover:opacity-80 motion-reduce:transition-none md:justify-self-start ${FOCUS_RING}`}
+          className={`flex items-center gap-2.5 text-title-sm transition-opacity duration-150 ease-out hover:opacity-80 motion-reduce:transition-none md:justify-self-start ${FOCUS_RING}`}
           style={{ color: "var(--color-text)" }}
         >
+          <Image src="/untch-logo.png" alt="" width={30} height={30} priority className="rounded-icons" />
           Untch
         </Link>
 

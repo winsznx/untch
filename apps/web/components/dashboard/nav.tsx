@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 const LINKS: { href: string; label: string }[] = [
@@ -48,7 +49,8 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
 
 function Wordmark() {
   return (
-    <Link href="/" className={`text-title-sm ${FOCUS} rounded-icons`} style={{ color: "var(--color-text)" }}>
+    <Link href="/" className={`flex items-center gap-2 text-title-sm ${FOCUS} rounded-icons`} style={{ color: "var(--color-text)" }}>
+      <Image src="/untch-logo.png" alt="" width={26} height={26} priority className="rounded-icons" />
       Untch
     </Link>
   );
