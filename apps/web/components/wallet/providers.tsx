@@ -13,6 +13,7 @@ import { cookieToInitialState, WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { buildSiweMessage } from "../../lib/wallet/siwe";
 import { wagmiConfig } from "../../lib/wallet/wagmi";
+import { xLayerTestnet } from "../../lib/chain/chains";
 import { AuthStatusContext } from "./wallet-context";
 
 /**
@@ -60,6 +61,9 @@ export function Providers({ children, cookie }: { children: ReactNode; cookie: s
           const res = await fetch("/api/auth/nonce");
           return ((await res.json()) as { nonce: string }).nonce;
         },
+        // `chainId` here is the wallet's ACTUAL current chain (RainbowKit passes `useAccount().chain.id`),
+        // never an assumed/hardcoded value — so the message and the wallet always agree. The NetworkGuard
+        // has already normalised the wallet to X Layer testnet by the time this runs.
         createMessage: ({ nonce, address, chainId }) =>
           buildSiweMessage({
             address,
@@ -93,6 +97,7 @@ export function Providers({ children, cookie }: { children: ReactNode; cookie: s
       <QueryClientProvider client={queryClient}>
         <RainbowKitAuthenticationProvider adapter={adapter} status={status}>
           <RainbowKitProvider
+            initialChain={xLayerTestnet}
             theme={darkTheme({ accentColor: "#5350cc", accentColorForeground: "white", borderRadius: "large" })}
           >
             <AuthStatusContext.Provider value={status}>{children}</AuthStatusContext.Provider>

@@ -1,8 +1,11 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
-  "build": { "builder": "RAILPACK" },
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"untch-web\" ]; then pnpm --filter @untch/web build; else echo \"no build step for $RAILWAY_SERVICE_NAME\"; fi"
+  },
   "deploy": {
-    "startCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"untch-receipt-writer\" ]; then pnpm --filter @untch/receipt-writer worker; else pnpm --filter @untch/asp start; fi",
+    "startCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"untch-receipt-writer\" ]; then pnpm --filter @untch/receipt-writer worker; elif [ \"$RAILWAY_SERVICE_NAME\" = \"untch-web\" ]; then pnpm --filter @untch/web start; else pnpm --filter @untch/asp start; fi",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }

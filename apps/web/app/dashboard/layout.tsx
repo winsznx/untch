@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { headers } from "next/headers";
 import { DashboardNav } from "../../components/dashboard/nav";
 import { AuthBar } from "../../components/wallet/auth-bar";
+import { NetworkGuard } from "../../components/wallet/network-guard";
 import { Providers } from "../../components/wallet/providers";
 
 export const metadata: Metadata = {
@@ -21,6 +22,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <div className="lg:pl-64">
           {/* Auth (§15 #1) — RainbowKit single-flow connect + SIWE sign-in (OKX Wallet priority). */}
           <AuthBar />
+          {/* Normalises any connected wallet to X Layer testnet before SIWE — see network-guard.tsx. */}
+          <NetworkGuard />
           <main className="mx-auto max-w-[1120px] px-6 py-10">{children}</main>
         </div>
       </div>
