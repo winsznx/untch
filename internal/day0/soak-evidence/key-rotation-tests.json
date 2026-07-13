@@ -1,0 +1,95 @@
+{
+  "network": {
+    "chainId": 1952,
+    "rpc": "https://testrpc.xlayer.tech",
+    "explorer": "https://www.oklink.com/x-layer-testnet"
+  },
+  "freshVault": "0xd1328df7f36407a3c56102bb8c2208845515910a",
+  "freshReceipts": "0xaaaf54edadcb18468c00684a1e1619374d94ef1e",
+  "counterparties": {
+    "K2_newOwnerAndAdmin": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+    "K3_writerTarget": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+    "newOracle": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "oldOracle": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+  },
+  "ownerAndOracle": [
+    {
+      "step": "oracle:setOracle→new",
+      "expect": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "got": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "ok": true,
+      "txHash": "0x1725172b8865ed9263a0f5a5694008c56b4b5786fe784b0aec428229dbdca7e8"
+    },
+    {
+      "step": "oracle:setOracle→restore",
+      "expect": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "got": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "ok": true,
+      "txHash": "0x530c96febd2190551370b9edbf3bfea7402cfc808c82ac82b93a97600d8b641f"
+    },
+    {
+      "step": "owner:transferOwnership (old key)",
+      "expect": "pendingOwner=0x90F79bf6EB2c4f870365E785982E1f101E93b906; owner STILL 0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5",
+      "got": "pendingOwner=0x90F79bf6EB2c4f870365E785982E1f101E93b906; owner=0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5",
+      "ok": true,
+      "txHash": "0xd940dcfe15e50f8ca89c5cb8ab6374bdfd5cb9ef1ef83bb596a33575abcce5d4"
+    },
+    {
+      "step": "owner:accept-by-wrong-account reverts",
+      "expect": "NotPendingOwner",
+      "got": "NotPendingOwner",
+      "ok": true
+    },
+    {
+      "step": "owner:acceptOwnership (new key)",
+      "expect": "owner=0x90F79bf6EB2c4f870365E785982E1f101E93b906, pendingOwner=0",
+      "got": "owner=0x90F79bf6EB2c4f870365E785982E1f101E93b906, pendingOwner=0x0000000000000000000000000000000000000000",
+      "ok": true,
+      "txHash": "0x9225c1baa3562d966df1ac28be97d2800008bf14354a73537fa210838a35e7ca"
+    },
+    {
+      "step": "owner:round-trip back to writer",
+      "expect": "0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5",
+      "got": "0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5",
+      "ok": true,
+      "txHash": "0x0389435c2a826dbd84986bd85d2a330da5b9d36171bbabbfebcc7a5faf500ef7"
+    }
+  ],
+  "writerAndAdmin": [
+    {
+      "step": "writer:propose(ADD_WRITER)",
+      "expect": "OpProposed; eta set",
+      "got": "proposed",
+      "ok": true,
+      "txHash": "0xed86b933405e42c011032b1a2625dbb38d6a6c95cc6ba2c085da7121ff121c78"
+    },
+    {
+      "step": "writer:execute-before-delay reverts",
+      "expect": "TimelockNotElapsed",
+      "got": "TimelockNotElapsed",
+      "ok": true
+    },
+    {
+      "step": "writer:execute(ADD_WRITER) after delay",
+      "expect": "isWriter(K3)=true",
+      "got": "isWriter=true",
+      "ok": true,
+      "txHash": "0xabebf5f7379edcf63fd6ef4d1037b757589d9fe9e391bc3bd23e7c26a265d22d"
+    },
+    {
+      "step": "writer:execute(REMOVE_WRITER) after delay",
+      "expect": "isWriter(K3)=false",
+      "got": "isWriter=false",
+      "ok": true,
+      "txHash": "0x3ce3a3b7674ff0f699d810cb3fc856354336671e67f82dad79af7cfb5a97a781"
+    },
+    {
+      "step": "admin:execute(TRANSFER_ADMIN) after delay",
+      "expect": "admin=0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "got": "admin=0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "ok": true,
+      "txHash": "0x204586e7410c6b3bd3b93f99b3eae8c5c5da7e24fc1a74e80e01fe64fc0b13b4"
+    }
+  ],
+  "allOk": true
+}

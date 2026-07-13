@@ -25,7 +25,8 @@
     "prove:network-switch": "tsx scripts/prove-network-switch.ts",
     "soak:decisions": "tsx scripts/soak-decisions.ts",
     "soak:onchain": "bash scripts/soak/run-onchain.sh",
-    "soak:prepare-public": "tsx scripts/soak/prepare-public-bundle.ts && tsx scripts/soak/render-runbook.ts"
+    "soak:prepare-public": "tsx scripts/soak/prepare-public-bundle.ts && tsx scripts/soak/render-runbook.ts",
+    "test:key-rotations": "tsx scripts/soak/test-key-rotations.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
