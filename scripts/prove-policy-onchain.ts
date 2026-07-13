@@ -106,7 +106,16 @@ async function main(): Promise<void> {
 
   const account = privateKeyToAccount(pk);
   const balance = await pub.getBalance({ address: account.address });
-  const gas = await pub.estimateContractGas({ ...request, account: account.address });
+  // Narrow the shared WriteRequest (a 4-function union) to the exact registerPolicy shape viem's
+  // strict overloads require. buildRegisterPolicy always emits this call, so the assertion is provably
+  // true and the bytes are identical to the UI path — only the static type is tightened.
+  const call = {
+    address: request.address,
+    abi: request.abi,
+    functionName: "registerPolicy" as const,
+    args: request.args as readonly [Address, Hex, bigint],
+  };
+  const gas = await pub.estimateContractGas({ ...call, account: account.address });
   const gasPrice = await pub.getGasPrice();
   console.log(`\noperator         : ${account.address}`);
   console.log(`balance          : ${formatEther(balance)} OKB`);
@@ -122,7 +131,7 @@ async function main(): Promise<void> {
 
   const wallet = createWalletClient({ account, chain: xLayerTestnet, transport: http(rpcUrl) });
   console.log("\n[1/2] broadcasting registerPolicy (UI path) …");
-  const hash = await wallet.writeContract({ ...request, account, chain: xLayerTestnet });
+  const hash = await wallet.writeContract({ ...call, account, chain: xLayerTestnet });
   const receipt = await pub.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`tx reverted: ${hash}`);
 
