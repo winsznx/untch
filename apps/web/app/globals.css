@@ -12,6 +12,39 @@ body {
   overflow-x: clip;
 }
 
+/* Dashboard sidebar rail. The collapse toggle (client) writes html[data-sidebar]; width, the content
+   offset, and label visibility are all CSS-driven off that attribute, so the client toggle and the
+   server-rendered content shell stay in sync without prop-drilling. Only applies at the lg breakpoint
+   where the fixed sidebar exists; below it the mobile drawer takes over. */
+@media (min-width: 1024px) {
+  .dashboard-sidebar {
+    width: 16rem;
+    transition: width 0.18s ease;
+  }
+  .dashboard-shell {
+    padding-left: 16rem;
+    transition: padding-left 0.18s ease;
+  }
+  html[data-sidebar="collapsed"] .dashboard-sidebar {
+    width: 4rem;
+  }
+  html[data-sidebar="collapsed"] .dashboard-shell {
+    padding-left: 4rem;
+  }
+  html[data-sidebar="collapsed"] .dashboard-sidebar .nav-label {
+    display: none;
+  }
+  html[data-sidebar="collapsed"] .dashboard-sidebar .nav-item {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  html[data-sidebar="collapsed"] .dashboard-sidebar .nav-brand {
+    justify-content: center;
+  }
+}
+
 body {
   background-color: var(--color-canvas);
   color: var(--color-text);

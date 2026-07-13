@@ -14,12 +14,11 @@ export default async function IntentStream() {
   const stream = scope.authenticated ? await liveIntentStream(scope.address) : [];
   return (
     <div className="flex flex-col gap-8">
-      <SectionTitle kicker="Live" title="Intent stream" />
-      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        Every payment attempt your agents made, as the deterministic policy engine decided it — read live from
-        the shared receipts store. The durable receipt records the anchored outcome (decision, amount, vendor,
-        tx); the full preflight rule trace is computed at decision time and not persisted, so it is not shown.
-      </p>
+      <SectionTitle
+        kicker="Live"
+        title="Intent stream"
+        subtitle="Every payment attempt your agents made, decided live by the policy engine and read from the shared receipts store. Only the anchored decision is stored — not the full preflight trace."
+      />
       {!scope.authenticated ? (
         <NoHistory authenticated={false} address={scope.address} what="intents" />
       ) : stream.length === 0 ? (

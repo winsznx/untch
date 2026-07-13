@@ -15,7 +15,11 @@ export default async function Disputes() {
   if (!d) {
     return (
       <div className="flex flex-col gap-8">
-        <SectionTitle kicker="Disputes" title="Dispute packet" />
+        <SectionTitle
+          kicker="Disputes"
+          title="Dispute packet"
+          subtitle="An evidence packet for a held payment — decision, verification, escalation history, receipts, and a timeline — anchored on X Layer."
+        />
         <NoHistory authenticated={scope.authenticated} address={scope.address} what="disputes" />
       </div>
     );
@@ -23,11 +27,11 @@ export default async function Disputes() {
   const cat = d.decision.category ?? "ESCALATED";
   return (
     <div className="flex flex-col gap-8">
-      <SectionTitle kicker="Disputes" title="Dispute packet" />
-      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        An evidence bundle for a held payment: the terminal decision, verification results, escalation history,
-        receipts, and a timeline. Assembled live by @untch/reports and anchored on X Layer (AuditAnchored).
-      </p>
+      <SectionTitle
+        kicker="Disputes"
+        title="Dispute packet"
+        subtitle="An evidence packet for a held payment — decision, verification, escalation history, receipts, and a timeline — assembled live and anchored on X Layer (AuditAnchored)."
+      />
 
       <DashCard>
         <div className="flex flex-wrap items-center justify-between gap-4">

@@ -12,7 +12,11 @@ export default async function Escalations() {
   if (!scope.authenticated) {
     return (
       <div className="flex flex-col gap-8">
-        <SectionTitle kicker="Approvals" title="Escalation inbox" />
+        <SectionTitle
+          kicker="Approvals"
+          title="Escalation inbox"
+          subtitle="Held payments awaiting approval. Resolve them here — the dashboard is a real fourth control channel, authorized by your signed-in session."
+        />
         <NoHistory authenticated={false} address={scope.address} what="escalations" />
       </div>
     );
@@ -20,14 +24,11 @@ export default async function Escalations() {
   const escalations = await liveEscalations(scope.address);
   return (
     <div className="flex flex-col gap-8">
-      <SectionTitle kicker="Approvals" title="Escalation inbox" />
-
-      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        Every escalation the policy engine raised for your agents, read live from the same @untch/escalation
-        store the control channels resolve against. The dashboard is a real fourth control channel: Approve
-        or Deny runs through the same §27 authority-boundary check and resolves the same shared record
-        Telegram, Discord, and Slack do — authorized by your signed-in session, no separate signature.
-      </p>
+      <SectionTitle
+        kicker="Approvals"
+        title="Escalation inbox"
+        subtitle="Held payments awaiting approval. Resolve them here — the dashboard is a real fourth control channel that runs the same §27 authority check as Telegram, Discord, and Slack, authorized by your session."
+      />
 
       {escalations.length === 0 ? (
         <DashCard>

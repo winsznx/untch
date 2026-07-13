@@ -9,14 +9,11 @@ export default async function Vault() {
   const scope = await getScope();
   return (
     <div className="flex flex-col gap-8">
-      <SectionTitle kicker="Mode C" title="Vault" />
-
-      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        The factory, token, and reference vault below are the real UntchVault deployment on X Layer testnet.
-        Deploy, deposit, withdraw, and pause are real transactions signed by your connected owner wallet, and
-        act on a vault you deploy and own. Automated day-to-day spend signing (Mode C oracle service) is a
-        separate later piece and is not part of these direct owner actions.
-      </p>
+      <SectionTitle
+        kicker="Mode C"
+        title="Vault"
+        subtitle="The real UntchVault deployment on X Layer testnet — deploy, fund, withdraw, and pause a vault you own, each a transaction signed by your owner wallet."
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <DashCard>

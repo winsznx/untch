@@ -15,7 +15,11 @@ export default async function Reports() {
   if (!r) {
     return (
       <div className="flex flex-col gap-8">
-        <SectionTitle kicker="Reports" title="Reconciliation" />
+        <SectionTitle
+          kicker="Reports"
+          title="Reconciliation"
+          subtitle="A deterministic view over your durable receipts, ledger, and escalations — hashed and anchored on X Layer."
+        />
         <NoHistory authenticated={scope.authenticated} address={scope.address} what="reports" />
       </div>
     );
@@ -23,12 +27,11 @@ export default async function Reports() {
   const total = (t: readonly { totalDisplay: string; token: string }[]) => t.map((x) => `${x.totalDisplay} ${x.token}`).join(", ") || "0";
   return (
     <div className="flex flex-col gap-8">
-      <SectionTitle kicker="Reports" title="Reconciliation" />
-      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        Period {r.period.label}. Assembled live by @untch/reports over the period's receipts, ledger, and
-        escalations. A reconciliation is a deterministic view over already-durable history, hashed and anchored
-        on X Layer (AuditAnchored).
-      </p>
+      <SectionTitle
+        kicker="Reports"
+        title="Reconciliation"
+        subtitle={`Period ${r.period.label}. A deterministic view over your receipts, ledger, and escalations — hashed and anchored on X Layer (AuditAnchored).`}
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Spent" value={total(r.spend.totals)} sub={`${r.spend.approvedCount} approved`} accent="text" />

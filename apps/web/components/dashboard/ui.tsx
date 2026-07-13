@@ -17,21 +17,73 @@ export function DashCard({ children, className = "", pad = true }: { children: R
   );
 }
 
-export function SectionTitle({ kicker, title, action }: { kicker?: string; title: string; action?: ReactNode }) {
+/**
+ * The per-route masthead: kicker → title → one-line subtitle on the left, contextual action(s) on the
+ * right, closed with a hairline divider so every route top reads as one deliberate, sectioned band rather
+ * than a bare title. `subtitle` and `action` are optional but every dashboard route supplies a subtitle.
+ */
+export function SectionTitle({
+  kicker,
+  title,
+  subtitle,
+  action,
+}: {
+  kicker?: string;
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+}) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div className="flex flex-col gap-2">
-        {kicker ? (
-          <span className="text-caption uppercase" style={{ color: "var(--color-data)", letterSpacing: "0.24px" }}>
-            {kicker}
-          </span>
-        ) : null}
-        <h1 className="text-heading-lg" style={{ color: "var(--color-text)" }}>
-          {title}
-        </h1>
+    <div className="flex flex-col gap-5 border-b pb-6" style={{ borderColor: "var(--color-border)" }}>
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="flex min-w-0 flex-col gap-2">
+          {kicker ? (
+            <span className="text-caption uppercase" style={{ color: "var(--color-data)", letterSpacing: "0.24px" }}>
+              {kicker}
+            </span>
+          ) : null}
+          <h1 className="text-heading-lg" style={{ color: "var(--color-text)" }}>
+            {title}
+          </h1>
+          {subtitle ? (
+            <p className="max-w-2xl text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
+              {subtitle}
+            </p>
+          ) : null}
+        </div>
+        {action ? <div className="flex flex-wrap items-center gap-2">{action}</div> : null}
       </div>
-      {action}
     </div>
+  );
+}
+
+/** A consistent masthead action — a pill link. `variant="primary"` for the one main action per route
+ *  (filled), else a hairline-outlined secondary. `external` opens in a new tab. */
+export function MastheadLink({
+  href,
+  children,
+  variant = "secondary",
+  external = false,
+}: {
+  href: string;
+  children: ReactNode;
+  variant?: "primary" | "secondary";
+  external?: boolean;
+}) {
+  const primary = variant === "primary";
+  return (
+    <a
+      href={href}
+      {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      className="rounded-full px-4 py-2 text-body-sm transition-opacity duration-150 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clinical-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+      style={{
+        color: "var(--color-text)",
+        background: primary ? "var(--color-action)" : "transparent",
+        border: `1px solid ${primary ? "var(--color-action)" : "var(--color-border)"}`,
+      }}
+    >
+      {children}
+    </a>
   );
 }
 

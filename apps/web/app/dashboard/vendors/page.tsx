@@ -14,19 +14,22 @@ export default async function Vendors() {
   if (!scope.authenticated || (vendors.length === 0 && buyers.length === 0)) {
     return (
       <div className="flex flex-col gap-8">
-        <SectionTitle kicker="Trust Bureau" title="Vendor directory" />
+        <SectionTitle
+          kicker="Trust Bureau"
+          title="Vendor directory"
+          subtitle="Counterparty reliability, scored live by the Trust Bureau from your real receipts. Enforcement reads the lower-confidence bound, never the raw score."
+        />
         <NoHistory authenticated={scope.authenticated} address={scope.address} what="vendor history" />
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-8">
-      <SectionTitle kicker="Trust Bureau" title="Vendor directory" />
-      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        Scores are computed live by @untch/trust-bureau over your real receipts. Enforcement uses the
-        lower-confidence bound (LCB), never the raw score. Each feature is marked observed (receipt-backed) or
-        cold-start prior, exactly as the Bureau reports it. Scores are operational signals, not determinations.
-      </p>
+      <SectionTitle
+        kicker="Trust Bureau"
+        title="Vendor directory"
+        subtitle="Counterparty reliability, scored live by the Trust Bureau from your real receipts. Enforcement reads the lower-confidence bound, never the raw score; each feature is marked observed or cold-start prior."
+      />
 
       {buyers.length > 0 ? (
         <DashCard>

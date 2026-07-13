@@ -4,19 +4,20 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { NavIcon, type NavIconName } from "./nav-icons";
 
-const LINKS: { href: string; label: string }[] = [
-  { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/intents", label: "Intent stream" },
-  { href: "/dashboard/policies", label: "Policies" },
-  { href: "/dashboard/escalations", label: "Escalations" },
-  { href: "/dashboard/ledger", label: "Ledger" },
-  { href: "/dashboard/vault", label: "Vault" },
-  { href: "/dashboard/vendors", label: "Vendors" },
-  { href: "/dashboard/reports", label: "Reports" },
-  { href: "/dashboard/disputes", label: "Disputes" },
-  { href: "/dashboard/settings", label: "Settings" },
-  { href: "/explorer", label: "Public explorer" },
+const LINKS: { href: string; label: string; icon: NavIconName }[] = [
+  { href: "/dashboard", label: "Overview", icon: "overview" },
+  { href: "/dashboard/intents", label: "Intent stream", icon: "intents" },
+  { href: "/dashboard/policies", label: "Policies", icon: "policies" },
+  { href: "/dashboard/escalations", label: "Escalations", icon: "escalations" },
+  { href: "/dashboard/ledger", label: "Ledger", icon: "ledger" },
+  { href: "/dashboard/vault", label: "Vault", icon: "vault" },
+  { href: "/dashboard/vendors", label: "Vendors", icon: "vendors" },
+  { href: "/dashboard/reports", label: "Reports", icon: "reports" },
+  { href: "/dashboard/disputes", label: "Disputes", icon: "disputes" },
+  { href: "/dashboard/settings", label: "Settings", icon: "settings" },
+  { href: "/explorer", label: "Public explorer", icon: "explorer" },
 ];
 
 const FOCUS =
@@ -32,14 +33,16 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
             key={link.href}
             href={link.href}
             onClick={onNavigate}
+            title={link.label}
             aria-current={active ? "page" : undefined}
-            className={`rounded-inputs px-3 py-2 text-body-sm transition duration-150 ease-out motion-reduce:transition-none ${FOCUS} ${active ? "" : "opacity-70 hover:opacity-100"}`}
+            className={`nav-item flex items-center gap-3 rounded-inputs px-3 py-2 text-body-sm transition duration-150 ease-out motion-reduce:transition-none ${FOCUS} ${active ? "" : "opacity-70 hover:opacity-100"}`}
             style={{
               color: "var(--color-text)",
               background: active ? "var(--color-action)" : "transparent",
             }}
           >
-            {link.label}
+            <NavIcon name={link.icon} className="shrink-0" />
+            <span className="nav-label truncate">{link.label}</span>
           </Link>
         );
       })}
@@ -47,25 +50,44 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
   );
 }
 
-function Wordmark() {
+function Wordmark({ compact = false }: { compact?: boolean }) {
   return (
     <Link href="/" className={`flex items-center gap-2 text-title-sm ${FOCUS} rounded-icons`} style={{ color: "var(--color-text)" }}>
-      <Image src="/untch-logo.png" alt="" width={26} height={26} priority className="rounded-icons" />
-      Untch
+      <Image src="/untch-logo.png" alt="" width={26} height={26} priority className="rounded-icons shrink-0" />
+      {compact ? null : <span className="nav-label">Untch</span>}
     </Link>
   );
+}
+
+/** Reads the persisted rail state (set pre-paint by the inline script in the dashboard layout) and toggles
+ *  it on <html data-sidebar>, which CSS turns into the collapsed rail width + hidden labels. */
+function useRail(): { collapsed: boolean; toggle: () => void } {
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    setCollapsed(document.documentElement.dataset.sidebar === "collapsed");
+  }, []);
+  const toggle = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    document.documentElement.dataset.sidebar = next ? "collapsed" : "expanded";
+    try {
+      localStorage.setItem("untch-sidebar", next ? "collapsed" : "expanded");
+    } catch {
+      /* private mode — rail just won't persist */
+    }
+  };
+  return { collapsed, toggle };
 }
 
 export function DashboardNav() {
   const pathname = usePathname() ?? "/dashboard";
   const [open, setOpen] = useState(false);
+  const { collapsed, toggle } = useRail();
 
-  // Close the drawer on route change.
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
-  // While the drawer is open: close on Escape and lock body scroll (a modal surface).
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
@@ -80,13 +102,28 @@ export function DashboardNav() {
 
   return (
     <>
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar — collapses to an icon rail (width + labels driven by html[data-sidebar] in CSS) */}
       <aside
-        className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col lg:gap-8 lg:overflow-y-auto lg:px-5 lg:py-8"
+        className={`dashboard-sidebar hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:flex-col lg:gap-6 lg:overflow-y-auto lg:px-3 lg:py-6 ${collapsed ? "is-collapsed" : ""}`}
         style={{ background: "var(--color-surface)", borderRight: "1px solid var(--color-border)" }}
       >
-        <Wordmark />
+        <div className="nav-brand flex items-center justify-between gap-2 px-1">
+          <Wordmark compact={collapsed} />
+        </div>
         <NavList pathname={pathname} />
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className={`nav-item mt-auto flex items-center gap-3 rounded-inputs px-3 py-2 text-body-sm opacity-60 transition hover:opacity-100 ${FOCUS}`}
+          style={{ color: "var(--color-text)" }}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={`shrink-0 transition-transform ${collapsed ? "rotate-180" : ""}`}>
+            <path d="M12.5 5 7.5 10l5 5" />
+            <path d="M4 4.5v11" />
+          </svg>
+          <span className="nav-label">Collapse</span>
+        </button>
       </aside>
 
       {/* Mobile top bar */}
@@ -111,7 +148,7 @@ export function DashboardNav() {
         </button>
       </div>
 
-      {/* Mobile slide-in drawer + backdrop (off-canvas, above the top bar) */}
+      {/* Mobile slide-in drawer + backdrop (icon + label nav) */}
       <div className="lg:hidden" aria-hidden={!open}>
         <button
           type="button"
@@ -126,7 +163,7 @@ export function DashboardNav() {
           role="dialog"
           aria-modal="true"
           aria-label="Dashboard menu"
-          className={`fixed inset-y-0 left-0 z-50 flex w-[280px] max-w-[85vw] flex-col gap-6 overflow-y-auto px-5 py-6 transition-transform duration-200 ease-out motion-reduce:transition-none ${open ? "translate-x-0" : "-translate-x-full"} ${open ? "" : "pointer-events-none"}`}
+          className={`fixed inset-y-0 left-0 z-50 flex w-[280px] max-w-[85vw] flex-col gap-6 overflow-y-auto px-4 py-6 transition-transform duration-200 ease-out motion-reduce:transition-none ${open ? "translate-x-0" : "-translate-x-full"} ${open ? "" : "pointer-events-none"}`}
           style={{ background: "var(--color-surface)", borderRight: "1px solid var(--color-border)" }}
         >
           <div className="flex items-center justify-between">

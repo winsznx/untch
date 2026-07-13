@@ -17,9 +17,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   return (
     <Providers cookie={cookie}>
+      {/* Restore the collapsed-rail choice before first paint so the sidebar never flashes full-width. */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `try{if(localStorage.getItem('untch-sidebar')==='collapsed')document.documentElement.dataset.sidebar='collapsed';}catch(e){}`,
+        }}
+      />
       <div className="min-h-screen bg-canvas">
         <DashboardNav />
-        <div className="lg:pl-64">
+        <div className="dashboard-shell">
           {/* Auth (§15 #1) — RainbowKit single-flow connect + SIWE sign-in (OKX Wallet priority). */}
           <AuthBar />
           {/* Normalises any connected wallet to X Layer testnet before SIWE — see network-guard.tsx. */}

@@ -1,4 +1,4 @@
-import { DashCard, SectionTitle, Mono } from "../../../components/dashboard/ui";
+import { DashCard, SectionTitle, Mono, MastheadLink } from "../../../components/dashboard/ui";
 import { NoHistory } from "../../../components/dashboard/no-history";
 import { PolicyActions } from "../../../components/dashboard/policy-actions";
 import { DEFAULT_POLICY_RULES } from "../../../lib/dashboard/data";
@@ -16,14 +16,12 @@ export default async function Policies() {
   const policies = scope.authenticated ? await livePolicies(scope.address) : [];
   return (
     <div className="flex flex-col gap-8">
-      <SectionTitle kicker="Policy builder" title="Spend policy" />
-
-      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        Create, update, and pause are real transactions signed by your connected wallet against the deployed
-        PolicyRegistry on X Layer testnet. The list below is read live from the same @untch/policy-store the
-        MCP preflight enforces against — so a policy your agent was created with (via the seller's
-        create_spend_policy) and one you register here are the same rows, shown here.
-      </p>
+      <SectionTitle
+        kicker="Policy builder"
+        title="Spend policy"
+        subtitle="The ruleset your agent is checked against — create, update, and pause as real on-chain transactions. Read live from the same policy store the MCP preflight enforces against."
+        action={<MastheadLink href="#policy-builder" variant="primary">＋ New policy</MastheadLink>}
+      />
 
       {!scope.authenticated ? (
         <NoHistory authenticated={false} address={scope.address} what="policies" />
@@ -40,7 +38,7 @@ export default async function Policies() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div id="policy-builder" className="grid scroll-mt-24 grid-cols-1 gap-4 lg:grid-cols-2">
         <DashCard>
           <div className="flex flex-col gap-4">
             <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Starting template</span>

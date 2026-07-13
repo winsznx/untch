@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DashCard, SectionTitle, StatTile, Meter, DecisionChip } from "../../components/dashboard/ui";
+import { DashCard, SectionTitle, StatTile, Meter, DecisionChip, MastheadLink } from "../../components/dashboard/ui";
 import { NoHistory } from "../../components/dashboard/no-history";
 import { getProofTiers } from "../../lib/dashboard/data";
 import { liveSavings, liveIntentStream } from "../../lib/dashboard/live";
@@ -15,7 +15,12 @@ export default async function Overview() {
   if (!scope.authenticated) {
     return (
       <div className="flex flex-col gap-10">
-        <SectionTitle kicker="Overview" title="Proof surface" />
+        <SectionTitle
+          kicker="Overview"
+          title="Proof surface"
+          subtitle="Waste blocked, spend approved, deliveries verified — your agents' governed activity, proven on-chain."
+          action={<MastheadLink href="/explorer">Public explorer →</MastheadLink>}
+        />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatTile label="Waste blocked" value="0.00 USDT" sub="0 payments stopped" accent="signal" />
           <StatTile label="Spent" value="0.00 USDT" sub="0 approved" accent="text" />
@@ -46,7 +51,12 @@ export default async function Overview() {
 
   return (
     <div className="flex flex-col gap-10">
-      <SectionTitle kicker="Overview" title="Proof surface" />
+      <SectionTitle
+        kicker="Overview"
+        title="Proof surface"
+        subtitle="Waste blocked, spend approved, deliveries verified — your agents' governed activity, proven on-chain."
+        action={<MastheadLink href="/explorer">Public explorer →</MastheadLink>}
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Waste blocked" value={`${usd(s.blockedWaste)} ${s.token}`} sub={`${s.blockedCount} payments stopped`} accent="signal" />

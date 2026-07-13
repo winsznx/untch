@@ -21,18 +21,22 @@ export default async function Ledger() {
   if (!scope.authenticated || entries.length === 0) {
     return (
       <div className="flex flex-col gap-8">
-        <SectionTitle kicker="Ledger" title="Ledger explorer" />
+        <SectionTitle
+          kicker="Ledger"
+          title="Ledger explorer"
+          subtitle="Append-only money record — SPEND moved, BLOCK_SAVED was prevented. Anchored rows link to their on-chain receipt."
+        />
         <NoHistory authenticated={scope.authenticated} address={scope.address} what="ledger entries" />
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-8">
-      <SectionTitle kicker="Ledger" title="Ledger explorer" />
-      <p className="max-w-2xl text-body" style={{ color: "var(--color-inverse-canvas)" }}>
-        Append-only money record. SPEND rows are payments that moved; BLOCK_SAVED rows are prevented spend.
-        Anchored rows link to their on-chain receipt. Export downloads the exact rows shown, in the browser.
-      </p>
+      <SectionTitle
+        kicker="Ledger"
+        title="Ledger explorer"
+        subtitle="Append-only money record — SPEND moved, BLOCK_SAVED was prevented. Anchored rows link to their on-chain receipt; export downloads the exact rows shown."
+      />
 
       <LedgerExport
         rows={entries.map((e) => ({
