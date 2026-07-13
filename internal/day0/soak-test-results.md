@@ -4,9 +4,10 @@
 (approve / block / escalate-approve / escalate-timeout / verify-fail-withhold), plus a pause drill and
 an oracle-key rotation drill executed end-to-end."
 
-**Status:** **CORE COMPLETE — all five outcome types + both drills executed for real; public-testnet
-broadcast + mainnet x402 subset remain (documented below, resume-ready).**
-**Date:** 2026-07-13
+**Status:** **CORE COMPLETE — all five outcome types + both drills executed for real on a testnet-1952
+fork (§2–§4). Public-testnet execution PREPARED as an exact, eth_call-preflighted signing bundle
+awaiting the human's own-wallet signatures (§7); mainnet x402 subset remains (§6).**
+**Date:** 2026-07-13 (fork layer) · public-bundle prepared 2026-07-13
 **Method discipline:** every number below is either the output of a real engine/EVM execution in this
 session or an independent raw read (`cast` / re-derived hash) — never the harness asserting its own
 success. Nothing is simulated or fabricated. Where a step genuinely could not run in this environment
@@ -165,7 +166,63 @@ These raw reads corroborate the harness's own report exactly.
 
 ---
 
-## 6. Done vs remaining (resume cleanly)
+## 6. Public testnet execution — real, publicly-verifiable hashes (PREPARED, awaiting human signatures)
+
+§2–§5 above are the **fork-based volume + diversity proof** — 56 cycles and both drills against the real
+deployed contract's bytecode+state, but on a local fork (no owner key in this environment). To land the
+same behavior on the **public** 1952 ledger with explorer-verifiable hashes — without this session ever
+handling the owner key — an exact **signing bundle** was prepared for the human to execute with their own
+wallet:
+
+- **Preparer:** [scripts/soak/prepare-public-bundle.ts](../../scripts/soak/prepare-public-bundle.ts) — runs
+  with **no private key**. Owner-only txs (pause/unpause/setOracle/ownerWithdraw) are emitted as calldata
+  for the human's **owner** wallet; receipts (`logReceipts`) for the human's authorized **writer** wallet
+  (`0x03e5…1ab5`, `isWriter==true` verified live); vault `spend()` calldata carries an oracle signature
+  **pre-baked from the vault's public demo oracle** (anvil #1 — the deployed vault's own oracle, a
+  documented throwaway, **not** the owner key), so the human only broadcasts.
+- **Bundle:** [soak-evidence/public-bundle.json](soak-evidence/public-bundle.json) — **21 real sends**
+  (public tx hashes) + **2 gas-free `eth_call` revert assertions**.
+- **Runbook:** [soak-public-runbook.md](soak-public-runbook.md) — copy-paste `cast` commands + per-step
+  independent-verification reads.
+- **Preflighted on LIVE public state (no key):** a sample `spend()` and a `logReceipts` were `eth_call`ed
+  against public 1952 — both returned success (the pre-baked oracle sig validates, the anchored intent
+  check passes, the writer is authorized). So the calldata is proven executable before the human runs it.
+
+**Representative sample — 2× each outcome (10 cycles):** each anchors a real receipt recording its real
+decision; the two settling outcomes also move money via a Mode-C `spend()` — so the settle/withhold split
+is visible on-chain as the presence/absence of a `VaultSpend`.
+
+| # | outcome | decision recorded | receipt tx | vault spend tx |
+|---|---|---|---|---|
+| 1–2 | approve | `APPROVED(1)` | ⬜ pending | ⬜ pending |
+| 3–4 | escalate-approve | `ESCALATED_THRESHOLD(14)→APPROVED` | ⬜ pending | ⬜ pending |
+| 5 | block | `BLOCKED_BUDGET(12)` | ⬜ pending | — withheld |
+| 6 | block | `BLOCKED_CATEGORY(8)` | ⬜ pending | — withheld |
+| 7–8 | escalate-timeout | `ESCALATED_THRESHOLD(14)→EXPIRED` | ⬜ pending | — withheld |
+| 9–10 | verify-fail-withhold | `VERIFY_FAILED(2)` | ⬜ pending | — withheld |
+
+**Drills (reversible — vault ends exactly as found):**
+
+| step | tx | verification |
+|---|---|---|
+| pause · pause | ⬜ | `paused()==true` |
+| pause · spend-while-paused | eth_call | reverts `VaultPaused` |
+| pause · ownerWithdraw-while-paused | ⬜ | owner balance +0.1 despite pause |
+| pause · unpause | ⬜ | `paused()==false` |
+| pause · spend-after-unpause | ⬜ | `VaultSpend`, payee +0.1 |
+| rotate · setOracle→new | ⬜ | `oracle()==0x3C44…93BC` |
+| rotate · old-sig-rejected | eth_call | reverts `BadOracle` |
+| rotate · new-sig-accepted | ⬜ | `VaultSpend`, payee +0.1 |
+| rotate · setOracle→restore | ⬜ | `oracle()==0x7099…79C8` (restored) |
+
+**On human-reported hashes:** every send hash will be independently verified via raw RPC / explorer —
+decode `ReceiptLogged` / `VaultSpend` / `OracleChanged` / `Paused` events, confirm balances and
+`nonceUsed`, and this table filled in with the real hashes. This section is the ONLY thing between the
+current state and a fully public §28 soak.
+
+---
+
+## 7. Done vs remaining (resume cleanly)
 
 **DONE (this session, real):**
 - [x] Testnet/mainnet split confirmed against the actual flow (§0).
@@ -179,11 +236,10 @@ These raw reads corroborate the harness's own report exactly.
 - [x] `tsc --noEmit` clean on all new code.
 
 **REMAINING (needs a human-held key / real funds — not blockers to the logic, only to the ledger write):**
-- [ ] **Re-broadcast the on-chain layer to *public* testnet 1952** for public explorer tx hashes. One
-      command, once the owner key is supplied:
-      `RPC_URL=https://testrpc.xlayer.tech DEPLOYER_PRIVATE_KEY=0x<owner key> pnpm soak:onchain`
-      (drop the anvil fork; point `run-onchain.sh`'s `RPC` at public 1952). The harness is unchanged; only
-      the signer/ledger differ — same code path already proven on the fork.
+- [ ] **Execute the prepared public bundle (§6)** with the human's own owner + writer wallets — 21 real
+      sends → public explorer hashes for the representative sample and both drills. Bundle + runbook are
+      built and eth_call-preflighted; nothing else to author. Report the hashes back for independent
+      verification.
 - [ ] **Mainnet x402 approved-settlement subset.** Already proven real once at D0.1 (mainnet tx
       `0x9db78b52…96cd1efc`). Repeating it at scale spends real USDT0 and needs a funded mainnet buyer
       wallet (the D0.1 human-only funding blocker) — deliberately not auto-run.
