@@ -1,5 +1,13 @@
-import { encodePacked, getAddress, keccak256, type Address, type Hex } from "viem";
-import type { MutateResult, OnchainPolicy, PolicyRegistryChain, RegisterResult } from "../src/registry";
+import { encodeFunctionData, encodePacked, getAddress, keccak256, type Address, type Hex } from "viem";
+import {
+  POLICY_REGISTRY_ABI,
+  type MutateResult,
+  type OnchainPolicy,
+  type OnchainRegistration,
+  type PolicyRegistryChain,
+  type RegisterCall,
+  type RegisterResult,
+} from "../src/registry";
 
 /**
  * A fake PolicyRegistry that reproduces the REAL contract's observable behaviour with no RPC:
@@ -26,9 +34,12 @@ export class FakeChain implements PolicyRegistryChain {
   readonly ownerAddress: Address;
   readonly registryAddress: Address = getAddress("0xe1d74c90801db0fa806c72eb818b7671b8233532");
   readonly chainId = 1952;
-  private nonce = 0n;
   private block = 100;
+  /** Per-owner nonce — every distinct submitter has its own sequence, exactly like the real registry. */
+  private readonly nonces = new Map<string, bigint>();
   private readonly rows = new Map<string, OnchainRow>();
+  /** Confirmed registrations keyed by txHash — what `getRegistrationFromReceipt` reads back. */
+  private readonly registrations = new Map<Hex, OnchainRegistration>();
   /** policyIds this operator does NOT own — mutating them reverts NotPolicyOwner. */
   readonly notOwned = new Set<string>();
 
@@ -40,23 +51,71 @@ export class FakeChain implements PolicyRegistryChain {
     return keccak256(encodePacked(["string", "uint256"], [tag, BigInt(this.block)]));
   }
 
-  async nextPolicyId(): Promise<bigint> {
-    return derivePolicyId(this.ownerAddress, this.nonce);
+  private nonceOf(owner: Address): bigint {
+    return this.nonces.get(getAddress(owner)) ?? 0n;
   }
 
-  async register(agent: Address, policyHash: Hex, expiry: bigint): Promise<RegisterResult> {
-    const id = derivePolicyId(this.ownerAddress, this.nonce);
-    this.nonce += 1n;
+  async nextPolicyId(): Promise<bigint> {
+    return derivePolicyId(this.ownerAddress, this.nonceOf(this.ownerAddress));
+  }
+
+  buildRegister(agent: Address, policyHash: Hex, expiry: bigint): RegisterCall {
+    const args = [getAddress(agent), policyHash, expiry] as const;
+    return {
+      to: this.registryAddress,
+      abi: POLICY_REGISTRY_ABI,
+      functionName: "registerPolicy",
+      args,
+      calldata: encodeFunctionData({ abi: POLICY_REGISTRY_ABI, functionName: "registerPolicy", args }),
+      chainId: this.chainId,
+    };
+  }
+
+  /**
+   * Simulate a CALLER's own wallet signing + submitting the unsigned registerPolicy call — the per-caller
+   * ownership path. `caller` becomes the on-chain `owner` (its own nonce derives the policyId), and the
+   * confirmation is retrievable by the returned txHash via `getRegistrationFromReceipt`. No key here
+   * either: it just records what a real submission would have produced.
+   */
+  submitRegister(caller: Address, agent: Address, policyHash: Hex, expiry: bigint): Hex {
+    const owner = getAddress(caller);
+    const nonce = this.nonceOf(owner);
+    const id = derivePolicyId(owner, nonce);
+    this.nonces.set(owner, nonce + 1n);
     this.block += 1;
+    const txHash = this.tx(`register:${id}`);
     this.rows.set(id.toString(), {
       policyHash,
       expiry,
       version: 1,
       status: 1,
-      owner: this.ownerAddress,
+      owner,
       agent: getAddress(agent),
     });
-    return { policyId: id, txHash: this.tx(`register:${id}`), blockNumber: this.block, version: 1 };
+    this.registrations.set(txHash, {
+      policyId: id,
+      owner,
+      agent: getAddress(agent),
+      policyHash,
+      expiry,
+      version: 1,
+      txHash,
+      blockNumber: this.block,
+    });
+    return txHash;
+  }
+
+  async getRegistrationFromReceipt(txHash: Hex): Promise<OnchainRegistration> {
+    const reg = this.registrations.get(txHash);
+    if (!reg) throw new Error(`tx ${txHash} has no PolicyRegistered event from registry ${this.registryAddress}`);
+    return reg;
+  }
+
+  async register(agent: Address, policyHash: Hex, expiry: bigint): Promise<RegisterResult> {
+    // Legacy server-signing path: the operator wallet self-registers under its OWN address.
+    const txHash = this.submitRegister(this.ownerAddress, agent, policyHash, expiry);
+    const reg = await this.getRegistrationFromReceipt(txHash);
+    return { policyId: reg.policyId, txHash, blockNumber: reg.blockNumber, version: 1 };
   }
 
   private owned(policyId: bigint): OnchainRow {

@@ -1,0 +1,32 @@
+{
+  "proof": "multi-tenancy — create_spend_policy per-caller ownership (Part 1)",
+  "network": "X Layer testnet",
+  "chainId": 1952,
+  "policyRegistry": "0xe1d74c90801db0fa806c72eb818b7671b8233532",
+  "callingConvention": "create_spend_policy returns UNSIGNED registerPolicy calldata; each caller's own wallet signs+submits; syncRegistration records owner from the confirmed PolicyRegistered event. The backend never signs.",
+  "callers": [
+    {
+      "caller": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+      "policyId": "87196911267039052968645333091891174728404891217179243762548850315828123461264",
+      "policyHash": "0xf4ca8d8f5d1fb496f67896775759730797b30b44548ed0ff698c34ddfccc17be",
+      "registerTx": "0xd79dd26c44998d5464926f64f320c05483233832bba338b2e8ef5e3b714ad858",
+      "syncedOwner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+      "rpcOwner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+      "ok": true
+    },
+    {
+      "caller": "0xFc2752D360fa0872847B470E37f6639c5f69DD3e",
+      "policyId": "98407830393883161221956755326938298570228708781942991524887481602029516626725",
+      "policyHash": "0xf4ca8d8f5d1fb496f67896775759730797b30b44548ed0ff698c34ddfccc17be",
+      "registerTx": "0x2dd21a5fb4c56798c1a2490dc27d8dc4ad586b80e8ccda3a70400164defcc986",
+      "syncedOwner": "0xFc2752D360fa0872847B470E37f6639c5f69DD3e",
+      "rpcOwner": "0xFc2752D360fa0872847B470E37f6639c5f69DD3e",
+      "ok": true
+    }
+  ],
+  "distinctOwners": true,
+  "distinctPolicies": true,
+  "independentlyVerified": "each owner read via a separate raw-RPC getPolicy() client, not the service's report",
+  "pass": true,
+  "capturedAt": "2026-07-13T11:40:01.723Z"
+}

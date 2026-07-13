@@ -1,15 +1,18 @@
--- §27 operator-identity readiness (schema-readiness only — NOT a multi-approver feature yet).
+-- §27 operator-identity — GENUINELY LOAD-BEARING (no longer just seeded placeholders).
 --
--- Today the §27 authority boundary binds ONE operator via env config (interim{Telegram,Discord,Slack}
--- Binding, combined). That works, but a policy cannot reference an operator, so adding a second approver
--- later would be a migration. These three tables remove that: the operator becomes a first-class row, its
--- channel handles become the persisted (channel, handle) → operator map, and a policy names its approvers
--- through a join table. A second approver later is then a few INSERTs, never a schema change.
+-- The operator is a first-class row; its channel handles are the persisted (channel, handle) → operator
+-- map; and a policy names its approvers through a join table. Now that create_spend_policy gives policies
+-- genuine, distinct owners (per-caller ownership), TWO real authority paths read these tables:
+--   • escalation ROUTING (services/asp/src/escalation-routing.ts): an escalating policy is routed to its
+--     REAL owner's operator (resolved via the owner's `dashboard` binding) and fanned out to THAT
+--     operator's bound channels — not a hardcoded operator regardless of owner.
+--   • the §27 dashboard authority boundary: a SIWE session may resolve an escalation only if its wallet's
+--     operator is an approver of THAT escalation's policy (operatorForOwner + approversFor).
 --
--- IMPORTANT: nothing reads these for authority yet. The live binding check still uses the env-derived
--- combineBindings (unchanged). These tables are provisioned with exactly today's single operator so the
--- shape is ready when the real §15 dashboard onboarding/binding flow lands. Same shared Postgres; this
--- package owns 004. Idempotent (IF NOT EXISTS / ON CONFLICT), safe to re-run.
+-- The interim single operator is provisioned from env at boot; an unbound owner routes to it as the
+-- documented interim default. A real §15 onboarding binds an owner to its OWN operator and routing follows
+-- it — a second operator is a few INSERTs, never a schema change. Same shared Postgres; this package owns
+-- 004. Idempotent (IF NOT EXISTS / ON CONFLICT), safe to re-run.
 
 -- The operator identity. One person; the real binding tuple (verified wallet, last-verified-at, set by a
 -- code roundtrip) is added when §15 exists — for now just an id + label.

@@ -127,8 +127,10 @@ service), same independent-verification standard as every prior on-chain proof.
   (§10.1) txs. See **Policy store** below.
 
 **FIXTURE-FREE-BUT-STILL-DEMO** (real logic, one demo shortcut, clearly labeled):
-- **Operator signing** uses the demo/burner wallet `0x98F43e…` server-side (interim). Real, on-chain,
-  but a **TEMPORARY stand-in** for the operator's own connected wallet — see **Operator signing**.
+- **`create_spend_policy` no longer signs** — it builds unsigned calldata for the caller's own wallet
+  (per-caller ownership; see **Operator signing** below). Only **`update/pause/resume_policy`** still
+  sign server-side with the interim demo/burner wallet `0x98F43e…`, a **TEMPORARY stand-in** that can
+  only mutate a policy that operator itself owns.
 
 **STILL EPHEMERAL** (real logic, demo-grade *state* — resets on restart; `src/ledger-state.ts`). Only
 the ledger window + intent cache remain in-memory; this is a *separate* later step (§7.1/§8), not the
@@ -172,26 +174,61 @@ Each mutation keeps three subsystems consistent: `@untch/canon` hashes the rules
 reimplemented) → `PolicyRegistry` runs the real register/update/pause tx → Postgres stores the row
 **after** the tx confirms (so a row never claims an anchor that did not land).
 
-## Operator signing (INTERIM demo wallet — TEMPORARY — and the target state)
+## Operator signing — per-caller ownership (`create_spend_policy` no longer signs)
 
 `PolicyRegistry.registerPolicy` is gated to `msg.sender == owner`: **direct, no relayer, no
-signature path** (deliberately unlike `SpendIntentRegistry`'s writer-set — policies are created
-*rarely by a human*, not constantly by software). The correct long-term flow is the operator's **own
-wallet, connected via the dashboard (§15)** — the backend should never hold an operator's key.
+signature path**. The only way a caller becomes the on-chain owner is to submit the tx with **their own
+key**. `create_spend_policy` now respects that — it is a **BREAKING CHANGE to the tool's calling
+convention** (this build's own callers were the primary users of it, so they moved with it):
 
-That dashboard does not exist yet. The **honest interim**: the seller signs `create/update/pause_policy`
-with the **same demo/burner wallet the whole build has used, `0x98F43e…`** (`OPERATOR_PRIVATE_KEY`),
-labeled a **TEMPORARY stand-in** in `config.ts`, `policy-wiring.ts`, `policy-handlers.ts`, and
-`@untch/policy-store`. It is **not** a custodial "master operator key" for third parties — when real
-operators exist, the demo wallet is replaced by each operator's own connected wallet, not by us
-signing on their behalf.
+1. `POST /create_spend_policy { agent, rules }` → the seller **builds the UNSIGNED `registerPolicy`
+   calldata** (`unsignedTx.calldata` + the decoded args + the canonical `policyHash`) and returns it. It
+   holds a **key-free `RegistryReader`** — it is structurally unable to sign. No `policyId` and no `tx`
+   yet: those exist only after the caller submits.
+2. the **caller's own wallet** signs + submits that calldata → the caller becomes the genuine on-chain
+   owner.
+3. `POST /sync_policy_registration { txHash, rules }` → the seller reads the confirmed `PolicyRegistered`
+   event and records the row with `owner` = **the real submitter from the event** (never assumed). The
+   rules must hash to the anchored `policyHash` (`RULES_HASH_MISMATCH` otherwise).
 
-> **Target state (named requirement, not built now).** The backend **prepares the `registerPolicy`
-> calldata and returns it unsigned**; the operator's own connected wallet signs and submits it; we
-> sync the Postgres row once we observe the on-chain confirmation. Do not mistake the demo shortcut
-> for this intended architecture. Building the unsigned-calldata flow is deferred with the dashboard
-> (§15); until then, `OPERATOR_PRIVATE_KEY` unset ⇒ the mutation tools return `503`
-> (`POLICY_SIGNER_NOT_CONFIGURED`) — read-only is the default, signing is opt-in.
+This brings the API path to parity with the dashboard, whose connected wallet already signs directly.
+Two distinct callers provably end up as two distinct on-chain owners — see the e2e proof below.
+`create_spend_policy` / `sync_policy_registration` need **no signing key** (only `DATABASE_URL` for the
+durable row); with the store unwired they return `503 POLICY_STORE_NOT_CONFIGURED`.
+
+`update_policy` / `pause_policy` / `resume_policy` still sign server-side with the interim demo/burner
+wallet `0x98F43e…` (`OPERATOR_PRIVATE_KEY`) — a **TEMPORARY stand-in** that can only mutate a policy that
+operator itself owns. `OPERATOR_PRIVATE_KEY` unset ⇒ those three return `503
+POLICY_SIGNER_NOT_CONFIGURED`; create/sync still work. Bringing them to the same unsigned-calldata parity
+is the same follow-up the dashboard's `buildUpdatePolicy` / `buildPausePolicy` already model.
+
+### Owner-based escalation routing (§27) — the operator tables are now load-bearing
+
+Now that policies have genuine, distinct owners, escalation notification routes to the **real owner**, not
+a hardcoded operator:
+
+- `escalation-routing.ts` resolves the escalating policy's **owner → operator** (via the owner's
+  `dashboard` binding, `operatorForOwner`), records that operator as the policy's approver, and fans out
+  only to **that operator's bound channels** (`channelsForOperator`). An as-yet-unbound owner (the interim
+  single-operator reality) routes to the configured operator and is first-classed for a later §15
+  onboarding — a bound owner routes to itself.
+- the §27 **dashboard** authority path now checks **policy ownership**: a SIWE session may resolve an
+  escalation only if its wallet's operator is an approver of THAT escalation's policy (`verifyOwnership`
+  → `operatorForOwner` + `approversFor`). A wallet that owns a *different* policy is refused
+  (`IGNORED_UNBOUND`), proven as an explicit negative case in `test/escalation-routing.test.ts`.
+
+The `escalation_operators` / `escalation_operator_bindings` / `policy_approvers` tables (migration 004),
+seeded with one row, are therefore **genuinely load-bearing now — not placeholders**. Telegram / Discord
+/ Slack / dashboard channel mechanics are unchanged; only the *routing* (which operator's bindings get
+notified) changed.
+
+### Real end-to-end proof
+
+`pnpm --filter @untch/asp policy:multitenant` — two different real wallets each create a real policy
+through the changed flow; each ends up as the genuine on-chain owner, **independently verified via raw
+RPC** (`getPolicy(policyId).owner`), receipt at
+`contracts/deploy/multi-tenant-policy-testnet-receipt.json`. One funded key + a freshly-generated,
+auto-funded second caller is enough; the proof refuses mainnet.
 
 ## `ping_untch` — kept (decision)
 

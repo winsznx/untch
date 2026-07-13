@@ -70,3 +70,43 @@ export interface PausePolicyResult {
   readonly txHash: Hex;
   readonly blockNumber: number;
 }
+
+/**
+ * Result of BUILDING an unsigned `create_spend_policy` — what the tool returns for the caller's own
+ * wallet to sign + submit. No tx, no owner yet: the owner becomes whoever submits `unsignedTx`, learned
+ * only after `syncRegistration` observes the confirmation.
+ */
+export interface BuildCreatePolicyResult {
+  readonly policyHash: Hex;
+  readonly registry: Address;
+  readonly chainId: number;
+  readonly agentId: Address;
+  /** on-chain expiry (unix seconds, uint64) derived from rules.expiry. */
+  readonly expiry: number;
+  /** The unsigned registerPolicy(agent, policyHash, expiry) call — viem request shape + raw calldata. */
+  readonly unsignedTx: {
+    readonly to: Address;
+    readonly functionName: "registerPolicy";
+    readonly args: readonly [Address, Hex, bigint];
+    readonly calldata: Hex;
+    readonly value: "0x0";
+    readonly chainId: number;
+  };
+}
+
+/**
+ * Result of SYNCING a confirmed registration — the durable row, with `owner` taken from the on-chain
+ * `PolicyRegistered` event (the real submitter), never assumed. `alreadyStored` is true when the row
+ * existed already (idempotent re-sync / dashboard-created policy).
+ */
+export interface SyncRegistrationResult {
+  readonly policyId: string;
+  readonly owner: Address;
+  readonly agentId: Address;
+  readonly policyHash: Hex;
+  readonly txHash: Hex;
+  readonly blockNumber: number;
+  readonly version: number;
+  readonly expiry: number;
+  readonly alreadyStored: boolean;
+}

@@ -18,6 +18,7 @@
     "receipt:e2e": "tsx --env-file=../../.env --env-file=.env src/run-receipt-e2e-proof.ts",
     "verify:e2e": "tsx --env-file=../../.env --env-file=.env src/run-verify-e2e-proof.ts",
     "policy:e2e": "tsx --env-file=../../.env --env-file=.env src/run-policy-e2e-proof.ts",
+    "policy:multitenant": "tsx --env-file=../../.env --env-file=.env src/run-multi-tenant-policy-proof.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },

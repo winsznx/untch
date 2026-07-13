@@ -9,7 +9,8 @@ on-chain anchoring** through the deployed `PolicyRegistry` (§10.1). `preflight_
 
 | Tool (in `@untch/asp`) | This package | Chain call (real testnet tx) |
 |---|---|---|
-| `create_spend_policy` | canonicalize+hash rules, derive id from the live nonce, store | `PolicyRegistry.registerPolicy` |
+| `create_spend_policy` | canonicalize+hash rules, **build UNSIGNED registerPolicy calldata** (never signs) | — (caller submits) |
+| `sync_policy_registration` | read the confirmed `PolicyRegistered` event, store the row with the **real owner** | — (read-only `RegistryReader`) |
 | `update_policy` | re-hash rules, sync new version | `PolicyRegistry.updatePolicy` |
 | `pause_policy` / `resume_policy` | flip stored status | `PolicyRegistry.pausePolicy` / `resumePolicy` |
 | `preflight_payment` (read) | load the stored policy for the engine | — (read-only `PolicyProvider`) |
@@ -35,24 +36,31 @@ policyId = uint256(keccak256(abi.encodePacked(owner, ownerNonce)))
 `id` is stored as `NUMERIC(78,0)` because a uint256 does not fit in `BIGINT` (the same representation
 the receipt writer uses for `policy_id`).
 
-## Operator signing — INTERIM demo wallet (TEMPORARY), and the target state
+## Per-caller ownership — `create_spend_policy` NO LONGER signs (the target state, now built)
 
 `registerPolicy` / `updatePolicy` / `pausePolicy` are gated to `msg.sender == owner` — **direct, no
-relayer, no signature path** (deliberately unlike `SpendIntentRegistry`'s writer-set: policies are
-created *rarely by a human*, not constantly by software). The correct long-term flow is the
-operator's **own wallet**, connected via the dashboard (§15) — our backend should never hold an
-operator's key.
+relayer, no signature path**. The only way a caller becomes the on-chain owner is to submit the tx with
+**their own key**. `create_spend_policy` now respects that instead of working around it:
 
-That dashboard does not exist yet. The honest interim: this package signs with the **same demo/burner
-wallet the whole build has used, `0x98F43e…`**, supplied as `OPERATOR_PRIVATE_KEY`. It is labeled a
-**TEMPORARY stand-in** everywhere it appears (`config.ts`, `registry.ts`, the ASP wiring + handlers,
-this README). It is **not** a custodial "master operator key" for third parties — when real operators
-exist, the demo wallet is replaced by each operator's own connected wallet.
+- **`PolicyRegistrationService.buildCreate`** canonicalize+hashes the rules and returns the **UNSIGNED**
+  `registerPolicy` calldata (`RegisterCall` — the viem request shape + raw `calldata`). It holds a
+  key-free **`RegistryReader`** (`ViemRegistryReader`), so it is *structurally* unable to sign.
+- the **caller's own wallet** signs + submits it and becomes the genuine on-chain owner.
+- **`PolicyRegistrationService.syncRegistration`** reads the confirmed `PolicyRegistered` event and stores
+  the row with `owner` taken from the event — **the real submitter, never assumed**. The supplied rules
+  must hash to the anchored `policyHash` (`RULES_HASH_MISMATCH` otherwise), binding the stored ruleset to
+  what the chain committed. Idempotent (a re-sync / dashboard-created policy → `alreadyStored`).
 
-**Target state (named requirement, not built now):** the backend **prepares the `registerPolicy`
-calldata and returns it unsigned**; the operator's own connected wallet signs and submits it; we sync
-the Postgres row once we observe the resulting on-chain confirmation. The demo shortcut must never be
-mistaken for this intended architecture.
+This is the same thing the dashboard already does (its connected wallet signs directly); the API path is
+now at parity. Two distinct callers therefore end up as two distinct on-chain owners — proven end-to-end
+on X Layer testnet (`contracts/deploy/multi-tenant-policy-testnet-receipt.json`), each owner independently
+read back over raw RPC.
+
+**`update_policy` / `pause_policy` / `resume_policy`** still sign server-side with the interim
+demo/burner wallet `0x98F43e…` (`OPERATOR_PRIVATE_KEY`) — a **TEMPORARY stand-in** that can only ever
+mutate a policy that operator itself owns. Bringing them to the same unsigned-calldata parity is the same
+follow-up the dashboard's `buildUpdatePolicy` / `buildPausePolicy` already model; the interim wallet never
+signs on another caller's behalf.
 
 ## Storage — the same instance, no second database
 
@@ -85,9 +93,10 @@ DATABASE_URL=postgresql://…proxy.rlwy.net:PORT/railway pnpm --filter @untch/po
 ## Env
 
 ```
-DATABASE_URL          # required (read + write) — the receipt writer's Railway Postgres
-OPERATOR_PRIVATE_KEY  # required to SIGN mutations — the interim demo wallet 0x98F43e… (TEMPORARY)
-RPC_URL               # default https://testrpc.xlayer.tech
+DATABASE_URL          # required — the receipt writer's Railway Postgres (create/sync record the row here)
+OPERATOR_PRIVATE_KEY  # ONLY for update/pause/resume signing — the interim demo wallet 0x98F43e… (TEMPORARY).
+                      # create_spend_policy needs NO key: it builds unsigned calldata; the caller signs.
+RPC_URL               # default https://testrpc.xlayer.tech (create build + sync + update/pause use it)
 POLICY_REGISTRY       # default 0xe1d74c90801db0fa806c72eb818b7671b8233532 (post-lint-fix redeploy)
 ```
 

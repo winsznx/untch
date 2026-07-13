@@ -64,6 +64,8 @@ export const ESCALATION_STATUS_ROUTE = "/escalation_status/:pollRef" as const;
  * connected wallet (see README → "Operator signing"). They are not buyer x402 calls.
  */
 export const CREATE_POLICY_ROUTE = "/create_spend_policy" as const;
+/** Second half of the per-caller create flow: record the durable row from the caller's confirmed tx. */
+export const SYNC_POLICY_ROUTE = "/sync_policy_registration" as const;
 export const UPDATE_POLICY_ROUTE = "/update_policy" as const;
 export const PAUSE_POLICY_ROUTE = "/pause_policy" as const;
 export const RESUME_POLICY_ROUTE = "/resume_policy" as const;

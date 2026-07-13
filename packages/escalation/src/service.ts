@@ -117,7 +117,18 @@ export class EscalationService {
 
   // ── CREATE → FAN_OUT → PENDING ──────────────────────────────────────────────────────────────────
 
-  async createEscalation(req: EscalationRequest): Promise<CreatedEscalation> {
+  /**
+   * `opts.restrictToChannels`, when present, is the set of channels the escalating policy's OWNER's
+   * operator is reachable on (owner-based routing). The fan-out targets are then the policy's authorized
+   * channels ∩ the registered channels ∩ this set — so an escalation reaches the RIGHT owner's channels
+   * and not another operator's. Absent ⇒ no owner restriction (the pre-routing behavior). It NEVER widens
+   * the fan-out; it only narrows it. The inbound §27 authority check is unaffected (a channel a policy
+   * authorizes can still resolve if it somehow received the code) — routing decides who is NOTIFIED.
+   */
+  async createEscalation(
+    req: EscalationRequest,
+    opts: { restrictToChannels?: ReadonlySet<string> } = {},
+  ): Promise<CreatedEscalation> {
     // Idempotent by pollRef: a retried preflight (or a duplicate ESCALATED decision) must NOT mint a
     // fresh code and re-notify — the stored code hash would no longer match the new plaintext, breaking
     // a legitimate approval. The first escalation for a poll ref wins; a repeat returns it untouched.
@@ -148,7 +159,7 @@ export class EscalationService {
       initialLog: [],
     });
 
-    const targets = this.resolveTargetChannels(req.approvals.channels);
+    const targets = this.resolveTargetChannels(req.approvals.channels, opts.restrictToChannels);
     let anyOk = false;
     for (const ch of targets) {
       const t0 = this.clock();
@@ -188,13 +199,17 @@ export class EscalationService {
     return { record: fresh ?? record, code };
   }
 
-  private resolveTargetChannels(allowed: readonly string[]) {
-    if (allowed.length === 0) return this.registry.all();
+  private resolveTargetChannels(allowed: readonly string[], restrict?: ReadonlySet<string>) {
     // Intersection ONLY — a policy naming a channel that isn't registered (e.g. imessage/Photon) simply
     // doesn't fan out there. A channel is never faked to satisfy the policy's list.
-    return allowed
-      .map((name) => this.registry.get(name))
-      .filter((c): c is NonNullable<typeof c> => c !== undefined);
+    const base =
+      allowed.length === 0
+        ? this.registry.all()
+        : allowed
+            .map((name) => this.registry.get(name))
+            .filter((c): c is NonNullable<typeof c> => c !== undefined);
+    // Owner routing narrows further: only channels the escalating policy's owner-operator is bound to.
+    return restrict ? base.filter((c) => restrict.has(c.name)) : base;
   }
 
   // ── INBOUND: the §27 authority-boundary check ───────────────────────────────────────────────────

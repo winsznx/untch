@@ -2,6 +2,7 @@ import {
   createPublicClient,
   createWalletClient,
   decodeEventLog,
+  encodeFunctionData,
   getAddress,
   http,
   type Abi,
@@ -24,6 +25,13 @@ import { privateKeyToAccount } from "viem/accounts";
  * build that is the demo/burner wallet 0x98F43e…, a TEMPORARY stand-in for the operator's dashboard-
  * connected wallet (§15). Only the tool-running instance ever holds this key; the read path
  * (`PolicyProvider` for preflight) never does.
+ *
+ * PER-CALLER OWNERSHIP (the `RegistryReader` split): `create_spend_policy` no longer signs on the
+ * caller's behalf. It BUILDS the unsigned `registerPolicy` call (`buildRegister`) for the caller's own
+ * wallet to sign + submit, then the backend SYNCS Postgres from what the chain actually confirmed
+ * (`getRegistrationFromReceipt`) — so the stored `owner` is whatever address really submitted the tx,
+ * read from the on-chain `PolicyRegistered` event, never assumed. Neither of those two operations needs
+ * a private key, so `RegistryReader` is the key-free surface the create/sync path uses.
  */
 export interface OnchainPolicy {
   readonly owner: Address;
@@ -47,10 +55,46 @@ export interface MutateResult {
   readonly version: number;
 }
 
-export interface PolicyRegistryChain {
-  readonly ownerAddress: Address;
+/** The unsigned `registerPolicy(agent, policyHash, expiry)` call — the exact viem write-request shape,
+ *  plus the raw ABI-encoded `calldata`, so ANY wallet (browser or programmatic) can sign + submit it. */
+export interface RegisterCall {
+  readonly to: Address;
+  readonly abi: typeof POLICY_REGISTRY_ABI;
+  readonly functionName: "registerPolicy";
+  readonly args: readonly [Address, Hex, bigint];
+  readonly calldata: Hex;
+  readonly chainId: number;
+}
+
+/** A confirmed on-chain registration, read back from the `PolicyRegistered` event of a submitted tx.
+ *  `owner` is whatever address actually submitted — the ground truth the store syncs to, never assumed. */
+export interface OnchainRegistration {
+  readonly policyId: bigint;
+  readonly owner: Address;
+  readonly agent: Address;
+  readonly policyHash: Hex;
+  readonly expiry: bigint;
+  readonly version: number;
+  readonly txHash: Hex;
+  readonly blockNumber: number;
+}
+
+/**
+ * The KEY-FREE registry surface used by the per-caller create/sync path. `buildRegister` is pure (no
+ * network, no key); `getRegistrationFromReceipt` only READS a confirmed tx over RPC. A read-only client
+ * (`ViemRegistryReader`) implements exactly this, so `create_spend_policy` never needs a signing key.
+ */
+export interface RegistryReader {
   readonly registryAddress: Address;
   readonly chainId: number;
+  /** Build the unsigned registerPolicy call for the caller's own wallet to sign + submit. */
+  buildRegister(agent: Address, policyHash: Hex, expiry: bigint): RegisterCall;
+  /** Read a confirmed registerPolicy tx and decode its `PolicyRegistered` event (owner = real submitter). */
+  getRegistrationFromReceipt(txHash: Hex): Promise<OnchainRegistration>;
+}
+
+export interface PolicyRegistryChain extends RegistryReader {
+  readonly ownerAddress: Address;
   /** The policyId the owner's NEXT registration will produce (contract-derived from the live nonce). */
   nextPolicyId(): Promise<bigint>;
   register(agent: Address, policyHash: Hex, expiry: bigint): Promise<RegisterResult>;
@@ -138,6 +182,98 @@ export const POLICY_REGISTRY_ABI = [
   },
 ] as const satisfies Abi;
 
+/** Pure builder for the unsigned registerPolicy call — shared by the read-only reader and the full client
+ *  so the bytes a caller signs are the same regardless of which surface built them. */
+function buildRegisterCall(
+  registry: Address,
+  chainId: number,
+  agent: Address,
+  policyHash: Hex,
+  expiry: bigint,
+): RegisterCall {
+  const args = [getAddress(agent), policyHash, expiry] as const;
+  return {
+    to: registry,
+    abi: POLICY_REGISTRY_ABI,
+    functionName: "registerPolicy",
+    args,
+    calldata: encodeFunctionData({ abi: POLICY_REGISTRY_ABI, functionName: "registerPolicy", args }),
+    chainId,
+  };
+}
+
+/** Read a confirmed registerPolicy tx and pull the on-chain truth from its `PolicyRegistered` event.
+ *  Only accepts an event emitted BY the configured registry, so a look-alike log cannot spoof a policy. */
+async function readRegistration(
+  pub: PublicClient,
+  registry: Address,
+  txHash: Hex,
+): Promise<OnchainRegistration> {
+  const rcpt = await pub.waitForTransactionReceipt({ hash: txHash });
+  if (rcpt.status !== "success") throw new Error(`registerPolicy tx reverted (tx ${txHash})`);
+
+  for (const log of rcpt.logs) {
+    if (getAddress(log.address) !== registry) continue; // must come from OUR registry
+    try {
+      const ev = decodeEventLog({ abi: POLICY_REGISTRY_ABI, data: log.data, topics: log.topics });
+      if (ev.eventName !== "PolicyRegistered") continue;
+      const a = ev.args as unknown as {
+        policyId: bigint;
+        owner: Address;
+        agent: Address;
+        policyHash: Hex;
+        expiry: bigint;
+        version: number;
+      };
+      return {
+        policyId: a.policyId,
+        owner: getAddress(a.owner),
+        agent: getAddress(a.agent),
+        policyHash: a.policyHash,
+        expiry: a.expiry,
+        version: Number(a.version),
+        txHash,
+        blockNumber: Number(rcpt.blockNumber),
+      };
+    } catch {
+      /* not a PolicyRegistered log */
+    }
+  }
+  throw new Error(`tx ${txHash} has no PolicyRegistered event from registry ${registry}`);
+}
+
+export interface ViemRegistryReaderOptions {
+  readonly chain: Chain;
+  readonly rpcUrl: string;
+  readonly registry: Address;
+}
+
+/**
+ * Key-free `RegistryReader` — the create/sync surface for `create_spend_policy`. Holds only a public
+ * client: it can BUILD the unsigned registerPolicy call and READ a confirmed registration back, but it
+ * cannot sign anything. This is what makes the backend structurally unable to register a policy on a
+ * caller's behalf; the caller's own wallet is the only signer.
+ */
+export class ViemRegistryReader implements RegistryReader {
+  private readonly pub: PublicClient;
+  readonly registryAddress: Address;
+  readonly chainId: number;
+
+  constructor(opts: ViemRegistryReaderOptions) {
+    this.chainId = opts.chain.id;
+    this.registryAddress = getAddress(opts.registry);
+    this.pub = createPublicClient({ chain: opts.chain, transport: http(opts.rpcUrl) });
+  }
+
+  buildRegister(agent: Address, policyHash: Hex, expiry: bigint): RegisterCall {
+    return buildRegisterCall(this.registryAddress, this.chainId, agent, policyHash, expiry);
+  }
+
+  getRegistrationFromReceipt(txHash: Hex): Promise<OnchainRegistration> {
+    return readRegistration(this.pub, this.registryAddress, txHash);
+  }
+}
+
 export interface ViemPolicyRegistryOptions {
   readonly chain: Chain;
   readonly rpcUrl: string;
@@ -170,6 +306,14 @@ export class ViemPolicyRegistry implements PolicyRegistryChain {
     return this.account.address;
   }
 
+  buildRegister(agent: Address, policyHash: Hex, expiry: bigint): RegisterCall {
+    return buildRegisterCall(this.registryAddress, this.chainId, agent, policyHash, expiry);
+  }
+
+  getRegistrationFromReceipt(txHash: Hex): Promise<OnchainRegistration> {
+    return readRegistration(this.pub, this.registryAddress, txHash);
+  }
+
   async nextPolicyId(): Promise<bigint> {
     return (await this.pub.readContract({
       address: this.registryAddress,
@@ -179,6 +323,13 @@ export class ViemPolicyRegistry implements PolicyRegistryChain {
     })) as bigint;
   }
 
+  /**
+   * LEGACY server-signing create path — the operator wallet self-signs a registerPolicy for its OWN
+   * policy. The `create_spend_policy` TOOL no longer calls this (it builds unsigned calldata for the
+   * caller's own wallet, see `PolicyRegistrationService`); it is retained ONLY for the single-owner
+   * legacy proof. It can only ever produce a policy owned by THIS operator wallet — it never signs on
+   * another caller's behalf.
+   */
   async register(agent: Address, policyHash: Hex, expiry: bigint): Promise<RegisterResult> {
     // Predict from the LIVE on-chain nonce, then register, then confirm the emitted id equals the
     // prediction — so Postgres binds to the id the chain actually assigned.
@@ -191,30 +342,13 @@ export class ViemPolicyRegistry implements PolicyRegistryChain {
       functionName: "registerPolicy",
       args: [getAddress(agent), policyHash, expiry],
     });
-    const rcpt = await this.pub.waitForTransactionReceipt({ hash: txHash });
-    if (rcpt.status !== "success") throw new Error(`registerPolicy reverted (tx ${txHash})`);
-
-    let eventPolicyId: bigint | undefined;
-    for (const log of rcpt.logs) {
-      try {
-        const ev = decodeEventLog({ abi: POLICY_REGISTRY_ABI, data: log.data, topics: log.topics });
-        if (ev.eventName === "PolicyRegistered") {
-          eventPolicyId = (ev.args as unknown as { policyId: bigint }).policyId;
-          break;
-        }
-      } catch {
-        /* not our event */
-      }
-    }
-    if (eventPolicyId === undefined) {
-      throw new Error(`registerPolicy tx ${txHash} emitted no PolicyRegistered event`);
-    }
-    if (eventPolicyId !== predicted) {
+    const reg = await readRegistration(this.pub, this.registryAddress, txHash);
+    if (reg.policyId !== predicted) {
       throw new Error(
-        `policyId drift: predicted ${predicted} from nonce, chain assigned ${eventPolicyId}`,
+        `policyId drift: predicted ${predicted} from nonce, chain assigned ${reg.policyId}`,
       );
     }
-    return { policyId: eventPolicyId, txHash, blockNumber: Number(rcpt.blockNumber), version: 1 };
+    return { policyId: reg.policyId, txHash, blockNumber: reg.blockNumber, version: 1 };
   }
 
   async update(policyId: bigint, newPolicyHash: Hex, newExpiry: bigint): Promise<MutateResult> {

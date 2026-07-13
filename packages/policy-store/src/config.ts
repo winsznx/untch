@@ -50,31 +50,38 @@ export function loadStorageConfig(): StorageConfig {
 }
 
 /**
+ * Create/sync side WITHOUT a signing key — the per-caller `create_spend_policy` surface. It needs the
+ * RPC + PolicyRegistry address to BUILD the unsigned registerPolicy call and READ back a confirmed
+ * registration, but it never signs (the caller's own wallet does). This is the config the store wires
+ * whenever DATABASE_URL is set, independent of OPERATOR_PRIVATE_KEY. Testnet only.
+ */
+export interface RegistryConfig extends StorageConfig {
+  readonly rpcUrl: string;
+  readonly chain: Chain;
+  readonly registry: Address;
+}
+
+export function loadRegistryConfig(): RegistryConfig {
+  const rpcUrl = process.env.RPC_URL?.trim() || xLayerTestnet.rpcUrls.default.http[0]!;
+  const registry = (process.env.POLICY_REGISTRY?.trim() || POLICY_REGISTRY_DEFAULT) as Address;
+  return { ...loadStorageConfig(), rpcUrl, chain: xLayerTestnet, registry };
+}
+
+/**
  * Write side: the operator identity that signs registerPolicy/updatePolicy/pausePolicy. In this
  * interim build `operatorPrivateKey` is the demo/burner wallet 0x98F43e… (OPERATOR_PRIVATE_KEY),
  * a TEMPORARY stand-in for the operator's own dashboard-connected wallet (§15) — see the README's
  * "operator-signing" section for the target state (backend returns unsigned calldata; the operator's
  * wallet signs). Refuses X Layer mainnet (196): testnet only until the full §28 checklist clears.
  */
-export interface OperatorConfig extends StorageConfig {
-  readonly rpcUrl: string;
-  readonly chain: Chain;
-  readonly registry: Address;
+export interface OperatorConfig extends RegistryConfig {
   readonly operatorPrivateKey: Hex;
 }
 
 export function loadOperatorConfig(): OperatorConfig {
-  const rpcUrl = process.env.RPC_URL?.trim() || xLayerTestnet.rpcUrls.default.http[0]!;
   const operatorPrivateKey = requireEnv("OPERATOR_PRIVATE_KEY");
   if (!/^0x[0-9a-fA-F]{64}$/.test(operatorPrivateKey)) {
     throw new Error("OPERATOR_PRIVATE_KEY is not a valid 0x 32-byte private key");
   }
-  const registry = (process.env.POLICY_REGISTRY?.trim() || POLICY_REGISTRY_DEFAULT) as Address;
-  return {
-    ...loadStorageConfig(),
-    rpcUrl,
-    chain: xLayerTestnet,
-    registry,
-    operatorPrivateKey: operatorPrivateKey as Hex,
-  };
+  return { ...loadRegistryConfig(), operatorPrivateKey: operatorPrivateKey as Hex };
 }

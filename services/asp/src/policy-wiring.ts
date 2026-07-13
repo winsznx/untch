@@ -1,11 +1,14 @@
 import {
   createPool,
   loadOperatorConfig,
+  loadRegistryConfig,
   PgPolicyRepo,
   PolicyProvider,
+  PolicyRegistrationService,
   PolicyService,
   runMigrations,
   ViemPolicyRegistry,
+  ViemRegistryReader,
 } from "@untch/policy-store";
 
 /**
@@ -27,6 +30,9 @@ import {
  */
 export interface PolicyWiring {
   readonly provider: PolicyProvider;
+  /** Per-caller create/sync surface (unsigned build + confirmation sync). No key. Present with the store. */
+  readonly registration: PolicyRegistrationService;
+  /** Signing surface for update/pause/resume. Null unless OPERATOR_PRIVATE_KEY is set. */
   readonly service: PolicyService | null;
   close(): Promise<void>;
 }
@@ -47,6 +53,16 @@ export async function initPolicyWiring(): Promise<PolicyWiring | null> {
   const repo = new PgPolicyRepo(pool);
   const provider = new PolicyProvider(repo);
 
+  // Per-caller create/sync: KEY-FREE. Builds the unsigned registerPolicy call and reads the confirmed
+  // registration back over RPC. The caller's own wallet is the only signer — the backend never signs.
+  const regCfg = loadRegistryConfig();
+  const reader = new ViemRegistryReader({ chain: regCfg.chain, rpcUrl: regCfg.rpcUrl, registry: regCfg.registry });
+  const registration = new PolicyRegistrationService(repo, reader);
+  console.log(
+    `[asp] policy store wired — create_spend_policy builds UNSIGNED registerPolicy calldata at ${regCfg.registry} ` +
+      "(caller signs; backend syncs owner from the confirmed event).",
+  );
+
   let service: PolicyService | null = null;
   if (process.env.OPERATOR_PRIVATE_KEY?.trim()) {
     const cfg = loadOperatorConfig();
@@ -58,16 +74,17 @@ export async function initPolicyWiring(): Promise<PolicyWiring | null> {
     });
     service = new PolicyService(repo, chain);
     console.log(
-      `[asp] policy store wired — operator ${chain.ownerAddress} (INTERIM demo wallet) signs registry txs at ${cfg.registry}.`,
+      `[asp] update/pause/resume_policy sign with operator ${chain.ownerAddress} (INTERIM demo wallet) at ${cfg.registry}.`,
     );
   } else {
     console.log(
-      "[asp] policy store wired READ-ONLY (OPERATOR_PRIVATE_KEY unset) — create/update/pause_policy return 503.",
+      "[asp] update/pause/resume_policy DISABLED (OPERATOR_PRIVATE_KEY unset) — they return 503; create/sync still work.",
     );
   }
 
   return {
     provider,
+    registration,
     service,
     async close() {
       await pool.end();

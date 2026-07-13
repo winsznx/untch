@@ -72,6 +72,7 @@ export {
   PgOperatorsRepo,
   InMemoryOperatorsRepo,
   DEMO_OPERATOR_ID,
+  OWNER_BINDING_CHANNEL,
 } from "./operators";
 export { createPool, runMigrations, type Pool } from "./db";
 export {

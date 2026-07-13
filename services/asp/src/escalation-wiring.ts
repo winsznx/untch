@@ -37,6 +37,7 @@ import {
 } from "@untch/escalation";
 import type { EscalationState } from "@untch/x402-guard";
 import type { EscalationGateway } from "./handlers";
+import { makeOwnershipVerifier, routeEscalationToOwner } from "./escalation-routing";
 
 /**
  * §7.2 / §27 escalation wiring for the seller — the SERVER-SIDE half of the control plane.
@@ -149,11 +150,12 @@ export async function initEscalationWiring(): Promise<EscalationWiring | null> {
   for (const c of channelsCfg) registry.register(c.channel);
   const binding = combineBindings(...channelsCfg.map((c) => c.binding));
 
-  // Operator-identity readiness (migration 004): mirror today's single operator + its channel handles into
-  // the (channel, handle) → operator table. This is provisioning only — the live §27 check above still uses
-  // `binding`; nothing reads these tables for authority yet. A second approver later is an INSERT, not a
-  // migration. See @untch/escalation operators.ts.
+  // Operator-identity (migration 004) — now GENUINELY LOAD-BEARING (escalation-routing.ts). Mirror the
+  // interim operator + its channel handles into the (channel, handle) → operator table. This is the
+  // operator an unbound owner's escalation routes to and whose bound channels it fans out over; a real
+  // §15 onboarding binds an owner to its OWN operator and routing follows it. A second operator is INSERTs.
   const operators = new PgOperatorsRepo(pool);
+  await operators.ensureOperator(DEMO_OPERATOR_ID, "interim demo operator (Step-5 wallet)");
   for (const c of channelsCfg) {
     await operators.ensureBinding(DEMO_OPERATOR_ID, c.channel.name, c.handle);
   }
@@ -173,6 +175,11 @@ export async function initEscalationWiring(): Promise<EscalationWiring | null> {
     scheduleTimeout: makeTimeoutScheduler(timeoutQueue),
     defaultTimeoutMin: storage.defaultTimeoutMin,
     maxTimeoutMin: storage.maxTimeoutMin,
+    // §27 dashboard identity path — a SIWE session's authority is its policy OWNERSHIP, not a code. The
+    // ownership check reads the (now load-bearing) operator tables: the session wallet's operator must be
+    // an approver of THIS escalation's policy, so a wallet can only resolve escalations for policies it owns.
+    identityAuthorizedChannels: new Set(["dashboard"]),
+    verifyOwnership: makeOwnershipVerifier(operators),
     onFailedControlEvent: (e: FailedControlEvent) =>
       console.warn(
         `[asp] FAILED CONTROL EVENT ${e.outcome} — escalation=${e.escalationId ?? "?"} ` +
@@ -216,19 +223,38 @@ export async function initEscalationWiring(): Promise<EscalationWiring | null> {
 
   const gateway: EscalationGateway = {
     async onEscalated({ input, decision, stored, pollRef }) {
-      // Readiness: ensure this policy has its (single, today) approver row. v1 = one row per policy.
-      await operators.ensurePolicyApprover(decision.policyId, DEMO_OPERATOR_ID).catch((err) =>
-        console.warn(`[asp] policy_approvers ensure failed (readiness only, non-fatal): ${(err as Error).message}`),
+      // OWNER-BASED ROUTING — route to the policy's REAL owner's operator + channels, not a hardcoded
+      // operator. A bound owner routes to itself; an as-yet-unbound owner is first-classed and notified via
+      // the interim operator. Non-fatal: on any routing error, fall back to an unrestricted fan-out so a
+      // decision is never silently un-escalated.
+      let restrictToChannels: Set<string> | undefined;
+      try {
+        const routed = await routeEscalationToOwner({
+          operators,
+          owner: stored.owner,
+          policyId: decision.policyId,
+          interimOperatorId: DEMO_OPERATOR_ID,
+        });
+        restrictToChannels = routed.restrictToChannels;
+        console.log(
+          `[asp] escalation on policy ${decision.policyId} (owner ${stored.owner}) → operator ${routed.operatorId} ` +
+            `channels [${[...restrictToChannels].join(", ") || "none"}]`,
+        );
+      } catch (err) {
+        console.warn(`[asp] owner routing failed (fan-out unrestricted, non-fatal): ${(err as Error).message}`);
+      }
+      const created = await service.createEscalation(
+        {
+          pollRef,
+          intentId: decision.intentHash,
+          reason: decision.decision,
+          policyId: decision.policyId,
+          amount: input.amount,
+          token: stored.rules.budgets.token,
+          approvals: readApprovalsConfig(stored),
+        },
+        restrictToChannels ? { restrictToChannels } : {},
       );
-      const created = await service.createEscalation({
-        pollRef,
-        intentId: decision.intentHash,
-        reason: decision.decision,
-        policyId: decision.policyId,
-        amount: input.amount,
-        token: stored.rules.budgets.token,
-        approvals: readApprovalsConfig(stored),
-      });
       const fanouts = created.record.channelLog.filter((e) => e.kind === "FANOUT").map((e) => e.channel);
       const failed = created.record.channelLog.filter((e) => e.kind === "FANOUT_FAILED").map((e) => e.channel);
       console.log(

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ChallengeBinding, GuardOutcome, PollHandle } from "@untch/x402-guard";
 import { formatUnits, getAddress, keccak256, parseUnits, toHex } from "viem";
 import { buyerAddress, readSettlementBalance } from "./buyer";
+import { createPolicyViaEndpoint } from "./caller-policy";
 import { MissingEnvError, NETWORK, SETTLEMENT_TOKEN } from "./config";
 import { guardedBuyerCall, makeHttpEscalationResolver, type PreflightCallResult } from "./guard-buyer";
 
@@ -108,19 +109,17 @@ interface CreatedPolicy {
   tx?: string;
 }
 
-async function createPolicy(sellerUrl: string, mode: Mode): Promise<CreatedPolicy> {
-  console.log(`[esc-${mode}] creating an escalate-friendly policy (channels for ${mode}) via live POST /create_spend_policy …`);
-  const res = await fetch(`${sellerUrl}/create_spend_policy`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ agent: DEMO_AGENT, rules: escalateRules(mode) }),
-  });
-  const body = (await res.json()) as { policyId?: string; policyHash?: string; tx?: string; code?: string; message?: string };
-  if (!res.ok || !body.policyId || !body.policyHash) {
-    fail(3, `create_spend_policy failed (${res.status}): ${body.code ?? ""} ${body.message ?? JSON.stringify(body)}`);
+async function createPolicy(sellerUrl: string, mode: Mode, buyerKey: `0x${string}`): Promise<CreatedPolicy> {
+  // Per-caller create (Part 1): the seller builds UNSIGNED calldata, the BUYER's own wallet signs+submits
+  // it (buyer becomes the on-chain owner), then the seller syncs. Needs testnet OKB in the buyer wallet.
+  console.log(`[esc-${mode}] creating an escalate-friendly policy the BUYER owns (build → buyer signs → sync) …`);
+  try {
+    const created = await createPolicyViaEndpoint({ sellerUrl, callerKey: buyerKey, agent: DEMO_AGENT, rules: escalateRules(mode) });
+    console.log(`[esc-${mode}] policy ${created.policyId} created (owner ${created.owner}, registerTx ${created.registerTx})`);
+    return { policyId: created.policyId, policyHash: created.policyHash, tx: created.registerTx };
+  } catch (err) {
+    fail(3, (err as Error).message);
   }
-  console.log(`[esc-${mode}] policy ${body.policyId} created (tx ${body.tx ?? "?"})`);
-  return { policyId: body.policyId!, policyHash: body.policyHash!.toLowerCase() as `0x${string}`, ...(body.tx ? { tx: body.tx } : {}) };
 }
 
 interface StatusView {
@@ -170,7 +169,7 @@ async function main(): Promise<void> {
   console.log(`[esc-${mode}] balance     : ${formatUnits(balance, SETTLEMENT_TOKEN.decimals)} ${SETTLEMENT_TOKEN.symbol} (need >= ${formatUnits(NEEDED_ATOMIC, SETTLEMENT_TOKEN.decimals)})`);
   if (balance < NEEDED_ATOMIC) fail(2, "buyer wallet unfunded for the $0.05 preflight");
 
-  const policy = await createPolicy(sellerUrl, mode);
+  const policy = await createPolicy(sellerUrl, mode, buyerKey);
 
   const advertisedResource = "http://untch-asp-production.up.railway.app/ping_untch";
   const invokedEndpoint = `${sellerUrl}/ping_untch`;

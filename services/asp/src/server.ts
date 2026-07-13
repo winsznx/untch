@@ -22,6 +22,7 @@ import {
   SCORE_BUYER_ROUTE,
   SCORE_PRICE,
   SCORE_VENDOR_ROUTE,
+  SYNC_POLICY_ROUTE,
   UPDATE_POLICY_ROUTE,
   VERIFY_PRICE,
   VERIFY_ROUTE,
@@ -37,6 +38,7 @@ import {
   handleCreateSpendPolicy,
   handlePausePolicy,
   handleResumePolicy,
+  handleSyncPolicyRegistration,
   handleUpdatePolicy,
 } from "./policy-handlers";
 import { handleScoreVendor, handleScoreBuyer } from "./score-handlers";
@@ -60,13 +62,17 @@ import { initReportWiring, type ReportWiring } from "./report-wiring";
  *                                 the REAL @untch/policy-engine (§7.1, deterministic, no LLM) against it
  *                                 + the in-memory ledger. Returns {decision, reasons[], ruleTrace[],
  *                                 receiptRef, sig}. The hardcoded fixture policy is GONE.
- *   • POST /create_spend_policy — operator: register a policy on-chain (PolicyRegistry) + store it.
+ *   • POST /create_spend_policy — build the UNSIGNED registerPolicy calldata for the CALLER's own wallet
+ *                                 to sign + submit (the backend never signs — per-caller ownership).
+ *   • POST /sync_policy_registration — record the durable row from the caller's confirmed tx, owner read
+ *                                 from the on-chain PolicyRegistered event (never assumed).
  *   • POST /update_policy       — operator: revise a policy's ruleset on-chain + in Postgres.
  *   • POST /pause_policy        — operator: pause a policy on-chain + in Postgres.
  *   • POST /resume_policy       — operator: resume a paused policy.
  *
- * Policy tools sign real registry txs with the INTERIM demo/burner operator wallet (see README →
- * "Operator signing"); they are unpriced admin routes in this build, not buyer x402 calls.
+ * `create_spend_policy` needs no signing key (it only builds calldata). `update/pause/resume_policy` still
+ * sign with the INTERIM demo/burner operator wallet (see README → "Operator signing"); they are unpriced
+ * admin routes in this build, not buyer x402 calls.
  *
  * The seller HMAC-authenticates to the facilitator with the OKX API triple. It never holds the buyer's
  * key — the buyer signs an EIP-3009 authorization itself; the facilitator submits it.
@@ -224,10 +230,17 @@ export function createSellerApp(
       .catch(next);
   });
 
-  // Operator policy tools. `service` is null when OPERATOR_PRIVATE_KEY is unset → the handlers 503.
-  const policyDeps = { service: policyWiring?.service ?? null };
+  // Operator policy tools. `registration` (per-caller create/sync) is present whenever the store is
+  // wired; `service` (update/pause/resume signing) is null when OPERATOR_PRIVATE_KEY is unset → 503.
+  const policyDeps = {
+    registration: policyWiring?.registration ?? null,
+    service: policyWiring?.service ?? null,
+  };
   app.post(CREATE_POLICY_ROUTE, (req, res, next) => {
     handleCreateSpendPolicy(req.body, policyDeps).then((r) => send(res, r)).catch(next);
+  });
+  app.post(SYNC_POLICY_ROUTE, (req, res, next) => {
+    handleSyncPolicyRegistration(req.body, policyDeps).then((r) => send(res, r)).catch(next);
   });
   app.post(UPDATE_POLICY_ROUTE, (req, res, next) => {
     handleUpdatePolicy(req.body, policyDeps).then((r) => send(res, r)).catch(next);
@@ -353,7 +366,8 @@ if (isMain) {
           console.log(`[asp]   POST ${SCORE_VENDOR_ROUTE} / ${SCORE_BUYER_ROUTE}  ${SCORE_PRICE}   (real §12 Bureau scoring, LCB)`);
           console.log(`[asp]   POST ${DISPUTE_ROUTE} ${DISPUTE_PRICE}   (dispute packet: assemble+hash+AuditAnchored)`);
           console.log(`[asp]   POST ${RECONCILE_ROUTE} ${RECONCILE_PRICE}   (reconcile spend/waste: assemble+hash+AuditAnchored)`);
-          console.log(`[asp]   POST ${CREATE_POLICY_ROUTE} / ${UPDATE_POLICY_ROUTE} / ${PAUSE_POLICY_ROUTE}  (operator, on-chain)`);
+          console.log(`[asp]   POST ${CREATE_POLICY_ROUTE} (unsigned build) → ${SYNC_POLICY_ROUTE} (caller signs; owner synced from chain)`);
+          console.log(`[asp]   POST ${UPDATE_POLICY_ROUTE} / ${PAUSE_POLICY_ROUTE} / ${RESUME_POLICY_ROUTE}  (operator-signed, on-chain)`);
           console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
           console.log(`[asp]   GET  ${ESCALATION_STATUS_ROUTE}  (escalation status poll, §7.2)`);
           console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
