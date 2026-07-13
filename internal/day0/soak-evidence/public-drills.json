@@ -1,0 +1,90 @@
+{
+  "network": {
+    "chainId": 1952,
+    "rpc": "https://testrpc.xlayer.tech",
+    "explorer": "https://www.oklink.com/x-layer-testnet"
+  },
+  "note": "Fresh UntchVault deployed for the public drills because the original demo vault's owner key (0x98F4…3c0b) is unavailable. Owner of this instance = receipt-writer wallet 0x03e5…1ab5.",
+  "freshVault": "0xd96d0058d6bd6483daaa0f39e7b5985ec2d96688",
+  "freshToken": "0x7e29d3d07189f0637e23568158cc8408f4f20422",
+  "owner": "0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5",
+  "oldOracle": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "newOracle": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+  "deploy": {
+    "tokenTx": "0xa44896ed35bf912125c10d778aebc68e0f299747107d0f19c2f54b7d99f99304",
+    "vaultTx": "0xc3921f9f4347b92fe3fd1be47ddfe5f184c10d10dc169747ead5e6e325bb7713",
+    "vaultBlock": 35507763
+  },
+  "pauseDrill": [
+    {
+      "step": "pause",
+      "expect": "paused=true",
+      "got": "paused=true",
+      "ok": true,
+      "txHash": "0xc8ca5a86657be9d2fc213fc6e338879223a8b73d008b4caecda95b28a2291cf0"
+    },
+    {
+      "step": "spend-while-paused",
+      "expect": "VaultPaused",
+      "got": "VaultPaused",
+      "ok": true
+    },
+    {
+      "step": "ownerWithdraw-while-paused",
+      "expect": "owner +0.1 despite pause",
+      "got": "+0.1",
+      "ok": true,
+      "txHash": "0x5869d1981e75fc806f3f22b2442050974150b75472427a2da86024aaaa2e3e24"
+    },
+    {
+      "step": "spend-after-unpause",
+      "expect": "paused=false & payee +0.1",
+      "got": "paused=false +0.1",
+      "ok": true,
+      "txHash": "0x1074499e6fae0509f0cf6277cfcc620a4eb4f0dd302c18aaba757eaf5915e14c"
+    }
+  ],
+  "oracleRotationDrill": [
+    {
+      "step": "oracle-before",
+      "expect": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "got": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "ok": true
+    },
+    {
+      "step": "setOracle-new",
+      "expect": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "got": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "ok": true,
+      "txHash": "0xe86f17cd0d09a4fcabd021a5617234acc838c7508964c4596e791e401cee70eb"
+    },
+    {
+      "step": "old-sig-rejected",
+      "expect": "BadOracle",
+      "got": "BadOracle",
+      "ok": true
+    },
+    {
+      "step": "new-sig-accepted",
+      "expect": "payee +0.1",
+      "got": "+0.1",
+      "ok": true,
+      "txHash": "0xd371395df7d484bd734d34ce222325657e76612ef90a4d59918f3aea3019232f"
+    },
+    {
+      "step": "setOracle-restore",
+      "expect": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "got": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "ok": true,
+      "txHash": "0x5f47140e867b4c2888fcc7085fda7353a9a8174ce9d55f827d896746732d0658"
+    },
+    {
+      "step": "invariants-intact",
+      "expect": "owner/cap/token unchanged",
+      "got": "owner=true cap=true token=true",
+      "ok": true
+    }
+  ],
+  "impostorRejected": true,
+  "allOk": true
+}

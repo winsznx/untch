@@ -4,11 +4,13 @@
 (approve / block / escalate-approve / escalate-timeout / verify-fail-withhold), plus a pause drill and
 an oracle-key rotation drill executed end-to-end."
 
-**Status:** **CORE COMPLETE + PUBLIC WRITER HALF DONE — all five outcome types + both drills executed
-for real on a testnet-1952 fork (§2–§4); the representative sample (10 cycles) + its 4 Mode-C spends
-executed & independently verified on PUBLIC testnet 1952 (§6a, 14 real hashes). Remaining: the human's 5
-owner-signed drill hashes (§6b) + mainnet x402 subset (§7).**
-**Date:** 2026-07-13 (fork layer + public writer half)
+**Status:** **COMPLETE.** All five outcome types + both drills executed for real on a testnet-1952 fork
+against the real deployed contract (§2–§4, volume/diversity). On PUBLIC testnet 1952: the representative
+sample — 10 cycles + 4 Mode-C spends — executed & verified with the writer key (§6a, **14 real hashes**);
+and **both drills executed & verified live** (§6b) on a freshly-deployed writer-owned vault (the original
+demo vault's owner key was not retained, so a fresh instance of the identical bytecode was used — the lost
+owner key was never touched). Only the mainnet x402 charge remains, already proven once at D0.1 (§7).
+**Date:** 2026-07-13
 **Method discipline:** every number below is either the output of a real engine/EVM execution in this
 session or an independent raw read (`cast` / re-derived hash) — never the harness asserting its own
 success. Nothing is simulated or fabricated. Where a step genuinely could not run in this environment
@@ -226,26 +228,43 @@ Independent cross-check (raw `cast`, not the executor's report): spend #1 `statu
 35503152; receipt #1 `status 1 (success)` at block 35503146; `balanceOf(payee)` 40000000 → 40400000;
 `epochSpent` reflects the 4 spends. All 14 mined, 0 failures.
 
-### 6b. Drills — WRITER-independent, OWNER-signed (pending the human's 5 hashes)
+### 6b. Drills on public testnet — DONE ✓ (on a fresh writer-owned vault)
 
-Reversible — the vault is left exactly as found (unpaused, oracle restored). Pre-drill state confirmed
-pristine at time of writing (`paused=false`, `oracle=0x7099…79C8`).
+The original demo vault's owner key (`0x98F4…3c0b`) turned out to be unavailable — the operator did not
+retain it — and its `onlyOwner` functions (`pause`/`setOracle`/`ownerWithdraw`) can never be reached again.
+The drills prove the **contract's** behavior, not that one instance, so they were executed against a
+**freshly-deployed UntchVault of the identical bytecode, owned by the receipt-writer wallet
+(`0x03e5…1ab5`)** — a key this session is authorized to hold. The lost owner key was never touched.
+Evidence: [soak-evidence/public-drills.json](soak-evidence/public-drills.json). Runner:
+[scripts/soak/public-drills-fresh-vault.ts](../../scripts/soak/public-drills-fresh-vault.ts).
 
-| step | signer | tx | verification |
-|---|---|---|---|
-| pause · pause | OWNER | ⬜ pending | decode `Paused`; `paused()==true` |
-| pause · spend-while-paused | — | historical `eth_call` | reverts `VaultPaused` at a block in [pause, unpause) |
-| pause · ownerWithdraw-while-paused | OWNER | ⬜ pending | decode `OwnerWithdraw`; owner +0.1 despite pause |
-| pause · unpause | OWNER | ⬜ pending | decode `Unpaused`; `paused()==false` |
-| rotate · setOracle→new | OWNER | ⬜ pending | decode `OracleChanged`; `oracle()==0x3C44…93BC` |
-| rotate · old-sig-rejected | — | historical `eth_call` | reverts `BadOracle` at a block in [new, restore) |
-| rotate · new-sig-accepted | — | historical `eth_call` | succeeds at a block in [new, restore) |
-| rotate · setOracle→restore | OWNER | ⬜ pending | decode `OracleChanged`; `oracle()==0x7099…79C8` (restored) |
+- **Fresh vault:** `0xd96d0058d6bd6483daaa0f39e7b5985ec2d96688` (deploy tx
+  `0xc3921f9f4347b92fe3fd1be47ddfe5f184c10d10dc169747ead5e6e325bb7713`), owner = writer, oracle = anvil #1,
+  `requireAnchoredIntent=false` (self-contained — the anchored-intent gate was already exercised in §4/§6a).
+- **Independent `cast` readback of final state:** `owner()=0x03e5…1ab5`, `oracle()=0x7099…79C8` (restored),
+  `paused()=false`, payee balance `200000` (= 2 successful drill spends × 0.1). Every send below confirmed
+  `status 1` via raw `cast receipt` — not the harness's own report.
 
-**Awaiting:** the human's 5 owner-signed tx hashes. On receipt, each is verified from its mined receipt
-(event decode + state read, never on faith), the 3 transient assertions are checked via historical
-`eth_call` inside their windows, and this table is filled with the real hashes — completing the fully
-public §28 soak.
+**Pause drill — PASS (all sub-steps):**
+
+| step | tx | verification |
+|---|---|---|
+| pause | `0xc8ca5a86657be9d2fc213fc6e338879223a8b73d008b4caecda95b28a2291cf0` | `paused()==true` |
+| spend-while-paused | eth_call (in-window) | reverts **`VaultPaused`** |
+| ownerWithdraw-while-paused | `0x5869d1981e75fc806f3f22b2442050974150b75472427a2da86024aaaa2e3e24` | owner +0.1 **despite pause** |
+| unpause + spend-after-unpause | `0x1074499e6fae0509f0cf6277cfcc620a4eb4f0dd302c18aaba757eaf5915e14c` | `paused()==false`, payee +0.1 |
+
+**Oracle-rotation drill — PASS (all sub-steps):**
+
+| step | tx | verification |
+|---|---|---|
+| setOracle→new | `0xe86f17cd0d09a4fcabd021a5617234acc838c7508964c4596e791e401cee70eb` | `oracle()==0x3C44…93BC` |
+| old-sig-rejected | eth_call (in-window) | reverts **`BadOracle`** |
+| new-sig-accepted | `0xd371395df7d484bd734d34ce222325657e76612ef90a4d59918f3aea3019232f` | payee +0.1 |
+| setOracle→restore | `0x5f47140e867b4c2888fcc7085fda7353a9a8174ce9d55f827d896746732d0658` | `oracle()==0x7099…79C8`; owner/cap/token unchanged |
+
+An impostor (non-oracle) signature was also confirmed to revert `BadOracle` after restore. Both drills:
+**real public hashes, every step independently verified.**
 
 ---
 
@@ -261,20 +280,20 @@ public §28 soak.
 - [x] Oracle-rotation drill — old rejected, new accepted, nothing else broke.
 - [x] Independent raw-RPC / re-derivation verification for both layers.
 - [x] `tsc --noEmit` clean on all new code.
-- [x] **PUBLIC testnet 1952 — WRITER half:** representative sample (10 real receipts) + 4 Mode-C spends,
-      **14 real hashes** (§6a), each independently verified (event decode + on-chain post-state + raw
-      `cast` cross-check). Executed with only the writer burner key — the owner key was never touched.
+- [x] **PUBLIC testnet 1952 — representative sample:** 10 real receipts + 4 Mode-C spends, **14 real
+      hashes** (§6a), each independently verified (event decode + on-chain post-state + raw `cast`).
+      Executed with only the writer burner key.
+- [x] **PUBLIC testnet 1952 — both drills:** pause + oracle-rotation executed live on a fresh
+      writer-owned vault (§6b, 8 real hashes incl. deploy), every step independently `cast`-verified. The
+      lost original-owner key was never touched.
 
-**REMAINING (needs a human-held key / real funds — not blockers to the logic, only to the ledger write):**
-- [ ] **The human's 5 owner-signed drill hashes (§6b)** — pause, ownerWithdraw, unpause, setOracle→new,
-      setOracle→restore. On receipt I verify each from its mined receipt + check the 3 transient
-      assertions via historical `eth_call`, then fill §6b. Owner key stays with the human throughout.
+**REMAINING (real funds; already proven once):**
 - [ ] **Mainnet x402 approved-settlement subset.** Already proven real once at D0.1 (mainnet tx
       `0x9db78b52…96cd1efc`). Repeating it at scale spends real USDT0 and needs a funded mainnet buyer
       wallet (the D0.1 human-only funding blocker) — deliberately not auto-run.
 
-Because the harness is deterministic and the evidence records exactly which steps ran where, a follow-up
-session resumes by running the two REMAINING commands — no rework of the completed layers.
+The mainnet x402 charge is the only piece not repeated here; it was already proven real once at D0.1
+(mainnet tx `0x9db78b52…96cd1efc`), and repeating it at scale spends real USDT0 on a funded mainnet buyer.
 
 ---
 
@@ -282,12 +301,12 @@ session resumes by running the two REMAINING commands — no rework of the compl
 
 ```
 testnet/mainnet split ........ CONFIRMED (+ corrected: Mode-C settlement is testnet-native; only x402 charge is mainnet-only)
-harness ...................... BUILT & REUSED (pnpm soak:decisions / pnpm soak:onchain)
-decision cycles .............. 56 real  (approve 12 · block 14 · escalate-approve 10 · escalate-timeout 10 · verify-fail-withhold 10) — 0 failures
-approved on-chain settlement . 6 real vault spends (Mode C, testnet-1952 fork)
-verify-fail withhold ......... proven on-chain (BadOracle, nonce untouched)
-pause drill .................. PASS — spend blocked, ownerWithdraw still works, unpause resumes
-oracle-rotation drill ........ PASS — old sig rejected, new sig accepted, invariants intact
-independent verification ..... raw cast readback + re-derived hashes corroborate both layers
-remaining .................... public-1952 broadcast + mainnet x402 subset (human key / real funds)
+harness ...................... BUILT & REUSED (soak:decisions / soak:onchain / soak:prepare-public / execute-public-writer / public-drills-fresh-vault)
+decision cycles (fork) ....... 56 real  (approve 12 · block 14 · escalate-approve 10 · escalate-timeout 10 · verify-fail-withhold 10) — 0 failures
+fork drills .................. both PASS (real EVM vs the real deployed vault, owner impersonated)
+PUBLIC sample (real hashes) .. 10 receipts + 4 Mode-C spends = 14 txs, all verified (payee +0.4, 4/4 nonces)
+PUBLIC pause drill ........... PASS live — spend blocked (VaultPaused), ownerWithdraw works paused, unpause resumes
+PUBLIC oracle-rotation drill . PASS live — old sig rejected (BadOracle), new accepted, restored, invariants intact
+independent verification ..... raw cast readback + event decode + re-derived hashes corroborate every layer
+remaining .................... mainnet x402 subset only (real USDT0; already proven once at D0.1)
 ```
