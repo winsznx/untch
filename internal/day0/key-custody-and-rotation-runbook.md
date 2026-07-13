@@ -236,7 +236,14 @@ unrecoverable.
 3. Seeds backed up to **≥2 offline, physically-separate** locations; team keys behind an **MPC quorum**.
 4. Maintain an **out-of-repo key registry**: role → address → device/custodian → seed-backup location.
 5. **Separate the roles** (deployer ≠ owner ≠ oracle ≠ admin ≠ writer). Transfer the deployer out after
-   deploy.
+   deploy. Enforce this mechanically, not by eye:
+   - **pre-deploy:** `pnpm verify:role-separation` — asserts all ten pairwise inequalities across the five
+     PUBLIC addresses, fails loudly (exit 1) if any two match. Public addresses only, no keys.
+     ([scripts/soak/verify-role-separation.ts](../../scripts/soak/verify-role-separation.ts))
+   - **post-deploy:** `pnpm verify:deployment-roles` — reads each contract's ACTUAL on-chain
+     owner/oracle/admin/writer-set and asserts they equal the intended addresses exactly, incl. that the
+     deployer holds no live role and `pendingOwner==0`. Read-only; gate CI on its exit code.
+     ([scripts/soak/verify-deployment-roles.ts](../../scripts/soak/verify-deployment-roles.ts))
 6. **Rotate proactively at the first doubt** about durability — especially the vault owner, via
    `transferOwnership`/`acceptOwnership`, **while the old key still signs**. Do not wait for certainty of
    loss; by then it is too late.

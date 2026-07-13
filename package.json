@@ -26,7 +26,9 @@
     "soak:decisions": "tsx scripts/soak-decisions.ts",
     "soak:onchain": "bash scripts/soak/run-onchain.sh",
     "soak:prepare-public": "tsx scripts/soak/prepare-public-bundle.ts && tsx scripts/soak/render-runbook.ts",
-    "test:key-rotations": "tsx scripts/soak/test-key-rotations.ts"
+    "test:key-rotations": "tsx scripts/soak/test-key-rotations.ts",
+    "verify:role-separation": "tsx scripts/soak/verify-role-separation.ts",
+    "verify:deployment-roles": "tsx scripts/soak/verify-deployment-roles.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
