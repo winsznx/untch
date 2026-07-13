@@ -4,10 +4,11 @@
 (approve / block / escalate-approve / escalate-timeout / verify-fail-withhold), plus a pause drill and
 an oracle-key rotation drill executed end-to-end."
 
-**Status:** **CORE COMPLETE — all five outcome types + both drills executed for real on a testnet-1952
-fork (§2–§4). Public-testnet execution PREPARED as an exact, eth_call-preflighted signing bundle
-awaiting the human's own-wallet signatures (§7); mainnet x402 subset remains (§6).**
-**Date:** 2026-07-13 (fork layer) · public-bundle prepared 2026-07-13
+**Status:** **CORE COMPLETE + PUBLIC WRITER HALF DONE — all five outcome types + both drills executed
+for real on a testnet-1952 fork (§2–§4); the representative sample (10 cycles) + its 4 Mode-C spends
+executed & independently verified on PUBLIC testnet 1952 (§6a, 14 real hashes). Remaining: the human's 5
+owner-signed drill hashes (§6b) + mainnet x402 subset (§7).**
+**Date:** 2026-07-13 (fork layer + public writer half)
 **Method discipline:** every number below is either the output of a real engine/EVM execution in this
 session or an independent raw read (`cast` / re-derived hash) — never the harness asserting its own
 success. Nothing is simulated or fabricated. Where a step genuinely could not run in this environment
@@ -166,13 +167,25 @@ These raw reads corroborate the harness's own report exactly.
 
 ---
 
-## 6. Public testnet execution — real, publicly-verifiable hashes (PREPARED, awaiting human signatures)
+## 6. Public testnet execution — real, publicly-verifiable hashes
 
 §2–§5 above are the **fork-based volume + diversity proof** — 56 cycles and both drills against the real
-deployed contract's bytecode+state, but on a local fork (no owner key in this environment). To land the
-same behavior on the **public** 1952 ledger with explorer-verifiable hashes — without this session ever
-handling the owner key — an exact **signing bundle** was prepared for the human to execute with their own
-wallet:
+deployed contract's bytecode+state, but on a local fork (no owner key in this environment). This section
+lands the same behavior on the **public** 1952 ledger with explorer-verifiable hashes, split by signer so
+this session never touches the owner key:
+
+- **WRITER half — DONE & independently verified (14 real public txs).** Executed with ONLY the
+  receipt-writer burner key (`0x03e5…1ab5`, gitignored) by
+  [scripts/soak/execute-public-writer.ts](../../scripts/soak/execute-public-writer.ts): the 10 Part-A
+  receipt anchors + the 4 Part-A Mode-C vault spends. Every tx verified from its mined receipt (events
+  decoded) and post-state read from chain, then cross-checked with raw `cast`.
+- **OWNER half — the human's 5 owner-signed drill steps** (pause, ownerWithdraw, unpause, setOracle→new,
+  setOracle→restore) run separately; hashes pending. The 3 transient `eth_call` assertions
+  (spend-while-paused reverts, old-sig rejected, new-sig accepted) are verified via **historical
+  `eth_call`** at blocks inside each transient window once those hashes land (archive queries confirmed
+  supported on the public RPC).
+
+The bundle the human executes:
 
 - **Preparer:** [scripts/soak/prepare-public-bundle.ts](../../scripts/soak/prepare-public-bundle.ts) — runs
   with **no private key**. Owner-only txs (pause/unpause/setOracle/ownerWithdraw) are emitted as calldata
@@ -188,37 +201,51 @@ wallet:
   against public 1952 — both returned success (the pre-baked oracle sig validates, the anchored intent
   check passes, the writer is authorized). So the calldata is proven executable before the human runs it.
 
-**Representative sample — 2× each outcome (10 cycles):** each anchors a real receipt recording its real
-decision; the two settling outcomes also move money via a Mode-C `spend()` — so the settle/withhold split
-is visible on-chain as the presence/absence of a `VaultSpend`.
+### 6a. Representative sample — 2× each outcome (10 cycles) — DONE ✓
 
-| # | outcome | decision recorded | receipt tx | vault spend tx |
+Each cycle anchored a real receipt (`logReceipts` → `ReceiptLogged`) recording its real decision; the two
+settling outcomes also moved money via a Mode-C `spend()` — so the settle/withhold split is visible
+on-chain as the presence/absence of a `VaultSpend`. Full log + decoded events + post-state:
+[soak-evidence/public-writer-results.json](soak-evidence/public-writer-results.json). Independent
+post-state read from chain: **payee +400000 base units = 4 × 0.1 token; 4/4 spend nonces consumed**.
+
+| # | outcome | decision (on-chain) | receipt tx | vault spend tx |
 |---|---|---|---|---|
-| 1–2 | approve | `APPROVED(1)` | ⬜ pending | ⬜ pending |
-| 3–4 | escalate-approve | `ESCALATED_THRESHOLD(14)→APPROVED` | ⬜ pending | ⬜ pending |
-| 5 | block | `BLOCKED_BUDGET(12)` | ⬜ pending | — withheld |
-| 6 | block | `BLOCKED_CATEGORY(8)` | ⬜ pending | — withheld |
-| 7–8 | escalate-timeout | `ESCALATED_THRESHOLD(14)→EXPIRED` | ⬜ pending | — withheld |
-| 9–10 | verify-fail-withhold | `VERIFY_FAILED(2)` | ⬜ pending | — withheld |
+| 1 | approve | `decision=1` | `0xb58295d50fb5d29fd497db30958b6d231df078969a8daee308300a3407e8ea53` | `0x367c74779da70a6803e9ab4a637abf189a77f2ab09d32c614d1de0b2c51bb64b` |
+| 2 | approve | `decision=1` | `0x4f9739083ca3230ca3f14da310f05033f1b2451f04ad2eb2d40c5faf3f4bb3e7` | `0x4bb4875b131ce2e147810c10c40dd872c75576e60cbe258e31c29464dc127bb7` |
+| 3 | escalate-approve | `decision=14→APPROVED` | `0x305687f844e14a41025962eef303da1383cc0bcdd0f6a5803c3d27362dd74ee5` | `0x5e7b5518f6108fcb450b2f5b672127c57ee5a0472998ca5e4a6772f496fd130a` |
+| 4 | escalate-approve | `decision=14→APPROVED` | `0x59ee20814139aafcb1a27b91429d52bdc909fa446a460ab3f854ba660a053eaa` | `0x92647c3f1508961d66798bfa64205d239d05e21a2414de5198443a6bf8a91904` |
+| 5 | block | `decision=12` (BUDGET) | `0x35ea4a45de0280f9907bc6ba90f0e1918cafc759e5129d16f5810b4368abc6a9` | — withheld |
+| 6 | block | `decision=8` (CATEGORY) | `0xd9cee9e981ef16ad745683736511239eaf5eaa8d651791880d2b2fd12869ea3e` | — withheld |
+| 7 | escalate-timeout | `decision=14→EXPIRED` | `0xe56fcad9e0a27c82869a0c1d8b253977f2d8c3c91ab4ea76433fb06fb72027b5` | — withheld |
+| 8 | escalate-timeout | `decision=14→EXPIRED` | `0x071efc206563dc61d4370c5844d7a61ee172e2de128cb12d289610c28afac771` | — withheld |
+| 9 | verify-fail-withhold | `verifyResult=2` (FAIL) | `0x327d21df06c6e3f51570a7ff3f197f91c1026f9ffcfe12b517cf8da62f7eddf6` | — withheld |
+| 10 | verify-fail-withhold | `verifyResult=2` (FAIL) | `0x79bcb5027a5dc06425a0f3a4bc1729cb0e1fc6f7025086734b1397e8960e0e77` | — withheld |
 
-**Drills (reversible — vault ends exactly as found):**
+Independent cross-check (raw `cast`, not the executor's report): spend #1 `status 1 (success)` at block
+35503152; receipt #1 `status 1 (success)` at block 35503146; `balanceOf(payee)` 40000000 → 40400000;
+`epochSpent` reflects the 4 spends. All 14 mined, 0 failures.
 
-| step | tx | verification |
-|---|---|---|
-| pause · pause | ⬜ | `paused()==true` |
-| pause · spend-while-paused | eth_call | reverts `VaultPaused` |
-| pause · ownerWithdraw-while-paused | ⬜ | owner balance +0.1 despite pause |
-| pause · unpause | ⬜ | `paused()==false` |
-| pause · spend-after-unpause | ⬜ | `VaultSpend`, payee +0.1 |
-| rotate · setOracle→new | ⬜ | `oracle()==0x3C44…93BC` |
-| rotate · old-sig-rejected | eth_call | reverts `BadOracle` |
-| rotate · new-sig-accepted | ⬜ | `VaultSpend`, payee +0.1 |
-| rotate · setOracle→restore | ⬜ | `oracle()==0x7099…79C8` (restored) |
+### 6b. Drills — WRITER-independent, OWNER-signed (pending the human's 5 hashes)
 
-**On human-reported hashes:** every send hash will be independently verified via raw RPC / explorer —
-decode `ReceiptLogged` / `VaultSpend` / `OracleChanged` / `Paused` events, confirm balances and
-`nonceUsed`, and this table filled in with the real hashes. This section is the ONLY thing between the
-current state and a fully public §28 soak.
+Reversible — the vault is left exactly as found (unpaused, oracle restored). Pre-drill state confirmed
+pristine at time of writing (`paused=false`, `oracle=0x7099…79C8`).
+
+| step | signer | tx | verification |
+|---|---|---|---|
+| pause · pause | OWNER | ⬜ pending | decode `Paused`; `paused()==true` |
+| pause · spend-while-paused | — | historical `eth_call` | reverts `VaultPaused` at a block in [pause, unpause) |
+| pause · ownerWithdraw-while-paused | OWNER | ⬜ pending | decode `OwnerWithdraw`; owner +0.1 despite pause |
+| pause · unpause | OWNER | ⬜ pending | decode `Unpaused`; `paused()==false` |
+| rotate · setOracle→new | OWNER | ⬜ pending | decode `OracleChanged`; `oracle()==0x3C44…93BC` |
+| rotate · old-sig-rejected | — | historical `eth_call` | reverts `BadOracle` at a block in [new, restore) |
+| rotate · new-sig-accepted | — | historical `eth_call` | succeeds at a block in [new, restore) |
+| rotate · setOracle→restore | OWNER | ⬜ pending | decode `OracleChanged`; `oracle()==0x7099…79C8` (restored) |
+
+**Awaiting:** the human's 5 owner-signed tx hashes. On receipt, each is verified from its mined receipt
+(event decode + state read, never on faith), the 3 transient assertions are checked via historical
+`eth_call` inside their windows, and this table is filled with the real hashes — completing the fully
+public §28 soak.
 
 ---
 
@@ -234,12 +261,14 @@ current state and a fully public §28 soak.
 - [x] Oracle-rotation drill — old rejected, new accepted, nothing else broke.
 - [x] Independent raw-RPC / re-derivation verification for both layers.
 - [x] `tsc --noEmit` clean on all new code.
+- [x] **PUBLIC testnet 1952 — WRITER half:** representative sample (10 real receipts) + 4 Mode-C spends,
+      **14 real hashes** (§6a), each independently verified (event decode + on-chain post-state + raw
+      `cast` cross-check). Executed with only the writer burner key — the owner key was never touched.
 
 **REMAINING (needs a human-held key / real funds — not blockers to the logic, only to the ledger write):**
-- [ ] **Execute the prepared public bundle (§6)** with the human's own owner + writer wallets — 21 real
-      sends → public explorer hashes for the representative sample and both drills. Bundle + runbook are
-      built and eth_call-preflighted; nothing else to author. Report the hashes back for independent
-      verification.
+- [ ] **The human's 5 owner-signed drill hashes (§6b)** — pause, ownerWithdraw, unpause, setOracle→new,
+      setOracle→restore. On receipt I verify each from its mined receipt + check the 3 transient
+      assertions via historical `eth_call`, then fill §6b. Owner key stays with the human throughout.
 - [ ] **Mainnet x402 approved-settlement subset.** Already proven real once at D0.1 (mainnet tx
       `0x9db78b52…96cd1efc`). Repeating it at scale spends real USDT0 and needs a funded mainnet buyer
       wallet (the D0.1 human-only funding blocker) — deliberately not auto-run.

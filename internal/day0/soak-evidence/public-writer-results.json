@@ -1,0 +1,203 @@
+{
+  "network": {
+    "chainId": 1952,
+    "rpc": "https://testrpc.xlayer.tech"
+  },
+  "writer": "0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5",
+  "ranAt": [
+    35503146,
+    35503152,
+    35503158,
+    35503163,
+    35503168,
+    35503175,
+    35503181,
+    35503188,
+    35503195,
+    35503201,
+    35503206,
+    35503213,
+    35503219,
+    35503226
+  ],
+  "receipts": [
+    {
+      "id": "sample.approve.1.receipt",
+      "purpose": "anchor receipt — approve (receiptId 0x374b4873ab46…, decision=1, verifyResult=0)",
+      "txHash": "0xb58295d50fb5d29fd497db30958b6d231df078969a8daee308300a3407e8ea53",
+      "block": 35503146,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0x374b4873ab46…, decision=1, verifyResult=0, intentHash=0x2932b9497dc0…)",
+        "BatchLogged(id=25, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.approve.2.receipt",
+      "purpose": "anchor receipt — approve (receiptId 0x58d39eb9d44c…, decision=1, verifyResult=0)",
+      "txHash": "0x4f9739083ca3230ca3f14da310f05033f1b2451f04ad2eb2d40c5faf3f4bb3e7",
+      "block": 35503158,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0x58d39eb9d44c…, decision=1, verifyResult=0, intentHash=0xf649cd3c3310…)",
+        "BatchLogged(id=26, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.escalate-approve.1.receipt",
+      "purpose": "anchor receipt — escalate-approve (preflight ESCALATED_THRESHOLD → off-chain APPROVE) (receiptId 0x4ecf8dcd8d01…, decision=14, verifyResult=0)",
+      "txHash": "0x305687f844e14a41025962eef303da1383cc0bcdd0f6a5803c3d27362dd74ee5",
+      "block": 35503168,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0x4ecf8dcd8d01…, decision=14, verifyResult=0, intentHash=0x574a45692cd8…)",
+        "BatchLogged(id=27, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.escalate-approve.2.receipt",
+      "purpose": "anchor receipt — escalate-approve (preflight ESCALATED_THRESHOLD → off-chain APPROVE) (receiptId 0xb5ad543b6cd1…, decision=14, verifyResult=0)",
+      "txHash": "0x59ee20814139aafcb1a27b91429d52bdc909fa446a460ab3f854ba660a053eaa",
+      "block": 35503181,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0xb5ad543b6cd1…, decision=14, verifyResult=0, intentHash=0xe4a1078e8cc1…)",
+        "BatchLogged(id=28, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.block-budget.receipt",
+      "purpose": "anchor receipt — block (BLOCKED_BUDGET) (receiptId 0xb619bc04c8c3…, decision=12, verifyResult=0)",
+      "txHash": "0x35ea4a45de0280f9907bc6ba90f0e1918cafc759e5129d16f5810b4368abc6a9",
+      "block": 35503195,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0xb619bc04c8c3…, decision=12, verifyResult=0, intentHash=0xf0c55b584300…)",
+        "BatchLogged(id=29, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.block-category.receipt",
+      "purpose": "anchor receipt — block (BLOCKED_CATEGORY) (receiptId 0xee853bf2ac3b…, decision=8, verifyResult=0)",
+      "txHash": "0xd9cee9e981ef16ad745683736511239eaf5eaa8d651791880d2b2fd12869ea3e",
+      "block": 35503201,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0xee853bf2ac3b…, decision=8, verifyResult=0, intentHash=0x28c0e767e1d6…)",
+        "BatchLogged(id=30, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.escalate-timeout.1.receipt",
+      "purpose": "anchor receipt — escalate-timeout (ESCALATED_THRESHOLD → off-chain EXPIRED / default DENY — NO spend) (receiptId 0x256cab9a741a…, decision=14, verifyResult=0)",
+      "txHash": "0xe56fcad9e0a27c82869a0c1d8b253977f2d8c3c91ab4ea76433fb06fb72027b5",
+      "block": 35503206,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0x256cab9a741a…, decision=14, verifyResult=0, intentHash=0x6c3abe625337…)",
+        "BatchLogged(id=31, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.escalate-timeout.2.receipt",
+      "purpose": "anchor receipt — escalate-timeout (ESCALATED_THRESHOLD → off-chain EXPIRED / default DENY — NO spend) (receiptId 0x82f86bd8237f…, decision=14, verifyResult=0)",
+      "txHash": "0x071efc206563dc61d4370c5844d7a61ee172e2de128cb12d289610c28afac771",
+      "block": 35503213,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0x82f86bd8237f…, decision=14, verifyResult=0, intentHash=0x9d70b38dd49f…)",
+        "BatchLogged(id=32, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.verify-fail.1.receipt",
+      "purpose": "anchor receipt — verify-fail-withhold (verifyResult=FAIL/2, WITHHOLD — NO spend) (receiptId 0x1a725cb51a8d…, decision=0, verifyResult=2)",
+      "txHash": "0x327d21df06c6e3f51570a7ff3f197f91c1026f9ffcfe12b517cf8da62f7eddf6",
+      "block": 35503219,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0x1a725cb51a8d…, decision=0, verifyResult=2, intentHash=0x659e5d987cde…)",
+        "BatchLogged(id=33, count=undefined)"
+      ]
+    },
+    {
+      "id": "sample.verify-fail.2.receipt",
+      "purpose": "anchor receipt — verify-fail-withhold (verifyResult=FAIL/2, WITHHOLD — NO spend) (receiptId 0x39b878f4642d…, decision=0, verifyResult=2)",
+      "txHash": "0x79bcb5027a5dc06425a0f3a4bc1729cb0e1fc6f7025086734b1397e8960e0e77",
+      "block": 35503226,
+      "status": "success",
+      "to": "0x0C64997277b7D94d2999DEa22A123cac56334863",
+      "events": [
+        "ReceiptLogged(receiptId=0x39b878f4642d…, decision=0, verifyResult=2, intentHash=0xa819b4e4c164…)",
+        "BatchLogged(id=34, count=undefined)"
+      ]
+    }
+  ],
+  "spends": [
+    {
+      "id": "sample.approve.1.spend",
+      "purpose": "approved settlement (Mode C) — vault spend 0.1 token to payee, oracle-signed",
+      "txHash": "0x367c74779da70a6803e9ab4a637abf189a77f2ab09d32c614d1de0b2c51bb64b",
+      "block": 35503152,
+      "status": "success",
+      "to": "0x42E699FfD8215d48397A049B4F7a176Db06F4848",
+      "events": [
+        "VaultSpend(recipient=0x000000000000000000000000000000000000bEEF, amount=100000, nonce=928100000000000)"
+      ]
+    },
+    {
+      "id": "sample.approve.2.spend",
+      "purpose": "approved settlement (Mode C) — vault spend 0.1 token to payee, oracle-signed",
+      "txHash": "0x4bb4875b131ce2e147810c10c40dd872c75576e60cbe258e31c29464dc127bb7",
+      "block": 35503163,
+      "status": "success",
+      "to": "0x42E699FfD8215d48397A049B4F7a176Db06F4848",
+      "events": [
+        "VaultSpend(recipient=0x000000000000000000000000000000000000bEEF, amount=100000, nonce=928100000000001)"
+      ]
+    },
+    {
+      "id": "sample.escalate-approve.1.spend",
+      "purpose": "settlement after escalation APPROVE (Mode C) — vault spend 0.1 token, oracle-signed",
+      "txHash": "0x5e7b5518f6108fcb450b2f5b672127c57ee5a0472998ca5e4a6772f496fd130a",
+      "block": 35503175,
+      "status": "success",
+      "to": "0x42E699FfD8215d48397A049B4F7a176Db06F4848",
+      "events": [
+        "VaultSpend(recipient=0x000000000000000000000000000000000000bEEF, amount=100000, nonce=928100000000002)"
+      ]
+    },
+    {
+      "id": "sample.escalate-approve.2.spend",
+      "purpose": "settlement after escalation APPROVE (Mode C) — vault spend 0.1 token, oracle-signed",
+      "txHash": "0x92647c3f1508961d66798bfa64205d239d05e21a2414de5198443a6bf8a91904",
+      "block": 35503188,
+      "status": "success",
+      "to": "0x42E699FfD8215d48397A049B4F7a176Db06F4848",
+      "events": [
+        "VaultSpend(recipient=0x000000000000000000000000000000000000bEEF, amount=100000, nonce=928100000000003)"
+      ]
+    }
+  ],
+  "independentPostState": {
+    "payeeBalanceBefore": "40000000",
+    "payeeBalanceAfter": "40400000",
+    "payeeDelta": "400000",
+    "spendNonceUsed": {
+      "928100000000000": true,
+      "928100000000001": true,
+      "928100000000002": true,
+      "928100000000003": true
+    }
+  },
+  "allSuccess": true
+}
