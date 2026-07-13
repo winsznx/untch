@@ -1,0 +1,11 @@
+{
+  "total": 56,
+  "byOutcome": {
+    "approve": 12,
+    "block": 14,
+    "escalate-approve": 10,
+    "escalate-timeout": 10,
+    "verify-fail-withhold": 10
+  },
+  "allOk": true
+}

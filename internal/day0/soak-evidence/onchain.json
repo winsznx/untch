@@ -1,0 +1,139 @@
+{
+  "rpcUrl": "http://127.0.0.1:8599",
+  "chainId": 1952,
+  "vault": "0x42e699ffd8215d48397a049b4f7a176db06f4848",
+  "oldOracle": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "newOracle": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+  "spendCycles": [
+    {
+      "step": "approved-spend#1",
+      "expect": "payee +1 & nonce consumed",
+      "got": "+1 nonceUsed=true",
+      "ok": true,
+      "txHash": "0x61f1002d2dfb815b12f71e20d2498135a84b41409d5c8053e6290ad20c11ecf6"
+    },
+    {
+      "step": "approved-spend#2",
+      "expect": "payee +1 & nonce consumed",
+      "got": "+1 nonceUsed=true",
+      "ok": true,
+      "txHash": "0xb776f0de8afbc1430aa575214d0dfbd7ee6ab5bc8e2ab243839849e621118ad2"
+    },
+    {
+      "step": "approved-spend#3",
+      "expect": "payee +1 & nonce consumed",
+      "got": "+1 nonceUsed=true",
+      "ok": true,
+      "txHash": "0x8ae9762d32befd9eb9017ce850b695f96cf27a913df339d210b0a287c969b0e2"
+    },
+    {
+      "step": "approved-spend#4",
+      "expect": "payee +1 & nonce consumed",
+      "got": "+1 nonceUsed=true",
+      "ok": true,
+      "txHash": "0x2cce317ab0ef8aa96a0aa16ef93d26e6f60d014f3155037fd7cbdf765ce4cbfe"
+    },
+    {
+      "step": "approved-spend#5",
+      "expect": "payee +1 & nonce consumed",
+      "got": "+1 nonceUsed=true",
+      "ok": true,
+      "txHash": "0x644a60106acf04378d727306c03b1c5bdc597371442640886b36923b937a839c"
+    },
+    {
+      "step": "approved-spend#6",
+      "expect": "payee +1 & nonce consumed",
+      "got": "+1 nonceUsed=true",
+      "ok": true,
+      "txHash": "0x2412658d6d498db80f94c32d7b778d01384df26537c6ad779f857f7afa8b1ec2"
+    }
+  ],
+  "withholdProof": [
+    {
+      "step": "withhold-no-oracle-sig",
+      "expect": "BadOracle revert (no settlement)",
+      "got": "BadOracle",
+      "ok": true
+    },
+    {
+      "step": "withhold-nonce-untouched",
+      "expect": "nonce never consumed",
+      "got": "nonceUsed=false",
+      "ok": true
+    }
+  ],
+  "pauseDrill": [
+    {
+      "step": "pause",
+      "expect": "paused=true",
+      "got": "paused=true",
+      "ok": true,
+      "txHash": "0x6107781ceafec032e9aeb0852f982c11d644391f4f150ca36627d937c9b175f7"
+    },
+    {
+      "step": "spend-while-paused",
+      "expect": "VaultPaused revert",
+      "got": "VaultPaused",
+      "ok": true
+    },
+    {
+      "step": "ownerWithdraw-while-paused",
+      "expect": "owner +1 despite pause",
+      "got": "+1 status=success",
+      "ok": true,
+      "txHash": "0xa8a954d2d634017b1fc8ad49b965768c794f8e0273dfe13efde1f5acd7b26f1b"
+    },
+    {
+      "step": "spend-after-unpause",
+      "expect": "paused=false & payee +1",
+      "got": "paused=false +1",
+      "ok": true,
+      "txHash": "0xee6feb4a1a28b722bcef402032cc568699a9b47019dcdcf87504ab51136f552f"
+    }
+  ],
+  "rotationDrill": [
+    {
+      "step": "oracle-before",
+      "expect": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "got": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "ok": true
+    },
+    {
+      "step": "setOracle",
+      "expect": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "got": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "ok": true,
+      "txHash": "0xbe6e1f1169a0ec337d52b237e1d249ddcef7ca0c5b89a3705117e75e136fb708"
+    },
+    {
+      "step": "old-oracle-sig-rejected",
+      "expect": "BadOracle revert",
+      "got": "BadOracle",
+      "ok": true
+    },
+    {
+      "step": "new-oracle-sig-accepted",
+      "expect": "payee +1",
+      "got": "+1",
+      "ok": true,
+      "txHash": "0xee949baae8098eb0e1cf89062670bebf214f1da86d12c7df5de333d3a53bc8e8"
+    },
+    {
+      "step": "invariants-intact",
+      "expect": "owner/caps/token-allowlist unchanged",
+      "got": "cap=true budget=true owner=true token=true",
+      "ok": true
+    }
+  ],
+  "finalState": {
+    "owner": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "oracle": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "paused": "false",
+    "perTxCap": "100000000",
+    "epochBudget": "250000000",
+    "epochSpent": "8000000",
+    "payeeBalance": "48000000",
+    "payeeStart": "40000000"
+  },
+  "allOk": true
+}

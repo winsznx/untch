@@ -1,0 +1,12 @@
+# Independent raw-RPC readback of the REAL vault on the fork, via cast (not the harness's report).
+# Captured 35497384=blockNumber on chainId 1952
+vault:            0x42e699ffd8215d48397a049b4f7a176db06f4848
+owner():          0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b
+oracle():         0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
+paused():         false
+perTxCap():       100000000 [1e8]
+epochBudget():    250000000 [2.5e8]
+epochSpent():     8000000 [8e6]
+requireAnchored:  true
+tokenAllowed(T):  true
+payee BEEF bal:   48000000 [4.8e7]
