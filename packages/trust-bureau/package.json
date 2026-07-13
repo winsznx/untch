@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Untch Bureau (PRD §12) — deterministic, weighted, NO-LLM (I1) vendor + buyer reliability scoring with per-score uncertainty and enforcement via the lower-confidence bound (LCB = score − z·σ). Four vendor features are computed from real receipt/escalation/on-chain history; three (rating_quality, price_sanity, claims_consistency) are honest cold-start-prior-only stubs (marketplace data unavailable — see README finding), renormalized out with σ widened per §12's fallback rule. Buyer hygiene is fully real. Epoch snapshots are merkle-rooted and anchored on-chain via UntchReceipts.anchorScore (§10.3 ScoreAnchored). Anti-gaming and appeal flow are explicitly deferred, not silently absent.",
+  "description": "Untch Bureau (PRD \u00a712) \u2014 deterministic, weighted, NO-LLM (I1) vendor + buyer reliability scoring with per-score uncertainty and enforcement via the lower-confidence bound (LCB = score \u2212 z\u00b7\u03c3). Four vendor features are computed from real receipt/escalation/on-chain history; three (rating_quality, price_sanity, claims_consistency) are honest cold-start-prior-only stubs (marketplace data unavailable \u2014 see README finding), renormalized out with \u03c3 widened per \u00a712's fallback rule. Buyer hygiene is fully real. Epoch snapshots are merkle-rooted and anchored on-chain via UntchReceipts.anchorScore (\u00a710.3 ScoreAnchored). Anti-gaming and appeal flow are explicitly deferred, not silently absent.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
@@ -17,6 +17,7 @@
     "@untch/policy-engine": "workspace:*",
     "@untch/proof-engine": "workspace:*",
     "@untch/receipt-writer": "workspace:*",
+    "@untch/shared": "workspace:*",
     "pg": "^8.13.1",
     "viem": "^2.55.0"
   },

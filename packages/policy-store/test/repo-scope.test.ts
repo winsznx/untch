@@ -4,6 +4,7 @@ import { getAddress, type Address, type Hex } from "viem";
 import { InMemoryPolicyRepo } from "../src/repo-memory";
 import type { StoredPolicy } from "../src/types";
 import { sampleRules } from "./helpers";
+import { X_LAYER_TESTNET_ID } from "../src/config";
 
 /**
  * listByOwner is the dashboard's scoping bridge: a signed-in wallet (the on-chain registrant / `owner`) sees
@@ -24,7 +25,7 @@ function policy(id: string, owner: Address, agentId: Address): StoredPolicy {
     status: "ACTIVE",
     policyHash: ("0x" + "ab".repeat(32)) as Hex,
     expiry: 1_900_000_000,
-    onchainRef: { chainId: 1952, registry: OWNER_A, registerTx: tx, registerBlock: 1, lastTx: tx, lastBlock: 1 },
+    onchainRef: { chainId: X_LAYER_TESTNET_ID, registry: OWNER_A, registerTx: tx, registerBlock: 1, lastTx: tx, lastBlock: 1 },
     rules: sampleRules() as unknown as StoredPolicy["rules"],
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),

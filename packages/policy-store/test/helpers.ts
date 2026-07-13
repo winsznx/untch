@@ -1,4 +1,5 @@
 import { encodeFunctionData, encodePacked, getAddress, keccak256, type Address, type Hex } from "viem";
+import { X_LAYER_TESTNET_ID } from "../src/config";
 import {
   POLICY_REGISTRY_ABI,
   type MutateResult,
@@ -33,7 +34,7 @@ interface OnchainRow {
 export class FakeChain implements PolicyRegistryChain {
   readonly ownerAddress: Address;
   readonly registryAddress: Address = getAddress("0xe1d74c90801db0fa806c72eb818b7671b8233532");
-  readonly chainId = 1952;
+  readonly chainId = X_LAYER_TESTNET_ID;
   private block = 100;
   /** Per-owner nonce — every distinct submitter has its own sequence, exactly like the real registry. */
   private readonly nonces = new Map<string, bigint>();

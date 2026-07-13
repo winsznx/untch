@@ -1,4 +1,10 @@
-import { defineChain, type Address, type Chain, type Hex } from "viem";
+import {
+  activeChain,
+  activeRpcUrl,
+  X_LAYER_MAINNET_ID,
+  X_LAYER_TESTNET_ID,
+} from "@untch/shared";
+import type { Address, Chain, Hex } from "viem";
 
 /**
  * Receipt-writer configuration. Two consumer shapes:
@@ -6,23 +12,35 @@ import { defineChain, type Address, type Chain, type Hex } from "viem";
  *   • the WORKER anchors — it needs all of the above PLUS the writer private key + the X Layer RPC.
  *
  * So config is split: `EnqueueConfig` (seller-safe) and `WorkerConfig` (writer, holds the key).
+ *
+ * The chain + RPC are resolved through the single shared source (packages/shared/src/chains.ts) via
+ * the CHAIN_ID/NETWORK env contract — no chain constants live here. Default network is testnet.
  */
 
-export const X_LAYER_TESTNET_ID = 1952 as const;
-export const X_LAYER_MAINNET_ID = 196 as const;
+export { X_LAYER_MAINNET_ID, X_LAYER_TESTNET_ID, xLayerMainnet, xLayerTestnet } from "@untch/shared";
 
-/** Deployed UntchReceipts (§10.3) on X Layer testnet — the anchoring target. */
+/** Deployed UntchReceipts (§10.3) on X Layer testnet — the anchoring target on the default network. */
 export const RECEIPTS_CONTRACT_DEFAULT: Address =
   "0x0c64997277b7d94d2999dea22a123cac56334863";
 
-export const xLayerTestnet: Chain = defineChain({
-  id: X_LAYER_TESTNET_ID,
-  name: "X Layer Testnet",
-  nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
-  rpcUrls: { default: { http: ["https://testrpc.xlayer.tech", "https://xlayertestrpc.okx.com"] } },
-  blockExplorers: { default: { name: "OKLink", url: "https://www.oklink.com/x-layer-testnet" } },
-  testnet: true,
-});
+/**
+ * UntchReceipts address per network. Only testnet is deployed today; mainnet has no default, so a
+ * mainnet run must pass RECEIPTS_CONTRACT explicitly — this fails loudly rather than anchoring a
+ * mainnet writer to a testnet address.
+ */
+export const RECEIPTS_CONTRACT_BY_CHAIN: Partial<Record<number, Address>> = {
+  [X_LAYER_TESTNET_ID]: RECEIPTS_CONTRACT_DEFAULT,
+};
+
+export function resolveReceiptsContract(chainId: number, override?: string): Address {
+  const addr = override?.trim() || RECEIPTS_CONTRACT_BY_CHAIN[chainId];
+  if (!addr) {
+    throw new Error(
+      `No UntchReceipts address for chainId ${chainId} — deploy UntchReceipts to that network and set RECEIPTS_CONTRACT.`,
+    );
+  }
+  return addr as Address;
+}
 
 export class MissingEnvError extends Error {
   constructor(public readonly varName: string) {
@@ -84,18 +102,18 @@ export interface WorkerConfig extends StorageConfig {
 }
 
 export function loadWorkerConfig(): WorkerConfig {
-  const rpcUrl = process.env.RPC_URL?.trim() || xLayerTestnet.rpcUrls.default.http[0]!;
+  const chain = activeChain(process.env);
+  const rpcUrl = activeRpcUrl(process.env);
   const writerPrivateKey = requireEnv("WRITER_PRIVATE_KEY");
   if (!/^0x[0-9a-fA-F]{64}$/.test(writerPrivateKey)) {
     throw new Error("WRITER_PRIVATE_KEY is not a valid 0x 32-byte private key");
   }
-  const receiptsContract = (process.env.RECEIPTS_CONTRACT?.trim() ||
-    RECEIPTS_CONTRACT_DEFAULT) as Address;
+  const receiptsContract = resolveReceiptsContract(chain.id, process.env.RECEIPTS_CONTRACT);
 
   return {
     ...loadStorageConfig(),
     rpcUrl,
-    chain: xLayerTestnet,
+    chain,
     receiptsContract,
     writerPrivateKey: writerPrivateKey as Hex,
     batchMaxSize: optInt("BATCH_MAX_SIZE", 25),

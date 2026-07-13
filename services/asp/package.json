@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Untch A2MCP ASP — x402 seller on X Layer via the OKX facilitator: ping_untch ($0.01 proof-of-rail), create_spend_intent (bundled canon hash), preflight_payment ($0.05, real §7.1 policy engine) + the local buyer driver.",
+  "description": "Untch A2MCP ASP \u2014 x402 seller on X Layer via the OKX facilitator: ping_untch ($0.01 proof-of-rail), create_spend_intent (bundled canon hash), preflight_payment ($0.05, real \u00a77.1 policy engine) + the local buyer driver.",
   "scripts": {
     "start": "tsx src/server.ts",
     "serve": "tsx --env-file=../../.env --env-file=.env src/server.ts",
@@ -35,6 +35,7 @@
     "@untch/proof-engine": "workspace:*",
     "@untch/receipt-writer": "workspace:*",
     "@untch/reports": "workspace:*",
+    "@untch/shared": "workspace:*",
     "@untch/trust-bureau": "workspace:*",
     "@untch/x402-guard": "workspace:*",
     "express": "^4.21.2",

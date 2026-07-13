@@ -13,7 +13,12 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { xLayerTestnet, X_LAYER_TESTNET_ID } from "../packages/shared/src/chains";
+import {
+  chainById,
+  xLayerTestnet,
+  X_LAYER_MAINNET_ID,
+  X_LAYER_TESTNET_ID,
+} from "../packages/shared/src/chains";
 
 /**
  * UntchVaultFactory deploy + demo driver (PRD §10.4 / §28 fork-integration + §22.4).
@@ -77,7 +82,7 @@ function loadArtifact(path: string, name: string): Artifact {
 }
 
 function targetChain(rpcUrl: string, chainId: number): Chain {
-  if (chainId === X_LAYER_TESTNET_ID) return xLayerTestnet;
+  if (chainId === X_LAYER_TESTNET_ID || chainId === X_LAYER_MAINNET_ID) return chainById(chainId);
   return defineChain({
     id: chainId,
     name: `chain-${chainId}`,
@@ -119,7 +124,11 @@ async function main() {
   console.log(`demo agent (salt): ${agent}`);
   console.log(`demo token       : ${token}`);
 
-  if (chainId === 196) throw new Error("Refusing X Layer MAINNET (chainId 196) — testnet only.");
+  if (chainId === X_LAYER_MAINNET_ID && process.env.ALLOW_MAINNET !== "1") {
+    throw new Error(
+      "Refusing X Layer MAINNET (196) without explicit opt-in — mainnet deploys stay gated on the §28 checklist. Set ALLOW_MAINNET=1 to proceed.",
+    );
+  }
   if (!pk) {
     console.log("\nNo DEPLOYER_PRIVATE_KEY set — preflight only. Set it + BROADCAST=1 to deploy.");
     return;

@@ -7,6 +7,7 @@ import {
   POLICY_REGISTRY_DEFAULT,
   PolicyRegistrationService,
   ViemRegistryReader,
+  X_LAYER_MAINNET_ID,
   X_LAYER_TESTNET_ID,
   xLayerTestnet,
 } from "@untch/policy-store";
@@ -86,7 +87,7 @@ async function main(): Promise<void> {
 
   const pub = createPublicClient({ chain: xLayerTestnet, transport: http(rpcUrl) });
   const chainId = await pub.getChainId();
-  if (chainId === 196) fail("refusing to run against X Layer MAINNET (196) — testnet only");
+  if (chainId === X_LAYER_MAINNET_ID) fail("refusing to run against X Layer MAINNET (196) — testnet only");
   if (chainId !== X_LAYER_TESTNET_ID) console.warn(`[multi-tenant] warning: unexpected chainId ${chainId}`);
 
   const code = await pub.getBytecode({ address: registry });

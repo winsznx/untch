@@ -1,20 +1,26 @@
-import { defineChain, type Address, type Chain } from "viem";
+import { activeChain, settlementToken, X_LAYER_MAINNET_ID } from "@untch/shared";
+import type { Chain } from "viem";
 
 /**
  * D0.1 network decision — recorded here so it is visible at the point of use:
  *
- *   Network = X Layer MAINNET (eip155:196), NOT testnet (eip155:1952).
+ *   Default network = X Layer MAINNET (eip155:196), NOT testnet (eip155:1952).
  *
- * Why not testnet: the OKX x402 facilitator + a settleable stablecoin only exist on mainnet
+ * Why mainnet by default: the OKX x402 facilitator + a settleable stablecoin only exist on mainnet
  * here — packages/shared/src/chains.ts (D0.3) records NO confirmed testnet USDT/USDG, and
  * @okxweb3/x402-evm documents only eip155:196 (default stablecoin USDT0, EIP-3009). So mainnet
  * at the documented $0.01 floor is the only real rail.
  *
- * The X Layer chain + USDT0 constants below are inlined (not imported from @untch/shared) so
- * this service deploys standalone to a cloud host. Values are the D0.3-verified ones — source
- * of truth remains packages/shared/src/chains.ts; keep them in sync if that file changes.
+ * The chain + settlement token are resolved from the SINGLE shared source (packages/shared/src/chains.ts)
+ * via the CHAIN_ID/NETWORK env contract — nothing is inlined. The seller falls back to mainnet when
+ * neither var is set; setting CHAIN_ID/NETWORK switches every derived value with no code change.
  */
-export const NETWORK = "eip155:196" as const;
+export const CHAIN: Chain = activeChain(process.env, X_LAYER_MAINNET_ID);
+export const NETWORK = `eip155:${CHAIN.id}` as const;
+
+/** The default x402 settlement token for the active network (mainnet ⇒ USDT0, D0.3-verified). */
+export const SETTLEMENT_TOKEN = settlementToken(CHAIN.id);
+
 export const PING_ROUTE = "/ping_untch" as const;
 export const PING_PRICE = "$0.01" as const;
 
@@ -71,22 +77,6 @@ export const PAUSE_POLICY_ROUTE = "/pause_policy" as const;
 export const RESUME_POLICY_ROUTE = "/resume_policy" as const;
 
 export const DEFAULT_PORT = 4021;
-
-export const CHAIN: Chain = defineChain({
-  id: 196,
-  name: "X Layer Mainnet",
-  nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.xlayer.tech"] } },
-  blockExplorers: { default: { name: "OKLink", url: "https://www.oklink.com/x-layer" } },
-  testnet: false,
-});
-
-/** USDT0 on X Layer mainnet — the default EIP-3009 settlement token (D0.3-verified). */
-export const SETTLEMENT_TOKEN = {
-  symbol: "USD₮0",
-  address: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736" as Address,
-  decimals: 6,
-} as const;
 
 export type SellerConfig = {
   okxApiKey: string;

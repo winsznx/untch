@@ -1,4 +1,10 @@
-import { defineChain, type Address, type Chain, type Hex } from "viem";
+import {
+  activeChain,
+  activeRpcUrl,
+  X_LAYER_MAINNET_ID,
+  X_LAYER_TESTNET_ID,
+} from "@untch/shared";
+import type { Address, Chain, Hex } from "viem";
 
 /**
  * Policy-store configuration. Two consumer shapes, mirroring the receipt-writer split:
@@ -6,26 +12,37 @@ import { defineChain, type Address, type Chain, type Hex } from "viem";
  *     never signs.
  *   • the WRITE side (the create/update/pause tools) additionally needs the operator wallet key + RPC
  *     + the PolicyRegistry address, because it broadcasts real registerPolicy/updatePolicy/pausePolicy.
+ *
+ * The chain + RPC are resolved through the single shared source (packages/shared/src/chains.ts) via
+ * the CHAIN_ID/NETWORK env contract — no chain constants live here. Default network is testnet.
  */
 
-export const X_LAYER_TESTNET_ID = 1952 as const;
-export const X_LAYER_MAINNET_ID = 196 as const;
+export { X_LAYER_MAINNET_ID, X_LAYER_TESTNET_ID, xLayerMainnet, xLayerTestnet } from "@untch/shared";
 
 /**
- * Deployed PolicyRegistry (§10.1) on X Layer testnet — the anchoring target. This is the POST-lint-fix
- * redeploy (supersedes the earlier 0xc571…); see contracts/deploy/testnet-receipt.json. Overridable
- * via POLICY_REGISTRY, but never guess a different address — a stale one silently anchors to nothing.
+ * Deployed PolicyRegistry (§10.1) on X Layer testnet — the anchoring target on the default network.
+ * This is the POST-lint-fix redeploy (supersedes the earlier 0xc571…); see contracts/deploy/testnet-receipt.json.
+ * Overridable via POLICY_REGISTRY, but never guess a different address — a stale one silently anchors to nothing.
  */
 export const POLICY_REGISTRY_DEFAULT: Address = "0xe1d74c90801db0fa806c72eb818b7671b8233532";
 
-export const xLayerTestnet: Chain = defineChain({
-  id: X_LAYER_TESTNET_ID,
-  name: "X Layer Testnet",
-  nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
-  rpcUrls: { default: { http: ["https://testrpc.xlayer.tech", "https://xlayertestrpc.okx.com"] } },
-  blockExplorers: { default: { name: "OKLink", url: "https://www.oklink.com/x-layer-testnet" } },
-  testnet: true,
-});
+/**
+ * PolicyRegistry address per network. Only testnet is deployed today; mainnet has no default, so a
+ * mainnet run must pass POLICY_REGISTRY explicitly rather than silently reusing a testnet address.
+ */
+export const POLICY_REGISTRY_BY_CHAIN: Partial<Record<number, Address>> = {
+  [X_LAYER_TESTNET_ID]: POLICY_REGISTRY_DEFAULT,
+};
+
+export function resolvePolicyRegistry(chainId: number, override?: string): Address {
+  const addr = override?.trim() || POLICY_REGISTRY_BY_CHAIN[chainId];
+  if (!addr) {
+    throw new Error(
+      `No PolicyRegistry address for chainId ${chainId} — deploy PolicyRegistry to that network and set POLICY_REGISTRY.`,
+    );
+  }
+  return addr as Address;
+}
 
 export class MissingEnvError extends Error {
   constructor(public readonly varName: string) {
@@ -62,9 +79,10 @@ export interface RegistryConfig extends StorageConfig {
 }
 
 export function loadRegistryConfig(): RegistryConfig {
-  const rpcUrl = process.env.RPC_URL?.trim() || xLayerTestnet.rpcUrls.default.http[0]!;
-  const registry = (process.env.POLICY_REGISTRY?.trim() || POLICY_REGISTRY_DEFAULT) as Address;
-  return { ...loadStorageConfig(), rpcUrl, chain: xLayerTestnet, registry };
+  const chain = activeChain(process.env);
+  const rpcUrl = activeRpcUrl(process.env);
+  const registry = resolvePolicyRegistry(chain.id, process.env.POLICY_REGISTRY);
+  return { ...loadStorageConfig(), rpcUrl, chain, registry };
 }
 
 /**
@@ -72,7 +90,8 @@ export function loadRegistryConfig(): RegistryConfig {
  * interim build `operatorPrivateKey` is the demo/burner wallet 0x98F43e… (OPERATOR_PRIVATE_KEY),
  * a TEMPORARY stand-in for the operator's own dashboard-connected wallet (§15) — see the README's
  * "operator-signing" section for the target state (backend returns unsigned calldata; the operator's
- * wallet signs). Refuses X Layer mainnet (196): testnet only until the full §28 checklist clears.
+ * wallet signs). Network follows the shared CHAIN_ID/NETWORK selection (default testnet); a mainnet
+ * run requires an explicit POLICY_REGISTRY address — it never reuses the testnet default on mainnet.
  */
 export interface OperatorConfig extends RegistryConfig {
   readonly operatorPrivateKey: Hex;

@@ -130,3 +130,97 @@ export function confirmedTokenAllowlist(chainId: number): Address[] {
     .filter(isConfirmed)
     .map((t) => t.address);
 }
+
+/**
+ * The default x402 settlement token per network — the EIP-3009 stablecoin the seller prices in.
+ * X Layer mainnet settles in USDT0 (OKX x402's documented default); X Layer testnet has NO confirmed
+ * settleable stablecoin (see TOKENS[1952]), so requesting one there fails loudly rather than guessing.
+ */
+export const SETTLEMENT_TOKEN_KEY: Partial<Record<number, string>> = {
+  [X_LAYER_MAINNET_ID]: "USDT0",
+};
+
+export function settlementToken(chainId: number): ConfirmedToken {
+  const key = SETTLEMENT_TOKEN_KEY[chainId];
+  const set = TOKENS[chainId as keyof typeof TOKENS] as
+    | Record<string, TokenEntry>
+    | undefined;
+  const entry = key && set ? set[key] : undefined;
+  if (!entry || !isConfirmed(entry)) {
+    throw new Error(
+      `No confirmed settlement token for chainId ${chainId} — supported: ${Object.keys(
+        SETTLEMENT_TOKEN_KEY,
+      ).join(", ")} (X Layer testnet has no confirmed stablecoin; see chains.ts TOKENS).`,
+    );
+  }
+  return entry;
+}
+
+/**
+ * Single network-selection source. Every service/library/script that talks to X Layer resolves its
+ * chain, RPC, and token addresses through the functions below — driven by ONE env contract:
+ *
+ *   CHAIN_ID   — the numeric chainId ("196" | "1952"), OR
+ *   NETWORK    — the CAIP-2 form ("eip155:196" | "eip155:1952").
+ *
+ * CHAIN_ID wins when both are set; when neither is set a consumer's own fallback applies (the library
+ * packages fall back to testnet, the ASP seller falls back to mainnet — that is the only per-consumer
+ * knob, the selection mechanism is identical). RPC_URL, when set, overrides the chain's default RPC.
+ */
+export const DEFAULT_CHAIN_ID: number = X_LAYER_TESTNET_ID;
+
+export type ChainEnv = {
+  CHAIN_ID?: string | undefined;
+  NETWORK?: string | undefined;
+  RPC_URL?: string | undefined;
+};
+
+/** Parse a CHAIN_ID ("196") or NETWORK ("eip155:196") string to a supported chainId, or throw. */
+export function parseChainId(raw: string): number {
+  const match = raw.trim().match(/(\d+)\s*$/);
+  const id = match ? Number(match[1]) : Number.NaN;
+  if (!(id in CHAINS)) {
+    throw new Error(
+      `Unsupported CHAIN_ID/NETWORK ${JSON.stringify(raw)} — supported: ${Object.keys(CHAINS).join(
+        ", ",
+      )}`,
+    );
+  }
+  return id;
+}
+
+/** The active chainId from env (CHAIN_ID, then NETWORK), else the caller's fallback. */
+export function resolveChainId(
+  env: ChainEnv = process.env,
+  fallback: number = DEFAULT_CHAIN_ID,
+): number {
+  const raw = env.CHAIN_ID?.trim() || env.NETWORK?.trim();
+  return raw ? parseChainId(raw) : fallback;
+}
+
+/** The chain config for a known chainId, or throw (never silently falls back). */
+export function chainById(chainId: number): Chain {
+  const chain = CHAINS[chainId as keyof typeof CHAINS];
+  if (!chain) {
+    throw new Error(
+      `Unsupported chainId ${chainId} — supported: ${Object.keys(CHAINS).join(", ")}`,
+    );
+  }
+  return chain;
+}
+
+/** The active chain from env selection. */
+export function activeChain(
+  env: ChainEnv = process.env,
+  fallback: number = DEFAULT_CHAIN_ID,
+): Chain {
+  return chainById(resolveChainId(env, fallback));
+}
+
+/** The active RPC URL: an explicit RPC_URL override wins, else the active chain's default RPC. */
+export function activeRpcUrl(
+  env: ChainEnv = process.env,
+  fallback: number = DEFAULT_CHAIN_ID,
+): string {
+  return env.RPC_URL?.trim() || activeChain(env, fallback).rpcUrls.default.http[0]!;
+}

@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 import { hashCanonicalJson } from "@untch/canon";
 import { VERIFY_RESULT_CODE } from "@untch/proof-engine";
 import { UNTCH_RECEIPTS_ABI } from "@untch/receipt-writer";
+import { chainById, X_LAYER_TESTNET_ID } from "@untch/shared";
 import {
   createPublicClient,
   decodeEventLog,
-  defineChain,
   formatUnits,
   http,
   keccak256,
@@ -44,12 +44,10 @@ const PRICE_ATOMIC = parseUnits("0.10", SETTLEMENT_TOKEN.decimals);
 const POLL_TIMEOUT_MS = Number(process.env.PROOF_POLL_TIMEOUT_MS ?? 180_000);
 const POLL_INTERVAL_MS = Number(process.env.PROOF_POLL_INTERVAL_MS ?? 5_000);
 
-const xLayerTestnet = defineChain({
-  id: 1952,
-  name: "X Layer Testnet",
-  nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+const xLayerTestnet = {
+  ...chainById(X_LAYER_TESTNET_ID),
   rpcUrls: { default: { http: [TESTNET_RPC] } },
-});
+};
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 

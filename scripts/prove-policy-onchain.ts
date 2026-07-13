@@ -9,7 +9,7 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { xLayerTestnet, X_LAYER_TESTNET_ID } from "../packages/shared/src/chains";
+import { xLayerTestnet, X_LAYER_MAINNET_ID, X_LAYER_TESTNET_ID } from "../packages/shared/src/chains";
 // The dashboard's OWN transaction-construction path — the exact module the "Create policy" button calls.
 // The only difference between this proof and a click in the UI is the signer: here a viem account, in the
 // browser the connected OKX Wallet. Same address, same ABI, same canon hash, same args.
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   const pub = createPublicClient({ transport: http(rpcUrl) });
   const chainId = await pub.getChainId();
   console.log(`chainId          : ${chainId}${chainId === X_LAYER_TESTNET_ID ? " (X Layer testnet)" : ""}`);
-  if (chainId === 196) throw new Error("Refusing to run against X Layer MAINNET (196) — testnet only.");
+  if (chainId === X_LAYER_MAINNET_ID) throw new Error("Refusing to run against X Layer MAINNET (196) — testnet only.");
 
   // Prove the contract the UI targets is live and matches what the dashboard shows.
   const code = await pub.getBytecode({ address: POLICY_REGISTRY });

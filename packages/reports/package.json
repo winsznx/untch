@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Untch report tools (PRD §11) — generate_dispute_packet and reconcile_agent_spend. Deterministic, NO-LLM (I1) aggregation over the durable receipt / ledger / escalation history that policy-engine, proof-engine, the receipt writer, and the escalation service already produce. Each tool assembles a real evidence artifact, hashes it (RFC 8785 JCS via @untch/canon), and anchors it on-chain by REUSING UntchReceipts.anchorAudit (§10.3 AuditAnchored) — the same anchor the PRD's §7.6 A2A flow already routes dispute packets through. Sparse history produces a sparse, honestly-labeled report; nothing is fabricated to look complete.",
+  "description": "Untch report tools (PRD \u00a711) \u2014 generate_dispute_packet and reconcile_agent_spend. Deterministic, NO-LLM (I1) aggregation over the durable receipt / ledger / escalation history that policy-engine, proof-engine, the receipt writer, and the escalation service already produce. Each tool assembles a real evidence artifact, hashes it (RFC 8785 JCS via @untch/canon), and anchors it on-chain by REUSING UntchReceipts.anchorAudit (\u00a710.3 AuditAnchored) \u2014 the same anchor the PRD's \u00a77.6 A2A flow already routes dispute packets through. Sparse history produces a sparse, honestly-labeled report; nothing is fabricated to look complete.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
@@ -17,6 +17,7 @@
     "@untch/policy-engine": "workspace:*",
     "@untch/proof-engine": "workspace:*",
     "@untch/receipt-writer": "workspace:*",
+    "@untch/shared": "workspace:*",
     "pg": "^8.13.1",
     "viem": "^2.55.0"
   },

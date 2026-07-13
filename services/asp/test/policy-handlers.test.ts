@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { X_LAYER_TESTNET_ID } from "@untch/shared";
 import { hashCanonicalJson } from "@untch/canon";
 import {
   InMemoryPolicyRepo,
@@ -51,7 +52,7 @@ interface Row {
 class FakeChain implements PolicyRegistryChain {
   readonly ownerAddress = OPERATOR;
   readonly registryAddress = getAddress("0xe1d74c90801db0fa806c72eb818b7671b8233532");
-  readonly chainId = 1952;
+  readonly chainId = X_LAYER_TESTNET_ID;
   private block = 100;
   private readonly nonces = new Map<string, bigint>();
   private readonly rows = new Map<string, Row>();

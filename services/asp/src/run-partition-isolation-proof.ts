@@ -7,6 +7,7 @@ import {
   InMemoryPolicyRepo,
   parsePolicyRules,
   PolicyProvider,
+  X_LAYER_TESTNET_ID,
   type StoredPolicy,
 } from "@untch/policy-store";
 import {
@@ -96,7 +97,7 @@ function storedPolicy(id: string, owner: Address, r: Record<string, unknown>): S
     policyHash: hashCanonicalJson(r),
     expiry: Math.floor(Date.parse(r.expiry as string) / 1000),
     onchainRef: {
-      chainId: 1952,
+      chainId: X_LAYER_TESTNET_ID,
       registry: "0xe1d74c90801db0fa806c72eb818b7671b8233532",
       registerTx: b32("ab"),
       registerBlock: 1,

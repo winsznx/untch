@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Untch receipt writer (PRD §7.4 / §10.3). Consumes preflight_payment decisions from the seller, writes a durable Postgres ledger + receipt row immediately, then batches receipts (N or T) and anchors them to the deployed UntchReceipts on X Layer testnet via BullMQ, with retry/backoff → DEGRADED_UNANCHORED and reorg re-verification. Postgres is the source of truth; chain anchoring is downstream of durability.",
+  "description": "Untch receipt writer (PRD \u00a77.4 / \u00a710.3). Consumes preflight_payment decisions from the seller, writes a durable Postgres ledger + receipt row immediately, then batches receipts (N or T) and anchors them to the deployed UntchReceipts on X Layer testnet via BullMQ, with retry/backoff \u2192 DEGRADED_UNANCHORED and reorg re-verification. Postgres is the source of truth; chain anchoring is downstream of durability.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@untch/policy-engine": "workspace:*",
+    "@untch/shared": "workspace:*",
     "bullmq": "^5.34.0",
     "ioredis": "^5.4.2",
     "pg": "^8.13.1",

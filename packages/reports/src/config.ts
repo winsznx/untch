@@ -1,4 +1,5 @@
-import { RECEIPTS_CONTRACT_DEFAULT, xLayerTestnet } from "@untch/receipt-writer";
+import { resolveReceiptsContract } from "@untch/receipt-writer";
+import { activeChain, activeRpcUrl } from "@untch/shared";
 import type { Address, Chain, Hex } from "viem";
 
 /**
@@ -12,9 +13,9 @@ import type { Address, Chain, Hex } from "viem";
  * and score anchorer already use, with the SAME authorized writer key — receipts, scores, and audit
  * reports share one contract and one anchor event family.
  */
-export const AUDIT_ANCHOR_CHAIN: Chain = xLayerTestnet;
-export const AUDIT_RECEIPTS_CONTRACT: Address = RECEIPTS_CONTRACT_DEFAULT;
-export const DEFAULT_RPC_URL = "https://testrpc.xlayer.tech";
+export const AUDIT_ANCHOR_CHAIN: Chain = activeChain(process.env);
+export const AUDIT_RECEIPTS_CONTRACT: Address = resolveReceiptsContract(AUDIT_ANCHOR_CHAIN.id);
+export const DEFAULT_RPC_URL = activeRpcUrl(process.env);
 
 export class MissingEnvError extends Error {
   constructor(public readonly varName: string) {
@@ -40,11 +41,11 @@ export interface AnchorConfig {
 export function loadAnchorConfig(): AnchorConfig {
   const key = requireEnv("WRITER_PRIVATE_KEY");
   if (!/^0x[0-9a-fA-F]{64}$/.test(key)) throw new Error("WRITER_PRIVATE_KEY is not a 0x 32-byte key");
+  const chain = activeChain(process.env);
   return {
-    rpcUrl: process.env.RPC_URL?.trim() || DEFAULT_RPC_URL,
-    chain: AUDIT_ANCHOR_CHAIN,
-    receiptsContract:
-      (process.env.RECEIPTS_CONTRACT?.trim() as Address | undefined) ?? AUDIT_RECEIPTS_CONTRACT,
+    rpcUrl: activeRpcUrl(process.env),
+    chain,
+    receiptsContract: resolveReceiptsContract(chain.id, process.env.RECEIPTS_CONTRACT),
     writerPrivateKey: key as Hex,
   };
 }

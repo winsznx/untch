@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { X_LAYER_TESTNET_ID } from "@untch/shared";
 import { hashSpendIntent, hashCanonicalJson, type SpendIntent } from "@untch/canon";
 import { PerAgentLock, evaluateIntentSerialized, ledgerPartitionKey } from "@untch/policy-engine";
 import {
@@ -68,7 +69,7 @@ function storedPolicy(id: string, rules: Record<string, unknown>): StoredPolicy 
     policyHash,
     expiry: Math.floor(Date.parse((rules.expiry as string)) / 1000),
     onchainRef: {
-      chainId: 1952,
+      chainId: X_LAYER_TESTNET_ID,
       registry: "0xe1d74c90801db0fa806c72eb818b7671b8233532",
       registerTx: b32("ab"),
       registerBlock: 1,

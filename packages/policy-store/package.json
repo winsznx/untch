@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Untch policy store (PRD §6.2 / §8 / §10.1). Durable Postgres policy CRUD whose id IS the on-chain PolicyRegistry policyId, anchored by real registerPolicy/updatePolicy/pausePolicy calls on X Layer. Postgres is synced from what the chain confirms; the policyId is derived from the live on-chain owner nonce, never an off-chain counter.",
+  "description": "Untch policy store (PRD \u00a76.2 / \u00a78 / \u00a710.1). Durable Postgres policy CRUD whose id IS the on-chain PolicyRegistry policyId, anchored by real registerPolicy/updatePolicy/pausePolicy calls on X Layer. Postgres is synced from what the chain confirms; the policyId is derived from the live on-chain owner nonce, never an off-chain counter.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
@@ -14,6 +14,7 @@
   "dependencies": {
     "@untch/canon": "workspace:*",
     "@untch/policy-engine": "workspace:*",
+    "@untch/shared": "workspace:*",
     "pg": "^8.13.1",
     "viem": "^2.55.0"
   },
