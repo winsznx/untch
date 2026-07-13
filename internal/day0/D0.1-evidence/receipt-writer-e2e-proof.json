@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "step": "§7.4 receipt-writer end-to-end proof",
+    "when": "2026-07-10T16:04:47.579Z",
+    "buyer": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "seller": "https://untch-asp-production.up.railway.app",
+    "receiptsContract": "0x0c64997277b7d94d2999dea22a123cac56334863",
+    "testnetRpc": "https://testrpc.xlayer.tech"
+  },
+  "decision": "BLOCKED_COOLDOWN",
+  "receiptId": "0xdd855fc53afb9ff530e54cb358ca8bd5b2dcc22fb006db2312dcc6859e0475bc",
+  "serviceReportedTx": "0x84f1eded3f2b9e7ac5c003b60c87f505b146d2aaf9366b8b9c1d84b848c05700",
+  "independentlyVerified": {
+    "method": "raw eth_getLogs for ReceiptLogged, receiptId matched from decoded chain logs",
+    "found": true,
+    "txHash": "0x84f1eded3f2b9e7ac5c003b60c87f505b146d2aaf9366b8b9c1d84b848c05700",
+    "block": 35240635
+  },
+  "finalStatus": "CONFIRMED",
+  "result": "PASS"
+}

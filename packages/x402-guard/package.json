@@ -1,0 +1,71 @@
+{
+  "name": "@untch/x402-guard",
+  "version": "0.1.0",
+  "description": "Operator-authorized payment middleware for x402/APP flows. Intercepts an HTTP 402 challenge, runs the Challenge Binding Check + a preflight policy decision, and only then lets the caller's OWN signer proceed (APPROVE), returns a structured refusal (BLOCK), or returns a non-blocking poll handle (ESCALATE). Never holds, sees, or requests a private key.",
+  "license": "MIT",
+  "author": "Untch",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "x402",
+    "402",
+    "payment-required",
+    "agent-payments",
+    "app",
+    "eip-3009",
+    "middleware",
+    "challenge-binding",
+    "replay-protection",
+    "preflight",
+    "usdc",
+    "web3"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/winsznx/untch.git",
+    "directory": "packages/x402-guard"
+  },
+  "homepage": "https://github.com/winsznx/untch/tree/main/packages/x402-guard#readme",
+  "bugs": {
+    "url": "https://github.com/winsznx/untch/issues"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  }
+}

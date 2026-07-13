@@ -2,34 +2,116 @@
 
 Real, settled, pay-per-call x402 on **X Layer mainnet** (`eip155:196`) via the **OKX hosted
 facilitator**. No mock mode, no substitute rail. D0.1 proved the rail with `ping_untch`; Step-2
-adds the two policy-plane tools (`create_spend_intent`, `preflight_payment`) and wires the real
-`@untch/policy-engine` behind the priced preflight.
+added the two buyer tools (`create_spend_intent`, `preflight_payment`) behind the real
+`@untch/policy-engine`. **The policy plane is now real and durable:** the old hardcoded fixture policy
+is gone — policies are stored in Postgres (`@untch/policy-store`), keyed by their on-chain policyId,
+and anchored by real `PolicyRegistry` (§10.1) txs. `preflight_payment` / `create_spend_intent` read
+real stored policies by `policyId`; `create/update/pause_policy` write them.
 
 ## Tools
 
 | Tool | Method / route | Price | What's real | Backed by |
 |---|---|---|---|---|
 | `ping_untch` | `GET /ping_untch` | `$0.01` | proof-of-rail health check (D0.1) | — |
-| `create_spend_intent` | `POST /create_spend_intent` | **bundled** (unpriced) | validate + canonicalize + **hash** a §8.1 SpendIntent | `@untch/canon` |
-| `preflight_payment` | `POST /preflight_payment` | `$0.05` | real deterministic **§7.1 policy decision** | `@untch/policy-engine` |
+| `create_spend_intent` | `POST /create_spend_intent` | **bundled** | validate + **hash** a §8.1 SpendIntent, **bound to a real stored policy** | `@untch/canon` + `@untch/policy-store` |
+| `preflight_payment` | `POST /preflight_payment` | `$0.05` | real **§7.1 decision** against a **real stored policy** | `@untch/policy-engine` + `@untch/policy-store` |
+| `verify_delivery` | `POST /verify_delivery` | `$0.10` | real **§13/§7.3 T0** verification → a **real VERIFY receipt** | `@untch/proof-engine` + `@untch/receipt-writer` |
+| `generate_dispute_packet` | `POST /generate_dispute_packet` | `$0.50` | assemble an intent's **real evidence bundle** (decision/verify/receipts/escalation/timeline) → hash → **`AuditAnchored`** | `@untch/reports` |
+| `reconcile_agent_spend` | `POST /reconcile_agent_spend` | `$0.25`² | assemble an agent's **real spend/blocked-waste report** over a period → hash → **`AuditAnchored`** | `@untch/reports` |
+| `create_spend_policy` | `POST /create_spend_policy` | unpriced¹ | **real `PolicyRegistry.registerPolicy` tx** + durable store | `@untch/policy-store` |
+| `update_policy` | `POST /update_policy` | unpriced¹ | **real `updatePolicy` tx** (version bump) + sync | `@untch/policy-store` |
+| `pause_policy` / `resume_policy` | `POST /pause_policy` · `/resume_policy` | unpriced¹ | **real `pausePolicy`/`resumePolicy` tx** + sync | `@untch/policy-store` |
 
-All settle in **USDT0** (`0x779Ded0c9e1022225f8E0630b35a9b54bE713736`, 6dp) via x402 v2:
+¹ §11 prices `create/update/pause_policy` (0.50 / 0.10). Pricing is **deliberately deferred** with the
+dashboard wallet-connect flow (§15): these are operator-admin actions signed by the operator's own
+wallet, not buyer x402 calls. In this interim build they are **unpriced admin routes** signed by the
+demo/burner operator wallet — see **Operator signing** below.
+
+² §11 prices `reconcile_agent_spend` at $0.25/day · $1.00/wk. The x402 middleware prices one static value
+per route, so this build charges the **$0.25 base rate for both** day and week reports; the differentiated
+week price is deferred (same posture as ¹). Both report tools assemble+hash from durable history and reuse
+`UntchReceipts.anchorAudit` (§10.3 `AuditAnchored`) — see `packages/reports/README.md` for the reuse
+decision, output shapes, honest gaps, and the two real testnet anchor proofs. Per-call seller-side
+anchoring is off unless `REPORT_ANCHOR_WRITER_KEY` is set (the seller holds no writer key by default).
+
+Buyer tools settle in **USDT0** (`0x779Ded0c9e1022225f8E0630b35a9b54bE713736`, 6dp) via x402 v2:
 `PAYMENT-REQUIRED` 402 challenge → EIP-3009 `PAYMENT-SIGNATURE` → `PAYMENT-RESPONSE` (settlement tx).
 
 ### `create_spend_intent` (bundled)
-Takes a full spend intent as JSON (uint256 fields as decimal **strings**, per PRD §9). Validates it,
-canonicalizes it, and returns the §8.1 `intentHash` computed by `@untch/canon`'s `hashSpendIntent`
-— the *same* hashing path the policy engine uses, so the hash is identical downstream. Returns
-`{ intentHash, canonicalIntent, onchain: null }`. It does **not** register anything on-chain —
-`SpendIntentRegistry` (§10.2) does not exist yet, so `onchain` is honestly `null`.
+Takes a full spend intent as JSON (uint256 fields as decimal **strings**, per PRD §9) plus a
+`policyId`. Validates + canonicalizes it, returns the §8.1 `intentHash` computed by `@untch/canon`'s
+`hashSpendIntent` — the *same* hashing path the policy engine uses — and **binds it to a real stored
+policy**: the `policyId` must resolve to a stored policy whose `policy_hash` equals the intent's
+`policyHash` (else `404 POLICY_NOT_FOUND` / `400 POLICY_BINDING_MISMATCH`). Returns
+`{ intentHash, canonicalIntent, policyId, policyVersion, onchain: null }`. `onchain` is `null` because
+`SpendIntentRegistry` (§10.2) is not wired to this tool yet.
 
 ### `preflight_payment` ($0.05)
-Accepts `{ intentHash }` (from a prior `create_spend_intent` on this instance), or an inline
-`{ intent }`, or both (the supplied hash is cross-checked against the recomputed one). Runs the
-**real** `evaluateIntentSerialized` (§7.1: per-agent lock → read ledger → evaluate → commit if
-approved) and returns the §8.2 decision **verbatim**:
+Accepts a `policyId` plus `{ intentHash }` (from a prior create on this instance), an inline
+`{ intent }`, or both (the supplied hash is cross-checked). It **loads the real stored policy named by
+`policyId`** and runs the **real** `evaluateIntentSerialized` (§7.1: per-agent lock → read ledger →
+evaluate → commit if approved) against it, returning the §8.2 decision **verbatim**:
 `{ decision, reasons[], ruleTrace[], intentHash, policyId, policyVersion, evaluatedAt, receiptRef, sig }`.
-`receiptRef` and `sig` are always `null` — see "still null" below.
+Resolution: missing `policyId` → `400`; unknown `policyId` → the engine fail-closes to
+`BLOCKED_NO_ACTIVE_POLICY` (I2); an intent bound to a different policy hash → `400
+POLICY_BINDING_MISMATCH`. `sig` is always `null` (§7.5 oracle signer unbuilt); `receiptRef` is a real
+queued ref when the §7.4 writer is wired, else `null`.
+
+### `verify_delivery` ($0.10)
+The first tool that produces a **real delivery-verification receipt** — one whose `verifyResult` /
+`proofTier` finally reflect what happened, not the default `0` every prior (decision-kind) receipt has
+carried. Accepts a `policyId`, an intent (`{ intentHash }` from a prior create on this instance, an
+inline `{ intent }`, or both — the same resolver preflight uses), the committed `acceptanceCriteria`
+document, and the `delivery` (`{ payload }` and/or `{ payloadHash }`). It resolves the intent, recovers
+the **committed §8.1 `acceptanceHash`**, and runs the **real, deterministic** `@untch/proof-engine` T0
+(no LLM, I1) — ajv schema + required-field / size / regex / enum checks + exact-hash for deterministic
+deliverables, all gated behind acceptance-criteria binding (the presented criteria must hash back to
+the committed `acceptanceHash`, so a buyer cannot swap the spec after delivery).
+
+Response:
+```jsonc
+{
+  "intentHash": "0x…",
+  "final": "VERIFY_PASSED",            // | VERIFY_FAILED | VERIFY_SKIPPED_UNCOMMITTED | VERIFY_TIER_NOT_IMPLEMENTED
+  "recommendation": "RELEASE",         // | WITHHOLD | NONE
+  "requiredTier": 0, "achievedTier": 0, "proofTier": 0,
+  "verifyResult": 1,                   // proof-engine code: 1=PASS 2=FAIL 3=SKIPPED_UNCOMMITTED 4=NOT_IMPLEMENTED
+  "tierResults": [                     // the FULL §13 ladder — T1–T4 present as NOT_IMPLEMENTED, never absent
+    { "tier": "T0", "result": "PASS" },
+    { "tier": "T1", "result": "NOT_IMPLEMENTED", "implemented": false, "note": "…" },
+    { "tier": "T2", "result": "NOT_IMPLEMENTED", "implemented": false, "note": "…" },
+    { "tier": "T3", "result": "NOT_IMPLEMENTED", "implemented": false, "note": "…" },
+    { "tier": "T4", "result": "NOT_IMPLEMENTED", "implemented": false, "note": "…" }
+  ],
+  "diffs": [],                         // machine-readable §7.3 diffs on a FAIL
+  "hygieneEvent": false,               // true only on VERIFY_SKIPPED_UNCOMMITTED
+  "payloadHash": "0x…",
+  "receiptRef": { "receiptId": "0x…", "status": "QUEUED" } // or null when the §7.4 writer is unwired
+}
+```
+**The cached intent is authoritative for T0.** When the supplied `intentHash` hits this instance's
+store (a prior `create_spend_intent`), T0 verifies against the **stored committed** intent's
+`acceptanceHash` — never whatever the caller also sent inline. If an inline intent is supplied
+alongside a store hit, it must match the stored record **exactly** (its recomputed hash must equal both
+the stored record's hash and the `intentHash` parameter), else `400 ACCEPTANCE_MISMATCH` — a tampered
+`acceptanceHash` is rejected, never silently preferred. Inline data drives T0 **only on a genuine store
+miss**, and the response then carries `"intentProvenance": "caller-supplied"` (vs `"store-committed"`)
+— committed into the VERIFY receipt's metadata hash so a store-miss result is never mistaken for a
+committed-intent one, and Trust Bureau (built next) can weight it as lower-confidence.
+
+Resolution / errors: missing `policyId` → `400`; unknown `policyId` → `404 POLICY_NOT_FOUND`; an intent
+bound to a different policy hash → `400 POLICY_BINDING_MISMATCH`; inline ≠ the stored committed record →
+`400 ACCEPTANCE_MISMATCH`; store miss with only an `intentHash` → `404 INTENT_NOT_FOUND` (fail closed —
+T0 never runs); no `payload`/`payloadHash` → `400 DELIVERY_REQUIRED`. **REQUIRED_TIER is T0** in this build — a policy requiring a higher tier returns
+`VERIFY_TIER_NOT_IMPLEMENTED` (WITHHOLD), never a silent pass, because T1–T4 are honest stubs
+(`@untch/proof-engine` README). A `0x0` committed `acceptanceHash` returns `VERIFY_SKIPPED_UNCOMMITTED`
+— a logged buyer-hygiene event (§7.3), not a pass. On success the VERIFY receipt is durably enqueued
+(§7.4) and anchored by the worker to `UntchReceipts` (§10.3) carrying the real `verifyResult`/`proofTier`.
+
+**End-to-end proof:** `pnpm --filter @untch/asp verify:e2e` (`src/run-verify-e2e-proof.ts`) — a real
+paid `verify_delivery` on the live seller → real T0 PASS → anchored VERIFY receipt, with the
+`verifyResult` + `proofTier` **decoded from the chain log via raw `eth_getLogs`** (not read from the
+service), same independent-verification standard as every prior on-chain proof.
 
 ## What is real vs fixture vs null vs open
 
@@ -40,22 +122,28 @@ approved) and returns the §8.2 decision **verbatim**:
   I1; fail-closed, I2). Ten of §7.1's thirteen `RULE_EVAL` rules are enforced; the other three are
   surfaced in the trace as `implemented:false` (they need §14/§12/§13 — not this package's bug).
 
-**FIXTURE** (real logic, demo-grade data — resets on process restart; see `src/policy-fixture.ts`):
-- **One hardcoded demo policy** (`FIXTURE_RULES`): daily budget 25 USDT, per-call cap 1.00,
-  `onPerCallCapExceeded: "ESCALATE"`, escalateAbove 5.00, categories allow `[market-data, security,
-  research]`, empty recipient/agent allow-deny, duplicate TTL 60 min, cooldown 5 min, 40 calls/h,
-  expiry `2026-12-31`. There is no per-operator policy store yet.
-- **In-memory ledger** (`InMemoryLedger`): correct window math (daily budget, rolling-hour rate
-  limit, duplicate TTL, per-service cooldown) but **ephemeral** — no Postgres/Redis. Resets on
-  restart. Not faked results — real rules over real (but in-memory) state.
-- **In-memory intent store** (`InMemoryIntentStore`): lets `preflight_payment` resolve a bare
-  `intentHash`. Not the on-chain registry; bounded; resets on restart.
+- **The policy itself is now REAL + DURABLE** — the fixture is gone. Policies live in Postgres
+  (`@untch/policy-store`) keyed by their **on-chain policyId**, anchored by real `PolicyRegistry`
+  (§10.1) txs. See **Policy store** below.
+
+**FIXTURE-FREE-BUT-STILL-DEMO** (real logic, one demo shortcut, clearly labeled):
+- **Operator signing** uses the demo/burner wallet `0x98F43e…` server-side (interim). Real, on-chain,
+  but a **TEMPORARY stand-in** for the operator's own connected wallet — see **Operator signing**.
+
+**STILL EPHEMERAL** (real logic, demo-grade *state* — resets on restart; `src/ledger-state.ts`). Only
+the ledger window + intent cache remain in-memory; this is a *separate* later step (§7.1/§8), not the
+policy:
+- **In-memory ledger** (`InMemoryLedger`): correct window math (daily budget, rolling-hour rate limit,
+  duplicate TTL, per-service cooldown) but ephemeral — no Redis/Postgres backstop yet.
+- **In-memory intent store** (`InMemoryIntentStore`): resolves a bare `intentHash`; bounded; not the
+  on-chain `SpendIntentRegistry` (§10.2).
 
 **NULL** (subsystem not built — never faked, always literal `null` + a code comment):
-- `preflight_payment.receiptRef` — the receipt writer (§7.4 `UntchReceipts`) does not exist yet.
 - `preflight_payment.sig` — the EIP-712 oracle signer (§7.5, Mode C) does not exist yet, and this
   preflight is advisory (Mode A), which never signs.
-- `create_spend_intent.onchain` — `SpendIntentRegistry` (§10.2) does not exist yet.
+- `create_spend_intent.onchain` — `SpendIntentRegistry` (§10.2) is not wired to this tool yet.
+- `preflight_payment.receiptRef` — `null` only when the §7.4 receipt writer is not wired; a real
+  queued ref otherwise.
 
 **OPEN** (unresolved question flagged for later, not built here):
 - **A2MCP listing wrapper format.** Verified this step (`internal/day0/step2-mcp-format-notes.md`):
@@ -65,6 +153,45 @@ approved) and returns the §8.2 decision **verbatim**:
   one residual unknown: whether OKX's live registration *form* requires a declarative per-tool
   input/output JSON **schema** as submitted metadata (a D0.2 form-filling item, not a protocol
   layer). Confirm against the live UI before authoring; do not build now.
+
+## Policy store (real, durable, on-chain-anchored)
+
+`@untch/policy-store` replaces the old fixture policy. Policies are stored in the **same Railway
+Postgres** the receipt writer uses (**no second instance** — its `002_policies.sql` lands in the
+shared migration history) and anchored on-chain via the deployed `PolicyRegistry` (§10.1) at
+`0xe1d74c90801db0fa806c72eb818b7671b8233532` (the post-lint-fix redeploy; the stale `0xc571…` is
+superseded).
+
+**policyId consistency.** The Postgres `policies.id` **IS** the on-chain policyId —
+`uint256(keccak256(abi.encodePacked(owner, ownerNonce)))`. The nonce is read from the **live
+contract** before registering; the id is taken from the confirmed `PolicyRegistered` event (asserted
+to equal the prediction). There is **no off-chain counter** and no separate mapping — the id cannot
+drift from the chain.
+
+Each mutation keeps three subsystems consistent: `@untch/canon` hashes the ruleset (reused, not
+reimplemented) → `PolicyRegistry` runs the real register/update/pause tx → Postgres stores the row
+**after** the tx confirms (so a row never claims an anchor that did not land).
+
+## Operator signing (INTERIM demo wallet — TEMPORARY — and the target state)
+
+`PolicyRegistry.registerPolicy` is gated to `msg.sender == owner`: **direct, no relayer, no
+signature path** (deliberately unlike `SpendIntentRegistry`'s writer-set — policies are created
+*rarely by a human*, not constantly by software). The correct long-term flow is the operator's **own
+wallet, connected via the dashboard (§15)** — the backend should never hold an operator's key.
+
+That dashboard does not exist yet. The **honest interim**: the seller signs `create/update/pause_policy`
+with the **same demo/burner wallet the whole build has used, `0x98F43e…`** (`OPERATOR_PRIVATE_KEY`),
+labeled a **TEMPORARY stand-in** in `config.ts`, `policy-wiring.ts`, `policy-handlers.ts`, and
+`@untch/policy-store`. It is **not** a custodial "master operator key" for third parties — when real
+operators exist, the demo wallet is replaced by each operator's own connected wallet, not by us
+signing on their behalf.
+
+> **Target state (named requirement, not built now).** The backend **prepares the `registerPolicy`
+> calldata and returns it unsigned**; the operator's own connected wallet signs and submits it; we
+> sync the Postgres row once we observe the on-chain confirmation. Do not mistake the demo shortcut
+> for this intended architecture. Building the unsigned-calldata flow is deferred with the dashboard
+> (§15); until then, `OPERATOR_PRIVATE_KEY` unset ⇒ the mutation tools return `503`
+> (`POLICY_SIGNER_NOT_CONFIGURED`) — read-only is the default, signing is opt-in.
 
 ## `ping_untch` — kept (decision)
 
@@ -90,8 +217,10 @@ member of the pnpm workspace and **deploys from the repo ROOT**:
 - Railway installs the whole workspace (`pnpm install --frozen-lockfile`) and runs the filtered
   start. Deploy: `railway up` from the repo root (service `untch-asp`, env `production`).
 
-Seller env on Railway = OKX HMAC triple + `PAY_TO_ADDRESS`. The buyer key never leaves the local
-gitignored `services/asp/.env`.
+Seller env on Railway = OKX HMAC triple + `PAY_TO_ADDRESS` + `DATABASE_URL` (policy read/write, shared
+with the receipt writer). `OPERATOR_PRIVATE_KEY` (the interim demo wallet) is set **only** where the
+policy mutation tools should sign — without it the seller reads policies but returns `503` on
+`create/update/pause_policy`. The buyer key + operator key never leave the gitignored `.env` files.
 
 ## Run
 
@@ -104,7 +233,24 @@ pnpm --filter @untch/asp typecheck
 pnpm --filter @untch/asp gen-buyer-wallet      # writes BUYER_PRIVATE_KEY to services/asp/.env
 pnpm --filter @untch/asp pay                    # D0.1 ping_untch $0.01 paid call
 pnpm --filter @untch/asp preflight:proof        # Step-2: create intent → pay $0.05 preflight
+pnpm --filter @untch/asp guarded:e2e            # §14 Mode B: paid call through @untch/x402-guard
+
+# policy store: real create_spend_policy tx → real preflight against the stored policy (task 5 proof):
+pnpm --filter @untch/policy-store migrate        # applies 002_policies.sql to the Railway Postgres
+pnpm --filter @untch/asp policy:e2e              # needs OPERATOR_PRIVATE_KEY + DATABASE_URL
 ```
+
+The buyer proof scripts (`preflight:proof`, `receipt:e2e`, `guarded:e2e`) bind their intents to a real
+stored policy via `DEMO_POLICY_ID` + `DEMO_POLICY_HASH` (printed by `policy:e2e`, recorded in
+`contracts/deploy/policy-store-testnet-receipt.json`) — no fixture is reintroduced.
+
+### Buyer-side middleware — §14 Mode B (real dogfood, I5)
+
+The buyer no longer signs whatever 402 it receives. `src/guard-buyer.ts` routes every outbound paid
+call through **`@untch/x402-guard`**: on a 402 it runs the Challenge Binding Check against what the
+buyer independently authorized, calls the real `preflight_payment`, and only on **APPROVE** does the
+buyer's own signer (`makeBuyerFetch`, the sole holder of the key) run. BLOCK ⇒ structured refusal;
+ESCALATE ⇒ a non-blocking poll handle. `guarded:e2e` is the live end-to-end proof of this path.
 
 ## Evidence
 

@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "proof": "§7.2 / §27 escalation service — LIVE e2e THROUGH THE PUBLIC ENDPOINT (also D0.7 evidence)",
+    "buyer": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "seller": "https://untch-asp-production.up.railway.app",
+    "network": "eip155:196",
+    "capturedAt": "2026-07-10T22:37:18.095Z",
+    "note": "The entire escalation lifecycle (create, Telegram fan-out, §27 authority boundary, resolve) ran on the deployed seller. The buyer only called public HTTP endpoints and polled."
+  },
+  "policy": {
+    "policyId": "99741098567322735879080960265861163310897663663332765358624117521512656062382",
+    "policyHash": "0xa37e92806729e5c3cd9593d5568722639179efcaecf449d6a116ef65ccd46a13",
+    "registerTx": "0x1dd427932efc350fba93033cf6610f1911ac366491318a21008d7fe06f0a8928",
+    "escalateAbove": 5
+  },
+  "intentAmount": 8,
+  "preflightDecision": "ESCALATED_THRESHOLD",
+  "preflightSettlementTx": "0xb72376821b523bc75921f49a6870584b0677b62b123639f5b24cc26bdd7952c4",
+  "pollRef": "0x3726c3112556c734ec2207d1f8460061dacaf42bc1800a90cb05e37f289ea4fa",
+  "escalationRecordInitial": {
+    "id": "esc_28be893b6254",
+    "status": "PENDING",
+    "reason": "ESCALATED_THRESHOLD",
+    "resolvedBy": null,
+    "resolvedAt": null
+  },
+  "guardPollBefore": "PENDING",
+  "guardPollAfter": "APPROVED",
+  "escalationRecordFinal": {
+    "id": "esc_28be893b6254",
+    "status": "APPROVED",
+    "reason": "ESCALATED_THRESHOLD",
+    "resolvedBy": {
+      "handle": "6668785182",
+      "channel": "telegram"
+    },
+    "resolvedAt": "2026-07-10T22:37:16.047Z"
+  },
+  "independentlyConfirmed": true
+}

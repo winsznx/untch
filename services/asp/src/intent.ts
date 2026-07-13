@@ -197,6 +197,29 @@ export function parseFullIntent(raw: unknown): { input: SpendIntentInput; intent
 }
 
 /**
+ * Recompute the `intentHash` of an already-parsed `SpendIntentInput` — the SAME `@untch/canon`
+ * `hashSpendIntent` over the §8.1 struct that `create_spend_intent`/`preflight` use, so a hash derived
+ * here is byte-identical. Used by `verify_delivery`, which resolves an intent (inline or by hash) and
+ * needs its authoritative hash for the tier check + verify receipt without re-parsing the raw body.
+ */
+export function intentHashOf(input: SpendIntentInput): Hex {
+  const struct: SpendIntent = {
+    owner: input.owner,
+    buyerAgentId: input.buyerAgentId,
+    workerAgentId: input.workerAgentId,
+    token: input.token,
+    maxAmount: input.maxAmount,
+    taskHash: input.taskHash,
+    acceptanceHash: input.acceptanceHash,
+    schemaHash: input.schemaHash,
+    policyHash: input.policyHash,
+    deadline: input.deadline,
+    nonce: input.nonce,
+  };
+  return hashSpendIntent(struct);
+}
+
+/**
  * The canonical, JSON-safe view of an intent returned to callers — the §8.1 bounded object (what
  * `intentHash` covers) with uints as decimal strings and addresses lowercased, plus the operational
  * fields echoed alongside so nothing is lost. This is the honest "canonical form": the `struct`

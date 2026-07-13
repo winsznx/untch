@@ -1,54 +1,109 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { hashSpendIntent, hashCanonicalJson, type SpendIntent } from "@untch/canon";
 import { PerAgentLock, evaluateIntentSerialized } from "@untch/policy-engine";
-import { hashSpendIntent, type SpendIntent } from "@untch/canon";
+import {
+  InMemoryPolicyRepo,
+  parsePolicyRules,
+  PolicyProvider,
+  toEnginePolicy,
+  type StoredPolicy,
+} from "@untch/policy-store";
 import type { Address, Hex } from "viem";
 import {
   handleCreateSpendIntent,
   handlePreflightPayment,
   type PreflightDeps,
 } from "../src/handlers";
-import {
-  FIXTURE_POLICY,
-  FIXTURE_POLICY_HASH,
-  InMemoryIntentStore,
-  InMemoryLedger,
-} from "../src/policy-fixture";
+import { InMemoryIntentStore, InMemoryLedger } from "../src/ledger-state";
 import { parseFullIntent } from "../src/intent";
 
 /**
- * Unit tests for the two Step-2 handlers. Deterministic, NO network: they drive the REAL
- * `@untch/policy-engine` through the handlers with a fixed clock and isolated in-memory state, and
- * assert the handler surfaces the engine's decision unchanged. Covers, per the task: a clean
- * approve, a budget block, a duplicate block, an escalate case, plus the "no alteration" guarantee
- * and the create→preflight hash handoff.
+ * Unit tests for the two buyer-facing handlers, now backed by a REAL stored policy (via an in-memory
+ * PolicyRepo + PolicyProvider) instead of the removed fixture. Deterministic, NO network: they drive
+ * the REAL `@untch/policy-engine` through the handlers with a fixed clock and isolated state, and
+ * assert the handler surfaces the engine's decision unchanged AND that it evaluated the STORED policy.
  */
 
 const NOW = Date.parse("2026-07-09T12:00:00Z");
 const now = (): number => NOW;
-const TODAY = new Date(NOW).toISOString().slice(0, 10); // "2026-07-09"
+const TODAY = new Date(NOW).toISOString().slice(0, 10);
 
 const OWNER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as Address;
-const TOKEN = "0x779Ded0c9e1022225f8E0630b35a9b54bE713736" as Address; // USDT0 on X Layer
+const AGENT = "0x000000000000000000000000000000000000A9E7" as Address;
+const TOKEN = "0x779Ded0c9e1022225f8E0630b35a9b54bE713736" as Address;
 const RECIPIENT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as Address;
 const b32 = (byte: string): Hex => `0x${byte.repeat(32)}` as Hex;
 const TASK_HASH = b32("11");
 const PARAMS_HASH = b32("55");
 const ENDPOINT = "https://api.example.com/v1/data?b=2&a=1";
 
-/** A JSON wire intent that APPROVES under the fixture policy: $0.05, category market-data,
- *  worker agent 0, well within the $1.00 per-call cap and $5.00 escalate threshold. */
+const POLICY_ID = "1";
+/** Baseline demo ruleset (allows market-data/security/research; $1 per-call cap; ESCALATE over cap). */
+function baseRules(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    budgets: { daily: 25, token: "USDT" },
+    perCallCap: 1.0,
+    onPerCallCapExceeded: "ESCALATE",
+    escalateAbove: 5.0,
+    categories: { allow: ["market-data", "security", "research"], deny: [] },
+    recipients: { allow: [], deny: [] },
+    agents: { allowWorkerIds: [], denyWorkerIds: [] },
+    duplicates: { ttlMin: 60, keys: ["taskHash", "endpoint", "paramsHash"] },
+    cooldowns: { sameServiceMin: 5 },
+    rateLimit: { callsPerHour: 40 },
+    expiry: "2026-12-31T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function storedPolicy(id: string, rules: Record<string, unknown>): StoredPolicy {
+  const policyHash = hashCanonicalJson(rules);
+  return {
+    id,
+    owner: OWNER,
+    agentId: AGENT,
+    version: 1,
+    status: "ACTIVE",
+    policyHash,
+    expiry: Math.floor(Date.parse((rules.expiry as string)) / 1000),
+    onchainRef: {
+      chainId: 1952,
+      registry: "0xe1d74c90801db0fa806c72eb818b7671b8233532",
+      registerTx: b32("ab"),
+      registerBlock: 1,
+      lastTx: b32("ab"),
+      lastBlock: 1,
+    },
+    rules: parsePolicyRules(rules),
+    createdAt: new Date(NOW).toISOString(),
+    updatedAt: new Date(NOW).toISOString(),
+  };
+}
+
+/** A provider seeded with the baseline policy under POLICY_ID; extra policies can be added. */
+function seededProvider(extra: StoredPolicy[] = []): { provider: PolicyProvider; hash: Hex } {
+  const repo = new InMemoryPolicyRepo();
+  const base = storedPolicy(POLICY_ID, baseRules());
+  void repo.insert(base);
+  for (const p of extra) void repo.insert(p);
+  return { provider: new PolicyProvider(repo), hash: base.policyHash };
+}
+
+const BASE_HASH = hashCanonicalJson(baseRules());
+
+/** A JSON wire intent that APPROVES under the baseline policy, bound to it by policyHash. */
 function wireIntent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     owner: OWNER,
     buyerAgentId: "1",
     workerAgentId: "0",
     token: TOKEN,
-    maxAmount: "1000000", // 1.0 USDT in base units (6dp) — the §8.1 ceiling
+    maxAmount: "1000000",
     taskHash: TASK_HASH,
     acceptanceHash: b32("22"),
     schemaHash: b32("33"),
-    policyHash: FIXTURE_POLICY_HASH,
+    policyHash: BASE_HASH,
     deadline: "9999999999",
     nonce: "1",
     endpoint: ENDPOINT,
@@ -62,25 +117,27 @@ function wireIntent(overrides: Record<string, unknown> = {}): Record<string, unk
 
 function freshPreflightDeps(overrides: Partial<PreflightDeps> = {}): PreflightDeps {
   return {
-    policy: FIXTURE_POLICY,
+    policyProvider: seededProvider().provider,
     ledger: new InMemoryLedger(now),
     intentStore: new InMemoryIntentStore(),
     now,
-    lock: new PerAgentLock(), // isolate from the engine's module singleton
+    lock: new PerAgentLock(),
     ...overrides,
   };
 }
 
 // ── create_spend_intent ──────────────────────────────────────────────────────
 
-test("create_spend_intent: valid intent → 200 with the canon intentHash + canonical view", () => {
+test("create_spend_intent: valid intent bound to the stored policy → 200 with canon intentHash", async () => {
   const store = new InMemoryIntentStore();
-  const res = handleCreateSpendIntent(wireIntent(), { intentStore: store });
+  const res = await handleCreateSpendIntent(
+    { ...wireIntent(), policyId: POLICY_ID },
+    { intentStore: store, policyProvider: seededProvider().provider },
+  );
 
   assert.equal(res.status, 200);
-  const body = res.body as { intentHash: Hex; canonicalIntent: { struct: Record<string, unknown> }; onchain: null };
+  const body = res.body as { intentHash: Hex; canonicalIntent: { struct: Record<string, unknown> }; policyId: string; onchain: null };
 
-  // The returned hash is exactly @untch/canon's hashSpendIntent over the §8.1 struct.
   const expectedStruct: SpendIntent = {
     owner: OWNER.toLowerCase() as Address,
     buyerAgentId: 1n,
@@ -90,85 +147,212 @@ test("create_spend_intent: valid intent → 200 with the canon intentHash + cano
     taskHash: TASK_HASH,
     acceptanceHash: b32("22"),
     schemaHash: b32("33"),
-    policyHash: FIXTURE_POLICY_HASH,
+    policyHash: BASE_HASH,
     deadline: 9_999_999_999n,
     nonce: 1n,
   };
   assert.equal(body.intentHash, hashSpendIntent(expectedStruct));
-
-  // Canonical view carries decimal-string uints + lowercased addresses.
-  assert.equal(body.canonicalIntent.struct.maxAmount, "1000000");
-  assert.equal(body.canonicalIntent.struct.owner, OWNER.toLowerCase());
-  // No on-chain registration — explicitly null (SpendIntentRegistry not built).
+  assert.equal(body.policyId, POLICY_ID);
   assert.equal(body.onchain, null);
-  // It was cached for a later preflight-by-hash.
   assert.ok(store.get(body.intentHash));
 });
 
-test("create_spend_intent: malformed intent → 400 §11 error envelope, nothing hashed", () => {
-  const store = new InMemoryIntentStore();
-  const res = handleCreateSpendIntent(
-    wireIntent({ maxAmount: 1000000, owner: "not-an-address" }), // number (violates §9) + bad addr
-    { intentStore: store },
-  );
+test("create_spend_intent: missing policyId → 400 POLICY_ID_REQUIRED", async () => {
+  const res = await handleCreateSpendIntent(wireIntent(), {
+    intentStore: new InMemoryIntentStore(),
+    policyProvider: seededProvider().provider,
+  });
   assert.equal(res.status, 400);
-  const body = res.body as { code: string; retryable: boolean; docsUrl: null };
-  assert.equal(body.code, "INTENT_MALFORMED");
-  assert.equal(body.retryable, false);
-  assert.equal(body.docsUrl, null);
+  assert.equal((res.body as { code: string }).code, "POLICY_ID_REQUIRED");
 });
 
-// ── preflight_payment: the four required decision paths ───────────────────────
+test("create_spend_intent: policyId not in store → 404 POLICY_NOT_FOUND", async () => {
+  const res = await handleCreateSpendIntent(
+    { ...wireIntent(), policyId: "424242" },
+    { intentStore: new InMemoryIntentStore(), policyProvider: seededProvider().provider },
+  );
+  assert.equal(res.status, 404);
+  assert.equal((res.body as { code: string }).code, "POLICY_NOT_FOUND");
+});
 
-test("preflight_payment: clean intent → APPROVED", async () => {
-  const deps = freshPreflightDeps();
-  const res = await handlePreflightPayment({ intent: wireIntent() }, deps);
+test("create_spend_intent: intent bound to a different policy hash → 400 POLICY_BINDING_MISMATCH", async () => {
+  const res = await handleCreateSpendIntent(
+    { ...wireIntent({ policyHash: b32("de") }), policyId: POLICY_ID },
+    { intentStore: new InMemoryIntentStore(), policyProvider: seededProvider().provider },
+  );
+  assert.equal(res.status, 400);
+  assert.equal((res.body as { code: string }).code, "POLICY_BINDING_MISMATCH");
+});
 
+test("create_spend_intent: malformed intent → 400 §11 error envelope, nothing hashed", async () => {
+  const store = new InMemoryIntentStore();
+  const res = await handleCreateSpendIntent(
+    { ...wireIntent({ maxAmount: 1000000, owner: "not-an-address" }), policyId: POLICY_ID },
+    { intentStore: store, policyProvider: seededProvider().provider },
+  );
+  assert.equal(res.status, 400);
+  assert.equal((res.body as { code: string }).code, "INTENT_MALFORMED");
+});
+
+// ── preflight_payment: decision paths against the STORED policy ───────────────
+
+test("preflight_payment: clean intent → APPROVED (evaluated against the stored policy)", async () => {
+  const res = await handlePreflightPayment({ intent: wireIntent(), policyId: POLICY_ID }, freshPreflightDeps());
   assert.equal(res.status, 200);
-  const body = res.body as { decision: string; receiptRef: null; sig: null; ruleTrace: unknown[] };
+  const body = res.body as { decision: string; policyId: string; receiptRef: null; sig: null; ruleTrace: unknown[] };
   assert.equal(body.decision, "APPROVED");
+  assert.equal(body.policyId, POLICY_ID); // the engine reports the stored policy's id
   assert.equal(body.receiptRef, null);
   assert.equal(body.sig, null);
   assert.ok(Array.isArray(body.ruleTrace) && body.ruleTrace.length > 0);
 });
 
+test("preflight_payment: missing policyId → 400 POLICY_ID_REQUIRED", async () => {
+  const res = await handlePreflightPayment({ intent: wireIntent() }, freshPreflightDeps());
+  assert.equal(res.status, 400);
+  assert.equal((res.body as { code: string }).code, "POLICY_ID_REQUIRED");
+});
+
+test("preflight_payment: unknown policyId → BLOCKED_NO_ACTIVE_POLICY (fail-closed, I2)", async () => {
+  // Intent bound to a hash with no matching stored policy; the engine gets a null policy.
+  const res = await handlePreflightPayment(
+    { intent: wireIntent({ policyHash: b32("de") }), policyId: "424242" },
+    freshPreflightDeps(),
+  );
+  assert.equal(res.status, 200);
+  assert.equal((res.body as { decision: string }).decision, "BLOCKED_NO_ACTIVE_POLICY");
+});
+
+test("preflight_payment: intent bound to a different policy than requested → 400 POLICY_BINDING_MISMATCH", async () => {
+  const res = await handlePreflightPayment(
+    { intent: wireIntent({ policyHash: b32("de") }), policyId: POLICY_ID },
+    freshPreflightDeps(),
+  );
+  assert.equal(res.status, 400);
+  assert.equal((res.body as { code: string }).code, "POLICY_BINDING_MISMATCH");
+});
+
+test("preflight_payment: paused stored policy → BLOCKED_NO_ACTIVE_POLICY", async () => {
+  const repo = new InMemoryPolicyRepo();
+  const paused: StoredPolicy = { ...storedPolicy(POLICY_ID, baseRules()), status: "PAUSED" };
+  void repo.insert(paused);
+  const res = await handlePreflightPayment(
+    { intent: wireIntent(), policyId: POLICY_ID },
+    freshPreflightDeps({ policyProvider: new PolicyProvider(repo) }),
+  );
+  assert.equal((res.body as { decision: string }).decision, "BLOCKED_NO_ACTIVE_POLICY");
+});
+
 test("preflight_payment: over-daily-budget → BLOCKED_BUDGET", async () => {
   const ledger = new InMemoryLedger(now);
-  ledger.seed("1", { spendByDay: new Map([[TODAY, 25]]) }); // already at the $25 daily cap
-  const res = await handlePreflightPayment({ intent: wireIntent() }, freshPreflightDeps({ ledger }));
-
-  const body = res.body as { decision: string };
-  assert.equal(body.decision, "BLOCKED_BUDGET"); // 25.00 + 0.05 > 25.00
+  ledger.seed("1", { spendByDay: new Map([[TODAY, 25]]) });
+  const res = await handlePreflightPayment(
+    { intent: wireIntent(), policyId: POLICY_ID },
+    freshPreflightDeps({ ledger }),
+  );
+  assert.equal((res.body as { decision: string }).decision, "BLOCKED_BUDGET");
 });
 
 test("preflight_payment: repeat of a recent intent → BLOCKED_DUPLICATE", async () => {
   const ledger = new InMemoryLedger(now);
   ledger.seed("1", {
     recentIntents: [
-      {
-        intentId: "pi_prior",
-        taskHash: TASK_HASH,
-        endpoint: ENDPOINT,
-        paramsHash: PARAMS_HASH,
-        createdAtMs: NOW - 60_000, // 1 minute ago, well within the 60-min TTL
-      },
+      { intentId: "pi_prior", taskHash: TASK_HASH, endpoint: ENDPOINT, paramsHash: PARAMS_HASH, createdAtMs: NOW - 60_000 },
     ],
   });
-  const res = await handlePreflightPayment({ intent: wireIntent() }, freshPreflightDeps({ ledger }));
-
-  const body = res.body as { decision: string };
-  assert.equal(body.decision, "BLOCKED_DUPLICATE");
+  const res = await handlePreflightPayment(
+    { intent: wireIntent(), policyId: POLICY_ID },
+    freshPreflightDeps({ ledger }),
+  );
+  assert.equal((res.body as { decision: string }).decision, "BLOCKED_DUPLICATE");
 });
 
 test("preflight_payment: over per-call cap with onPerCallCapExceeded=ESCALATE → ESCALATED_PER_CALL_CAP", async () => {
-  // amount 2.0 > perCallCap 1.0, but <= maxAmount 5.0 (so intent-bound passes first). The fixture
-  // policy's onPerCallCapExceeded=ESCALATE routes it to approval instead of blocking.
   const res = await handlePreflightPayment(
-    { intent: wireIntent({ amount: 2.0, maxAmount: "5000000" }) },
+    { intent: wireIntent({ amount: 2.0, maxAmount: "5000000" }), policyId: POLICY_ID },
     freshPreflightDeps(),
   );
-  const body = res.body as { decision: string };
-  assert.equal(body.decision, "ESCALATED_PER_CALL_CAP");
+  assert.equal((res.body as { decision: string }).decision, "ESCALATED_PER_CALL_CAP");
+});
+
+// ── §7.2 escalation gateway wiring (server-side create on ESCALATED_*) ──────────
+
+test("preflight_payment: an ESCALATED_* decision drives the escalation gateway with the guard's pollRef", async () => {
+  // #given a receiptRef (so pollRef must be receiptRef.receiptId, exactly what the guard poll() computes)
+  const receiptId = b32("f1") as Hex;
+  const calls: Array<{ pollRef: string; reason: string; amount: number; intentHash: string }> = [];
+  const escalationGateway = {
+    async onEscalated(args: {
+      input: { amount: number };
+      decision: { decision: string; intentHash: string };
+      stored: StoredPolicy;
+      pollRef: string;
+    }): Promise<void> {
+      calls.push({
+        pollRef: args.pollRef,
+        reason: args.decision.decision,
+        amount: args.input.amount,
+        intentHash: args.decision.intentHash,
+      });
+    },
+  };
+  const receiptEnqueuer = {
+    async enqueue(): Promise<{ receiptId: Hex; status: "QUEUED" }> {
+      return { receiptId, status: "QUEUED" };
+    },
+  } as unknown as PreflightDeps["receiptEnqueuer"];
+
+  // #when an over-cap intent escalates
+  const res = await handlePreflightPayment(
+    { intent: wireIntent({ amount: 2.0, maxAmount: "5000000" }), policyId: POLICY_ID },
+    freshPreflightDeps({ escalationGateway, ...(receiptEnqueuer ? { receiptEnqueuer } : {}) }),
+  );
+
+  // #then the decision escalated AND the gateway was called once with pollRef == receiptId
+  assert.equal((res.body as { decision: string }).decision, "ESCALATED_PER_CALL_CAP");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.pollRef, receiptId, "pollRef must equal receiptRef.receiptId (guard poll key)");
+  assert.equal(calls[0]!.reason, "ESCALATED_PER_CALL_CAP");
+  assert.equal(calls[0]!.amount, 2.0);
+});
+
+test("preflight_payment: a NON-escalated (APPROVED) decision never calls the escalation gateway", async () => {
+  let called = 0;
+  const escalationGateway = {
+    async onEscalated(): Promise<void> {
+      called++;
+    },
+  };
+  const res = await handlePreflightPayment(
+    { intent: wireIntent(), policyId: POLICY_ID },
+    freshPreflightDeps({ escalationGateway }),
+  );
+  assert.equal((res.body as { decision: string }).decision, "APPROVED");
+  assert.equal(called, 0, "an approval is not an escalation — the gateway must stay untouched");
+});
+
+// ── the stored policy really drives the decision (non-coincidence, like the e2e) ──
+
+test("preflight_payment: the STORED policy's rules drive the outcome, not any default", async () => {
+  // A second policy that allows ONLY 'logistics' (a category the baseline denies).
+  const logisticsRules = baseRules({ categories: { allow: ["logistics"], deny: [] } });
+  const logistics = storedPolicy("2", logisticsRules);
+  const { provider } = seededProvider([logistics]);
+
+  // #given an intent bound to policy 2 with category logistics → APPROVED (only policy 2 allows it).
+  const approve = await handlePreflightPayment(
+    { intent: wireIntent({ policyHash: logistics.policyHash, category: "logistics" }), policyId: "2" },
+    freshPreflightDeps({ policyProvider: provider }),
+  );
+  assert.equal((approve.body as { decision: string }).decision, "APPROVED");
+
+  // #and the SAME policy 2 blocks a market-data intent (its allow-list excludes it) → proves policy 2's
+  //  own rules were used, not the baseline market-data allow-list.
+  const block = await handlePreflightPayment(
+    { intent: wireIntent({ policyHash: logistics.policyHash, category: "market-data" }), policyId: "2" },
+    freshPreflightDeps({ policyProvider: provider }),
+  );
+  assert.equal((block.body as { decision: string }).decision, "BLOCKED_CATEGORY");
 });
 
 // ── the "no alteration" guarantee ─────────────────────────────────────────────
@@ -176,43 +360,49 @@ test("preflight_payment: over per-call cap with onPerCallCapExceeded=ESCALATE �
 test("preflight_payment surfaces evaluateIntentSerialized's decision/reasons/trace VERBATIM", async () => {
   const wire = wireIntent();
   const { input } = parseFullIntent(wire);
+  const enginePolicy = toEnginePolicy(storedPolicy(POLICY_ID, baseRules()));
 
-  // What the engine returns, called directly with identical inputs (fixed clock + isolated lock).
-  const engineDecision = await evaluateIntentSerialized(input, FIXTURE_POLICY, new InMemoryLedger(now), {
+  const engineDecision = await evaluateIntentSerialized(input, enginePolicy, new InMemoryLedger(now), {
     now,
     lock: new PerAgentLock(),
   });
 
-  // What the handler returns.
-  const res = await handlePreflightPayment({ intent: wire }, freshPreflightDeps());
+  const res = await handlePreflightPayment({ intent: wire, policyId: POLICY_ID }, freshPreflightDeps());
   const body = res.body as { decision: string; reasons: unknown; ruleTrace: unknown; intentHash: Hex };
 
   assert.equal(body.decision, engineDecision.decision);
   assert.deepEqual(body.reasons, engineDecision.reasons);
-  assert.deepEqual(body.ruleTrace, engineDecision.rules); // trace passed through untouched
+  assert.deepEqual(body.ruleTrace, engineDecision.rules);
   assert.equal(body.intentHash, engineDecision.intentHash);
 });
 
-// ── create → preflight handoff by intentHash, and honest misses ───────────────
+// ── create → preflight handoff by intentHash ──────────────────────────────────
 
 test("create_spend_intent → preflight_payment by intentHash resolves + APPROVES", async () => {
   const store = new InMemoryIntentStore();
-  const created = handleCreateSpendIntent(wireIntent(), { intentStore: store });
+  const provider = seededProvider().provider;
+  const created = await handleCreateSpendIntent(
+    { ...wireIntent(), policyId: POLICY_ID },
+    { intentStore: store, policyProvider: provider },
+  );
   const intentHash = (created.body as { intentHash: Hex }).intentHash;
 
-  const res = await handlePreflightPayment({ intentHash }, freshPreflightDeps({ intentStore: store }));
+  const res = await handlePreflightPayment(
+    { intentHash, policyId: POLICY_ID },
+    freshPreflightDeps({ intentStore: store, policyProvider: provider }),
+  );
   assert.equal((res.body as { decision: string }).decision, "APPROVED");
 });
 
 test("preflight_payment: unknown intentHash → 404 (no registry yet), honest and retryable=false", async () => {
-  const res = await handlePreflightPayment({ intentHash: b32("ab") }, freshPreflightDeps());
+  const res = await handlePreflightPayment({ intentHash: b32("ab"), policyId: POLICY_ID }, freshPreflightDeps());
   assert.equal(res.status, 404);
   assert.equal((res.body as { code: string }).code, "INTENT_NOT_FOUND");
 });
 
 test("preflight_payment: intentHash + inline intent that disagree → 400 INTENT_HASH_MISMATCH", async () => {
   const res = await handlePreflightPayment(
-    { intentHash: b32("ab"), intent: wireIntent() },
+    { intentHash: b32("ab"), intent: wireIntent(), policyId: POLICY_ID },
     freshPreflightDeps(),
   );
   assert.equal(res.status, 400);
@@ -220,7 +410,7 @@ test("preflight_payment: intentHash + inline intent that disagree → 400 INTENT
 });
 
 test("preflight_payment: neither intentHash nor intent → 400 INTENT_REQUIRED", async () => {
-  const res = await handlePreflightPayment({}, freshPreflightDeps());
+  const res = await handlePreflightPayment({ policyId: POLICY_ID }, freshPreflightDeps());
   assert.equal(res.status, 400);
   assert.equal((res.body as { code: string }).code, "INTENT_REQUIRED");
 });

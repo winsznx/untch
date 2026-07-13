@@ -1,0 +1,26 @@
+{
+  "contract": "UntchReceipts",
+  "network": "local anvil (--block-time 1)",
+  "chainId": 31337,
+  "purpose": "Pre-testnet end-to-end proof of the full deploy driver flow (repo discipline: prove locally before spending testnet gas).",
+  "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "timelockDelaySeconds": 4,
+  "flowVerified": [
+    "deploy",
+    "propose(ADD_WRITER, deployer)",
+    "execute-before-delay reverts (read-only eth_call) = true",
+    "wait out the timelock delay",
+    "execute(ADD_WRITER, deployer) -> isWriter[deployer] = true",
+    "logReceipts([3]) -> ReceiptLogged x3 + BatchLogged id 1",
+    "anchorScore + anchorAudit",
+    "readback: batchCount=4, admin=deployer, opEta=0",
+    "roundTripOk = true"
+  ],
+  "measuredGas": {
+    "batch_of_1_total": 42109,
+    "batch_of_10_total": 149270,
+    "batch_of_50_total": 658610,
+    "marginalPerReceipt_50_vs_10": 12734,
+    "note": "Matches the X Layer testnet numbers exactly (EVM-equivalent), cross-checking the receipt."
+  }
+}

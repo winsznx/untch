@@ -25,6 +25,49 @@ export const CREATE_INTENT_ROUTE = "/create_spend_intent" as const;
 export const PREFLIGHT_ROUTE = "/preflight_payment" as const;
 export const PREFLIGHT_PRICE = "$0.05" as const;
 
+/** §11 verify_delivery — priced $0.10, settled the same way as preflight (real USDT0 via the OKX x402
+ *  facilitator). Runs the real §13/§7.3 T0 Proof Engine and writes a real VERIFY receipt. */
+export const VERIFY_ROUTE = "/verify_delivery" as const;
+export const VERIFY_PRICE = "$0.10" as const;
+
+/** §11 Untch Bureau tools — priced $0.20 each, settled the same way as preflight/verify (real USDT0 via
+ *  the OKX x402 facilitator). Deterministic §12 weighted scoring with LCB enforcement; no LLM (I1). */
+export const SCORE_VENDOR_ROUTE = "/score_vendor" as const;
+export const SCORE_BUYER_ROUTE = "/score_buyer" as const;
+export const SCORE_PRICE = "$0.20" as const;
+
+/** §11 report tools — deterministic aggregation over durable receipt/ledger/escalation history, hashed
+ *  and anchored via UntchReceipts.anchorAudit (§10.3 AuditAnchored). No LLM (I1).
+ *  • generate_dispute_packet — $0.50 (§11), per intentRef.
+ *  • reconcile_agent_spend   — §11 lists $0.25/day · $1.00/wk. The x402 middleware prices one static
+ *    value per route, so this build charges the $0.25 base rate for BOTH day and week reports; the
+ *    day/week differentiated (discounted-week) pricing is DEFERRED with the dashboard wallet-connect
+ *    flow, the SAME honest posture the policy tools already take (see "Reconcile pricing" in README).
+ *    The tool still produces day OR week reports correctly — only the differentiated price is deferred. */
+export const DISPUTE_ROUTE = "/generate_dispute_packet" as const;
+export const DISPUTE_PRICE = "$0.50" as const;
+export const RECONCILE_ROUTE = "/reconcile_agent_spend" as const;
+export const RECONCILE_PRICE = "$0.25" as const;
+
+/** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
+export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
+
+/** §7.2 escalation status poll (unpriced) — GET /escalation_status/:pollRef. What the guard's poll()
+ *  resolves against: returns the getState() state + the escalation record's final fields. */
+export const ESCALATION_STATUS_ROUTE = "/escalation_status/:pollRef" as const;
+
+/**
+ * Operator-facing policy tools (§11 create/update/pause_policy). These sign real PolicyRegistry
+ * (§10.1) txs with the operator wallet. §11 prices them (0.50 / 0.10), but pricing is deliberately
+ * DEFERRED with the dashboard wallet-connect flow (§15): in this interim build they are UNPRICED admin
+ * routes signed by the demo/burner operator wallet — a TEMPORARY stand-in for the operator's own
+ * connected wallet (see README → "Operator signing"). They are not buyer x402 calls.
+ */
+export const CREATE_POLICY_ROUTE = "/create_spend_policy" as const;
+export const UPDATE_POLICY_ROUTE = "/update_policy" as const;
+export const PAUSE_POLICY_ROUTE = "/pause_policy" as const;
+export const RESUME_POLICY_ROUTE = "/resume_policy" as const;
+
 export const DEFAULT_PORT = 4021;
 
 export const CHAIN: Chain = defineChain({

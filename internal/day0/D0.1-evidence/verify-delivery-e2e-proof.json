@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "step": "§13/§7.3 verify_delivery end-to-end proof (first real verifyResult/proofTier on-chain)",
+    "when": "2026-07-11T07:25:46.259Z",
+    "buyer": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "seller": "https://untch-asp-production.up.railway.app",
+    "receiptsContract": "0x0c64997277b7d94d2999dea22a123cac56334863",
+    "testnetRpc": "https://testrpc.xlayer.tech"
+  },
+  "committedAcceptanceHash": "0x08586b14d88c5bec374590afb435e2c3ac2933282c2a2374f57e7ca2f8f48f5c",
+  "delivery": {
+    "symbol": "OKB",
+    "price": 48.15,
+    "asOf": "2026-07-11T11:59:00Z"
+  },
+  "serviceResult": {
+    "final": "VERIFY_PASSED",
+    "verifyResult": 1,
+    "proofTier": 0
+  },
+  "receiptId": "0x00121e34815dca1050be216a525e1687032a30ce6196813371a20bfd5f61662c",
+  "serviceReportedTx": "0x48d41b364ec1d78f1c118a64b44b7b456cb34a62b07a3d1617a21a959472e209",
+  "independentlyVerified": {
+    "method": "raw eth_getLogs for ReceiptLogged; receiptId + verifyResult + proofTier decoded from chain logs",
+    "found": true,
+    "txHash": "0x48d41b364ec1d78f1c118a64b44b7b456cb34a62b07a3d1617a21a959472e209",
+    "block": 35295900,
+    "verifyResult": 1,
+    "proofTier": 0,
+    "decision": 0
+  },
+  "finalStatus": "CONFIRMED",
+  "result": "PASS"
+}

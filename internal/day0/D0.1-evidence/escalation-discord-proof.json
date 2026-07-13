@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "proof": "§7.2 / §27 escalation — LIVE DISCORD proof through the public endpoint",
+    "mode": "discord",
+    "buyer": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    "seller": "https://untch-asp-production.up.railway.app",
+    "network": "eip155:196",
+    "capturedAt": "2026-07-11T06:47:29.534Z",
+    "note": "The whole escalation lifecycle (create, fan-out, §27 authority boundary, resolve) ran on the deployed seller. The buyer only called public HTTP and polled."
+  },
+  "policy": {
+    "policyId": "24738519583504061318906313157950766002905980873376876529717757304203156588686",
+    "policyHash": "0xa28dbd5c4096a106fc29b17e3ced6dbcd637d4d7a19d7be88b9f06bd879965b3",
+    "registerTx": "0x7c0ac0452f39f79d3123f024cf161482babb955d6b5a52c06295f63191fd5ccf"
+  },
+  "intentAmount": 8,
+  "preflightDecision": "ESCALATED_THRESHOLD",
+  "preflightSettlementTx": "0xb556518c78e4d0e0fa5ce13f6d2bff6db7e1829792e978116375cd6799049da5",
+  "pollRef": "0x73eb42d77b8785a43c27b807fb070fd655fb47bff0ff5e073a75d8fe81193f15",
+  "fannedOutTo": [
+    "discord"
+  ],
+  "guardPollBefore": "PENDING",
+  "guardPollAfter": "APPROVED",
+  "recordFinalStatus": "APPROVED",
+  "approvedChannels": [
+    "discord"
+  ],
+  "resolvedBy": {
+    "handle": "1322232231682506826",
+    "channel": "discord"
+  },
+  "channelLog": [
+    {
+      "at": "2026-07-11T06:46:28.560Z",
+      "kind": "FANOUT",
+      "channel": "discord",
+      "latencyMs": 512
+    },
+    {
+      "at": "2026-07-11T06:47:26.633Z",
+      "kind": "INBOUND",
+      "detail": "resolved APPROVED via discord",
+      "handle": "1322232231682506826",
+      "channel": "discord",
+      "outcome": "APPROVED",
+      "latencyMs": 5
+    }
+  ],
+  "independentlyConfirmed": true
+}

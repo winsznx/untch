@@ -1,0 +1,66 @@
+{
+  "contract": "UntchReceipts",
+  "prd": "§10.3",
+  "network": "X Layer testnet",
+  "chainId": 1952,
+  "address": "0x0c64997277b7d94d2999dea22a123cac56334863",
+  "explorer": "https://www.oklink.com/x-layer-testnet/address/0x0c64997277b7d94d2999dea22a123cac56334863",
+  "sourceVerified": "Pass - Verified (OKLink)",
+  "timelockDelaySeconds": 60,
+  "deployerAdmin": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+  "txs": {
+    "deploy": "0xf0df27f3970daffa63bd32f61033c6737bafb30278b72aeb637d5120126d43f1",
+    "propose_ADD_WRITER": "0x15dbc176672efb5d5f33b67671e54462061b28e008251db6575cbb0c1b58ed81",
+    "execute_ADD_WRITER": "0x7ec1447966c081f74115da8c6fbc6caacf467e1baadf71eee593f9df3a727162",
+    "logReceipts_demo_batch_of_3": "0x09a4297b1be05b364468e3723f5679a86c60e8f40b00025e73e4ee3c64f7ab3a",
+    "anchorScore": "0xba85dbf61d6c5ac4fef61501c20480c71e5af37e377d707bc31c53d90743cb88",
+    "anchorAudit": "0xa1ba739455c0f6999df3a42f662f59191a833688b8e2cbc0524f29542288b8d6",
+    "gas_batch_1": "0x9da3b2e4c75ec89c28401309d908719743f6d89b3c18af91f78b257b7d396916",
+    "gas_batch_10": "0xd1ba89f48d72403d4219c6b809dbd22e2667944e6493a709197b85385b9bcbe9",
+    "gas_batch_50": "0xb7464830add00c177b7ba5d9564ab16f6ce7fa649716e4150ee3b60d30328da0"
+  },
+  "timelockProof": {
+    "opId": "0xda9d0a5b149e31443698241fdd4b8e2d6ed97546106874b868f4a224c0ca70ae",
+    "eta": 1783633596,
+    "executeBeforeDelayReverted_ethCall": true,
+    "note": "propose at T, execute reverted via read-only eth_call before eta, then a real ~60s wait, then execute succeeded — the §10.3 timelock (judgment call 3) demonstrated on-chain."
+  },
+  "independentReadback": {
+    "method": "raw eth_getTransactionReceipt (cast receipt --json) per tx, event topics counted + fields decoded client-side; on-chain state via eth_call — NOT taken on the deploy driver's stdout",
+    "allTxStatus": "0x1",
+    "eventCounts": {
+      "ReceiptLogged": 64,
+      "BatchLogged": 4,
+      "ScoreAnchored": 1,
+      "AuditAnchored": 1,
+      "OpProposed": 1,
+      "OpExecuted": 1,
+      "WriterAdded": 1
+    },
+    "demoReceiptDecoded": {
+      "schemaVersion": 1,
+      "agentIdTopic": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "agentIdNote": "bytes32(uint256 buyerAgentId=1) — a numeric identity id, NOT an address (judgment call 1)",
+      "amount": 1000000
+    },
+    "state": {
+      "batchCount": 4,
+      "timelockDelay": 60,
+      "SCHEMA_VERSION": 1,
+      "admin": "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+      "isWriter_deployer": true,
+      "opEta_after_execute": 0
+    }
+  },
+  "measuredGas": {
+    "source": "real X Layer testnet transactions (gasUsed from eth_getTransactionReceipt)",
+    "batch_of_1_total": 42109,
+    "batch_of_10_total": 149270,
+    "batch_of_50_total": 658610,
+    "perReceipt_at_1": 42109,
+    "perReceipt_at_10": 14927,
+    "perReceipt_at_50": 13172,
+    "marginalPerReceipt_50_vs_10": 12734,
+    "note": "batching amortizes the fixed per-tx overhead (~21k intrinsic + batch-counter SSTORE + BatchLogged) across receipts: ~42k/receipt at size 1 down to ~13k/receipt at size 50, marginal ~12.7k. This is the measured gas/receipt §17/§25/§10.4 promised — no cost claim before measurement."
+  }
+}

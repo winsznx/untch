@@ -8,5 +8,12 @@ node_modules/
 dist/
 *.log
 
+# next.js build output (apps/web)
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
 # internal PRD stays local per D0.8 (repo scaffold gitignores /internal)
 # NOTE: for D0.1 we DO want the notes + evidence tracked locally; see below
+/internal/
+internal/*

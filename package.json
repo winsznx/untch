@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
-    "node": ">=20.6"
+    "node": ">=22.4"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -13,7 +13,15 @@
     "gen:fixtures": "tsx packages/canon/scripts/gen-fixture-hashes.ts",
     "test:canon": "node --import tsx --test packages/canon/test/*.test.ts",
     "test:policy": "node --import tsx --test packages/policy-engine/test/*.test.ts",
-    "test:asp": "node --import tsx --test services/asp/test/*.test.ts"
+    "test:proof": "node --import tsx --test packages/proof-engine/test/*.test.ts",
+    "test:asp": "node --import tsx --test services/asp/test/*.test.ts",
+    "test:receipt-writer": "node --import tsx --test packages/receipt-writer/test/*.test.ts",
+    "test:escalation": "node --import tsx --test packages/escalation/test/*.test.ts",
+  "test:web": "node --import tsx --test apps/web/test/*.test.ts",
+  "prove:policy-ui": "tsx scripts/prove-policy-onchain.ts",
+    "test:trust-bureau": "node --import tsx --test packages/trust-bureau/test/*.test.ts",
+    "gen:writer-wallet": "tsx scripts/gen-writer-wallet.ts",
+    "provision:writer": "tsx scripts/provision-receipt-writer.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
@@ -25,6 +33,10 @@
     "typescript": "^5.7.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": ["esbuild"],
+    "overrides": {
+      "ioredis": "5.10.1",
+      "postcss": "^8.5.16"
+    }
   }
 }
