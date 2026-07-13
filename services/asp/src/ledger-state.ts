@@ -18,8 +18,15 @@ import type { Hex } from "viem";
  * file is the §7.1 STATE_ASSEMBLY window state (daily budget, rolling-hour rate, duplicate TTL,
  * per-service cooldown) and the intentHash→intent cache. Both keep REAL window/dedup logic but
  * EPHEMERAL storage — they reset on restart. Making that state durable (Redis + a Postgres backstop,
- * §7.1/§8 `replay_nonces`/`ledger_entries`) is a separate later step; only the policy was fixture, and
- * it has been replaced.
+ * §7.1/§8 `replay_nonces`/`ledger_entries`) is a separate, already-accepted later step; only the
+ * policy was fixture, and it has been replaced.
+ *
+ * PARTITIONING: every bucket here is keyed by the `ledgerPartitionKey` the serialized engine passes
+ * in — the POLICY ID, not the raw `buyerAgentId`. This is what keeps two different owners whose agents
+ * collide on the ubiquitous `buyerAgentId` "1" in genuinely independent budget/rate/duplicate/cooldown
+ * state (see `@untch/policy-engine` `ledgerPartitionKey` for the schema rationale). This module never
+ * derives the key itself — it stores by whatever key `read`/`commitApproved` receive, so the tenancy
+ * boundary lives in exactly one place.
  */
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -36,7 +43,7 @@ function utcDay(nowMs: number): string {
   return new Date(nowMs).toISOString().slice(0, 10);
 }
 
-interface AgentBucket {
+interface PartitionBucket {
   spendByDay: Map<string, number>;
   recentIntents: RecentIntent[];
   lastCallByService: Record<string, number>;
@@ -46,27 +53,29 @@ interface AgentBucket {
 /**
  * A real, correct in-memory implementation of `@untch/policy-engine`'s `Ledger`. `read` assembles the
  * exact `LedgerWindowState` the engine expects; `commitApproved` (called by the engine ONLY on an
- * APPROVED decision, inside the per-agent lock) records the spend so the next intent for that agent
- * observes it. Correct window math (daily reset, rolling hour, duplicate/cooldown clocks) — ephemeral
- * storage only. Injectable clock so unit tests are deterministic.
+ * APPROVED decision, inside the per-partition lock) records the spend so the next intent for that
+ * partition observes it. Buckets are keyed by the policyId partition key the engine passes (never the
+ * raw `buyerAgentId`), so colliding agent ids across owners stay isolated. Correct window math (daily
+ * reset, rolling hour, duplicate/cooldown clocks) — ephemeral storage only. Injectable clock so unit
+ * tests are deterministic.
  */
 export class InMemoryLedger implements Ledger {
-  private readonly agents = new Map<string, AgentBucket>();
+  private readonly partitions = new Map<string, PartitionBucket>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  private bucket(agentKey: string): AgentBucket {
-    let b = this.agents.get(agentKey);
+  private bucket(partitionKey: string): PartitionBucket {
+    let b = this.partitions.get(partitionKey);
     if (!b) {
       b = { spendByDay: new Map(), recentIntents: [], lastCallByService: {}, callTimestamps: [] };
-      this.agents.set(agentKey, b);
+      this.partitions.set(partitionKey, b);
     }
     return b;
   }
 
-  read(agentKey: string): LedgerWindowState {
+  read(partitionKey: string): LedgerWindowState {
     const nowMs = this.now();
-    const b = this.bucket(agentKey);
+    const b = this.bucket(partitionKey);
     const today = utcDay(nowMs);
 
     // Prune stale records (bounds memory; does not change any decision the rules would make).
@@ -81,9 +90,9 @@ export class InMemoryLedger implements Ledger {
     };
   }
 
-  commitApproved(agentKey: string, intent: SpendIntentInput, decision: Decision): void {
+  commitApproved(partitionKey: string, intent: SpendIntentInput, decision: Decision): void {
     const nowMs = this.now();
-    const b = this.bucket(agentKey);
+    const b = this.bucket(partitionKey);
     const today = utcDay(nowMs);
 
     b.spendByDay.set(today, (b.spendByDay.get(today) ?? 0) + intent.amount);
@@ -98,9 +107,10 @@ export class InMemoryLedger implements Ledger {
     b.callTimestamps.push(nowMs);
   }
 
-  /** Test/ops helper — seed an agent's window directly (used by unit tests to trigger blocks). */
-  seed(agentKey: string, partial: Partial<AgentBucket>): void {
-    const b = this.bucket(agentKey);
+  /** Test/ops helper — seed a partition's window directly (used by unit tests to trigger blocks).
+   *  `partitionKey` must be the `ledgerPartitionKey` (policyId), matching what the engine reads. */
+  seed(partitionKey: string, partial: Partial<PartitionBucket>): void {
+    const b = this.bucket(partitionKey);
     if (partial.spendByDay) b.spendByDay = partial.spendByDay;
     if (partial.recentIntents) b.recentIntents = partial.recentIntents;
     if (partial.lastCallByService) b.lastCallByService = partial.lastCallByService;

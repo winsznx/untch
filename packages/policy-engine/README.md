@@ -41,7 +41,7 @@ POLICY_LOOKUP that precedes `RULE_EVAL`.
 | `rate.limit` | **real** | `BLOCKED_RATE` |
 | `proof.tierRequired` | stub | `ESCALATED_PROOF_TIER` (needs §13 Proof Engine tiers) |
 | `escalate.aboveThreshold` | **real** | `ESCALATED_THRESHOLD` |
-| per-agent concurrency lock | **real** (in-memory) | serializes intents, no budget race |
+| per-policy concurrency lock | **real** (in-memory) | serializes intents, no budget race |
 
 The terminal codes this slice can emit are `REJECTED_MALFORMED`, `BLOCKED_NO_ACTIVE_POLICY`,
 `BLOCKED_FAIL_CLOSED`, `BLOCKED_DUPLICATE`, `BLOCKED_COOLDOWN`, `BLOCKED_RECIPIENT`, `BLOCKED_AGENT`,
@@ -75,10 +75,23 @@ the approval pipeline, §7.2); it is not an approval. `BLOCKED_REPLAY`, the vend
 - **Decision trace matches PRD §8.2.** The `Decision` object carries `decision`, `intentHash`,
   `policyId`, `policyVersion`, `evaluatedAt`, and `rules[]` exactly as §8.2 shows (plus an additive
   `reasons[]`), so a later receipt writer consumes it unchanged.
-- **The concurrency lock is real, not a stub.** `evaluateIntentSerialized` acquires a per-`agentId`
-  in-memory async mutex around the read → evaluate → commit critical section. In-memory is correct
-  for a single process; the production upgrade is a distributed (Redis) lock, per §7.1, with the
-  on-chain vault epoch accounting (§7.5) as the backstop. See `src/concurrency.ts`.
+- **The concurrency lock is real, not a stub.** `evaluateIntentSerialized` acquires a
+  per-**partition** in-memory async mutex around the read → evaluate → commit critical section. In-memory
+  is correct for a single process; the production upgrade is a distributed (Redis) lock, per §7.1, with
+  the on-chain vault epoch accounting (§7.5) as the backstop. See `src/concurrency.ts`.
+- **The partition key is the policyId, NOT the raw `buyerAgentId`.** All per-caller ephemeral state —
+  the budget window, rate limit, duplicate/cooldown clocks, and the lock — is keyed by
+  `ledgerPartitionKey(policy.id)`. `buyerAgentId` is a caller-supplied value that is often literally the
+  ubiquitous "1" across unrelated agents; keying on it would collapse two different owners into one
+  budget bucket. The durable schema settles the correct shape: `policies.id` (the on-chain
+  `uint256(keccak256(abi.encodePacked(owner, ownerNonce)))`) is the PRIMARY KEY, and each policy row
+  governs exactly one agent via a single immutable `policies.agent_id` — so policyId already determines
+  the agent, and two owners always get distinct policyIds even when their `agent_id` collides on "1". A
+  compound `(policyId, agentId)` key would be redundant; **policyId alone is the correct, minimal key**,
+  and since the budget lives in the policy's rules, spend must be counted per-policy anyway. The
+  no-active-policy path (fail-closed, nothing committed) shares one reserved `policy:∅` partition.
+  **Out of scope here:** durability / cross-instance sharing of this in-memory window is a separate,
+  already-accepted future item (§7.1 distributed lock + Redis/Postgres backstop), not this fix.
 
 ## API
 
@@ -88,7 +101,8 @@ import { evaluateIntent, evaluateIntentSerialized, PerAgentLock } from "@untch/p
 // Pure, synchronous, no I/O — ledger state injected:
 const decision = evaluateIntent(intent, policy, ledgerWindowState);
 
-// Race-safe: serializes concurrent intents for the same agent behind a per-agentId lock:
+// Race-safe: serializes concurrent intents for the same POLICY behind a per-policyId lock
+// (ledgerPartitionKey), so different owners colliding on buyerAgentId stay independent:
 const decision = await evaluateIntentSerialized(intent, policy, ledger /* read + commitApproved */);
 ```
 
@@ -105,4 +119,8 @@ order-correctness tests that give an intent two violations and assert the trace 
 **earlier** §7.1 rule (proving short-circuit order, not just "a" failure). The load-bearing
 concurrency test asserts the budget race: the **same** two-intent scenario **double-approves
 without the lock** (proving the test is real) and yields **exactly one `APPROVED` + one
-`BLOCKED_BUDGET` with the lock**.
+`BLOCKED_BUDGET` with the lock**. A companion test proves the multi-tenancy partition: two
+**different** policies (distinct policyIds) whose intents collide on `buyerAgentId` "1" keep
+**independent** budget buckets — neither's spend touches the other's. The service-level counterpart
+(`services/asp`, `pnpm --filter @untch/asp policy:partition`) proves the same isolation end-to-end
+through the real handler for budget, rate, duplicate, and cooldown state.

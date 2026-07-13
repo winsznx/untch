@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { hashSpendIntent, hashCanonicalJson, type SpendIntent } from "@untch/canon";
-import { PerAgentLock, evaluateIntentSerialized } from "@untch/policy-engine";
+import { PerAgentLock, evaluateIntentSerialized, ledgerPartitionKey } from "@untch/policy-engine";
 import {
   InMemoryPolicyRepo,
   parsePolicyRules,
@@ -245,7 +245,7 @@ test("preflight_payment: paused stored policy → BLOCKED_NO_ACTIVE_POLICY", asy
 
 test("preflight_payment: over-daily-budget → BLOCKED_BUDGET", async () => {
   const ledger = new InMemoryLedger(now);
-  ledger.seed("1", { spendByDay: new Map([[TODAY, 25]]) });
+  ledger.seed(ledgerPartitionKey(POLICY_ID), { spendByDay: new Map([[TODAY, 25]]) });
   const res = await handlePreflightPayment(
     { intent: wireIntent(), policyId: POLICY_ID },
     freshPreflightDeps({ ledger }),
@@ -255,7 +255,7 @@ test("preflight_payment: over-daily-budget → BLOCKED_BUDGET", async () => {
 
 test("preflight_payment: repeat of a recent intent → BLOCKED_DUPLICATE", async () => {
   const ledger = new InMemoryLedger(now);
-  ledger.seed("1", {
+  ledger.seed(ledgerPartitionKey(POLICY_ID), {
     recentIntents: [
       { intentId: "pi_prior", taskHash: TASK_HASH, endpoint: ENDPOINT, paramsHash: PARAMS_HASH, createdAtMs: NOW - 60_000 },
     ],
@@ -413,4 +413,108 @@ test("preflight_payment: neither intentHash nor intent → 400 INTENT_REQUIRED",
   const res = await handlePreflightPayment({ policyId: POLICY_ID }, freshPreflightDeps());
   assert.equal(res.status, 400);
   assert.equal((res.body as { code: string }).code, "INTENT_REQUIRED");
+});
+
+// ── MULTI-TENANCY: two policies (different owners) that collide on buyerAgentId stay isolated ──
+//
+// Every intent below carries the ubiquitous buyerAgentId "1" — the exact value the ledger used to key
+// on. Two DIFFERENT owners' policies (distinct on-chain policyIds) must therefore NOT share budget,
+// duplicate detection, cooldown clocks, or the rate window. Each test drives the REAL handler + REAL
+// InMemoryLedger through a shared deps bundle, so a spend/dup/cooldown/rate event under one policy is
+// asserted NOT to affect the other, while each policy's OWN limit is still enforced under the new key.
+
+const OWNER_B = "0xB0bB0000000000000000000000000000000000bB" as Address;
+const POLICY_A = "9001";
+const POLICY_B = "9002";
+
+/** Shared deps carrying two policies that differ only by owner + policyId (same rules ⇒ same hash),
+ *  a single shared ledger + lock so cross-policy leakage would be observable if the key were wrong. */
+function collisionDeps(rules: Record<string, unknown> = baseRules()): { deps: PreflightDeps; hash: Hex } {
+  const repo = new InMemoryPolicyRepo();
+  void repo.insert({ ...storedPolicy(POLICY_A, rules), owner: OWNER });
+  void repo.insert({ ...storedPolicy(POLICY_B, rules), owner: OWNER_B });
+  return {
+    deps: {
+      policyProvider: new PolicyProvider(repo),
+      ledger: new InMemoryLedger(now),
+      intentStore: new InMemoryIntentStore(),
+      now,
+      lock: new PerAgentLock(),
+    },
+    hash: hashCanonicalJson(rules),
+  };
+}
+
+const decOf = (res: { body: unknown }): string => (res.body as { decision: string }).decision;
+
+test("multi-tenancy budget: colliding buyerAgentId — one policy's spend never touches the other's budget", async () => {
+  // daily 25 each, with per-call cap + escalate threshold well above 20 so budget is the discriminator
+  const { deps, hash } = collisionDeps(baseRules({ perCallCap: 1000, escalateAbove: 1000 }));
+  const BIG_MAX = "1000000000"; // 1000 USDT ceiling so the intent-bound rule is not the discriminator
+  // #given policy A spends 20 (APPROVED)
+  const a1 = await handlePreflightPayment(
+    { intent: wireIntent({ policyHash: hash, amount: 20, maxAmount: BIG_MAX, taskHash: b32("a1"), paramsHash: b32("a1"), endpoint: "https://svc-a1.example/x", nonce: "1" }), policyId: POLICY_A },
+    deps,
+  );
+  assert.equal(decOf(a1), "APPROVED");
+  // #when policy B (different owner, same buyerAgentId) spends 20 against ITS own fresh budget
+  const b1 = await handlePreflightPayment(
+    { intent: wireIntent({ policyHash: hash, amount: 20, maxAmount: BIG_MAX, taskHash: b32("b1"), paramsHash: b32("b1"), endpoint: "https://svc-b1.example/y", nonce: "1" }), policyId: POLICY_B },
+    deps,
+  );
+  // #then B approves — A's 20 did not eat B's budget (a shared "1" bucket would be 40 > 25 → BLOCKED)
+  assert.equal(decOf(b1), "APPROVED", "B's daily budget is independent of A's spend");
+  // #and A's OWN budget is still enforced: another 20 on A (fresh service, not a duplicate) → 40 > 25
+  const a2 = await handlePreflightPayment(
+    { intent: wireIntent({ policyHash: hash, amount: 20, maxAmount: BIG_MAX, taskHash: b32("a2"), paramsHash: b32("a2"), endpoint: "https://svc-a2.example/z", nonce: "2" }), policyId: POLICY_A },
+    deps,
+  );
+  assert.equal(decOf(a2), "BLOCKED_BUDGET", "A's own daily budget still enforced under the partition key");
+});
+
+test("multi-tenancy duplicate: a repeated intent under one policy does not block the twin under another", async () => {
+  const { deps, hash } = collisionDeps();
+  const shape = { policyHash: hash, amount: 0.05, taskHash: b32("dd"), paramsHash: b32("dd"), endpoint: "https://dup.example/p", nonce: "1" };
+  // #given A submits an intent (APPROVED, recorded for dedup)
+  assert.equal(decOf(await handlePreflightPayment({ intent: wireIntent(shape), policyId: POLICY_A }, deps)), "APPROVED");
+  // #when B submits the SAME task/endpoint/params under its own policy
+  const b = await handlePreflightPayment({ intent: wireIntent(shape), policyId: POLICY_B }, deps);
+  // #then B approves — dedup state is per-policy, not shared across the colliding agent id
+  assert.equal(decOf(b), "APPROVED", "duplicate detection is per-policy");
+  // #and A still catches its OWN duplicate (dedup precedes cooldown in rule order)
+  const aDup = await handlePreflightPayment({ intent: wireIntent(shape), policyId: POLICY_A }, deps);
+  assert.equal(decOf(aDup), "BLOCKED_DUPLICATE", "A still detects its own duplicate under the partition key");
+});
+
+test("multi-tenancy cooldown: same-service cooldown under one policy does not cool down another", async () => {
+  const { deps, hash } = collisionDeps();
+  const host = "https://cool.example/a"; // one service host; cooldown is keyed by host
+  // #given A calls the service (APPROVED, arms A's cooldown clock for that host)
+  assert.equal(
+    decOf(await handlePreflightPayment({ intent: wireIntent({ policyHash: hash, amount: 0.05, taskHash: b32("c1"), paramsHash: b32("c1"), endpoint: host, nonce: "1" }), policyId: POLICY_A }, deps)),
+    "APPROVED",
+  );
+  // #when B calls the SAME service host under its own policy
+  const b = await handlePreflightPayment({ intent: wireIntent({ policyHash: hash, amount: 0.05, taskHash: b32("c2"), paramsHash: b32("c2"), endpoint: host, nonce: "1" }), policyId: POLICY_B }, deps);
+  // #then B approves — a shared cooldown clock would have BLOCKED_COOLDOWN
+  assert.equal(decOf(b), "APPROVED", "cooldown clock is per-policy");
+  // #and A hitting the same service again within cooldown IS blocked (its own clock intact)
+  const a2 = await handlePreflightPayment({ intent: wireIntent({ policyHash: hash, amount: 0.05, taskHash: b32("c3"), paramsHash: b32("c3"), endpoint: host, nonce: "2" }), policyId: POLICY_A }, deps);
+  assert.equal(decOf(a2), "BLOCKED_COOLDOWN", "A's own cooldown clock still enforced");
+});
+
+test("multi-tenancy rate limit: exhausting one policy's rate window does not throttle another", async () => {
+  const { deps, hash } = collisionDeps(baseRules({ rateLimit: { callsPerHour: 1 } }));
+  // #given A uses its single hourly call
+  assert.equal(
+    decOf(await handlePreflightPayment({ intent: wireIntent({ policyHash: hash, amount: 0.05, taskHash: b32("e1"), paramsHash: b32("e1"), endpoint: "https://rl-a1.example/1", nonce: "1" }), policyId: POLICY_A }, deps)),
+    "APPROVED",
+  );
+  // #and A's next call is rate-limited (own window full)
+  const a2 = await handlePreflightPayment({ intent: wireIntent({ policyHash: hash, amount: 0.05, taskHash: b32("e2"), paramsHash: b32("e2"), endpoint: "https://rl-a2.example/1", nonce: "2" }), policyId: POLICY_A }, deps);
+  assert.equal(decOf(a2), "BLOCKED_RATE", "A's own rate window still enforced");
+  // #when B makes its first call while A is throttled
+  const b1 = await handlePreflightPayment({ intent: wireIntent({ policyHash: hash, amount: 0.05, taskHash: b32("e3"), paramsHash: b32("e3"), endpoint: "https://rl-b1.example/1", nonce: "1" }), policyId: POLICY_B }, deps);
+  // #then B approves — the rate window is per-policy, not shared across the colliding agent id
+  assert.equal(decOf(b1), "APPROVED", "B's rate window is independent of A's exhaustion");
 });

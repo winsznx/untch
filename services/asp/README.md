@@ -49,7 +49,7 @@ policy**: the `policyId` must resolve to a stored policy whose `policy_hash` equ
 ### `preflight_payment` ($0.05)
 Accepts a `policyId` plus `{ intentHash }` (from a prior create on this instance), an inline
 `{ intent }`, or both (the supplied hash is cross-checked). It **loads the real stored policy named by
-`policyId`** and runs the **real** `evaluateIntentSerialized` (§7.1: per-agent lock → read ledger →
+`policyId`** and runs the **real** `evaluateIntentSerialized` (§7.1: per-**policy** lock → read ledger →
 evaluate → commit if approved) against it, returning the §8.2 decision **verbatim**:
 `{ decision, reasons[], ruleTrace[], intentHash, policyId, policyVersion, evaluatedAt, receiptRef, sig }`.
 Resolution: missing `policyId` → `400`; unknown `policyId` → the engine fail-closes to
@@ -136,7 +136,13 @@ service), same independent-verification standard as every prior on-chain proof.
 the ledger window + intent cache remain in-memory; this is a *separate* later step (§7.1/§8), not the
 policy:
 - **In-memory ledger** (`InMemoryLedger`): correct window math (daily budget, rolling-hour rate limit,
-  duplicate TTL, per-service cooldown) but ephemeral — no Redis/Postgres backstop yet.
+  duplicate TTL, per-service cooldown) but ephemeral — no Redis/Postgres backstop yet. Every bucket is
+  keyed by the **policyId** partition (`ledgerPartitionKey`), never the raw `buyerAgentId`, so two
+  different owners whose agents collide on the ubiquitous `buyerAgentId` "1" keep genuinely independent
+  budget / rate / duplicate / cooldown state and one lock each. Proven end-to-end by
+  `pnpm --filter @untch/asp policy:partition` (→ `internal/multi-tenancy/partition-isolation-proof.md`).
+  The remaining *durability / cross-instance* limitation is a separate, already-accepted later step —
+  same category as the intent store's — not what the partition-key fix addresses.
 - **In-memory intent store** (`InMemoryIntentStore`): resolves a bare `intentHash`; bounded; not the
   on-chain `SpendIntentRegistry` (§10.2).
 

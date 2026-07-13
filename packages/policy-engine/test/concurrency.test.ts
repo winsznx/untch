@@ -4,6 +4,7 @@ import {
   PerAgentLock,
   evaluateIntent,
   evaluateIntentSerialized,
+  ledgerPartitionKey,
   type Decision,
   type Ledger,
   type LedgerWindowState,
@@ -51,16 +52,17 @@ class InMemoryLedger implements Ledger {
 }
 
 /** read → evaluate → commit, WITHOUT the lock — identical to evaluateIntentSerialized's inner
- *  task minus the mutex, so the two tests differ in exactly one thing: serialization. */
+ *  task minus the mutex, so the two tests differ in exactly one thing: serialization. Keys by the
+ *  same policyId partition the serialized path uses, so the race stays real for the same policy. */
 async function runUnlocked(
   intent: SpendIntentInput,
   policy: Policy,
   ledger: InMemoryLedger,
 ): Promise<Decision> {
-  const agentKey = String(intent.buyerAgentId);
-  const state = await ledger.read(agentKey);
+  const partitionKey = ledgerPartitionKey(policy.id);
+  const state = await ledger.read(partitionKey);
   const decision = evaluateIntent(intent, policy, state, { now });
-  if (decision.decision === "APPROVED") await ledger.commitApproved(agentKey, intent, decision);
+  if (decision.decision === "APPROVED") await ledger.commitApproved(partitionKey, intent, decision);
   return decision;
 }
 
@@ -85,7 +87,11 @@ describe("budget race", () => {
     // #then both approve and the agent overspends its daily budget — the exact bug the lock prevents
     const approved = results.filter((r) => r.decision === "APPROVED").length;
     assert.equal(approved, 2, "unlocked path must double-approve for the locked test to be meaningful");
-    assert.equal(ledger.total(String(AGENT)), 30, "unlocked path overspends past the 25 daily budget");
+    assert.equal(
+      ledger.total(ledgerPartitionKey(policy.id)),
+      30,
+      "unlocked path overspends past the 25 daily budget",
+    );
   });
 
   test("WITH the per-agent lock, exactly one APPROVED and one BLOCKED_BUDGET — never both", async () => {
@@ -101,7 +107,44 @@ describe("budget race", () => {
     const outcomes = results.map((r) => r.decision).sort();
     assert.deepEqual(outcomes, ["APPROVED", "BLOCKED_BUDGET"]);
     assert.equal(results.filter((r) => r.decision === "APPROVED").length, 1, "never both APPROVED");
-    assert.equal(ledger.total(String(AGENT)), 15, "only the one approved spend is committed");
+    assert.equal(
+      ledger.total(ledgerPartitionKey(policy.id)),
+      15,
+      "only the one approved spend is committed",
+    );
+  });
+
+  /**
+   * The tenancy proof for the partition-key fix. Two DIFFERENT policies (different owners, distinct
+   * on-chain policyIds) whose intents carry the SAME `buyerAgentId` "1" must NOT share a budget
+   * bucket. Both spend 20 concurrently against their own daily-25 budgets: with correct per-policy
+   * partitioning BOTH approve (each 20 ≤ 25). Under the old `buyerAgentId`-alone key they would have
+   * collapsed into one bucket (20 + 20 = 40 > 25) and one would have been wrongly BLOCKED_BUDGET —
+   * one tenant's spend eating the other's. The commit totals confirm the buckets are independent.
+   */
+  test("two policies sharing buyerAgentId do NOT share a budget bucket (no cross-tenant collision)", async () => {
+    // #given two policies with distinct ids (different owners), each daily-25, and intents that
+    // collide on buyerAgentId 1 — each spending 20 (fits alone, would not fit a shared bucket)
+    const policyX = activePolicy({ id: "111" });
+    const policyY = activePolicy({ id: "222" });
+    const intentX = validIntent({ buyerAgentId: AGENT, nonce: 7n, amount: 20, maxAmount: HIGH_MAX, taskHash: `0x${"c3".repeat(32)}` });
+    const intentY = validIntent({ buyerAgentId: AGENT, nonce: 8n, amount: 20, maxAmount: HIGH_MAX, taskHash: `0x${"d4".repeat(32)}` });
+    const ledger = new InMemoryLedger();
+    const lock = new PerAgentLock();
+
+    // #when both run concurrently through the serialized entry point, each against its own policy
+    const [rx, ry] = await Promise.all([
+      evaluateIntentSerialized(intentX, policyX, ledger, { now, lock }),
+      evaluateIntentSerialized(intentY, policyY, ledger, { now, lock }),
+    ]);
+
+    // #then neither steals the other's budget — both APPROVE and each bucket holds only its own spend
+    assert.equal(rx.decision, "APPROVED", "policy X must approve on its own independent budget");
+    assert.equal(ry.decision, "APPROVED", "policy Y must approve on its own independent budget");
+    assert.equal(ledger.total(ledgerPartitionKey("111")), 20, "policy X's bucket holds only X's spend");
+    assert.equal(ledger.total(ledgerPartitionKey("222")), 20, "policy Y's bucket holds only Y's spend");
+    // #and the two partition keys are genuinely distinct despite the identical buyerAgentId
+    assert.notEqual(ledgerPartitionKey("111"), ledgerPartitionKey("222"));
   });
 });
 

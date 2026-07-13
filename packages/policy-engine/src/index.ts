@@ -17,6 +17,7 @@ export { evaluateIntent, type EvaluateOptions } from "./evaluate";
 export {
   PerAgentLock,
   evaluateIntentSerialized,
+  ledgerPartitionKey,
   type Ledger,
   type SerializeOptions,
 } from "./concurrency";
