@@ -9,7 +9,14 @@
 # no registry to publish to, the source must be present at build time, so the service now
 # deploys from the repo ROOT as a workspace (Railway start = `pnpm --filter @untch/asp start`)
 # rather than as the standalone island it was through D0.1. See services/asp/README.md.
+#
+# apps/video is deliberately excluded: it is a local-only Remotion scratch app for rendering launch
+# footage, not part of the product build. Left in the workspace it adds a lockfile importer (~90 lines
+# of remotion deps) for a directory that is gitignored and therefore absent in CI, which breaks
+# `pnpm install --frozen-lockfile`. Excluded here, the committed lockfile stays reproducible from a
+# clean checkout. Install it standalone (`pnpm install` inside apps/video) if you need to render.
 packages:
   - "packages/*"
   - "services/*"
   - "apps/*"
+  - "!apps/video"
