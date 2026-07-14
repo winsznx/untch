@@ -37,6 +37,15 @@ export {
   type DashboardApprovalInput,
 } from "./dashboard";
 export {
+  PhotonChannel,
+  renderPhotonMessage,
+  type PhotonChannelOptions,
+  type SpectrumPort,
+  type SpectrumInbound,
+  type SpectrumSendResult,
+} from "./photon";
+export { createSpectrumPort } from "./photon-spectrum";
+export {
   parseButtonPayload,
   approvePayload,
   denyPayload,
@@ -56,6 +65,7 @@ export {
   interimDiscordBinding,
   interimSlackBinding,
   interimDashboardBinding,
+  interimPhotonBinding,
   combineBindings,
 } from "./binding";
 export { generateCode, hashCode, codeMatchesHash } from "./codes";
@@ -81,16 +91,19 @@ export {
   loadDiscordConfig,
   loadSlackConfig,
   loadDashboardConfig,
+  loadPhotonConfig,
   hasTelegramEnv,
   hasDiscordEnv,
   hasSlackEnv,
   hasDashboardEnv,
+  hasPhotonEnv,
   MissingEnvError,
   type StorageConfig,
   type TelegramConfig,
   type DiscordConfig,
   type SlackConfig,
   type DashboardConfig,
+  type PhotonConfig,
 } from "./config";
 export {
   createRedis,

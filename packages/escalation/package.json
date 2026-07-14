@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Untch escalation service (PRD §7.2 / §27). Channel-agnostic escalation lifecycle for the operator-approval path: the deterministic policy engine escalates a decision, this service fans it out to a control channel (Telegram now, Photon later), and resolves the operator's response through the FULL §27 authority-boundary check before it counts. Channels never make money decisions — they only transport a response the engine already asked for. Timeout → default DENY (I2, fail closed). Wires x402-guard's poll() to resolve against real escalations.",
+  "description": "Untch escalation service (PRD §7.2 / §27). Channel-agnostic escalation lifecycle for the operator-approval path: the deterministic policy engine escalates a decision, this service fans it out to a control channel (Telegram, Discord, Slack, Dashboard, and Photon/iMessage), and resolves the operator's response through the FULL §27 authority-boundary check before it counts. Channels never make money decisions — they only transport a response the engine already asked for. Timeout → default DENY (I2, fail closed). Wires x402-guard's poll() to resolve against real escalations.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
@@ -19,6 +19,8 @@
     "e2e": "tsx src/run-escalation-e2e-proof.ts"
   },
   "dependencies": {
+    "@spectrum-ts/core": "^10.0.0",
+    "@spectrum-ts/imessage": "^10.0.0",
     "@untch/policy-store": "workspace:*",
     "@untch/receipt-writer": "workspace:*",
     "@untch/x402-guard": "workspace:*",

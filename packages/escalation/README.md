@@ -3,12 +3,14 @@
 When the deterministic policy engine escalates a spend instead of approving or blocking it, **this
 service carries the decision to a human and carries the human's answer back — without ever letting the
 channel decide.** It owns the §7.2 escalation lifecycle and the §27 authority-boundary check, exposes a
-channel-agnostic seam (three real channels today: **Telegram, Discord, and Slack**; Photon later), and
-wires x402-guard's `poll()` so an `ESCALATED` decision resolves for real once the operator responds.
+channel-agnostic seam (five real channels today: **Telegram, Discord, Slack, Dashboard, and Photon
+(iMessage)**), and wires x402-guard's `poll()` so an `ESCALATED` decision resolves for real once the
+operator responds.
 
-One operator, three reachable surfaces — not three approvers. Each channel binds to the SAME operator
-identity through its own handle (Telegram chat id, Discord user id, Slack user id); any bound channel can
-approve that operator's escalations, and an amount above `dualChannelAbove` requires two DISTINCT ones.
+One operator, five reachable surfaces — not five approvers. Each channel binds to the SAME operator
+identity through its own handle (Telegram chat id, Discord user id, Slack user id, dashboard wallet,
+iMessage handle); any bound channel can approve that operator's escalations, and an amount above
+`dualChannelAbove` requires two DISTINCT ones.
 
 ```
 Policy decides → channel notifies & captures → THIS service validates → guard sees the resolved state
@@ -96,35 +98,72 @@ implementing that one interface; **the core state machine does not change.** Dis
 proof: each is one `implements Channel` file, and neither touched a line of the state machine or the §27
 check.
 
-### The three real channels + their transport choices
+### The real channels + their transport choices
 
 | Channel | Send | Receive | Why this receive path |
 |---------|------|---------|-----------------------|
 | **Telegram** | Bot API `sendMessage` (inline buttons) | long-poll `getUpdates` | no public endpoint; outbound only |
 | **Discord** | REST `POST /users/@me/channels` → DM with buttons | **gateway** (WebSocket) | interactions-webhook needs a PUBLIC endpoint + Ed25519 signature checks — a new inbound attack surface; the gateway is outbound-only, matching Telegram |
 | **Slack** | `conversations.open` → `chat.postMessage` (Block Kit buttons) | **Socket Mode** (WebSocket) | the Events API needs a public endpoint + signing-secret verification; Socket Mode opens an outbound socket from an app-level token, no public endpoint |
+| **Dashboard** | nothing to push (PULL surface — the escalation is already in the authenticated inbox) | in-process `submit()` | SIWE session identity IS the sender handle; no external endpoint at all |
+| **Photon (iMessage)** | `spectrum-ts` cloud `space.create(handle)` → `app.send` (**text baseline**, no buttons) | **`app.messages`** gRPC stream (WebSocket-like) | `app.webhook()` needs a PUBLIC endpoint + HMAC — a new inbound surface; the `app.messages` stream is outbound-only, matching every other push channel |
 
-Both new channels are **DM to one bound operator** (never a public server/team channel — a broadcast
-surface has a different trust model than a private DM to a single bound identity), both carry the code in
-the same `a:<escId>:<code>` button payload and accept the same `APPROVE <code>` text baseline, and both
-use Node's built-in `WebSocket` (Node 22+) rather than a heavy client SDK — so, like Telegram, they are
-unit-tested with an injected socket and no network. See
-[`src/discord.ts`](src/discord.ts) and [`src/slack.ts`](src/slack.ts) for the full choice rationale.
+The push channels are all **DM to one bound operator** (never a public server/team channel — a broadcast
+surface has a different trust model than a private DM to a single bound identity). Telegram/Discord/Slack
+carry the code in the `a:<escId>:<code>` button payload; Photon has no iMessage buttons, so it uses the
+`APPROVE <code>` **text baseline** `wire-format.ts` already defines (the code is printed in the body,
+delivered only to the bound operator's device). Telegram/Discord/Slack use Node's built-in `WebSocket`/
+`fetch` (no client SDK); Photon is the ONE channel whose transport is proprietary gRPC with no built-in
+equivalent, so its SDK (`spectrum-ts`) is isolated behind the narrow `SpectrumPort` interface (injected,
+and the real adapter lives in [`src/photon-spectrum.ts`](src/photon-spectrum.ts)) — the channel itself
+imports no SDK and is unit-tested with a fake port and no network, exactly like the other four. See
+[`src/discord.ts`](src/discord.ts), [`src/slack.ts`](src/slack.ts), and [`src/photon.ts`](src/photon.ts)
+for each channel's full choice rationale.
+
+**Photon delivery is ACCEPTANCE, not device-delivery — verified in the SDK source, stated plainly.** A
+resolved Spectrum `send` means Spectrum Cloud accepted the send RPC, NOT that the message reached the
+operator's device. Apple's own delivered/read receipts exist one layer down in Photon's transport but
+`spectrum-ts@10.0.0` discards them before a caller sees them, and there is no delivery
+webhook/callback/poll in the public API. This is SAFE here precisely because the §7.2 timeout is
+fail-closed (I2): a silently-undelivered escalation still defaults to DENY at its deadline — money never
+settles because a notification quietly failed. It is the same guarantee tier as every other channel (none
+confirm a human actually read the message); Photon simply cannot do better even though Apple's signal
+exists, because the abstraction drops it.
+
+**Photon free/Pro is a shared iMessage pool with an allowlist + real quotas.** The bound operator handle
+MUST be a pre-registered user of the Photon project or a send is rejected with "Target not allowed for
+this project" (surfaced as `ok:false`, a logged `FANOUT_FAILED`, never a silent success). The published
+docs (`connection-and-routing.mdx`) state per-server/per-line quotas — **5,000 messages/server/day and 50
+new conversations/line/day** — which directly **contradicts** the pricing page's "Unlimited daily
+messages"; both are reported here rather than picking one. For a single-operator escalation channel the
+volume is far under either bound, and repeated sends reuse the one resolved conversation (not 50 new
+ones). Sender identity on inbound (`message.sender.address`) is still populated by Apple even in
+shared-pool mode, so the §27 handle binding is reliable. Dedicated numbers + group support require the
+Business plan.
 
 ### Deliberate scope limits — documented, not silent gaps
 
-**1. Photon is NOT built here (the D0.6 gate has never run).**
-[§29 D0.6](../../internal/untch-prd.md) — subscription confirmed live, a real echo, a poll-vote
-roundtrip — has no PASS evidence. Building the escalation service against Photon now would repeat the
-mistake of building on an unvalidated external dependency. So the Photon channel is deferred: this ships
-a **clean `Channel` interface Photon (Spectrum) implements later** without touching the core. **Next
-step: run D0.6, then add a `PhotonChannel implements Channel`.** Telegram, Discord, and Slack are the
-real implementations today; Photon is the one deferred channel, pending its own D0.6 validation.
+**1. Photon (iMessage) is now BUILT — from the verified `spectrum-ts@10.0.0` interface, not a blog post.**
+The clean `Channel` seam the earlier build reserved for Photon is now filled by
+[`PhotonChannel`](src/photon.ts) + the isolated [`SpectrumPort` adapter](src/photon-spectrum.ts), and
+neither touched a line of the state machine or the §27 check — the seam held. The interface was read
+directly from the published SDK source (the marketing `spectrum.send("+1…")` shape is WRONG; the real API
+is `Spectrum({projectId, projectSecret, platforms:[imessage.config()]})` → `space.create(handle)` →
+`app.send(space, text)`, inbound over the `app.messages` gRPC stream). The two open questions were
+answered with code-level evidence and are documented above: **delivery is ACCEPTANCE, not device-delivery**
+(the fail-closed timeout is the backstop), and **free/Pro is a shared allowlisted pool with a
+docs-vs-pricing quota contradiction**. The offline adversarial battery ([`test/photon.test.ts`](test/photon.test.ts))
+is the standing correctness proof — send, the pure normalizer, the stream reconnect/stop lifecycle, and
+the three named §27 cases (wrong sender, replayed code, expired code) driven through a REAL `PhotonChannel`
++ `interimPhotonBinding` on the real service, plus the dual-channel distinct-surface case. The one real
+end-to-end LIVE proof (a real escalation → a real iMessage → a real `APPROVE <code>` reply) is the
+ready harness `escalation:proof photon`; like the Discord/Slack live proofs it needs the seller
+configured with `PHOTON_*` + a human reply, and it never fabricates a PASS.
 
 **2. Dual-channel enforcement is genuinely proven — no longer inert.**
 `policy.approvals.dualChannelAbove` requires a second **distinct** channel (`AWAITING_SECOND_CHANNEL` →
 `APPROVED`). Step 7 shipped this logic but noted it as inert, because with only Telegram live there was no
-second channel to satisfy it. That is no longer true: with three real channels, the rule is enforced for
+second channel to satisfy it. That is no longer true: with multiple real channels, the rule is enforced for
 real. [`test/dual-channel.test.ts`](test/dual-channel.test.ts) proves both directions against the same
 compare-and-set repo semantics Postgres enforces —
   * **positive:** an above-threshold escalation approved on one channel (e.g. telegram) holds at
@@ -135,15 +174,16 @@ compare-and-set repo semantics Postgres enforces —
 
 Below the threshold, a single bound channel approves normally.
 
-**3. Handle-binding is an interim env binding — for all three channels.**
+**3. Handle-binding is an interim env binding — for all channels.**
 There is no onboarding/binding UI yet (no dashboard exists), so the real §27 binding tuple (channel +
 provider + spaceId/conversation + sender handle + verified operator wallet + last-verified-at, set by a
 code roundtrip) is not yet capturable. The interim is one configured id per channel, all bound to the
 **same demo operator this whole build has used** (the Step-5 demo wallet): `TELEGRAM_CHAT_ID`,
-`DISCORD_USER_ID`, `SLACK_USER_ID`. This is the "one operator, three surfaces" model — combined with
-`combineBindings`, a bound approval on ANY channel authorizes the operator, while any other sender on any
-channel is `IGNORED_UNBOUND`. Clearly labeled temporary. **Real requirement (named future step): a proper
-onboarding/binding flow, presumably via the eventual dashboard (§15).**
+`DISCORD_USER_ID`, `SLACK_USER_ID`, `DASHBOARD_OPERATOR_WALLET`, `PHOTON_OPERATOR_HANDLE`. This is the
+"one operator, five surfaces" model — combined with `combineBindings`, a bound approval on ANY channel
+authorizes the operator, while any other sender on any channel is `IGNORED_UNBOUND`. Clearly labeled
+temporary. **Real requirement (named future step): a proper onboarding/binding flow, presumably via the
+eventual dashboard (§15).**
 
 **Schema-readiness for multiple operators is in place ([`migrations/004_operators.sql`](migrations/004_operators.sql)),
 but no logic reads it yet.** The live binding above is still the env-derived `combineBindings`. In parallel,
@@ -173,9 +213,10 @@ pnpm --filter @untch/escalation telegram-receiver
 ```
 
 The **deployed seller** wires every configured channel automatically: on boot it registers Telegram,
-Discord, and/or Slack (whichever env is set), binds them all to the same operator via `combineBindings`,
-starts each receiver, and fans an escalation out across all of them (∩ `policy.approvals.channels`). No
-channel is faked — one that isn't configured simply isn't registered.
+Discord, Slack, Dashboard, and/or Photon (whichever env is set), binds them all to the same operator via
+`combineBindings`, starts each receiver, and fans an escalation out across all of them (∩
+`policy.approvals.channels`). No channel is faked — one that isn't configured simply isn't registered; a
+Photon connect failure (bad secret / unreachable Spectrum Cloud) skips iMessage and leaves the rest up.
 
 ### The real end-to-end proofs (task 5)
 
@@ -184,6 +225,7 @@ pnpm --filter @untch/asp escalation:e2e            # Telegram, in-process servic
 pnpm --filter @untch/asp escalation:live           # Telegram, through the live public endpoint (D0.7)
 pnpm --filter @untch/asp escalation:proof discord  # Discord solo, through the live public endpoint
 pnpm --filter @untch/asp escalation:proof slack    # Slack solo, through the live public endpoint
+pnpm --filter @untch/asp escalation:proof photon   # Photon/iMessage solo — a real "APPROVE <code>" reply
 pnpm --filter @untch/asp escalation:proof dual     # two DISTINCT channels resolve one above-threshold escalation
 ```
 
@@ -206,16 +248,18 @@ correctness proof; each live proof is the one real human tap on top of it.
 ## Tests
 
 ```bash
-pnpm --filter @untch/escalation test        # 56 tests: state machine + adversarial boundary + all 3 channels
+pnpm --filter @untch/escalation test        # 88 tests: state machine + adversarial boundary + all 5 channels
 ```
 
 Covers every §7.2 transition; the three named adversarial cases (wrong sender, replayed code, expired
-code) run against Telegram AND across Discord and Slack; wrong-channel / bad-code / channel-cap; the
-**dual-channel rule proven with three real channels** — positive (two distinct channels → APPROVED) and
-negative (same channel twice → `IGNORED_BAD_CODE`, still held); timeout → default DENY; the fail-closed
-derived-expiry; the not-found path; each channel's send + pure event→`InboundResponse` normalizer + its
-gateway/socket lifecycle (identify, heartbeat, ack, reconnect/backoff) driven by an injected fake
-WebSocket with no network; and the code hashing (single-use, constant-time). The in-memory repo mirrors
+code) run against Telegram AND across Discord, Slack, and Photon/iMessage; wrong-channel / bad-code /
+channel-cap; the **dual-channel rule proven with distinct real channels** — positive (two distinct
+channels → APPROVED, including iMessage as the distinct second surface) and negative (same channel twice →
+`IGNORED_BAD_CODE`, still held); timeout → default DENY; the fail-closed derived-expiry; the not-found
+path; each channel's send + pure event→`InboundResponse` normalizer + its transport lifecycle — the
+gateway/socket lifecycle (identify, heartbeat, ack, reconnect/backoff) for Discord/Slack driven by an
+injected fake WebSocket, and Photon's `app.messages` stream reconnect/stop lifecycle driven by an injected
+fake `SpectrumPort` — all with no network; and the code hashing (single-use, constant-time). The in-memory repo mirrors
 the Postgres repo's compare-and-set transition semantics, so "first valid decision wins" and the
 dual-channel distinctness check are exercised against the same guard the database enforces.
 

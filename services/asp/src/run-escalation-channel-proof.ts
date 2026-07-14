@@ -13,6 +13,8 @@ import { guardedBuyerCall, makeHttpEscalationResolver, type PreflightCallResult 
  *
  *   pnpm --filter @untch/asp escalation:proof discord   → one escalation resolved via a real Discord tap
  *   pnpm --filter @untch/asp escalation:proof slack     → one escalation resolved via a real Slack tap
+ *   pnpm --filter @untch/asp escalation:proof photon    → one escalation resolved via a real iMessage reply
+ *                                                          ("APPROVE <code>") through Photon Spectrum Cloud
  *   pnpm --filter @untch/asp escalation:proof dual       → an above-threshold escalation resolved by TWO
  *                                                          DISTINCT real channels together
  *
@@ -28,7 +30,14 @@ import { guardedBuyerCall, makeHttpEscalationResolver, type PreflightCallResult 
  * fabricates a PASS. That is the same honest boundary the Telegram e2e held before its token was live.
  */
 
-type Mode = "discord" | "slack" | "dual";
+type Mode = "discord" | "slack" | "photon" | "dual";
+
+/** The channel NAME each single-channel mode fans out to (Photon's operator-facing surface is `imessage`). */
+const MODE_CHANNEL: Record<Exclude<Mode, "dual">, string> = {
+  discord: "discord",
+  slack: "slack",
+  photon: "imessage",
+};
 
 const here = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(here, "..", "..", "..", "internal", "day0", "D0.1-evidence");
@@ -53,12 +62,12 @@ function prereq(mode: Mode, targets: string[], got: string[]): never {
   console.error(`\nRESULT: PREREQ MISSING — the deployed seller did not fan out to [${targets.join(", ")}].`);
   console.error(`It fanned out to: [${got.join(", ") || "none"}].`);
   console.error(
-    `\nThis proof needs the ${mode} path configured ON THE SELLER (its own bot token(s) + the bound\n` +
-      `operator id, e.g. DISCORD_BOT_TOKEN/DISCORD_USER_ID and/or SLACK_BOT_TOKEN/SLACK_APP_TOKEN/\n` +
-      `SLACK_USER_ID), plus a policy whose approvals.channels authorizes them. The offline test battery\n` +
-      `(packages/escalation) proves both new channels' §27 authority boundary and the dual-channel rule\n` +
-      `adversarially; this driver is the ready live harness for the one real tap. Configure the seller and\n` +
-      `re-run. It never fabricates a PASS.`,
+    `\nThis proof needs the ${mode} path configured ON THE SELLER (its own credentials + the bound\n` +
+      `operator id: DISCORD_BOT_TOKEN/DISCORD_USER_ID, SLACK_BOT_TOKEN/SLACK_APP_TOKEN/SLACK_USER_ID,\n` +
+      `and/or PHOTON_PROJECT_ID/PHOTON_PROJECT_SECRET/PHOTON_OPERATOR_HANDLE), plus a policy whose\n` +
+      `approvals.channels authorizes them. The offline test battery (packages/escalation) proves every\n` +
+      `channel's §27 authority boundary and the dual-channel rule adversarially; this driver is the ready\n` +
+      `live harness for the one real tap. Configure the seller and re-run. It never fabricates a PASS.`,
   );
   process.exit(2);
 }
@@ -77,7 +86,7 @@ const DUAL_CHANNELS = (process.argv[3]?.trim() || "telegram,slack")
 
 /** Rules that (a) escalate a modest call before any BLOCK rule and (b) authorize the target channels. */
 function escalateRules(mode: Mode): Record<string, unknown> {
-  const channels = mode === "discord" ? ["discord"] : mode === "slack" ? ["slack"] : DUAL_CHANNELS;
+  const channels = mode === "dual" ? DUAL_CHANNELS : [MODE_CHANNEL[mode]];
   const channelCaps: Record<string, number> = {};
   for (const c of channels) channelCaps[c] = 100;
   return {
@@ -145,10 +154,10 @@ function fanoutChannels(view: StatusView): string[] {
 
 async function main(): Promise<void> {
   const mode = (process.argv[2] ?? process.env.CHANNEL_PROOF ?? "").toLowerCase() as Mode;
-  if (mode !== "discord" && mode !== "slack" && mode !== "dual") {
-    fail(2, `usage: escalation:proof <discord|slack|dual> (got ${JSON.stringify(process.argv[2] ?? "")})`);
+  if (mode !== "discord" && mode !== "slack" && mode !== "photon" && mode !== "dual") {
+    fail(2, `usage: escalation:proof <discord|slack|photon|dual> (got ${JSON.stringify(process.argv[2] ?? "")})`);
   }
-  const targets = mode === "discord" ? ["discord"] : mode === "slack" ? ["slack"] : DUAL_CHANNELS;
+  const targets = mode === "dual" ? DUAL_CHANNELS : [MODE_CHANNEL[mode]];
 
   const sellerUrl = (process.env.SELLER_URL?.trim() || DEFAULT_SELLER).replace(/\/$/, "");
   const buyerKeyRaw = process.env.BUYER_PRIVATE_KEY?.trim();
@@ -241,7 +250,9 @@ async function main(): Promise<void> {
 
   const ask = mode === "dual"
     ? `>>> Approve in TWO of [${targets.join(", ")}] now (two DISTINCT surfaces). Waiting up to ${waitSec}s...`
-    : `>>> Tap Approve in ${mode} now. Waiting up to ${waitSec}s...`;
+    : mode === "photon"
+      ? `>>> Reply "APPROVE <code>" in iMessage now (the code is in the message). Waiting up to ${waitSec}s...`
+      : `>>> Tap Approve in ${mode} now. Waiting up to ${waitSec}s...`;
   console.log(`\n${ask}\n`);
 
   const startMs = Date.now();

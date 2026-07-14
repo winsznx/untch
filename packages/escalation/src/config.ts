@@ -4,11 +4,12 @@
  * Split by role, like receipt-writer:
  *   • `StorageConfig` — Postgres + Redis, needed by everything (the SAME shared instances the receipt
  *     writer and policy store use — no new database, no second Redis).
- *   • `TelegramConfig` — the one real channel: bot token + the interim operator binding.
+ *   • one config per channel (`TelegramConfig`, `DiscordConfig`, `SlackConfig`, `DashboardConfig`,
+ *     `PhotonConfig`) — each a credential/token plus the interim operator binding for that surface.
  *
  * The escalation state machine itself needs only storage. A channel is layered on top; the core never
- * imports a channel's config (that is the whole point of the channel-agnostic seam — Photon later
- * brings its own config without touching this).
+ * imports a channel's config (that is the whole point of the channel-agnostic seam — each channel, most
+ * recently Photon/iMessage, brought its own config without touching the core).
  */
 
 export class MissingEnvError extends Error {
@@ -169,4 +170,39 @@ export function loadDashboardConfig(): DashboardConfig {
 /** True iff the dashboard operator wallet is set — lets the wiring register the dashboard only when bound. */
 export function hasDashboardEnv(): boolean {
   return !!process.env.DASHBOARD_OPERATOR_WALLET?.trim();
+}
+
+/**
+ * Photon (Spectrum Cloud) channel config — the fifth surface, iMessage.
+ *
+ * `projectId` + `projectSecret` are the Photon project credentials (from app.photon.codes); they are the
+ * SELLER's, set locally in the environment exactly like every other channel's tokens — never pasted into
+ * chat. `operatorHandle` is the SAME interim single-operator binding as the other channels, one surface
+ * further: the bound operator's iMessage handle (E.164 phone, e.g. `+15551234567`, or an email), which is
+ * both the send target and the handle inbound senders are matched against. On the shared-pool (Free/Pro)
+ * plan this handle MUST be a pre-registered user of the Photon project or sends are rejected with
+ * "Target not allowed for this project". The real §15 onboarding/binding flow is the named future step;
+ * until then it is the one configured operator handle, the same person reached on a fifth surface.
+ */
+export interface PhotonConfig {
+  readonly projectId: string;
+  readonly projectSecret: string;
+  readonly operatorHandle: string;
+}
+
+export function loadPhotonConfig(): PhotonConfig {
+  return {
+    projectId: requireEnv("PHOTON_PROJECT_ID"),
+    projectSecret: requireEnv("PHOTON_PROJECT_SECRET"),
+    operatorHandle: requireEnv("PHOTON_OPERATOR_HANDLE"),
+  };
+}
+
+/** True iff all Photon env is present — lets the wiring register Photon only when configured. */
+export function hasPhotonEnv(): boolean {
+  return (
+    !!process.env.PHOTON_PROJECT_ID?.trim() &&
+    !!process.env.PHOTON_PROJECT_SECRET?.trim() &&
+    !!process.env.PHOTON_OPERATOR_HANDLE?.trim()
+  );
 }

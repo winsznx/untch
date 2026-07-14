@@ -2,8 +2,9 @@
  * @untch/escalation — public types.
  *
  * The vocabulary of the §7.2 escalation lifecycle and the §27 authority boundary. The core deliberately
- * knows nothing about any specific channel: a `Channel` is an interface (Telegram implements it now,
- * Photon later) and an inbound operator response is a plain `InboundResponse` — a transport-neutral
+ * knows nothing about any specific channel: a `Channel` is an interface (Telegram, Discord, Slack,
+ * Dashboard, and Photon/iMessage all implement it) and an inbound operator response is a plain
+ * `InboundResponse` — a transport-neutral
  * record the state machine runs through the same authority-boundary check regardless of where it came
  * from. Channels never make money decisions; they only transport a response for a decision the engine
  * already made.
