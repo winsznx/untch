@@ -17,8 +17,8 @@
     "test:asp": "node --import tsx --test services/asp/test/*.test.ts",
     "test:receipt-writer": "node --import tsx --test packages/receipt-writer/test/*.test.ts",
     "test:escalation": "node --import tsx --test packages/escalation/test/*.test.ts",
-  "test:web": "node --import tsx --test apps/web/test/*.test.ts",
-  "prove:policy-ui": "tsx scripts/prove-policy-onchain.ts",
+    "test:web": "node --import tsx --test apps/web/test/*.test.ts",
+    "prove:policy-ui": "tsx scripts/prove-policy-onchain.ts",
     "test:trust-bureau": "node --import tsx --test packages/trust-bureau/test/*.test.ts",
     "gen:writer-wallet": "tsx scripts/gen-writer-wallet.ts",
     "provision:writer": "tsx scripts/provision-receipt-writer.ts",
@@ -28,7 +28,8 @@
     "soak:prepare-public": "tsx scripts/soak/prepare-public-bundle.ts && tsx scripts/soak/render-runbook.ts",
     "test:key-rotations": "tsx scripts/soak/test-key-rotations.ts",
     "verify:role-separation": "tsx scripts/soak/verify-role-separation.ts",
-    "verify:deployment-roles": "tsx scripts/soak/verify-deployment-roles.ts"
+    "verify:deployment-roles": "tsx scripts/soak/verify-deployment-roles.ts",
+    "deploy:keyed-suite": "tsx scripts/deploy-keyed-suite.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
@@ -40,7 +41,9 @@
     "typescript": "^5.7.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"],
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
     "overrides": {
       "ioredis": "5.10.1",
       "postcss": "^8.5.16"
