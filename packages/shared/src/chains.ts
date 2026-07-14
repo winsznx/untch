@@ -169,10 +169,18 @@ export function settlementToken(chainId: number): ConfirmedToken {
  */
 export const DEFAULT_CHAIN_ID: number = X_LAYER_TESTNET_ID;
 
+/**
+ * The env bag the selection functions read from. The index signature is load-bearing: every caller
+ * passes a whole `process.env`, whose only nominal property is Next's `NODE_ENV` augmentation. Without
+ * it, an all-optional `ChainEnv` is a *weak type*, and passing `process.env` fails TS's weak-type check
+ * ("no properties in common") wherever those augmented node types are in scope — apps/web, but not the
+ * root config that CI runs.
+ */
 export type ChainEnv = {
   CHAIN_ID?: string | undefined;
   NETWORK?: string | undefined;
   RPC_URL?: string | undefined;
+  [key: string]: string | undefined;
 };
 
 /** Parse a CHAIN_ID ("196") or NETWORK ("eip155:196") string to a supported chainId, or throw. */
