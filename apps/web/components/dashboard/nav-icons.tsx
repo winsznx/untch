@@ -4,6 +4,7 @@
  * mobile drawer both lean on these being instantly recognizable at a glance).
  */
 export type NavIconName =
+  | "start"
   | "overview"
   | "intents"
   | "policies"
@@ -30,6 +31,14 @@ export function NavIcon({ name, className }: { name: NavIconName; className?: st
     "aria-hidden": true,
   };
   switch (name) {
+    case "start":
+      return (
+        <svg {...svg}>
+          <path d="M10 2.5c3 1 5 3.5 5 7 0 1.4-.3 2.6-.8 3.6l-4.2 2-4.2-2C5.3 12.1 5 10.9 5 9.5c0-3.5 2-6 5-7Z" />
+          <circle cx="10" cy="8.5" r="1.5" />
+          <path d="M7.5 15c-1 .8-1.3 2-1.3 2.5.8 0 1.8-.4 2.5-1.2" />
+        </svg>
+      );
     case "overview":
       return (
         <svg {...svg}>
