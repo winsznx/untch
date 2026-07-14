@@ -17,6 +17,14 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { pairwiseDistinct, type Role } from "./soak/role-lib";
+import {
+  isConfirmed,
+  settlementToken,
+  TOKENS,
+  X_LAYER_MAINNET_ID,
+  X_LAYER_TESTNET_ID,
+  type ConfirmedToken,
+} from "../packages/shared/src/chains";
 
 /**
  * Deploy the Untch contract suite with SEPARATED role keys (the fix for the owner-key-loss incident).
@@ -34,21 +42,51 @@ import { pairwiseDistinct, type Role } from "./soak/role-lib";
  *   TIMELOCK_DELAY        UntchReceipts timelock seconds (default 60).
  *   BROADCAST=1           actually send txs (else preflight: validate + distinctness + funding only).
  *   ALLOW_MAINNET=1       required to target chainId 196.
+ *
+ * PRODUCTION-SHAPED CONFIG:
+ *   Settlement token — resolved from the shared chains.ts registry for the TARGET chain:
+ *     • mainnet 196 → the real confirmed USDT0 (0x779Ded…, 6 dp); the token is NOT deployed, only referenced.
+ *     • testnet 1952 → chains.ts has NO confirmed stablecoin, so a 6-dp MockERC20 stand-in is deployed and
+ *       clearly labelled (mainnet would use USDT0). Override with TOKEN_ADDRESS to force a specific token.
+ *   REQUIRE_ANCHORED_INTENT  default "true" (production). The vault is wired to a real SpendIntentRegistry:
+ *     INTENT_REGISTRY (if set) else the suite's own freshly-deployed registry. Set "false" for a self-
+ *     contained keying dry-run (registry unwired).
  */
-
-const ROLE_ENVS = ["OWNER_ADDRESS", "ORACLE_ADDRESS", "ADMIN_ADDRESS", "WRITER_ADDRESS"] as const;
-const X_LAYER_MAINNET_ID = 196;
-const X_LAYER_TESTNET_ID = 1952;
 
 const ART = (p: string) => fileURLToPath(new URL(`../contracts/out/${p}`, import.meta.url));
 type Artifact = { abi: Abi; bytecode: { object: Hex } };
 const load = (p: string): Artifact => JSON.parse(readFileSync(ART(p), "utf8")) as Artifact;
 
 const OP = { ADD_WRITER: 1, TRANSFER_ADMIN: 3 } as const;
-const DECIMALS = 6;
-const PER_TX_CAP = parseUnits("100", DECIMALS);
-const EPOCH_BUDGET = parseUnits("250", DECIMALS);
 const EPOCH_LEN = 86_400n;
+
+interface ResolvedToken {
+  readonly decimals: number;
+  readonly mode: "real-confirmed" | "testnet-standin" | "override";
+  readonly label: string;
+  /** Set when the token already exists (real/override); undefined ⇒ deploy a MockERC20 stand-in. */
+  readonly address?: Address;
+}
+
+/** Production-shaped token selection: real USDT0 where chains.ts confirms one, honest stand-in otherwise. */
+function resolveToken(chainId: number): ResolvedToken {
+  const override = process.env.TOKEN_ADDRESS?.trim();
+  if (override) {
+    if (!isAddress(override)) throw new Error(`TOKEN_ADDRESS is not a valid address: "${override}"`);
+    const decimals = Number(process.env.TOKEN_DECIMALS ?? "6");
+    return { address: getAddress(override), decimals, mode: "override", label: `override ${getAddress(override)} (${decimals} dp)` };
+  }
+  try {
+    const t: ConfirmedToken = settlementToken(chainId);
+    return { address: t.address, decimals: t.decimals, mode: "real-confirmed", label: `${t.symbol} ${t.address} (${t.decimals} dp, chains.ts confirmed)` };
+  } catch {
+    // No confirmed stablecoin for this chain (testnet). Match the production token's decimals so caps are
+    // sized identically; deploy a MockERC20 stand-in. Mainnet's real token is documented for contrast.
+    const mainnetUSDT0 = TOKENS[X_LAYER_MAINNET_ID].USDT0;
+    const decimals = isConfirmed(mainnetUSDT0) ? mainnetUSDT0.decimals : 6;
+    return { decimals, mode: "testnet-standin", label: `MockERC20 stand-in (${decimals} dp) — no confirmed stablecoin on chainId ${chainId}; mainnet uses USDT0 ${isConfirmed(mainnetUSDT0) ? mainnetUSDT0.address : "?"}` };
+  }
+}
 
 const wait = (s: number) => new Promise((r) => setTimeout(r, s * 1000));
 
@@ -124,12 +162,26 @@ async function main(): Promise<void> {
   const recArt = load("UntchReceipts.sol/UntchReceipts.json");
   const vaultArt = load("UntchVault.sol/UntchVault.json");
 
-  console.log("\n[1/4] deploying MockERC20 · SpendIntentRegistry · UntchReceipts · UntchVault …");
-  const token = await deploy(tokenArt, []);
+  // Production-shaped config resolved for THIS chain.
+  const tok = resolveToken(chainId);
+  const perTxCap = parseUnits("100", tok.decimals);
+  const epochBudget = parseUnits("250", tok.decimals);
+  const requireAnchored = (process.env.REQUIRE_ANCHORED_INTENT ?? "true") !== "false";
+  const registryOverride = process.env.INTENT_REGISTRY?.trim();
+  if (registryOverride && !isAddress(registryOverride)) throw new Error(`INTENT_REGISTRY invalid: "${registryOverride}"`);
+  console.log(`token   : ${tok.label}`);
+  console.log(`intent  : requireAnchoredIntent=${requireAnchored}${requireAnchored ? ` → registry ${registryOverride ?? "(suite's own)"}` : " (unwired dry-run)"}`);
+
+  console.log("\n[1/4] deploying token(if needed) · SpendIntentRegistry · UntchReceipts · UntchVault …");
+  const token = tok.address ?? (await deploy(tokenArt, []));
+  if (!tok.address) console.log(`  token ${token} (deployed — testnet stand-in)`);
+  else console.log(`  token ${token} (referenced — not deployed)`);
   const registry = await deploy(regArt, []);
   const receipts = await deploy(recArt, [timelock]);
-  const vault = await deploy(vaultArt, [owner, oracle, zeroAddress, PER_TX_CAP, EPOCH_BUDGET, EPOCH_LEN, [token], false]);
-  console.log(`  token ${token}\n  registry ${registry}\n  receipts ${receipts}\n  vault ${vault}`);
+  // requireAnchoredIntent=true must reference a non-zero registry: the override, else the suite's own.
+  const vaultRegistry: Address = requireAnchored ? (registryOverride ? getAddress(registryOverride) : registry) : zeroAddress;
+  const vault = await deploy(vaultArt, [owner, oracle, vaultRegistry, perTxCap, epochBudget, EPOCH_LEN, [token], requireAnchored]);
+  console.log(`  registry ${registry}\n  receipts ${receipts}\n  vault ${vault} (intentRegistry=${vaultRegistry}, requireAnchoredIntent=${requireAnchored})`);
 
   // ── SpendIntentRegistry (immediate admin): add writer, then transfer admin LAST ──
   console.log("[2/4] registry: addWriter(writer) → transferAdmin(admin) …");
@@ -151,6 +203,9 @@ async function main(): Promise<void> {
     vaultOwner: await read(vault, vaultArt.abi, "owner"),
     vaultOracle: await read(vault, vaultArt.abi, "oracle"),
     vaultPending: await read(vault, vaultArt.abi, "pendingOwner"),
+    vaultRequireAnchored: await read(vault, vaultArt.abi, "requireAnchoredIntent"),
+    vaultIntentRegistry: await read(vault, vaultArt.abi, "intentRegistry"),
+    vaultTokenAllowed: await read(vault, vaultArt.abi, "tokenAllowed", [token]),
     receiptsAdmin: await read(receipts, recArt.abi, "admin"),
     receiptsWriter: await read(receipts, recArt.abi, "isWriter", [writer]),
     registryAdmin: await read(registry, regArt.abi, "admin"),
@@ -159,10 +214,12 @@ async function main(): Promise<void> {
   const eq = (a: unknown, b: string) => String(a).toLowerCase() === b.toLowerCase();
   const ok =
     eq(state.vaultOwner, owner) && eq(state.vaultOracle, oracle) && state.vaultPending === zeroAddress &&
+    state.vaultRequireAnchored === requireAnchored && eq(state.vaultIntentRegistry, vaultRegistry) &&
+    state.vaultTokenAllowed === true &&
     eq(state.receiptsAdmin, admin) && state.receiptsWriter === true &&
     eq(state.registryAdmin, admin) && state.registryWriter === true;
 
-  console.log(JSON.stringify({ chainId, deployer, token, registry, receipts, vault, roles: { owner, oracle, admin, writer }, readback: state, ok }, null, 2));
+  console.log(JSON.stringify({ chainId, deployer, token, tokenMode: tok.mode, registry, receipts, vault, requireAnchoredIntent: requireAnchored, vaultIntentRegistry: vaultRegistry, roles: { owner, oracle, admin, writer }, readback: state, ok }, null, 2));
   console.log("\nverify independently:");
   console.log(`  RPC_URL=${rpcUrl} VAULT_ADDRESS=${vault} RECEIPTS_ADDRESS=${receipts} SPEND_INTENT_REGISTRY_ADDRESS=${registry} \\`);
   console.log(`  DEPLOYER_ADDRESS=${deployer} OWNER_ADDRESS=${owner} ADMIN_ADDRESS=${admin} WRITER_ADDRESS=${writer} ORACLE_ADDRESS=${oracle} \\`);
