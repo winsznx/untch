@@ -8,6 +8,13 @@ node_modules/
 dist/
 *.log
 
+# macOS
+.DS_Store
+
+# local-only Remotion scratch app for launch footage (also excluded from the pnpm workspace so the
+# committed lockfile stays reproducible from a clean checkout)
+apps/video/
+
 # next.js build output (apps/web)
 .next/
 next-env.d.ts
