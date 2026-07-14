@@ -50,6 +50,21 @@ export function interimDashboardBinding(walletAddress: string): BindingVerifier 
     ch === "dashboard" && senderHandle.trim().toLowerCase() === boundHandle;
 }
 
+/**
+ * Photon's interim binding: the bound operator's iMessage handle on the `imessage` channel. Same one demo
+ * operator as the other four surfaces — one person reached on iMessage, not a fifth approver. Any other
+ * sender handle is unbound ⇒ IGNORED_UNBOUND.
+ *
+ * Compared CASE-INSENSITIVELY: an email iMessage handle is the same regardless of case, and Apple may
+ * return a differently-cased form than the configured one, so a plain exact match would wrongly reject a
+ * legitimate reply. E.164 phone handles are digits and unaffected. The real §15 onboarding binding is the
+ * named future step; until then it is the one configured operator handle.
+ */
+export function interimPhotonBinding(handle: string): BindingVerifier {
+  const boundHandle = handle.trim().toLowerCase();
+  return (ch, senderHandle) => ch === "imessage" && senderHandle.trim().toLowerCase() === boundHandle;
+}
+
 /** One strict channel+handle binding — the shared interim shape until the real §15 onboarding flow exists. */
 function interimHandleBinding(channel: string, handle: string): BindingVerifier {
   const boundChannel = channel;

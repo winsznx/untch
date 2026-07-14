@@ -8,8 +8,8 @@ import type { InboundResponse } from "./types";
  * click and no per-click roundtrip; the §27 authority-boundary check in the service remains the sole
  * money-decision gate, exactly as it is for every other channel.
  *
- * Transport shape — a PULL surface, not a push transport. The other three channels PUSH an escalation out
- * to an external provider (a Telegram/Discord/Slack DM). The dashboard PUSHES nothing: an escalation is
+ * Transport shape — a PULL surface, not a push transport. The other channels PUSH an escalation out
+ * to an external provider (a Telegram/Discord/Slack DM or a Photon iMessage). The dashboard PUSHES nothing: an escalation is
  * already visible in the operator's authenticated inbox, which reads escalation records straight from the
  * repo. So `send` has nothing external to deliver. This is the OPPOSITE trade-off from Discord's gateway
  * note: there is no external endpoint and therefore no new inbound attack surface at all, at the cost of

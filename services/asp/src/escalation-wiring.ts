@@ -4,25 +4,30 @@ import {
   DiscordChannel,
   EscalationService,
   PgEscalationsRepo,
+  PhotonChannel,
   SlackChannel,
   TelegramChannel,
   combineBindings,
   createPool,
   createRedis,
+  createSpectrumPort,
   createTimeoutQueue,
   createTimeoutWorker,
   DEMO_OPERATOR_ID,
   PgOperatorsRepo,
   hasDashboardEnv,
   hasDiscordEnv,
+  hasPhotonEnv,
   hasSlackEnv,
   hasTelegramEnv,
   interimDashboardBinding,
   interimDiscordBinding,
+  interimPhotonBinding,
   interimSlackBinding,
   interimTelegramBinding,
   loadDashboardConfig,
   loadDiscordConfig,
+  loadPhotonConfig,
   loadSlackConfig,
   loadStorageConfig,
   loadTelegramConfig,
@@ -43,16 +48,16 @@ import { makeOwnershipVerifier, routeEscalationToOwner } from "./escalation-rout
  * §7.2 / §27 escalation wiring for the seller — the SERVER-SIDE half of the control plane.
  *
  * When DATABASE_URL + REDIS_URL are present AND at least one control channel is configured (Telegram,
- * Discord, and/or Slack), the seller:
+ * Discord, Slack, Dashboard, and/or Photon/iMessage), the seller:
  *   • creates the escalation record on every ESCALATED_* preflight decision (the `gateway`),
  *   • fans it out over EVERY configured channel (the policy's `approvals.channels` ∩ the registered ones),
  *   • runs each channel's inbound operator response through the §27 authority boundary,
  *   • fires §7.2 timeouts (BullMQ on the shared Redis) → EXPIRED → default DENY,
  *   • and serves the resolved state at GET /escalation_status/:pollRef.
  *
- * All three channels bind to the SAME demo operator via `combineBindings` — one person reachable on three
- * surfaces, not three approvers. Any bound channel can approve; an amount above `dualChannelAbove` needs
- * two DISTINCT ones. When no channel is configured this stays null and the gateway is simply not wired —
+ * Every channel binds to the SAME demo operator via `combineBindings` — one person reachable on up to
+ * five surfaces, not five approvers. Any bound channel can approve; an amount above `dualChannelAbove`
+ * needs two DISTINCT ones. When no channel is configured this stays null and the gateway is not wired —
  * an honest capability boundary, never a fabricated approval.
  *
  * Uses the SAME shared Postgres + Redis as the receipt writer and policy store (no new instance).
@@ -86,8 +91,13 @@ interface RegisteredChannel {
   readonly label: string;
 }
 
-/** Build the set of real channels the env configures. Each binds the SAME operator on its own surface. */
-function configuredChannels(): RegisteredChannel[] {
+/**
+ * Build the set of real channels the env configures. Each binds the SAME operator on its own surface.
+ * Async because Photon's Spectrum Cloud port opens a gRPC connection at construction; its creation is
+ * wrapped so an unreachable Spectrum Cloud (or a bad project secret) skips iMessage rather than taking
+ * down the whole escalation plane — the same non-fatal posture as a receiver that fails to start.
+ */
+async function configuredChannels(): Promise<RegisteredChannel[]> {
   const out: RegisteredChannel[] = [];
   if (hasTelegramEnv()) {
     const cfg = loadTelegramConfig();
@@ -125,17 +135,34 @@ function configuredChannels(): RegisteredChannel[] {
       label: `dashboard (wallet ${cfg.operatorWallet})`,
     });
   }
+  if (hasPhotonEnv()) {
+    const cfg = loadPhotonConfig();
+    try {
+      const port = await createSpectrumPort(cfg);
+      out.push({
+        channel: new PhotonChannel({ port, operatorHandle: cfg.operatorHandle }),
+        binding: interimPhotonBinding(cfg.operatorHandle),
+        handle: cfg.operatorHandle,
+        label: `imessage (photon ${cfg.operatorHandle})`,
+      });
+    } catch (err) {
+      console.error(
+        `[asp] Photon (iMessage) NOT registered — Spectrum Cloud connect failed (bad secret or ` +
+          `unreachable). The other channels are unaffected: ${(err as Error).message}`,
+      );
+    }
+  }
   return out;
 }
 
 export async function initEscalationWiring(): Promise<EscalationWiring | null> {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   const redisUrl = process.env.REDIS_URL?.trim();
-  const channelsCfg = configuredChannels();
+  const channelsCfg = await configuredChannels();
   if (!databaseUrl || !redisUrl || channelsCfg.length === 0) {
     console.log(
       "[asp] escalation service NOT wired (needs DATABASE_URL + REDIS_URL + at least one of " +
-        "TELEGRAM_* / DISCORD_* / SLACK_*) — ESCALATED decisions will not create a server-side escalation.",
+        "TELEGRAM_* / DISCORD_* / SLACK_* / PHOTON_*) — ESCALATED decisions will not create a server-side escalation.",
     );
     return null;
   }
