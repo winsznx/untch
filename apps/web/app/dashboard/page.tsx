@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { DashCard, SectionTitle, StatTile, Meter, DecisionChip, MastheadLink } from "../../components/dashboard/ui";
 import { NoHistory } from "../../components/dashboard/no-history";
 import { getProofTiers } from "../../lib/dashboard/data";
 import { liveSavings, liveIntentStream } from "../../lib/dashboard/live";
 import { getScope } from "../../lib/dashboard/scope";
+import { hasAnyPolicy } from "../../lib/dashboard/onboarding";
 
 const usd = (n: number) => n.toFixed(2);
 
@@ -12,6 +14,15 @@ export const dynamic = "force-dynamic";
 
 export default async function Overview() {
   const scope = await getScope();
+
+  // First-time detection (Step-31 #1): an authenticated wallet that has never registered a policy is a
+  // first-time operator. Send it to the guided onboarding path instead of the normal empty-state
+  // dashboard. The demo operator (which owns the seeded history) is never a first-timer, and any wallet
+  // with an on-chain policy already falls straight through to the real dashboard below.
+  if (scope.authenticated && scope.address && !scope.isDemoOperator) {
+    if (!(await hasAnyPolicy(scope.address))) redirect("/dashboard/start");
+  }
+
   if (!scope.authenticated) {
     return (
       <div className="flex flex-col gap-10">

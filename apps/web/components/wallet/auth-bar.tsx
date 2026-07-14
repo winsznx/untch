@@ -13,6 +13,7 @@ import { useAuthStatus } from "./wallet-context";
  */
 
 const SECTION: Record<string, string> = {
+  "/dashboard/start": "Get started",
   "/dashboard": "Overview",
   "/dashboard/intents": "Intent stream",
   "/dashboard/policies": "Policies",

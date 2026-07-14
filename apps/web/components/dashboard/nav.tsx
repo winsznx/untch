@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { NavIcon, type NavIconName } from "./nav-icons";
 
 const LINKS: { href: string; label: string; icon: NavIconName }[] = [
+  { href: "/dashboard/start", label: "Get started", icon: "start" },
   { href: "/dashboard", label: "Overview", icon: "overview" },
   { href: "/dashboard/intents", label: "Intent stream", icon: "intents" },
   { href: "/dashboard/policies", label: "Policies", icon: "policies" },
