@@ -1,0 +1,91 @@
+# Untch web app (§15 dashboard + onboarding). Closes a real CI coverage hole: until this workflow,
+# NOTHING typechecked apps/web and NOTHING ran its suite. The root `pnpm typecheck` that canon.yml /
+# policy-engine.yml / receipt-writer.yml run uses the root tsconfig, whose include is only
+# packages/** + scripts/** — apps/web was outside every path filter AND outside the only typecheck.
+# That is how 15 real TS2559 errors (the ChainEnv weak-type bug, fixed in 3c5257b) sat in the
+# codebase undiscovered: they were invisible to the root tsconfig and only ever surfaced under
+# apps/web's own tsconfig, which no job ran.
+#
+# Two things make this job non-vacuous, both deliberate:
+#
+#   1. It runs apps/web's OWN tsconfig (`pnpm --filter @untch/web typecheck`), not the root one.
+#      The root config cannot see these errors by construction. Verified: with 3c5257b reverted this
+#      job reports exactly those 15 errors and fails.
+#
+#   2. It runs `next typegen` first. next-env.d.ts and .next/types are gitignored build artifacts, so
+#      a clean checkout has neither. `typegen` regenerates them without a full `next build` (no env,
+#      no database, seconds not minutes). This is NOT needed for the ChainEnv class of error — Next's
+#      NodeJS.ProcessEnv augmentation arrives via `next/index.d.ts`'s own
+#      `/// <reference types="./types/global" />` the moment anything imports `next`, with or without
+#      next-env.d.ts. It IS needed so the job checks the same file set a developer sees locally:
+#      tsconfig includes `.next/types/**/*.ts`, which is where Next emits routes.d.ts, cache-life.d.ts
+#      and validator.ts — validator.ts being the one that type-validates every page/layout export
+#      signature against its route. Skipping typegen would silently check 3 fewer files and drop that
+#      validation, i.e. narrow the gate rather than close it.
+#
+# Path filter covers packages/** in full, not just apps/web/**: the web app has workspace deps on 11
+# @untch packages, and the ChainEnv bug is the proof that a change under packages/shared can break
+# apps/web's typecheck and nothing else. A narrower filter would reopen the same hole.
+name: web
+
+on:
+  push:
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/web.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: apps/web typecheck (own tsconfig) + web suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # next-env.d.ts + .next/types are gitignored, so a clean checkout has neither. `typegen` emits
+      # them without a full build (no env vars, no database) so apps/web's tsconfig checks the same
+      # file set it does locally — including .next/types/validator.ts.
+      - name: Generate Next route types
+        run: pnpm --filter @untch/web exec next typegen
+
+      # The root tsconfig (packages/** + scripts/** only). Kept for parity with the other workflows —
+      # an apps/web-only change otherwise runs no repo-wide typecheck at all.
+      - name: Typecheck (root tsconfig)
+        run: pnpm typecheck
+
+      # The gate that actually closes the hole: apps/web's own tsconfig, which the root config cannot
+      # see. This is the step that catches the ChainEnv class of error.
+      - name: Typecheck (apps/web tsconfig)
+        run: pnpm --filter @untch/web typecheck
+
+      - name: Web suite
+        run: pnpm test:web

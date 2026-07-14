@@ -1,0 +1,69 @@
+# Untch escalation suite (PRD §7.2 lifecycle / §27 authority boundary). Covers the escalation state
+# machine, the §27 check (binding, single-use code, channel cap, dual-channel rule), the §7.2 timeout →
+# default DENY fail-closed path (I2), and all five channel implementations — Telegram, Discord, Slack,
+# Dashboard, and Photon/iMessage. Every channel is unit-tested against an injected socket/port with no
+# network, so no Postgres/Redis/Spectrum credentials are needed in CI.
+#
+# Why this workflow exists: `pnpm test:escalation` (88 tests) was wired into NO workflow. The package's
+# code was typechecked in CI only incidentally — the root `pnpm typecheck` covers packages/**, and the
+# other jobs' path filters happen to include pnpm-lock.yaml — but not one of its 88 tests had ever run
+# on a real CI machine. The Photon channel (3b5f755) landed with its 12 adversarial tests green locally
+# and ungated remotely. This closes that.
+name: escalation
+
+on:
+  push:
+    paths:
+      - "packages/escalation/**"
+      - "packages/policy-store/**"
+      - "packages/receipt-writer/**"
+      - "packages/x402-guard/**"
+      - "packages/canon/**"
+      - "packages/shared/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/escalation.yml"
+  pull_request:
+    paths:
+      - "packages/escalation/**"
+      - "packages/policy-store/**"
+      - "packages/receipt-writer/**"
+      - "packages/x402-guard/**"
+      - "packages/canon/**"
+      - "packages/shared/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/escalation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  escalation:
+    name: §7.2 lifecycle + §27 authority boundary + 5 channels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Escalation suite
+        run: pnpm test:escalation
