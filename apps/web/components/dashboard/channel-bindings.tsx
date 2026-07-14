@@ -27,7 +27,14 @@ interface Started {
   handle: string;
 }
 
-export function ChannelBindings() {
+export function ChannelBindings({
+  onVerifiedChange,
+}: {
+  /** Optional sequencing signal for the onboarding flow: fires on every refresh with the count of
+   *  VERIFIED channels, so the flow can require a bound channel before completion. Absent at the
+   *  existing Settings call site, so this changes no current behavior. */
+  onVerifiedChange?: (verifiedCount: number) => void;
+} = {}) {
   const w = useWallet();
   const authed = w.status === "authenticated";
   const [bindings, setBindings] = useState<BindingView[]>([]);
@@ -45,10 +52,11 @@ export function ChannelBindings() {
       if (!res.ok) return;
       const json = (await res.json()) as { bindings: BindingView[] };
       setBindings(json.bindings);
+      onVerifiedChange?.(json.bindings.filter((b) => b.status === "verified").length);
     } catch {
       /* not signed in */
     }
-  }, [authed]);
+  }, [authed, onVerifiedChange]);
 
   useEffect(() => {
     void refresh();

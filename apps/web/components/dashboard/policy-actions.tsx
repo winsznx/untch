@@ -11,6 +11,7 @@ import {
   computePolicyHash,
   type PolicyRules,
 } from "../../lib/chain/policy-tx";
+import type { Hex } from "viem";
 import { makePublicClient } from "../../lib/wallet/provider";
 import { TxButton, type TxStep } from "../wallet/tx-button";
 import { useWallet } from "../wallet/wallet-context";
@@ -27,7 +28,16 @@ import { useWallet } from "../wallet/wallet-context";
 /** The demo agent the guided rules govern, matching the deploy scripts + anchored demo policy. */
 const DEMO_AGENT: Address = "0x000000000000000000000000000000000000A9E7";
 
-export function PolicyActions({ initialRules }: { initialRules: PolicyRules }) {
+export function PolicyActions({
+  initialRules,
+  onCreated,
+}: {
+  initialRules: PolicyRules;
+  /** Optional sequencing signal for the onboarding flow: fires once a brand-new policy is confirmed
+   *  on-chain, with the real policyId (read from the registry pre-broadcast) and the register tx hash.
+   *  Absent at every existing call site, so this changes no current behavior. */
+  onCreated?: (info: { policyId: bigint; txHash: Hex }) => void;
+}) {
   const w = useWallet();
   const [rulesText, setRulesText] = useState(() => JSON.stringify(initialRules, null, 2));
   const [ownedPolicyId, setOwnedPolicyId] = useState<bigint | null>(null);
@@ -96,7 +106,11 @@ export function PolicyActions({ initialRules }: { initialRules: PolicyRules }) {
           prepare={prepareCreate}
           requireAuth
           disabled={!ok}
-          onConfirmed={() => setOwnedPolicyId(predictedRef.current)}
+          onConfirmed={(hash) => {
+            const id = predictedRef.current;
+            setOwnedPolicyId(id);
+            if (id !== null) onCreated?.({ policyId: id, txHash: hash });
+          }}
         />
         <TxButton label="Update policy" prepare={prepareUpdate} requireAuth disabled={!ok || ownedPolicyId === null} variant="signal" />
         <TxButton
