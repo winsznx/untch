@@ -255,6 +255,7 @@ export function createSellerApp(
       ...(escalationWiring ? { escalationGateway: escalationWiring.gateway } : {}),
       intentRegistry,
       oracleSigner,
+      scoreDataSource: scoreWiring?.dataSource ?? null,
     })
       .then((result) => send(res, result))
       .catch(next);

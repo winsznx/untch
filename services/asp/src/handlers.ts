@@ -200,10 +200,8 @@ export interface PreflightDeps {
   readonly intentRegistry?: import("./intent-registry").IntentRegistryClient | null;
   /** Optional Mode C oracle signer (env ORACLE_PRIVATE_KEY). */
   readonly oracleSigner?: import("./oracle-signer").OracleSigner | null;
-  /**
-   * Optional bureau / CBC injects assembled by the server into a wrapper ledger.
-   * Prefer wrapping the ledger's read() rather than mutating this field.
-   */
+  /** Optional bureau for vendor.lcbFloor snapshot inject. */
+  readonly scoreDataSource?: import("@untch/trust-bureau").ScoreDataSource | null;
 }
 
 /**
@@ -259,7 +257,7 @@ function resolveIntent(
         status: 404,
         body: errorEnvelope(
           "INTENT_NOT_FOUND",
-          `intentHash ${intentHash} is not in this instance's in-memory store (created on another instance, or lost on restart — there is no SpendIntentRegistry yet). Resubmit with the inline intent.`,
+          `intentHash ${intentHash} is not in this instance's in-memory store (created on another instance, or lost on restart). Resubmit with the inline intent, or re-create via create_spend_intent.`,
         ),
       };
     }
@@ -329,10 +327,19 @@ export async function handlePreflightPayment(
   if (deps.now) opts.now = deps.now;
   if (deps.lock) opts.lock = deps.lock;
 
+  // Assemble CBC / vendor LCB / proof-tier injects for the full RULE_EVAL chain
+  const { assemblePreflightInjects, wrapLedgerWithInjects } = await import("./preflight-state");
+  const injects = await assemblePreflightInjects(
+    resolved.input,
+    body,
+    deps.scoreDataSource ?? null,
+  );
+  const ledger = wrapLedgerWithInjects(deps.ledger, injects);
+
   const decision: Decision = await evaluateIntentSerialized(
     resolved.input,
     policy,
-    deps.ledger,
+    ledger,
     opts,
   );
 

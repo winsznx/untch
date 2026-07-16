@@ -162,7 +162,46 @@ export class PgScoreDataSource implements ScoreDataSource {
          FROM score_snapshots WHERE subject = $1 AND epoch = $2 ORDER BY subject_id`,
       [kind, epoch],
     );
-    return res.rows.map((r) => ({
+    return res.rows.map((r) => this.mapSnapshot(r));
+  }
+
+  async latestSnapshot(kind: SubjectKind, subjectId: Hex): Promise<ScoreSnapshotRow | null> {
+    const res = await this.pool.query<{
+      subject: string;
+      subject_id: string;
+      epoch: string;
+      score: number;
+      sigma: number;
+      lcb: number;
+      band: string;
+      features: FeatureResult[];
+      anchored_root: string | null;
+      computed_at: Date;
+    }>(
+      `SELECT subject, subject_id, epoch, score, sigma, lcb, band, features, anchored_root, computed_at
+         FROM score_snapshots
+        WHERE subject = $1 AND subject_id = $2
+        ORDER BY computed_at DESC
+        LIMIT 1`,
+      [kind, subjectId],
+    );
+    const row = res.rows[0];
+    return row ? this.mapSnapshot(row) : null;
+  }
+
+  private mapSnapshot(r: {
+    subject: string;
+    subject_id: string;
+    epoch: string;
+    score: number;
+    sigma: number;
+    lcb: number;
+    band: string;
+    features: FeatureResult[];
+    anchored_root: string | null;
+    computed_at: Date;
+  }): ScoreSnapshotRow {
+    return {
       subject: r.subject as SubjectKind,
       subjectId: r.subject_id,
       epoch: Number(r.epoch),
@@ -173,6 +212,6 @@ export class PgScoreDataSource implements ScoreDataSource {
       features: r.features,
       anchoredRoot: (r.anchored_root as Hex | null) ?? null,
       computedAt: r.computed_at.toISOString(),
-    }));
+    };
   }
 }

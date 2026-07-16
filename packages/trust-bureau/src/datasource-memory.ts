@@ -76,6 +76,13 @@ export class MemoryScoreDataSource implements ScoreDataSource {
       .filter((r) => r.subject === kind && r.epoch === epoch)
       .sort((a, b) => a.subjectId.localeCompare(b.subjectId));
   }
+
+  async latestSnapshot(kind: SubjectKind, subjectId: Hex): Promise<ScoreSnapshotRow | null> {
+    const rows = [...this.snapshots.values()]
+      .filter((r) => r.subject === kind && r.subjectId.toLowerCase() === subjectId.toLowerCase())
+      .sort((a, b) => Date.parse(b.computedAt) - Date.parse(a.computedAt));
+    return rows[0] ?? null;
+  }
 }
 
 function eq(a: string, b: string): boolean {

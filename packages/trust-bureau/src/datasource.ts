@@ -63,4 +63,9 @@ export interface ScoreDataSource {
   setAnchoredRoot(kind: SubjectKind, epoch: number, root: Hex): Promise<void>;
   /** All snapshots for one subject kind + epoch (the leaves of the merkle tree to anchor). */
   snapshotsForEpoch(kind: SubjectKind, epoch: number): Promise<readonly ScoreSnapshotRow[]>;
+  /**
+   * Latest score snapshot for a subject (any epoch), newest first. Used by preflight
+   * `vendor.lcbFloor` inject — null when the bureau has never scored this id.
+   */
+  latestSnapshot(kind: SubjectKind, subjectId: Hex): Promise<ScoreSnapshotRow | null>;
 }
