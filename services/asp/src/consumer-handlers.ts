@@ -203,9 +203,13 @@ export function handleCatalog(): HandlerResult {
       surfaces: {
         control: [
           { path: "GET /ping_untch", price: "0.01", role: "health / rail proof" },
-          { path: "POST /create_spend_intent", price: "bundled", role: "bound intent" },
-          { path: "POST /preflight_payment", price: "0.05", role: "policy gate" },
+          { path: "POST /create_spend_intent", price: "bundled", role: "bound intent + optional on-chain register" },
+          { path: "POST /preflight_payment", price: "0.05", role: "policy gate (13/13 RULE_EVAL + optional Mode C sig)" },
           { path: "POST /verify_delivery", price: "0.10", role: "T0 proof" },
+          { path: "POST /detect_duplicate", price: "0.02", role: "duplicate check" },
+          { path: "POST /redact_payment_metadata", price: "0.02", role: "PII strip + hash" },
+          { path: "POST /get_ledger", price: "free", role: "ledger window slice" },
+          { path: "POST /log_receipt", price: "free", role: "receipt status façade" },
           { path: "POST /score_vendor", price: "0.20", role: "bureau" },
           { path: "POST /score_buyer", price: "0.20", role: "bureau" },
           { path: "POST /generate_dispute_packet", price: "0.50", role: "reports" },

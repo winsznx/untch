@@ -10,13 +10,12 @@ import {
 } from "../../../../lib/auth/session";
 import { clearCookie, cookieOptions } from "../../../../lib/auth/server";
 import { verifySiweSignin } from "../../../../lib/auth/verify";
-import { X_LAYER_TESTNET_ID } from "../../../../lib/chain/chains";
+import { REQUIRED_CHAIN_ID } from "../../../../lib/wallet/network";
 
 /**
  * Verify a SIWE sign-in: the message's nonce must be the one this server minted (from the nonce cookie),
- * the signature must verify, and the chain must be X Layer testnet. On success, mint the session cookie
- * and burn the nonce cookie (single use). This establishes IDENTITY only; on-chain writes still each need
- * their own signed transaction.
+ * the signature must verify. Session is bound to the product chain. This establishes IDENTITY only;
+ * on-chain writes still each need their own signed transaction.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = (await req.json().catch(() => null)) as { message?: string; signature?: string } | null;
@@ -44,9 +43,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ok: true,
     address: result.address,
     operatorId: operatorIdFor(result.address),
-    chainId: X_LAYER_TESTNET_ID,
+    chainId: REQUIRED_CHAIN_ID,
   });
-  res.cookies.set(SESSION_COOKIE, createSession(result.address, X_LAYER_TESTNET_ID), cookieOptions(COOKIE_MAX_AGE.session));
+  res.cookies.set(SESSION_COOKIE, createSession(result.address, REQUIRED_CHAIN_ID), cookieOptions(COOKIE_MAX_AGE.session));
   res.cookies.set(NONCE_COOKIE, "", clearCookie);
   return res;
 }

@@ -3,7 +3,7 @@ import { NoHistory } from "../../../components/dashboard/no-history";
 import { LedgerExport } from "../../../components/dashboard/ledger-export";
 import { liveLedger } from "../../../lib/dashboard/live";
 import { getScope } from "../../../lib/dashboard/scope";
-import { txUrl } from "../../../lib/onchain";
+import { productTxUrl } from "../../../lib/onchain";
 
 const TYPE_COLOR: Record<string, string> = {
   SPEND: "var(--color-text)",
@@ -71,7 +71,7 @@ export default async function Ledger() {
                   <td className="px-5 py-3 text-caption-lg" style={{ color: "var(--color-inverse-muted)" }}>{e.createdAt.slice(11, 16)}</td>
                   <td className="px-5 py-3 text-caption-lg">
                     {e.txHash ? (
-                      <a href={txUrl("testnet", e.txHash)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace" }}>
+                      <a href={productTxUrl(e.txHash)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace" }}>
                         {e.txHash.slice(0, 10)}…
                       </a>
                     ) : (

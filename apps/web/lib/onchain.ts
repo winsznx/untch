@@ -1,13 +1,20 @@
 /**
  * Real Untch on-chain artifacts and explorer helpers.
  *
- * Every value here is a genuinely on-chain address or transaction from this build's actual
- * history (sources: contracts/deploy/*.json, internal/day0/D0.1-evidence/*, package READMEs).
- * Nothing is fabricated. The explorer bases mirror `@untch/shared` chains.ts (inlined to keep
- * the client bundle free of the workspace package). Product contracts live on X Layer testnet
- * (mainnet deploy is deferred until all five clear the §28 gate); only the D0.1 settlement and
- * the ERC-8004 registry are mainnet.
+ * Base contracts for the product chain come from CONTRACTS_BY_CHAIN (mainnet default).
+ * Historical proof txs remain labeled with their true net (testnet soak + mainnet x402).
+ * Demo vault is testnet-only.
  */
+
+import {
+  CONTRACTS_BY_CHAIN,
+  X_LAYER_MAINNET_ID,
+  X_LAYER_TESTNET_ID,
+} from "@untch/shared";
+import { PRODUCT_CHAIN_ID, productExplorerNet } from "./chain/chains";
+
+/** Re-export for dashboard pages (product chain explorer net). */
+export { productExplorerNet };
 
 export type Net = "mainnet" | "testnet";
 
@@ -22,6 +29,15 @@ export function txUrl(net: Net, hash: string): string {
 
 export function addressUrl(net: Net, addr: string): string {
   return `${EXPLORER[net]}/address/${addr}`;
+}
+
+/** Product-chain explorer net (default mainnet). */
+export function productTxUrl(hash: string): string {
+  return txUrl(productExplorerNet(), hash);
+}
+
+export function productAddressUrl(addr: string): string {
+  return addressUrl(productExplorerNet(), addr);
 }
 
 export function shortHex(value: string, head = 8, tail = 6): string {
@@ -82,37 +98,61 @@ export type ContractRef = {
   note: string;
 };
 
-/** Real deployed contracts. */
+function baseContracts(chainId: number, net: Net): ContractRef[] {
+  const c = CONTRACTS_BY_CHAIN[chainId];
+  if (!c) return [];
+  return [
+    {
+      name: "PolicyRegistry",
+      address: c.policyRegistry,
+      net,
+      note: "Anchors which committed ruleset governs an agent.",
+    },
+    {
+      name: "SpendIntentRegistry",
+      address: c.spendIntentRegistry,
+      net,
+      note: "On-chain lifecycle for bounded spend intents above the policy threshold.",
+    },
+    {
+      name: "UntchReceipts",
+      address: c.receipts,
+      net,
+      note: "Versioned, batched receipt event log. Hashes only, never payloads.",
+    },
+    {
+      name: "UntchVaultFactory",
+      address: c.vaultFactory,
+      net,
+      note: "Deploys per-agent vaults (Mode C enforcement).",
+    },
+  ];
+}
+
+/**
+ * Product contracts for the active build chain (default mainnet), plus the historical testnet
+ * demo vault when browsing history. Mainnet has no fixed demo vault.
+ */
 export const CONTRACTS: ContractRef[] = [
-  {
-    name: "PolicyRegistry",
-    address: "0xe1d74c90801db0fa806c72eb818b7671b8233532",
-    net: "testnet",
-    note: "Anchors which committed ruleset governs an agent.",
-  },
-  {
-    name: "SpendIntentRegistry",
-    address: "0xf87e50f83172c2dace7d274e4c701212caeb1372",
-    net: "testnet",
-    note: "On-chain lifecycle for bounded spend intents above the policy threshold.",
-  },
-  {
-    name: "UntchReceipts",
-    address: "0x0c64997277b7d94d2999dea22a123cac56334863",
-    net: "testnet",
-    note: "Versioned, batched receipt event log. Hashes only, never payloads.",
-  },
-  {
-    name: "UntchVaultFactory",
-    address: "0x1562c6eb1813016c8562cf6771cbf715007bb7e9",
-    net: "testnet",
-    note: "Deploys per-agent vaults (Mode C enforcement).",
-  },
+  ...baseContracts(
+    PRODUCT_CHAIN_ID === X_LAYER_TESTNET_ID ? X_LAYER_TESTNET_ID : X_LAYER_MAINNET_ID,
+    PRODUCT_CHAIN_ID === X_LAYER_TESTNET_ID ? "testnet" : "mainnet",
+  ),
+  // Always surface the other net's base suite so judges can verify both.
+  ...(PRODUCT_CHAIN_ID === X_LAYER_MAINNET_ID
+    ? baseContracts(X_LAYER_TESTNET_ID, "testnet").map((r) => ({
+        ...r,
+        note: `${r.note} (build-era testnet)`,
+      }))
+    : baseContracts(X_LAYER_MAINNET_ID, "mainnet").map((r) => ({
+        ...r,
+        note: `${r.note} (production mainnet)`,
+      }))),
   {
     name: "UntchVault (demo)",
     address: "0x42e699ffd8215d48397a049b4f7a176db06f4848",
     net: "testnet",
-    note: "A deployed vault instance with real spend and withdraw transactions.",
+    note: "Testnet demo vault with real spend/withdraw history. Mainnet vaults are per-operator via the factory.",
   },
 ];
 
@@ -121,16 +161,19 @@ export const INVARIANTS: { id: string; claim: string; detail: string }[] = [
   {
     id: "I1",
     claim: "The model never touches the money.",
-    detail: "Every approve, block, or escalate comes from deterministic policy evaluation. No LLM output sits in a money decision.",
+    detail:
+      "Every approve, block, or escalate comes from deterministic policy evaluation. No LLM output sits in a money decision.",
   },
   {
     id: "I2",
     claim: "Fail closed.",
-    detail: "Any dependency failure during a preflight blocks or escalates the payment. It never silently approves.",
+    detail:
+      "Any dependency failure during a preflight blocks or escalates the payment. It never silently approves.",
   },
   {
     id: "I4",
     claim: "The owner keeps custody.",
-    detail: "Untch's oracle key cannot withdraw or transfer funds. The owner can pause or withdraw without us.",
+    detail:
+      "Untch's oracle key cannot withdraw or transfer funds. The owner can pause or withdraw without us.",
   },
 ];

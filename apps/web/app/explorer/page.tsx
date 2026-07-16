@@ -27,7 +27,8 @@ export default function Explorer() {
             </h1>
             <p className="max-w-2xl text-subheading" style={{ color: "var(--color-inverse-canvas)" }}>
               Every decision, verification, score, and report is anchored on X Layer as a hash. Open any row on
-              OKLink and verify it directly. Product contracts are on testnet; the first settled call is on mainnet.
+              OKLink and verify it directly. Production base contracts live on mainnet (196); testnet suite and
+              historical soak anchors remain listed for independent verification.
             </p>
           </header>
 

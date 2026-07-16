@@ -17,8 +17,8 @@ import type {
  * BLOCKED_* / REJECTED_* outcome — never a silent APPROVE.
  *
  * Pipeline: canonicalize+validate → policy-active lookup → state-assembly guard → RULE_EVAL
- * (the ordered §7.1 chain in `rules.ts` — ten real rules interleaved with three stubs),
- * short-circuiting on the first fail/escalate with the full partial trace attached.
+ * (the ordered §7.1 chain in `rules.ts` — all thirteen rules), short-circuiting on the first
+ * fail/escalate with the full partial trace attached.
  */
 
 const ZERO_HASH = `0x${"0".repeat(64)}` as Hex;
@@ -83,7 +83,7 @@ export function evaluateIntent(
     return make(
       "APPROVED",
       intentHash,
-      ["all implemented rules passed; stubbed rules not yet enforced (see trace implemented:false)"],
+      ["all RULE_EVAL rules passed"],
       rules,
     );
   } catch (err) {

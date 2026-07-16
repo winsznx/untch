@@ -1,29 +1,41 @@
 import { getAddress, type Address } from "viem";
-import { contractsForChain, resolveChainId, X_LAYER_TESTNET_ID } from "@untch/shared";
+import {
+  contractsForChain,
+  resolveChainId,
+  settlementToken,
+  X_LAYER_MAINNET_ID,
+  X_LAYER_TESTNET_ID,
+} from "@untch/shared";
 
 /**
  * Real deployed contract addresses + the exact ABI fragments the dashboard writes against.
  *
- * The four base addresses are resolved PER NETWORK from the shared CONTRACTS_BY_CHAIN registry
- * (packages/shared/chains.ts), selected by NEXT_PUBLIC_CHAIN_ID (inlined into the client bundle at
- * build time; unset ⇒ X Layer testnet). So a `NEXT_PUBLIC_CHAIN_ID=196` build points the dashboard at
- * the real mainnet contracts, while the default stays testnet. The ABIs are transcribed verbatim from
- * the Foundry artifacts (contracts/out/**), narrowed to the functions/events the UI calls.
+ * The four base addresses are resolved PER NETWORK from CONTRACTS_BY_CHAIN, selected by
+ * NEXT_PUBLIC_CHAIN_ID (inlined at build; unset ⇒ mainnet 196). Testnet via NEXT_PUBLIC_CHAIN_ID=1952.
  */
 
-const ACTIVE_CHAIN_ID = resolveChainId({ CHAIN_ID: process.env.NEXT_PUBLIC_CHAIN_ID }, X_LAYER_TESTNET_ID);
+const ACTIVE_CHAIN_ID = resolveChainId({ CHAIN_ID: process.env.NEXT_PUBLIC_CHAIN_ID }, X_LAYER_MAINNET_ID);
 const CONTRACTS = contractsForChain(ACTIVE_CHAIN_ID);
 
+export const ACTIVE_PRODUCT_CHAIN_ID = ACTIVE_CHAIN_ID;
 export const POLICY_REGISTRY: Address = getAddress(CONTRACTS.policyRegistry);
 export const VAULT_FACTORY: Address = getAddress(CONTRACTS.vaultFactory);
 export const INTENT_REGISTRY: Address = getAddress(CONTRACTS.spendIntentRegistry);
-/**
- * The demo UntchVault instance + its ERC-20 — TESTNET ONLY (real spend/withdraw tx history on its
- * address page). Mainnet has no fixed demo vault; there, operators deploy their own vault via the
- * factory, so these are used only on the testnet demo surface.
- */
-export const DEMO_VAULT: Address = "0x42e699ffd8215d48397a049b4f7a176db06f4848";
-export const VAULT_TOKEN: Address = "0xf202ce41d76ee1a2aec72e7a9180331d437ddd41";
+export const RECEIPTS: Address = getAddress(CONTRACTS.receipts);
+
+/** Testnet demo vault + mock ERC-20 (only meaningful on chain 1952). */
+export const DEMO_VAULT_TESTNET: Address = "0x42e699ffd8215d48397a049b4f7a176db06f4848";
+export const VAULT_TOKEN_TESTNET: Address = "0xf202ce41d76ee1a2aec72e7a9180331d437ddd41";
+
+/** Demo vault surface — null on mainnet (operators deploy via factory). */
+export const DEMO_VAULT: Address | null =
+  ACTIVE_CHAIN_ID === X_LAYER_TESTNET_ID ? DEMO_VAULT_TESTNET : null;
+
+/** Settlement / vault token for the product chain. */
+export const VAULT_TOKEN: Address =
+  ACTIVE_CHAIN_ID === X_LAYER_TESTNET_ID
+    ? VAULT_TOKEN_TESTNET
+    : getAddress(settlementToken(ACTIVE_CHAIN_ID).address);
 
 export const POLICY_REGISTRY_ABI = [
   {

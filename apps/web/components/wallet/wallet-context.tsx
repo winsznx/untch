@@ -5,7 +5,7 @@ import type { Abi, Address, Hex } from "viem";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import type { AuthenticationStatus } from "@rainbow-me/rainbowkit";
-import { X_LAYER_TESTNET_ID } from "../../lib/chain/chains";
+import { REQUIRED_CHAIN_ID } from "../../lib/wallet/network";
 import { wagmiConfig } from "../../lib/wallet/wagmi";
 
 /**
@@ -22,8 +22,8 @@ export function useAuthStatus(): AuthenticationStatus {
  * vault-actions) plus the escalation/binding controls. It is now backed by wagmi + RainbowKit rather than a
  * hand-rolled EIP-1193 flow: connect + SIWE sign-in are handled by RainbowKit's modal (see providers.tsx),
  * so this hook only exposes connection status, the signed-in address, and the two things the writes need —
- * a fresh-signed `writeContract` and a `waitForReceipt`. Each write ensures the wallet is on X Layer testnet
- * first, then asks the connected wallet to sign a new transaction.
+ * a fresh-signed `writeContract` and a `waitForReceipt`. Each write ensures the wallet is on the
+ * product chain (mainnet by default) first, then asks the connected wallet to sign.
  */
 
 export type WalletStatus = "disconnected" | "connected" | "authenticated";
@@ -56,7 +56,7 @@ export function useWallet(): WalletState {
   const writeContract = useCallback(
     async (call: ContractCall): Promise<Hex> => {
       if (!address) throw new Error("Connect a wallet first.");
-      if (chainId !== X_LAYER_TESTNET_ID) await switchChainAsync({ chainId: X_LAYER_TESTNET_ID });
+      if (chainId !== REQUIRED_CHAIN_ID) await switchChainAsync({ chainId: REQUIRED_CHAIN_ID });
       // writeContractAsync is generic over the ABI; a runtime-assembled call is typed structurally, so
       // narrow to the parameter type here rather than fighting the inference. Not `any` — a concrete cast.
       return writeContractAsync({
@@ -64,7 +64,7 @@ export function useWallet(): WalletState {
         abi: call.abi,
         functionName: call.functionName,
         args: call.args,
-        chainId: X_LAYER_TESTNET_ID,
+        chainId: REQUIRED_CHAIN_ID,
       } as unknown as Parameters<typeof writeContractAsync>[0]);
     },
     [address, chainId, switchChainAsync, writeContractAsync],

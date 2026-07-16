@@ -137,7 +137,12 @@ test("create_spend_intent: valid intent bound to the stored policy → 200 with 
   );
 
   assert.equal(res.status, 200);
-  const body = res.body as { intentHash: Hex; canonicalIntent: { struct: Record<string, unknown> }; policyId: string; onchain: null };
+  const body = res.body as {
+    intentHash: Hex;
+    canonicalIntent: { struct: Record<string, unknown> };
+    policyId: string;
+    onchain: { registered: boolean; status: string };
+  };
 
   const expectedStruct: SpendIntent = {
     owner: OWNER.toLowerCase() as Address,
@@ -154,7 +159,9 @@ test("create_spend_intent: valid intent bound to the stored policy → 200 with 
   };
   assert.equal(body.intentHash, hashSpendIntent(expectedStruct));
   assert.equal(body.policyId, POLICY_ID);
-  assert.equal(body.onchain, null);
+  // No writer key in unit tests → honest unwired (never a silent null lie).
+  assert.equal(body.onchain.registered, false);
+  assert.equal(body.onchain.status, "unwired");
   assert.ok(store.get(body.intentHash));
 });
 

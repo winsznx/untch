@@ -207,7 +207,8 @@ export function contractsForChain(chainId: number): DeployedContracts {
  * packages fall back to testnet, the ASP seller falls back to mainnet — that is the only per-consumer
  * knob, the selection mechanism is identical). RPC_URL, when set, overrides the chain's default RPC.
  */
-export const DEFAULT_CHAIN_ID: number = X_LAYER_TESTNET_ID;
+/** Production default is X Layer mainnet (196). Set CHAIN_ID=1952 / NEXT_PUBLIC_CHAIN_ID=1952 for testnet. */
+export const DEFAULT_CHAIN_ID: number = X_LAYER_MAINNET_ID;
 
 /**
  * The env bag the selection functions read from. The index signature is load-bearing: every caller

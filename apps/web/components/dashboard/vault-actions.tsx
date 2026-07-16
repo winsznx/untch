@@ -11,7 +11,7 @@ import {
   buildVaultPause,
 } from "../../lib/chain/vault-tx";
 import { makePublicClient } from "../../lib/wallet/provider";
-import { addressUrl } from "../../lib/onchain";
+import { productAddressUrl } from "../../lib/onchain";
 import { TxButton, type TxStep } from "../wallet/tx-button";
 import { useWallet } from "../wallet/wallet-context";
 
@@ -113,7 +113,7 @@ export function VaultActions() {
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <span className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>Your vault</span>
         {hasVault ? (
-          <a href={addressUrl("testnet", deployedVault!)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>
+          <a href={productAddressUrl(deployedVault!)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>
             {deployedVault!.slice(0, 10)}…{deployedVault!.slice(-6)}
           </a>
         ) : (

@@ -3,53 +3,43 @@ import type {
   DecisionOutcome,
   LedgerWindowState,
   Policy,
+  PolicyRules,
   RuleTraceEntry,
   SpendIntentInput,
 } from "./types";
 
 /**
- * The rule layer for the PARTIAL policy engine (PRD §7.1 RULE_EVAL).
+ * The rule layer for the §7.1 RULE_EVAL engine.
  *
- * Ten of §7.1's thirteen RULE_EVAL rules are real here, in their exact §7.1 order, plus the
- * `policy.active` lookup. THREE remain explicit stubs (`replay.contextBinding`,
- * `vendor.lcbFloor`, `proof.tierRequired`): each returns PASS but is tagged `implemented: false`
- * in the trace, so nothing is ever silently skipped or silently passed (invariant I2 in spirit)
- * and the manifest test can prove exactly which rules are real. Each stub needs a subsystem this
- * package does not have yet (the §14 challenge envelope, the §12 Trust Bureau, the §13 Proof
- * Engine's tier concept respectively), so implementing them now would mean guessing interfaces.
- * See the package README and PRD §7.1 for the full chain.
+ * All thirteen RULE_EVAL rules are real here (plus `policy.active` lookup), in exact §7.1 order.
+ * Bureau scores, CBC challenges, and available proof tiers are injected on `LedgerWindowState` —
+ * this package stays pure (no I/O). When a floor/challenge is not configured, the matching rule
+ * PASSes with an explicit note rather than inventing enforcement.
  */
 
 /**
- * Real rules in this slice, in decision-trace order: `policy.active` (the §7.1 POLICY_LOOKUP) then
- * the ten implemented RULE_EVAL rules in §7.1 order. `duplicate.*`'s label derives from the
- * configured keys; the default tuple yields the name pinned here.
+ * Real rules in decision-trace order: `policy.active` then thirteen RULE_EVAL rules.
+ * `duplicate.*`'s label derives from the configured keys; the default tuple yields the name pinned here.
  */
 export const IMPLEMENTED_RULES = [
   "policy.active",
   "duplicate.taskHash_endpoint_paramsHash",
   "cooldown.sameService",
+  "replay.contextBinding",
   "recipient.allowDeny",
   "agent.workerAllowDeny",
   "category.allow",
+  "vendor.lcbFloor",
   "intent.maxAmountBound",
   "perCall.cap",
   "budget.daily",
   "rate.limit",
+  "proof.tierRequired",
   "escalate.aboveThreshold",
 ] as const;
 
-/**
- * The three §7.1 RULE_EVAL rules NOT implemented in this slice, in RULE_EVAL order. Each maps to a
- * §7.1 line and its real terminal code; here each is a no-op PASS marked `implemented: false`.
- * The manifest test asserts the trace's stub set equals exactly this list — so this slice can
- * never be mistaken for the complete engine.
- */
-export const STUBBED_RULES = [
-  "replay.contextBinding", // §7.1 BLOCKED_REPLAY — needs the §14 x402 challenge envelope
-  "vendor.lcbFloor", // §7.1 BLOCKED_VENDOR_RISK | ESCALATED_VENDOR_RISK — needs the §12 Trust Bureau
-  "proof.tierRequired", // §7.1 ESCALATED_PROOF_TIER — needs the §13 Proof Engine tier concept
-] as const;
+/** No RULE_EVAL stubs remain — kept as empty const for callers that still import the name. */
+export const STUBBED_RULES = [] as const;
 
 /** Base units per DISPLAY unit. The §9 6-decimal (USDT) convention, matching `@untch/canon`'s
  *  `moneyToBaseUnits(x, 6)`; the existing budget math already uses it. Production should swap this
@@ -353,53 +343,230 @@ const ruleEscalateAbove: RuleFn = ({ intent, policy }) => {
   return pass(rule, { observed, limit, token });
 };
 
-type ChainStep = { readonly kind: "rule"; readonly fn: RuleFn } | { readonly kind: "stub"; readonly rule: string };
+// ── replay.contextBinding (§14 CBC inject) → BLOCKED_REPLAY | REJECTED_BINDING ─────────────
 
-/**
- * The RULE_EVAL chain in §7.1 order. Real rules slot into their exact positions relative to the
- * three interleaved stubs — NOT appended at the end. Order is load-bearing: it is what makes the
- * short-circuit deterministic (an intent that violates two rules fails on the earlier one).
- */
-const RULE_EVAL_CHAIN: readonly ChainStep[] = [
-  { kind: "rule", fn: ruleDuplicate }, // BLOCKED_DUPLICATE
-  { kind: "rule", fn: ruleCooldown }, // BLOCKED_COOLDOWN
-  { kind: "stub", rule: "replay.contextBinding" }, // BLOCKED_REPLAY (stubbed)
-  { kind: "rule", fn: ruleRecipient }, // BLOCKED_RECIPIENT
-  { kind: "rule", fn: ruleWorkerAgent }, // BLOCKED_AGENT
-  { kind: "rule", fn: ruleCategory }, // BLOCKED_CATEGORY
-  { kind: "stub", rule: "vendor.lcbFloor" }, // BLOCKED_VENDOR_RISK | ESCALATED_VENDOR_RISK (stubbed)
-  { kind: "rule", fn: ruleIntentBound }, // BLOCKED_INTENT_BOUND
-  { kind: "rule", fn: rulePerCallCap }, // BLOCKED_PER_CALL_CAP | ESCALATED_PER_CALL_CAP
-  { kind: "rule", fn: ruleBudgetDaily }, // BLOCKED_BUDGET
-  { kind: "rule", fn: ruleRateLimit }, // BLOCKED_RATE
-  { kind: "stub", rule: "proof.tierRequired" }, // ESCALATED_PROOF_TIER (stubbed)
-  { kind: "rule", fn: ruleEscalateAbove }, // ESCALATED_THRESHOLD
-] as const;
+/** Field order matches @untch/x402-guard CBC (nonce/expiry → REPLAY; rest → BINDING). */
+const CBC_FIELDS: readonly {
+  field: string;
+  code: "BLOCKED_REPLAY" | "REJECTED_BINDING";
+  optional: boolean;
+}[] = [
+  { field: "recipient", code: "REJECTED_BINDING", optional: false },
+  { field: "token", code: "REJECTED_BINDING", optional: false },
+  { field: "amount", code: "REJECTED_BINDING", optional: false },
+  { field: "resourceUrl", code: "REJECTED_BINDING", optional: false },
+  { field: "endpoint", code: "REJECTED_BINDING", optional: false },
+  { field: "method", code: "REJECTED_BINDING", optional: false },
+  { field: "nonce", code: "BLOCKED_REPLAY", optional: true },
+  { field: "expiry", code: "BLOCKED_REPLAY", optional: true },
+  { field: "taskHash", code: "REJECTED_BINDING", optional: true },
+  { field: "intentHash", code: "REJECTED_BINDING", optional: true },
+  { field: "policyId", code: "REJECTED_BINDING", optional: true },
+  { field: "metadataHash", code: "REJECTED_BINDING", optional: true },
+];
 
-function stubEntry(rule: string): RuleTraceEntry {
-  return {
-    rule,
-    result: "PASS",
-    implemented: false,
-    note: "NOT_YET_IMPLEMENTED — stubbed in this slice; see PRD §7.1 for the real rule",
-  };
+function normCbcValue(field: string, v: string): string {
+  const t = v.trim();
+  if (field === "recipient" || field === "token") return t.toLowerCase();
+  if (field === "method") return t.toUpperCase();
+  if (field.endsWith("Hash") || field === "taskHash" || field === "intentHash" || field === "metadataHash") {
+    return t.toLowerCase();
+  }
+  if (field === "resourceUrl" || field === "endpoint") {
+    try {
+      return canonUrl(t);
+    } catch {
+      return t;
+    }
+  }
+  return t;
 }
 
+const ruleReplayContext: RuleFn = ({ policy, state }) => {
+  const rule = "replay.contextBinding";
+  const binding = state.challengeBinding;
+  const require = policy.rules.requireChallenge === true;
+  if (!binding) {
+    if (require) {
+      return halt(
+        rule,
+        "BLOCKED_REPLAY",
+        "policy requires challenge binding but none was supplied — failing closed",
+        { note: "REQUIRE_CHALLENGE" },
+      );
+    }
+    return pass(rule, { note: "NO_CHALLENGE" });
+  }
+  const { expected, presented } = binding;
+  for (const spec of CBC_FIELDS) {
+    const rawE = expected[spec.field];
+    const rawP = presented[spec.field];
+    const hasE = typeof rawE === "string" && rawE.trim().length > 0;
+    const hasP = typeof rawP === "string" && rawP.trim().length > 0;
+    if (!hasE && !hasP) {
+      if (spec.optional) continue;
+      return halt(rule, spec.code, `challenge field ${spec.field} missing on both sides`, {
+        note: spec.field,
+      });
+    }
+    if (hasE !== hasP) {
+      return halt(
+        rule,
+        spec.code,
+        `challenge field ${spec.field} present on only one side`,
+        { note: spec.field },
+      );
+    }
+    if (normCbcValue(spec.field, rawE!) !== normCbcValue(spec.field, rawP!)) {
+      return halt(
+        rule,
+        spec.code,
+        `challenge field ${spec.field} mismatch (expected ≠ presented)`,
+        { note: spec.field },
+      );
+    }
+  }
+  return pass(rule, { note: "CBC_OK" });
+};
+
+// ── vendor.lcbFloor (§12 bureau inject) → BLOCKED_VENDOR_RISK | ESCALATED_VENDOR_RISK ──────
+
+const ruleVendorLcbFloor: RuleFn = ({ policy, state, nowMs }) => {
+  const rule = "vendor.lcbFloor";
+  const vendors = policy.rules.vendors;
+  if (!vendors || typeof vendors.minScoreLCB !== "number") {
+    return pass(rule, { note: "NO_VENDOR_FLOOR" });
+  }
+  const floor = vendors.minScoreLCB;
+  const onBelow = vendors.onBelowFloor === "ESCALATE" ? "ESCALATE" : "BLOCK";
+  const onUnavail = vendors.onScoreUnavailable ?? "BLOCK";
+  const score = state.vendorScore;
+
+  if (!score || !score.available) {
+    // No snapshot at all: USE_STALE cannot help — fail closed (BLOCK unless ESCALATE requested).
+    if (onUnavail === "ESCALATE") {
+      return halt(rule, "ESCALATED_VENDOR_RISK", "vendor score unavailable — escalated per policy", {
+        limit: floor,
+        note: "SCORE_UNAVAILABLE",
+      });
+    }
+    return halt(rule, "BLOCKED_VENDOR_RISK", "vendor score unavailable — blocked per policy", {
+      limit: floor,
+      note: "SCORE_UNAVAILABLE",
+    });
+  }
+
+  const maxAgeH = vendors.staleScoreMaxAgeH;
+  if (typeof maxAgeH === "number" && maxAgeH >= 0) {
+    const ageH = (nowMs - score.computedAtMs) / 3_600_000;
+    if (ageH > maxAgeH) {
+      if (onUnavail === "ESCALATE") {
+        return halt(rule, "ESCALATED_VENDOR_RISK", `vendor score stale (${ageH.toFixed(1)}h > ${maxAgeH}h)`, {
+          observed: score.lcb,
+          limit: floor,
+          raw: score.score,
+          sigma: score.sigma,
+          note: "SCORE_STALE",
+        });
+      }
+      if (onUnavail !== "USE_STALE") {
+        return halt(rule, "BLOCKED_VENDOR_RISK", `vendor score stale (${ageH.toFixed(1)}h > ${maxAgeH}h)`, {
+          observed: score.lcb,
+          limit: floor,
+          raw: score.score,
+          sigma: score.sigma,
+          note: "SCORE_STALE",
+        });
+      }
+      // USE_STALE: continue with the snapshot despite age
+    }
+  }
+
+  if (score.lcb < floor) {
+    if (onBelow === "ESCALATE") {
+      return halt(
+        rule,
+        "ESCALATED_VENDOR_RISK",
+        `vendor LCB ${score.lcb.toFixed(4)} below floor ${floor}`,
+        { observed: score.lcb, limit: floor, raw: score.score, sigma: score.sigma },
+      );
+    }
+    return halt(
+      rule,
+      "BLOCKED_VENDOR_RISK",
+      `vendor LCB ${score.lcb.toFixed(4)} below floor ${floor}`,
+      { observed: score.lcb, limit: floor, raw: score.score, sigma: score.sigma },
+    );
+  }
+  return pass(rule, {
+    observed: score.lcb,
+    limit: floor,
+    raw: score.score,
+    sigma: score.sigma,
+  });
+};
+
+// ── proof.tierRequired → ESCALATED_PROOF_TIER when required > available ───────────────────
+
+/** Required proof tier for a display amount given optional policy.proof. */
+export function requiredProofTier(
+  amount: number,
+  proof: PolicyRules["proof"] | undefined,
+): number {
+  if (!proof) return 0;
+  let required = typeof proof.defaultTier === "number" ? proof.defaultTier : 0;
+  for (const row of proof.requireTierAbove ?? []) {
+    if (amount > row.amount && row.tier > required) required = row.tier;
+  }
+  return required;
+}
+
+const ruleProofTier: RuleFn = ({ intent, policy, state }) => {
+  const rule = "proof.tierRequired";
+  const required = requiredProofTier(intent.amount, policy.rules.proof);
+  const available = typeof state.availableProofTier === "number" ? state.availableProofTier : 0;
+  if (required > available) {
+    return halt(
+      rule,
+      "ESCALATED_PROOF_TIER",
+      `required proof tier T${required} exceeds available T${available} — escalate for higher-tier verify`,
+      { observed: available, limit: required },
+    );
+  }
+  return pass(rule, { observed: available, limit: required });
+};
+
+type ChainStep = { readonly kind: "rule"; readonly fn: RuleFn };
+
 /**
- * Run the ordered §7.1 RULE_EVAL chain, appending each rule's trace entry (including stubs) to
- * `rules` as it goes. Returns the first terminal `outcome` (short-circuit), or `null` if every
- * rule passed. Entries are pushed incrementally, so a mid-chain throw still leaves a partial trace
- * for the caller's fail-closed handler.
+ * The RULE_EVAL chain in §7.1 order. Order is load-bearing: short-circuit is deterministic
+ * (an intent that violates two rules fails on the earlier one).
+ */
+const RULE_EVAL_CHAIN: readonly ChainStep[] = [
+  { kind: "rule", fn: ruleDuplicate },
+  { kind: "rule", fn: ruleCooldown },
+  { kind: "rule", fn: ruleReplayContext },
+  { kind: "rule", fn: ruleRecipient },
+  { kind: "rule", fn: ruleWorkerAgent },
+  { kind: "rule", fn: ruleCategory },
+  { kind: "rule", fn: ruleVendorLcbFloor },
+  { kind: "rule", fn: ruleIntentBound },
+  { kind: "rule", fn: rulePerCallCap },
+  { kind: "rule", fn: ruleBudgetDaily },
+  { kind: "rule", fn: ruleRateLimit },
+  { kind: "rule", fn: ruleProofTier },
+  { kind: "rule", fn: ruleEscalateAbove },
+] as const;
+
+/**
+ * Run the ordered §7.1 RULE_EVAL chain, appending each rule's trace entry to `rules` as it goes.
+ * Returns the first terminal `outcome` (short-circuit), or `null` if every rule passed.
  */
 export function evaluateRuleChain(
   ctx: RuleContext,
   rules: RuleTraceEntry[],
 ): { outcome: DecisionOutcome | null; reason?: string } {
   for (const step of RULE_EVAL_CHAIN) {
-    if (step.kind === "stub") {
-      rules.push(stubEntry(step.rule));
-      continue;
-    }
     const res = step.fn(ctx);
     rules.push(res.entry);
     if (res.outcome) {

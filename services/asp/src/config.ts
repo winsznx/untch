@@ -66,6 +66,14 @@ export const CHECK_DOMAINS_ROUTE = "/builder/check_domains" as const;
 export const RANK_OPTIONS_ROUTE = "/builder/rank_options" as const;
 export const SEO_TIPS_ROUTE = "/builder/seo_tips" as const;
 
+/** §11 remaining tools. */
+export const DETECT_DUP_ROUTE = "/detect_duplicate" as const;
+export const DETECT_DUP_PRICE = "$0.02" as const;
+export const REDACT_META_ROUTE = "/redact_payment_metadata" as const;
+export const REDACT_META_PRICE = "$0.02" as const;
+export const GET_LEDGER_ROUTE = "/get_ledger" as const;
+export const LOG_RECEIPT_ROUTE = "/log_receipt" as const;
+
 /** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
 export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
 

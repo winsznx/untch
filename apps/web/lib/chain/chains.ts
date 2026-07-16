@@ -1,19 +1,19 @@
 import { defineChain } from "viem";
+import { resolveChainId, X_LAYER_MAINNET_ID as SHARED_MAINNET, X_LAYER_TESTNET_ID as SHARED_TESTNET } from "@untch/shared";
 
 /**
- * Client-safe X Layer testnet definition for the dashboard's real wallet writes.
+ * Client-safe X Layer chain definitions for the dashboard.
  *
- * The product contracts (PolicyRegistry, UntchVaultFactory, UntchVault) live on X Layer testnet
- * (chainId 1952 / 0x7a0); mainnet is deferred until the §28 gate clears. These values mirror
- * `@untch/shared` chains.ts, inlined here so client components never pull the whole shared package
- * into the browser bundle. Any address/chainId change flows from the D0.3-verified source in shared.
+ * Product chain is selected by NEXT_PUBLIC_CHAIN_ID (inlined at build; unset ⇒ mainnet 196).
+ * Testnet (1952) remains fully selectable for soak/dev. Addresses live in @untch/shared
+ * CONTRACTS_BY_CHAIN — never hardcode base contracts here.
  */
 
-export const X_LAYER_TESTNET_ID = 1952 as const;
-export const X_LAYER_MAINNET_ID = 196 as const;
+export const X_LAYER_TESTNET_ID = SHARED_TESTNET;
+export const X_LAYER_MAINNET_ID = SHARED_MAINNET;
 
-/** The 0x-hex chainId wallets speak in wallet_switchEthereumChain / wallet_addEthereumChain. */
 export const X_LAYER_TESTNET_HEX = "0x7a0" as const;
+export const X_LAYER_MAINNET_HEX = "0xc4" as const;
 
 export const xLayerTestnet = defineChain({
   id: X_LAYER_TESTNET_ID,
@@ -28,13 +28,6 @@ export const xLayerTestnet = defineChain({
   testnet: true,
 });
 
-/**
- * X Layer mainnet is supported in the wallet config for one reason: SIGN-IN is chain-agnostic identity,
- * and an operator's wallet is almost always sitting on mainnet. If the config only knew testnet, a
- * mainnet-connected wallet would be on an unsupported chain and the SIWE signature would never complete.
- * All product WRITES still target the testnet contracts and switch the wallet to testnet on demand
- * (see useWallet.writeContract); nothing here spends on mainnet.
- */
 export const xLayerMainnet = defineChain({
   id: X_LAYER_MAINNET_ID,
   name: "X Layer",
@@ -48,7 +41,7 @@ export const xLayerMainnet = defineChain({
   testnet: false,
 });
 
-/** The EIP-3085 params a wallet needs to add X Layer testnet when the operator hasn't got it yet. */
+/** EIP-3085 params — testnet. */
 export const X_LAYER_TESTNET_ADD_PARAMS = {
   chainId: X_LAYER_TESTNET_HEX,
   chainName: "X Layer Testnet",
@@ -56,3 +49,30 @@ export const X_LAYER_TESTNET_ADD_PARAMS = {
   rpcUrls: ["https://testrpc.xlayer.tech"],
   blockExplorerUrls: ["https://www.oklink.com/x-layer-testnet"],
 };
+
+/** EIP-3085 params — mainnet. */
+export const X_LAYER_MAINNET_ADD_PARAMS = {
+  chainId: X_LAYER_MAINNET_HEX,
+  chainName: "X Layer",
+  nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
+  rpcUrls: ["https://rpc.xlayer.tech"],
+  blockExplorerUrls: ["https://www.oklink.com/x-layer"],
+};
+
+/** Product chain id (build-time). Default mainnet. */
+export const PRODUCT_CHAIN_ID: number = resolveChainId(
+  { CHAIN_ID: process.env.NEXT_PUBLIC_CHAIN_ID },
+  X_LAYER_MAINNET_ID,
+);
+
+export function productChain() {
+  return PRODUCT_CHAIN_ID === X_LAYER_TESTNET_ID ? xLayerTestnet : xLayerMainnet;
+}
+
+export function productAddChainParams() {
+  return PRODUCT_CHAIN_ID === X_LAYER_TESTNET_ID ? X_LAYER_TESTNET_ADD_PARAMS : X_LAYER_MAINNET_ADD_PARAMS;
+}
+
+export function productExplorerNet(): "mainnet" | "testnet" {
+  return PRODUCT_CHAIN_ID === X_LAYER_MAINNET_ID ? "mainnet" : "testnet";
+}

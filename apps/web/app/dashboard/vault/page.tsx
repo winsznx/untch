@@ -2,17 +2,22 @@ import { DashCard, SectionTitle, Meter, Mono } from "../../../components/dashboa
 import { VaultActions } from "../../../components/dashboard/vault-actions";
 import { getVault } from "../../../lib/dashboard/data";
 import { getScope } from "../../../lib/dashboard/scope";
-import { addressUrl } from "../../../lib/onchain";
+import { productAddressUrl, productExplorerNet, addressUrl } from "../../../lib/onchain";
 
 export default async function Vault() {
   const v = getVault();
   const scope = await getScope();
+  const net = productExplorerNet();
   return (
     <div className="flex flex-col gap-8">
       <SectionTitle
         kicker="Mode C"
         title="Vault"
-        subtitle="The real UntchVault deployment on X Layer testnet — deploy, fund, withdraw, and pause a vault you own, each a transaction signed by your owner wallet."
+        subtitle={
+          v.isDemo
+            ? "Reference UntchVault on X Layer testnet — deploy your own via the factory on the product chain."
+            : "Deploy, fund, withdraw, and pause a vault you own on the product chain — each a transaction signed by your owner wallet. Mainnet has no fixed demo vault."
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -42,11 +47,17 @@ export default async function Vault() {
 
         <DashCard>
           <div className="flex flex-col gap-3">
-            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Reference deployment (demo vault)</span>
-            <Addr label="Vault" addr={v.address} />
-            <Addr label="Factory" addr={v.factory} />
-            <Addr label="Token" addr={v.token} />
-            <Addr label="Oracle key" addr={v.oracle} />
+            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>
+              {v.isDemo ? "Reference deployment (testnet demo vault)" : "Product contracts"}
+            </span>
+            {v.address ? <Addr label="Vault" addr={v.address} net={v.isDemo ? "testnet" : net} /> : (
+              <p className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
+                No fixed demo vault on mainnet — deploy via factory below.
+              </p>
+            )}
+            <Addr label="Factory" addr={v.factory} net={net} />
+            <Addr label="Token" addr={v.token} net={net} />
+            {v.oracle ? <Addr label="Oracle key" addr={v.oracle} net={v.isDemo ? "testnet" : net} /> : null}
           </div>
         </DashCard>
       </div>
@@ -67,11 +78,12 @@ function Stat({ label, value, color = "var(--color-text)" }: { label: string; va
   );
 }
 
-function Addr({ label, addr }: { label: string; addr: string }) {
+function Addr({ label, addr, net }: { label: string; addr: string; net: "mainnet" | "testnet" }) {
+  const href = net === productExplorerNet() ? productAddressUrl(addr) : addressUrl(net, addr);
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-3">
       <span className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>{label}</span>
-      <a href={addressUrl("testnet", addr)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline">
+      <a href={href} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline">
         <Mono color="var(--color-data)">{addr.slice(0, 10)}…{addr.slice(-6)}</Mono>
       </a>
     </div>

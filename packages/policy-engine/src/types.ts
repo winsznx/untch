@@ -35,16 +35,26 @@ export type DecisionOutcome =
   | "BLOCKED_FAIL_CLOSED"
   | "BLOCKED_DUPLICATE"
   | "BLOCKED_COOLDOWN"
+  | "BLOCKED_REPLAY"
+  | "REJECTED_BINDING"
   | "BLOCKED_RECIPIENT"
   | "BLOCKED_AGENT"
   | "BLOCKED_CATEGORY"
+  | "BLOCKED_VENDOR_RISK"
+  | "ESCALATED_VENDOR_RISK"
   | "BLOCKED_INTENT_BOUND"
   | "BLOCKED_PER_CALL_CAP"
   | "ESCALATED_PER_CALL_CAP"
   | "BLOCKED_BUDGET"
   | "BLOCKED_RATE"
+  | "ESCALATED_PROOF_TIER"
   | "ESCALATED_THRESHOLD"
   | "APPROVED";
+
+/** How a policy resolves a vendor LCB floor breach (§7.1). */
+export type OnBelowFloor = "BLOCK" | "ESCALATE";
+/** How a policy resolves a missing/stale vendor score (§7.1). */
+export type OnScoreUnavailable = "BLOCK" | "ESCALATE" | "USE_STALE";
 
 export type RuleResult = "PASS" | "FAIL";
 
@@ -116,6 +126,37 @@ export interface PolicyRules {
   };
   /** §8 `rules.expiry` — ISO-8601 UTC. The policy is inactive once this instant passes. */
   readonly expiry: string;
+  /**
+   * §8 `vendors` — optional. When omitted, `vendor.lcbFloor` PASSes (no floor configured).
+   * When present with `minScoreLCB`, the bureau LCB inject on the ledger window is enforced.
+   */
+  readonly vendors?: {
+    readonly allow?: readonly string[];
+    readonly deny?: readonly string[];
+    readonly minScoreLCB: number;
+    readonly onBelowFloor?: OnBelowFloor;
+    readonly onScoreUnavailable?: OnScoreUnavailable;
+    /** Hours a score snapshot may age before treated as unavailable (USE_STALE path). */
+    readonly staleScoreMaxAgeH?: number;
+  };
+  /**
+   * §8 `proof` — optional. When omitted, required tier is 0 (T0). Available tier today is
+   * injected on the ledger window (default 0 = T0 only).
+   */
+  readonly proof?: {
+    readonly defaultTier?: number;
+    readonly requireTierAbove?: readonly { readonly amount: number; readonly tier: number }[];
+  };
+  /**
+   * When true, preflight requires a challenge-binding inject on the ledger window
+   * (`challengeBinding`). Absent binding ⇒ fail closed. Default false (Mode A advisory without CBC).
+   */
+  readonly requireChallenge?: boolean;
+  /**
+   * §10.2 — intents with display `amount` ≥ this are anchored on SpendIntentRegistry.
+   * Read by the ASP create tool, not by RULE_EVAL.
+   */
+  readonly anchorIntentsAbove?: number;
 }
 
 /**
@@ -213,6 +254,31 @@ export interface LedgerWindowState {
   readonly lastCallByService: Readonly<Record<string, number>>;
   /** This agent's call count in the trailing rate-limit window (one hour) — the rate rule's input. */
   readonly callsInLastHour: number;
+  /**
+   * §12 bureau inject for `vendor.lcbFloor`. Assembled by the ASP (or tests) — pure engine never
+   * fetches scores. `null` / absent ⇒ score unavailable (policy `onScoreUnavailable` decides).
+   */
+  readonly vendorScore?: {
+    readonly vendorId: string;
+    readonly lcb: number;
+    readonly score: number;
+    readonly sigma: number;
+    readonly computedAtMs: number;
+    readonly available: boolean;
+  } | null;
+  /**
+   * Highest proof tier the system can evaluate today (0 = T0 schema only). Defaults to 0 when
+   * omitted so `proof.tierRequired` is honest without inventing T1+.
+   */
+  readonly availableProofTier?: number;
+  /**
+   * §14 CBC inject for `replay.contextBinding`. When absent and policy does not require a
+   * challenge, the rule PASSes with note NO_CHALLENGE (Mode A). When present, fields must match.
+   */
+  readonly challengeBinding?: {
+    readonly expected: Readonly<Record<string, string | undefined>>;
+    readonly presented: Readonly<Record<string, string | undefined>>;
+  } | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

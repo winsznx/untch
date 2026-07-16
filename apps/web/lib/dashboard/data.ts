@@ -12,6 +12,7 @@ import type { Hex } from "viem";
 import type { PolicyRules } from "../chain/policy-tx";
 import { hashCanonicalJson } from "@untch/canon";
 import { verifyDelivery } from "@untch/proof-engine";
+import { DEMO_VAULT, VAULT_FACTORY, VAULT_TOKEN } from "../chain/contracts";
 
 const h32 = (b: string): Hex => `0x${b.padStart(2, "0").repeat(32).slice(0, 64)}` as Hex;
 
@@ -60,29 +61,31 @@ export function getProofTiers(): ProofTierView {
   return { finals, ladder };
 }
 
-// ── Vault panel (§15 #6) — REAL deployed testnet addresses/txs + seeded caps ──────────────────────
-// Reads are real on-chain artifacts; the epoch gauge / caps are seeded and writes need a live wallet.
+// ── Vault panel (§15 #6) — product-chain factory + testnet demo vault when available ─────────────
 export type VaultView = {
-  address: Hex;
+  address: Hex | null;
   factory: Hex;
   token: Hex;
-  oracle: Hex;
+  oracle: Hex | null;
   paused: boolean;
   perTxCap: number;
   epochBudget: number;
   epochSpent: number;
   epochLenHours: number;
+  /** True when address is the fixed testnet demo vault (mainnet operators deploy their own). */
+  isDemo: boolean;
 };
 export function getVault(): VaultView {
   return {
-    address: "0x42e699ffd8215d48397a049b4f7a176db06f4848",
-    factory: "0x1562c6eb1813016c8562cf6771cbf715007bb7e9",
-    token: "0xf202ce41d76ee1a2aec72e7a9180331d437ddd41",
-    oracle: "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b",
+    address: DEMO_VAULT,
+    factory: VAULT_FACTORY,
+    token: VAULT_TOKEN,
+    oracle: DEMO_VAULT ? ("0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b" as Hex) : null,
     paused: false,
     perTxCap: 10,
     epochBudget: 100,
-    epochSpent: 23.6,
+    epochSpent: DEMO_VAULT ? 23.6 : 0,
     epochLenHours: 24,
+    isDemo: DEMO_VAULT !== null,
   };
 }

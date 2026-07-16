@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
-import { X_LAYER_TESTNET_ADD_PARAMS, xLayerTestnet } from "../../lib/chain/chains";
+import { productAddChainParams, productChain } from "../../lib/chain/chains";
 import { REQUIRED_CHAIN_ID, resolveNetworkAction } from "../../lib/wallet/network";
 
 /**
- * Ensures a connected wallet is on X Layer testnet BEFORE the SIWE sign step (and every write) can run.
+ * Ensures a connected wallet is on the product chain BEFORE the SIWE sign step (and every write) can run.
  *
  * Why this exists: RainbowKit's SIWE handler reads `useAccount().chain?.id`, which wagmi leaves `undefined`
  * whenever the wallet's active chain isn't in the configured set — and then silently returns without
@@ -38,7 +38,7 @@ export function NetworkGuard() {
     try {
       await switchChainAsync({
         chainId: REQUIRED_CHAIN_ID,
-        addEthereumChainParameter: X_LAYER_TESTNET_ADD_PARAMS,
+        addEthereumChainParameter: productAddChainParams(),
       });
       setState({ busy: false, error: null });
     } catch (e) {
@@ -69,10 +69,10 @@ export function NetworkGuard() {
     >
       <span className="text-body-sm" style={{ color: "var(--color-inverse-canvas)" }}>
         {state.error
-          ? `${state.error} Untch runs on ${xLayerTestnet.name} — switch your wallet's network there to sign in.`
+          ? `${state.error} Untch runs on ${productChain().name} — switch your wallet's network there to sign in.`
           : state.busy
-            ? `Switching your wallet to ${xLayerTestnet.name}… approve the request in your wallet.`
-            : `Your wallet is on the wrong network. Untch runs on ${xLayerTestnet.name}.`}
+            ? `Switching your wallet to ${productChain().name}… approve the request in your wallet.`
+            : `Your wallet is on the wrong network. Untch runs on ${productChain().name}.`}
       </span>
       <button
         type="button"
@@ -90,7 +90,7 @@ export function NetworkGuard() {
           border: "1px solid var(--color-action)",
         }}
       >
-        {state.busy ? "Switching…" : `Switch to ${xLayerTestnet.name}`}
+        {state.busy ? "Switching…" : `Switch to ${productChain().name}`}
       </button>
     </div>
   );

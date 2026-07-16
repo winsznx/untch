@@ -4,9 +4,9 @@ import { PolicyActions } from "../../../components/dashboard/policy-actions";
 import { DEFAULT_POLICY_RULES } from "../../../lib/dashboard/data";
 import { livePolicies, type PolicyView } from "../../../lib/dashboard/live";
 import { getScope } from "../../../lib/dashboard/scope";
-import { addressUrl, txUrl } from "../../../lib/onchain";
+import { POLICY_REGISTRY } from "../../../lib/chain/contracts";
+import { productAddressUrl, productTxUrl } from "../../../lib/onchain";
 
-const REGISTRY = "0xe1d74c90801db0fa806c72eb818b7671b8233532";
 
 /** Reads the operator's real registered policies from the shared Postgres per request. */
 export const dynamic = "force-dynamic";
@@ -57,7 +57,7 @@ export default async function Policies() {
       </div>
 
       <DashCard>
-        <KV k="PolicyRegistry (X Layer testnet)" v={<Link href={addressUrl("testnet", REGISTRY)}>{REGISTRY}</Link>} />
+        <KV k="PolicyRegistry" v={<Link href={productAddressUrl(POLICY_REGISTRY)}>{POLICY_REGISTRY}</Link>} />
       </DashCard>
     </div>
   );
@@ -85,7 +85,7 @@ function PolicyCard({ p }: { p: PolicyView }) {
         <KV k="Escalate above" v={`${r.escalateAbove}`} />
         <KV k="Categories" v={r.categories.allow.join(", ") || "—"} />
         <KV k="policyHash" v={<Mono color="var(--color-data)">{p.policyHash.slice(0, 22)}…</Mono>} />
-        <KV k="registerPolicy tx" v={<Link href={txUrl("testnet", p.registerTx)}>{p.registerTx.slice(0, 22)}…</Link>} />
+        <KV k="registerPolicy tx" v={<Link href={productTxUrl(p.registerTx)}>{p.registerTx.slice(0, 22)}…</Link>} />
       </div>
     </DashCard>
   );

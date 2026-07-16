@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Hex } from "viem";
 import type { PolicyRules } from "../../lib/chain/policy-tx";
-import { txUrl } from "../../lib/onchain";
+import { productTxUrl } from "../../lib/onchain";
 import { PolicyActions } from "../dashboard/policy-actions";
 import { ChannelBindings } from "../dashboard/channel-bindings";
 import { VaultActions } from "../dashboard/vault-actions";
@@ -285,7 +285,7 @@ function DoneStep({
           label="Policy on-chain"
           value={
             policy ? (
-              <a href={txUrl("testnet", policy.txHash)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>
+              <a href={productTxUrl(policy.txHash)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>
                 policy {policy.policyId.toString()} · {policy.txHash.slice(0, 10)}…{policy.txHash.slice(-6)}
               </a>
             ) : (

@@ -178,21 +178,24 @@ describe("evaluateIntent · BLOCKED_FAIL_CLOSED (§7.1 STATE_ASSEMBLY, I2)", () 
 });
 
 describe("evaluateIntent · APPROVED (all implemented rules pass)", () => {
-  test("clean intent ⇒ APPROVED; trace shows every real + stub rule; stubs tagged implemented:false", () => {
+  test("clean intent ⇒ APPROVED; full RULE_EVAL trace with no stubs", () => {
     // #when
     const d = evaluateIntent(validIntent(), activePolicy(), emptyLedger(), opts);
     // #then
     assert.equal(d.decision, "APPROVED");
-    // real rules present, PASS, and NOT flagged implemented:false
-    for (const name of ["policy.active", "duplicate.taskHash_endpoint_paramsHash", "budget.daily"]) {
+    for (const name of [
+      "policy.active",
+      "duplicate.taskHash_endpoint_paramsHash",
+      "replay.contextBinding",
+      "vendor.lcbFloor",
+      "proof.tierRequired",
+      "budget.daily",
+    ]) {
       const r = rule(d.rules, name);
       assert.equal(r?.result, "PASS", `${name} should PASS`);
       assert.equal(r?.implemented, undefined, `${name} is real, must not carry implemented:false`);
     }
-    // every stub present, PASS, implemented:false
-    const stubs = d.rules.filter((r) => r.implemented === false);
-    assert.ok(stubs.length >= 1);
-    for (const s of stubs) assert.equal(s.result, "PASS");
+    assert.equal(d.rules.filter((r) => r.implemented === false).length, 0);
     assert.equal(NOW_MS > 0, true);
   });
 });

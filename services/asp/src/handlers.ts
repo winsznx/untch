@@ -65,17 +65,14 @@ function intentBoundToPolicy(intent: SpendIntentInput, stored: StoredPolicy): bo
 export interface CreateDeps {
   readonly intentStore: InMemoryIntentStore;
   readonly policyProvider: PolicyProvider;
+  /** Optional SpendIntentRegistry writer. When set, intents ≥ anchorIntentsAbove are registered. */
+  readonly intentRegistry?: import("./intent-registry").IntentRegistryClient | null;
 }
 
 /**
- * `create_spend_intent` (bundled / unpriced). Validates the untrusted intent, canonicalizes it, and
- * hashes the §8.1 bounded object via `@untch/canon` (`hashSpendIntent` — the SAME path the policy
- * engine uses, so this hash is identical to the one preflight derives). It then binds the intent to a
- * REAL stored policy: the request's `policyId` must resolve to a stored policy whose `policy_hash`
- * equals the intent's `policyHash`, so a minted intent provably commits to a policy that actually
- * exists in the durable store (not a fabricated or fixture hash). Caches the parsed intent so a later
- * `preflight_payment` can resolve it by `intentHash`. Nothing is registered on-chain here — the
- * `SpendIntentRegistry` (§10.2) is not wired to this tool, so `onchain` is explicitly null.
+ * `create_spend_intent` (bundled / unpriced). Validates, hashes, binds to a real policy, caches.
+ * When `intentRegistry` is wired and policy.anchorIntentsAbove is met, registers on SpendIntentRegistry.
+ * Otherwise returns an honest onchain status (unwired / below_anchor_threshold), never a silent lie.
  */
 export async function handleCreateSpendIntent(
   body: unknown,
@@ -118,6 +115,38 @@ export async function handleCreateSpendIntent(
 
   deps.intentStore.put(parsed.intentHash, parsed.input);
 
+  // §10.2 on-chain anchor when threshold met and writer wired
+  const { shouldAnchorIntent } = await import("./intent-registry");
+  const rules = stored.rules as { anchorIntentsAbove?: number };
+  let onchain: Record<string, unknown>;
+  if (!deps.intentRegistry) {
+    onchain = { registered: false, status: "unwired", reason: "INTENT_WRITER_PRIVATE_KEY not configured" };
+  } else if (!shouldAnchorIntent(parsed.input.amount, rules)) {
+    onchain = {
+      registered: false,
+      status: "below_anchor_threshold",
+      reason:
+        typeof rules.anchorIntentsAbove === "number"
+          ? `amount ${parsed.input.amount} < anchorIntentsAbove ${rules.anchorIntentsAbove}`
+          : "policy has no anchorIntentsAbove",
+    };
+  } else {
+    const struct = {
+      owner: parsed.input.owner,
+      buyerAgentId: parsed.input.buyerAgentId,
+      workerAgentId: parsed.input.workerAgentId,
+      token: parsed.input.token,
+      maxAmount: parsed.input.maxAmount,
+      taskHash: parsed.input.taskHash,
+      acceptanceHash: parsed.input.acceptanceHash,
+      schemaHash: parsed.input.schemaHash,
+      policyHash: parsed.input.policyHash,
+      deadline: parsed.input.deadline,
+      nonce: parsed.input.nonce,
+    };
+    onchain = await deps.intentRegistry.register(struct, BigInt(policyId));
+  }
+
   return {
     status: 200,
     body: {
@@ -125,8 +154,7 @@ export async function handleCreateSpendIntent(
       canonicalIntent: toCanonicalView(parsed.input),
       policyId,
       policyVersion: stored.version,
-      // No IntentRegistry wired to this tool (§10.2) — nothing anchored here. Explicitly null.
-      onchain: null,
+      onchain,
     },
   };
 }
@@ -168,6 +196,14 @@ export interface PreflightDeps {
    *  escalation so the guard's poll() resolves for real. Absent ⇒ no escalation is created (poll stays
    *  PENDING) — an honest capability boundary, never a fabricated approval. */
   readonly escalationGateway?: EscalationGateway;
+  /** Optional intent registry for post-decision setStatus. */
+  readonly intentRegistry?: import("./intent-registry").IntentRegistryClient | null;
+  /** Optional Mode C oracle signer (env ORACLE_PRIVATE_KEY). */
+  readonly oracleSigner?: import("./oracle-signer").OracleSigner | null;
+  /**
+   * Optional bureau / CBC injects assembled by the server into a wrapper ledger.
+   * Prefer wrapping the ledger's read() rather than mutating this field.
+   */
 }
 
 /**
@@ -326,6 +362,47 @@ export async function handlePreflightPayment(
     }
   }
 
+  // §10.2 post-decision status on registry (only if previously registered — setStatus fails otherwise)
+  if (deps.intentRegistry && (decision.decision === "APPROVED" || decision.decision.startsWith("BLOCKED"))) {
+    const { IntentStatus } = await import("./intent-registry");
+    const status =
+      decision.decision === "APPROVED" ? IntentStatus.APPROVED : IntentStatus.BLOCKED;
+    try {
+      await deps.intentRegistry.setStatus(decision.intentHash, status);
+    } catch (err) {
+      console.error("[asp] intent setStatus failed (intent may not be registered)", err);
+    }
+  }
+
+  // Mode C oracle sig — only on APPROVED when vaultAddress provided and signer wired
+  let sig: Record<string, unknown> | null = null;
+  const b = (body ?? {}) as Record<string, unknown>;
+  const vaultAddress =
+    typeof b.vaultAddress === "string" && /^0x[0-9a-fA-F]{40}$/.test(b.vaultAddress)
+      ? (b.vaultAddress as `0x${string}`)
+      : null;
+  if (decision.decision === "APPROVED" && deps.oracleSigner && vaultAddress) {
+    try {
+      const signed = await deps.oracleSigner.signSpend({
+        vault: vaultAddress,
+        recipient: resolved.input.recipientAddress,
+        amount: resolved.input.maxAmount,
+        token: resolved.input.token,
+        intentHash: decision.intentHash,
+      });
+      sig = {
+        signature: signed.sig,
+        nonce: signed.nonce.toString(),
+        expiry: signed.expiry.toString(),
+        digest: signed.digest,
+        vault: signed.vault,
+      };
+    } catch (err) {
+      console.error("[asp] oracle sign failed", err);
+      sig = { error: "ESCALATED_SIGNER_DOWN", message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   return {
     status: 200,
     body: {
@@ -338,9 +415,10 @@ export async function handlePreflightPayment(
       policyId: decision.policyId,
       policyVersion: decision.policyVersion,
       evaluatedAt: decision.evaluatedAt,
-      // §7.4 real receipt ref (or null when unwired / enqueue failed). sig stays null (§7.5 unbuilt).
+      // §7.4 real receipt ref (or null when unwired / enqueue failed).
       receiptRef,
-      sig: null,
+      // Mode C: oracle sig when wired + vaultAddress; else null (honest).
+      sig,
     },
   };
 }

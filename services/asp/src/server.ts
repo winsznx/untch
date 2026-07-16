@@ -10,10 +10,14 @@ import {
   CHECK_DOMAINS_ROUTE,
   CREATE_INTENT_ROUTE,
   CREATE_POLICY_ROUTE,
+  DETECT_DUP_PRICE,
+  DETECT_DUP_ROUTE,
   DISPUTE_PRICE,
   DISPUTE_ROUTE,
   ESCALATION_STATUS_ROUTE,
+  GET_LEDGER_ROUTE,
   loadSellerConfig,
+  LOG_RECEIPT_ROUTE,
   NETWORK,
   PAUSE_POLICY_ROUTE,
   PING_PRICE,
@@ -24,6 +28,8 @@ import {
   RECEIPT_STATUS_ROUTE,
   RECONCILE_PRICE,
   RECONCILE_ROUTE,
+  REDACT_META_PRICE,
+  REDACT_META_ROUTE,
   RESUME_POLICY_ROUTE,
   SCORE_BUYER_ROUTE,
   SCORE_PRICE,
@@ -46,6 +52,14 @@ import {
   handleSeoTips,
   handleSuggestNames,
 } from "./consumer-handlers";
+import {
+  handleDetectDuplicate,
+  handleGetLedger,
+  handleLogReceipt,
+  handleRedactPaymentMetadata,
+} from "./s11-handlers";
+import { initIntentRegistry } from "./intent-registry";
+import { initOracleSigner } from "./oracle-signer";
 import {
   handleCreateSpendIntent,
   handlePreflightPayment,
@@ -170,10 +184,31 @@ export function createSellerApp(
           description: "Untch Launch Pack — deterministic product name suggestions for builders",
           mimeType: "application/json",
         },
+        [`POST ${DETECT_DUP_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: DETECT_DUP_PRICE },
+          description: "Untch detect_duplicate — check recent ledger window for a matching task/endpoint/params",
+          mimeType: "application/json",
+        },
+        [`POST ${REDACT_META_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: REDACT_META_PRICE },
+          description: "Untch redact_payment_metadata — strip PII patterns and hash redacted metadata",
+          mimeType: "application/json",
+        },
       },
       resourceServer,
     ),
   );
+
+  const intentRegistry = initIntentRegistry();
+  const oracleSigner = initOracleSigner();
+  if (intentRegistry) {
+    console.log(`[asp] SpendIntentRegistry wired at ${intentRegistry.registry} (chain ${intentRegistry.chainId})`);
+  } else {
+    console.log("[asp] SpendIntentRegistry NOT wired (set INTENT_WRITER_PRIVATE_KEY) — onchain stays honest unwired");
+  }
+  if (oracleSigner) {
+    console.log("[asp] Mode C oracle signer wired (ORACLE_PRIVATE_KEY) — pass vaultAddress on preflight for sig");
+  }
 
   // Body parsing AFTER the gate: only paid/unpriced requests that reach a handler get parsed.
   app.use(express.json({ limit: "64kb" }));
@@ -191,11 +226,20 @@ export function createSellerApp(
   app.post(RANK_OPTIONS_ROUTE, (req, res) => send(res, handleRankOptions(req.body)));
   app.post(SEO_TIPS_ROUTE, (req, res) => send(res, handleSeoTips(req.body)));
 
+  // §11 tools (priced in middleware where applicable; free get_ledger / log_receipt)
+  app.post(DETECT_DUP_ROUTE, (req, res) => send(res, handleDetectDuplicate(req.body, ledgerState.ledger)));
+  app.post(REDACT_META_ROUTE, (req, res) => send(res, handleRedactPaymentMetadata(req.body)));
+  app.post(GET_LEDGER_ROUTE, (req, res) => send(res, handleGetLedger(req.body, ledgerState.ledger)));
+  app.post(LOG_RECEIPT_ROUTE, (req, res, next) => {
+    handleLogReceipt(req.body, receiptWiring).then((r) => send(res, r)).catch(next);
+  });
+
   app.post(CREATE_INTENT_ROUTE, (req, res, next) => {
     if (!policyWiring) return send(res, policyStoreUnconfigured());
     handleCreateSpendIntent(req.body, {
       intentStore: ledgerState.intentStore,
       policyProvider: policyWiring.provider,
+      intentRegistry,
     })
       .then((result) => send(res, result))
       .catch(next);
@@ -209,6 +253,8 @@ export function createSellerApp(
       intentStore: ledgerState.intentStore,
       ...(receiptWiring ? { receiptEnqueuer: receiptWiring.enqueuer } : {}),
       ...(escalationWiring ? { escalationGateway: escalationWiring.gateway } : {}),
+      intentRegistry,
+      oracleSigner,
     })
       .then((result) => send(res, result))
       .catch(next);

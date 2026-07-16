@@ -17,8 +17,7 @@ import { xLayerMainnet, xLayerTestnet } from "../chain/chains";
  * that, RainbowKit renders "disconnected" while the wallet is connected and its SIWE signMessage has no
  * connector to sign with — which is exactly the "Preparing message…" hang this replaces.
  *
- * Chains: testnet (the product chain, default) AND mainnet, because sign-in is chain-agnostic identity and an
- * operator's wallet usually sits on mainnet; writes switch to testnet on demand.
+ * Chains: mainnet first (product default) and testnet selectable via NEXT_PUBLIC_CHAIN_ID=1952.
  */
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim() ?? "";
@@ -45,8 +44,8 @@ const connectors = connectorsForWallets(groups, { appName: "Untch", projectId })
 
 export const wagmiConfig = createConfig({
   connectors,
-  chains: [xLayerTestnet, xLayerMainnet],
-  transports: { [xLayerTestnet.id]: http(), [xLayerMainnet.id]: http() },
+  chains: [xLayerMainnet, xLayerTestnet],
+  transports: { [xLayerMainnet.id]: http(), [xLayerTestnet.id]: http() },
   storage: createStorage({ storage: cookieStorage }),
   ssr: true,
 });

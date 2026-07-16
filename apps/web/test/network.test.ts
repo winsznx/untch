@@ -19,21 +19,21 @@ import { X_LAYER_MAINNET_ID, X_LAYER_TESTNET_ID } from "../lib/chain/chains";
 
 const ETHEREUM_MAINNET = 1; // the chain OKX was reported parked on
 
-test("REQUIRED_CHAIN_ID is the product chain (X Layer testnet)", () => {
-  assert.equal(REQUIRED_CHAIN_ID, X_LAYER_TESTNET_ID);
+test("REQUIRED_CHAIN_ID is the product chain (X Layer mainnet by default)", () => {
+  assert.equal(REQUIRED_CHAIN_ID, X_LAYER_MAINNET_ID);
 });
 
-test("BEFORE→AFTER: a wallet parked on Ethereum mainnet is told to switch to X Layer testnet", () => {
+test("BEFORE→AFTER: a wallet parked on Ethereum mainnet is told to switch to X Layer product chain", () => {
   // #given a connected wallet on Ethereum mainnet — the exact state OKX was left in
   // #when the guard decides what to do before SIWE
   const action = resolveNetworkAction({ isConnected: true, chainId: ETHEREUM_MAINNET });
   // #then it requests an explicit switch to the product chain instead of letting the sign step silently bail
-  assert.deepEqual(action, { kind: "switch", targetChainId: X_LAYER_TESTNET_ID });
+  assert.deepEqual(action, { kind: "switch", targetChainId: X_LAYER_MAINNET_ID });
 });
 
 test("general fix: every off-product chain switches, not just OKX/Ethereum", () => {
-  // #given a range of chains a wallet could be parked on (Ethereum, Polygon, Base, Arbitrum, X Layer mainnet)
-  for (const wrong of [ETHEREUM_MAINNET, 137, 8453, 42161, X_LAYER_MAINNET_ID]) {
+  // #given a range of chains a wallet could be parked on (Ethereum, Polygon, Base, Arbitrum, X Layer testnet)
+  for (const wrong of [ETHEREUM_MAINNET, 137, 8453, 42161, X_LAYER_TESTNET_ID]) {
     // #when the guard resolves
     const action = resolveNetworkAction({ isConnected: true, chainId: wrong });
     // #then each is switched to the product chain
@@ -41,8 +41,8 @@ test("general fix: every off-product chain switches, not just OKX/Ethereum", () 
   }
 });
 
-test("a wallet already on X Layer testnet is ready — no gratuitous switch", () => {
-  assert.deepEqual(resolveNetworkAction({ isConnected: true, chainId: X_LAYER_TESTNET_ID }), { kind: "ready" });
+test("a wallet already on the product chain (mainnet) is ready — no gratuitous switch", () => {
+  assert.deepEqual(resolveNetworkAction({ isConnected: true, chainId: X_LAYER_MAINNET_ID }), { kind: "ready" });
 });
 
 test("a disconnected or chain-unknown wallet needs no switch", () => {
@@ -62,7 +62,7 @@ test("SIWE message carries exactly the chainId it is given (rules out a hardcode
   // #given the wrong-chain state: the message would carry chainId 1, which the server's X Layer gate rejects
   const wrong = parseSiweMessage(buildSiweMessage({ ...common, chainId: ETHEREUM_MAINNET }));
   assert.equal(wrong.chainId, ETHEREUM_MAINNET);
-  // #then after the guard switches, the same builder carries 1952 — the value the server accepts
-  const right = parseSiweMessage(buildSiweMessage({ ...common, chainId: X_LAYER_TESTNET_ID }));
-  assert.equal(right.chainId, X_LAYER_TESTNET_ID);
+  // #then after the guard switches, the same builder carries 196 — the product chain the server accepts
+  const right = parseSiweMessage(buildSiweMessage({ ...common, chainId: X_LAYER_MAINNET_ID }));
+  assert.equal(right.chainId, X_LAYER_MAINNET_ID);
 });

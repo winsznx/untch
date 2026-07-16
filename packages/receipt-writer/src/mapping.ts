@@ -39,6 +39,12 @@ const DECISION_CODE: Record<DecisionOutcome, number> = {
   BLOCKED_BUDGET: 12,
   BLOCKED_RATE: 13,
   ESCALATED_THRESHOLD: 14,
+  // Appended after the frozen 1–15 set — never renumber existing codes.
+  BLOCKED_REPLAY: 16,
+  REJECTED_BINDING: 17,
+  BLOCKED_VENDOR_RISK: 18,
+  ESCALATED_VENDOR_RISK: 19,
+  ESCALATED_PROOF_TIER: 20,
 };
 
 export function decisionToUint8(outcome: DecisionOutcome): number {

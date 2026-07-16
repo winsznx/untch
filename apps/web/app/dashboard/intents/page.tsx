@@ -2,7 +2,7 @@ import { DashCard, SectionTitle, DecisionChip, Mono } from "../../../components/
 import { NoHistory } from "../../../components/dashboard/no-history";
 import { liveIntentStream, type IntentRow } from "../../../lib/dashboard/live";
 import { getScope } from "../../../lib/dashboard/scope";
-import { txUrl } from "../../../lib/onchain";
+import { productTxUrl } from "../../../lib/onchain";
 
 const OUTCOME_LABEL = (o: string) => o.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
@@ -51,7 +51,7 @@ function IntentCard({ row }: { row: IntentRow }) {
       </div>
       {row.anchored && row.txHash ? (
         <div className="mt-3">
-          <a href={txUrl("testnet", row.txHash)} target="_blank" rel="noopener noreferrer" className="text-caption-lg underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace" }}>
+          <a href={productTxUrl(row.txHash)} target="_blank" rel="noopener noreferrer" className="text-caption-lg underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace" }}>
             Anchored · {row.txHash.slice(0, 12)}…
           </a>
         </div>

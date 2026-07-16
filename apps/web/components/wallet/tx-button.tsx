@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Hex } from "viem";
-import { txUrl } from "../../lib/onchain";
+import { productTxUrl } from "../../lib/onchain";
 import { useWallet, type ContractCall } from "./wallet-context";
 
 /**
@@ -86,7 +86,7 @@ export function TxButton({
       {phase.kind === "done" ? (
         <span className="text-caption-lg" style={{ color: "var(--color-positive)" }}>
           Confirmed ·{" "}
-          <a href={txUrl("testnet", phase.hash)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace" }}>
+          <a href={productTxUrl(phase.hash)} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline" style={{ color: "var(--color-data)", fontFamily: "ui-monospace, monospace" }}>
             {short(phase.hash)}
           </a>
         </span>
