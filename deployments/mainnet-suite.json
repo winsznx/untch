@@ -1,0 +1,22 @@
+{
+  "chainId": 196,
+  "phase1CompletedAt": "2026-07-16T00:20:52.120Z",
+  "deployer": "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
+  "roles": {
+    "owner": "0x37b1a5cE095C33519553b32e15955Bd0647c45f2",
+    "oracle": "0xb29516C8c5dFC29A9E3f68f6e92fd1B6c7612d61",
+    "admin": "0x4dE912B84c54f6855114519795A1afCA82dD2D19",
+    "writer": "0xeeDda7D18A34A93F3A722eb4446A526Af515457A"
+  },
+  "policyRegistry": "0xa2177e6d8682367637a3c2af53e2cf8088efa954",
+  "spendIntentRegistry": "0x9c1f89dfddd9ae1f9adda4b30ff338e2aa2db202",
+  "receipts": "0xb5b853684624aea2ecbcd0e888cbff46ff0a5f95",
+  "vaultFactory": "0x6cc3bc686a7bc554dbd5636cb3eeee9171036805",
+  "timelockDelay": "259200",
+  "receiptsEta": "1784420443",
+  "settlementTokenForLaterVaults": {
+    "symbol": "USD₮",
+    "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+    "decimals": 6
+  }
+}
