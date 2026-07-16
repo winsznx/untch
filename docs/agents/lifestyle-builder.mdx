@@ -20,14 +20,28 @@ This is a **demo fulfillment** path for marketplace and video demos. It is not a
 
 ## Untch Launch Pack
 
-| Path | Price |
-| --- | --- |
-| `POST /builder/suggest_names` | $0.01 |
-| `POST /builder/check_domains` | free |
-| `POST /builder/rank_options` | free |
-| `POST /builder/seo_tips` | free |
+Hireable agent product: one idea in, brand options + live domain checks + rank + launch checklist out.
 
-Use for Software Utility narratives and agent onboarding flows. Domain checks are deterministic stubs until a registrar API is connected.
+| Path | Price | Notes |
+| --- | --- | --- |
+| `POST /builder/brand_pack` | $0.05 | **Hire this** — names + live RDAP domains + rank + SEO in one call |
+| `POST /builder/suggest_names` | $0.01 | LLM names when `XAI_API_KEY` / `OPENAI_API_KEY` is set; structured fallback otherwise |
+| `POST /builder/check_domains` | free | Live RDAP availability (AVAILABLE / TAKEN / UNKNOWN) |
+| `POST /builder/rank_options` | free | Heuristic rank (length, charset, pronounceability) |
+| `POST /builder/seo_tips` | free | Launch checklist for a chosen name |
+
+### Hire flow
+
+```http
+POST https://asp.untch.xyz/builder/brand_pack
+Content-Type: application/json
+
+{ "idea": "agent spend control for crypto wallets" }
+```
+
+Pay the x402 challenge in USDT0 on X Layer (`eip155:196`). Response includes `suggestions`, live `domains`, `ranked` picks with `availableDomains`, and `seo` tips.
+
+Control-plane money decisions stay LLM-free. LLM is used only for naming inside Launch Pack when a key is configured.
 
 ## Related
 

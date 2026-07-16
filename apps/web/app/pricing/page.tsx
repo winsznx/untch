@@ -31,8 +31,9 @@ const LIFESTYLE: Row[] = [
 ];
 
 const BUILDER: Row[] = [
+  { tool: "brand_pack", path: "POST /builder/brand_pack", price: "$0.05", note: "Names + RDAP + rank + SEO" },
   { tool: "suggest_names", path: "POST /builder/suggest_names", price: "$0.01" },
-  { tool: "check_domains", path: "POST /builder/check_domains", price: "Free" },
+  { tool: "check_domains", path: "POST /builder/check_domains", price: "Free", note: "Live RDAP" },
   { tool: "rank_options", path: "POST /builder/rank_options", price: "Free" },
   { tool: "seo_tips", path: "POST /builder/seo_tips", price: "Free" },
 ];

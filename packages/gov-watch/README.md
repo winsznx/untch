@@ -9,6 +9,12 @@ about it through the existing escalation channels.
 notices the `OpProposed` in time to pull the lever. Without a watcher, the delay protects nothing — it
 just means the attacker waits three days. This closes that.
 
+## ABIs (CI)
+
+Decode ABIs are pinned under `abi/UntchReceipts.json` and `abi/SpendIntentRegistry.json`.
+`contracts/out` is gitignored, so CI never depends on a local `forge build`. Refresh those JSON files
+from forge artifacts when the watched event surface changes.
+
 It is deliberately **not an indexer**: no history, no query surface, no database. It keeps one durable
 number (the last block scanned and delivered) and forgets everything else.
 

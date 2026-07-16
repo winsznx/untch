@@ -16,11 +16,9 @@ const FIX = JSON.parse(
   readFileSync(fileURLToPath(new URL("./real-testnet-logs.json", import.meta.url)), "utf8"),
 ) as { logs: Array<Record<string, string | string[]>> };
 
-const RECEIPTS_ABI = (
-  JSON.parse(
-    readFileSync(fileURLToPath(new URL("../../../contracts/out/UntchReceipts.sol/UntchReceipts.json", import.meta.url)), "utf8"),
-  ) as { abi: Abi }
-).abi;
+const RECEIPTS_ABI = JSON.parse(
+  readFileSync(fileURLToPath(new URL("../abi/UntchReceipts.json", import.meta.url)), "utf8"),
+) as Abi;
 
 const RECEIPTS_ADDR = "0x0C64997277b7D94d2999DEa22A123cac56334863" as const;
 

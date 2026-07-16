@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  handleBrandPack,
   handleCafeMenu,
   handleCafeOrderLatte,
   handleCatalog,
@@ -9,20 +10,27 @@ import {
   handleSeoTips,
   handleSuggestNames,
 } from "../src/consumer-handlers";
+import { fallbackSuggestNames } from "../src/launch-pack/names";
+import { rankBrandNames } from "../src/launch-pack/rank";
+import { loadLlmConfig } from "../src/launch-pack/llm";
+import { isBannedBrand } from "../src/launch-pack/anti-slop";
 
-test("catalog lists control + lifestyle + builder surfaces", () => {
+test("catalog lists control + lifestyle + builder surfaces including brand_pack", () => {
   const r = handleCatalog();
   assert.equal(r.status, 200);
   const body = r.body as {
     type: string;
     baseUrl: string;
-    surfaces: { control: unknown[]; lifestyle: unknown[]; builder: unknown[] };
+    surfaces: { control: unknown[]; lifestyle: unknown[]; builder: { path: string }[] };
+    launchPack: { hireFlow: string[] };
   };
   assert.equal(body.type, "A2MCP");
   assert.equal(body.baseUrl, "https://asp.untch.xyz");
   assert.ok(body.surfaces.control.length >= 6);
   assert.ok(body.surfaces.lifestyle.length >= 2);
-  assert.ok(body.surfaces.builder.length >= 4);
+  assert.ok(body.surfaces.builder.length >= 5);
+  assert.ok(body.surfaces.builder.some((b) => b.path.includes("brand_pack")));
+  assert.ok(body.launchPack.hireFlow.length >= 1);
 });
 
 test("cafe menu is free and machine-readable", () => {
@@ -50,25 +58,57 @@ test("cafe latte order returns pickup voucher", () => {
   assert.ok(body.orderId.startsWith("cafe_"));
 });
 
-test("suggest_names requires idea and is deterministic", () => {
-  const bad = handleSuggestNames({});
+test("suggest_names requires idea and is deterministic without LLM", async () => {
+  const bad = await handleSuggestNames({});
   assert.equal(bad.status, 400);
 
-  const a = handleSuggestNames({ idea: "agent spend control" });
-  const b = handleSuggestNames({ idea: "agent spend control" });
-  assert.equal(a.status, 200);
-  assert.deepEqual(a.body, b.body);
-  const body = a.body as { suggestions: { name: string; score: number }[] };
-  assert.ok(body.suggestions.length >= 4);
-  assert.ok(body.suggestions.every((s) => s.name.length > 0 && s.score > 0));
+  const prevXai = process.env.XAI_API_KEY;
+  const prevOpen = process.env.OPENAI_API_KEY;
+  delete process.env.XAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const a = await handleSuggestNames({ idea: "agent spend control" });
+    const b = await handleSuggestNames({ idea: "agent spend control" });
+    assert.equal(a.status, 200);
+    assert.deepEqual(a.body, b.body);
+    const body = a.body as {
+      suggestions: { name: string; score: number }[];
+      engine: string;
+    };
+    assert.equal(body.engine, "fallback");
+    assert.ok(body.suggestions.length >= 4);
+    assert.ok(body.suggestions.every((s) => s.name.length > 0 && s.score > 0));
+  } finally {
+    if (prevXai !== undefined) process.env.XAI_API_KEY = prevXai;
+    else delete process.env.XAI_API_KEY;
+    if (prevOpen !== undefined) process.env.OPENAI_API_KEY = prevOpen;
+    else delete process.env.OPENAI_API_KEY;
+  }
 });
 
-test("check_domains expands TLDs deterministically", () => {
-  const r = handleCheckDomains({ names: ["untchdemo"] });
+test("fallback name generator is deterministic and brandable", () => {
+  const a = fallbackSuggestNames("agent spend control", 6);
+  const b = fallbackSuggestNames("agent spend control", 6);
+  assert.deepEqual(a, b);
+  assert.equal(a.length, 6);
+  for (const s of a) {
+    assert.match(s.name, /^[A-Za-z][A-Za-z0-9]*$/);
+    assert.ok(s.name.length >= 3 && s.name.length <= 18);
+  }
+});
+
+test("check_domains expands TLDs and returns RDAP-shaped results", async () => {
+  const r = await handleCheckDomains({ names: ["untchdemo"] });
   assert.equal(r.status, 200);
-  const body = r.body as { results: { domain: string; status: string }[] };
-  assert.equal(body.results.length, 4); // .xyz .com .ai .dev
+  const body = r.body as {
+    results: { domain: string; status: string; source: string }[];
+    source: string;
+  };
+  assert.equal(body.source, "rdap");
+  assert.equal(body.results.length, 5); // .com .xyz .ai .dev .io
   assert.ok(body.results.every((x) => x.domain.startsWith("untchdemo.")));
+  assert.ok(body.results.every((x) => x.source === "rdap"));
+  assert.ok(body.results.every((x) => ["AVAILABLE", "TAKEN", "UNKNOWN"].includes(x.status)));
 });
 
 test("rank_options sorts higher scores first", () => {
@@ -81,10 +121,79 @@ test("rank_options sorts higher scores first", () => {
   }
 });
 
+test("rankBrandNames prefers ideal length and alpha-only", () => {
+  const { ranked, top } = rankBrandNames(["ab", "BrightKit", "x-y-z-long-name-here"]);
+  assert.equal(top, "BrightKit");
+  assert.ok(ranked[0]!.score > ranked[ranked.length - 1]!.score);
+});
+
 test("seo_tips requires name", () => {
   assert.equal(handleSeoTips({}).status, 400);
   const r = handleSeoTips({ name: "Untch" });
   assert.equal(r.status, 200);
-  const body = r.body as { tips: string[] };
+  const body = r.body as { tips: string[]; handles: { domains: string[] } };
   assert.ok(body.tips.length >= 4);
+  assert.ok(body.handles.domains.some((d) => d.includes("untch")));
+});
+
+test("brand_pack returns names + domains + rank + seo without LLM", async () => {
+  const bad = await handleBrandPack({});
+  assert.equal(bad.status, 400);
+
+  const prevXai = process.env.XAI_API_KEY;
+  const prevOpen = process.env.OPENAI_API_KEY;
+  delete process.env.XAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const r = await handleBrandPack({ idea: "agent spend control for crypto wallets" });
+    assert.equal(r.status, 200);
+    const body = r.body as {
+      engine: string;
+      suggestions: unknown[];
+      ranked: { name: string; availableDomains: string[] }[];
+      top: string;
+      domains: { domain: string; status: string }[];
+      seo: { tips: string[] } | null;
+      paidTool: string;
+    };
+    assert.equal(body.engine, "fallback");
+    assert.equal(body.paidTool, "brand_pack");
+    assert.ok(body.suggestions.length >= 3);
+    assert.ok(body.ranked.length >= 1);
+    assert.ok(body.top.length > 0);
+    assert.ok(body.domains.length >= 3);
+    assert.ok(body.seo && body.seo.tips.length >= 4);
+  } finally {
+    if (prevXai !== undefined) process.env.XAI_API_KEY = prevXai;
+    else delete process.env.XAI_API_KEY;
+    if (prevOpen !== undefined) process.env.OPENAI_API_KEY = prevOpen;
+    else delete process.env.OPENAI_API_KEY;
+  }
+});
+
+test("loadLlmConfig prefers XAI when set; Groq second", () => {
+  assert.equal(loadLlmConfig({}), null);
+  const xai = loadLlmConfig({ XAI_API_KEY: "xai-test", XAI_MODEL: "grok-3-mini" });
+  assert.ok(xai);
+  assert.equal(xai!.provider, "xai");
+  assert.equal(xai!.baseUrl, "https://api.x.ai/v1");
+  assert.equal(xai!.model, "grok-3-mini");
+
+  const groq = loadLlmConfig({ GROQ_API_KEY: "gsk-test" });
+  assert.ok(groq);
+  assert.equal(groq!.provider, "groq");
+  assert.equal(groq!.baseUrl, "https://api.groq.com/openai/v1");
+  assert.match(groq!.model, /llama/);
+});
+
+test("fallback names reject AI-slop stems", () => {
+  assert.equal(isBannedBrand("AegisSentinel"), true);
+  assert.equal(isBannedBrand("NexusPrime"), true);
+  assert.equal(isBannedBrand("FieldKit"), false);
+  assert.equal(isBannedBrand("Untch"), true);
+
+  const names = fallbackSuggestNames("agent spend control wallet", 6);
+  for (const s of names) {
+    assert.equal(isBannedBrand(s.name), false, s.name);
+  }
 });

@@ -31,6 +31,7 @@
     "verify:deployment-roles": "tsx scripts/soak/verify-deployment-roles.ts",
     "deploy:keyed-suite": "tsx scripts/deploy-keyed-suite.ts",
     "deploy:mainnet-suite": "tsx scripts/deploy-mainnet-suite.ts",
+    "register:erc8004": "tsx scripts/register-erc8004-agent.ts",
     "test:gov-watch": "node --import tsx --test packages/gov-watch/test/*.test.ts",
     "gov-watch": "pnpm --filter @untch/gov-watch watch",
     "prove:gov-watch": "pnpm --filter @untch/gov-watch prove:testnet"

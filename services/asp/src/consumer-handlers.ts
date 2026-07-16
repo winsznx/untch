@@ -1,10 +1,13 @@
 /**
- * Consumer / lifestyle / builder ASP tools — thin, deterministic, x402-priced.
- * These are real HTTP services agents can call; external fulfillment (Purch, registrars)
- * can replace stubs later without changing the Untch preflight surface.
+ * Consumer / lifestyle / builder ASP tools.
+ * Control-plane money decisions stay LLM-free (I1). Launch Pack may use an LLM for naming only.
  */
 
 import type { HandlerResult } from "./handlers";
+import { loadLlmConfig } from "./launch-pack/llm";
+import { suggestProductNames } from "./launch-pack/names";
+import { checkDomainsLive, DEFAULT_TLDS } from "./launch-pack/rdap";
+import { rankBrandNames } from "./launch-pack/rank";
 
 function errorEnvelope(code: string, message: string, retryable = false): HandlerResult["body"] {
   return { code, message, retryable, docsUrl: null };
@@ -15,6 +18,20 @@ function asString(v: unknown, max = 500): string | null {
   const t = v.trim();
   if (!t || t.length > max) return null;
   return t;
+}
+
+function parseNameList(raw: unknown, max = 12): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((x) => String(x).trim()).filter(Boolean).slice(0, max);
+  }
+  if (typeof raw === "string") {
+    return raw
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, max);
+  }
+  return [];
 }
 
 // ── Café (lifestyle demo) ────────────────────────────────────────────────────
@@ -59,141 +76,211 @@ export function handleCafeOrderLatte(body: unknown): HandlerResult {
       pickupCode,
       fulfillment: "DEMO_VOUCHER",
       buyerRef,
-      message: "Show pickup code at any partner café — demo fulfillment. Real merchants can plug the same handshake.",
+      message:
+        "Show pickup code at any partner café — demo fulfillment. Real merchants can plug the same handshake.",
       paidAt: new Date().toISOString(),
     },
   };
 }
 
-// ── Launch / builder pack ────────────────────────────────────────────────────
+// ── Launch Pack ──────────────────────────────────────────────────────────────
 
-const ADJECTIVES = [
-  "bright", "clear", "swift", "quiet", "solid", "open", "north", "prime", "true", "field",
-  "signal", "harbor", "ledger", "pulse", "forge", "anchor", "relay", "vault", "orbit", "grain",
-];
-const NOUNS = [
-  "kit", "lab", "works", "desk", "node", "base", "line", "stack", "craft", "gate",
-  "lane", "mill", "yard", "form", "loop", "path", "dock", "grid", "core", "wave",
-];
-
-/** Paid $0.01 — suggest product names from an idea string (deterministic, no LLM). */
-export function handleSuggestNames(body: unknown): HandlerResult {
+/** Paid $0.01 — product name suggestions (LLM when XAI_API_KEY/OPENAI_API_KEY set). */
+export async function handleSuggestNames(body: unknown): Promise<HandlerResult> {
   const b = (body ?? {}) as Record<string, unknown>;
-  const idea = asString(b.idea ?? b.query ?? b.prompt, 200);
+  const idea = asString(b.idea ?? b.query ?? b.prompt, 280);
   if (!idea) {
-    return { status: 400, body: errorEnvelope("IDEA_REQUIRED", "provide `idea` (string, max 200 chars)") };
+    return { status: 400, body: errorEnvelope("IDEA_REQUIRED", "provide `idea` (string, max 280 chars)") };
   }
-  const seed = [...idea.toLowerCase()].reduce((a, c) => a + c.charCodeAt(0), 0);
-  const words = idea.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
-  const stem = (words[0] ?? "untch").slice(0, 8);
-  const names: string[] = [];
-  for (let i = 0; i < 8; i++) {
-    const a = ADJECTIVES[(seed + i * 7) % ADJECTIVES.length];
-    const n = NOUNS[(seed + i * 13) % NOUNS.length];
-    names.push(i % 2 === 0 ? `${stem}${n}` : `${a}${stem}`);
-  }
-  // unique, title-ish
-  const unique = [...new Set(names)].slice(0, 6).map((n) => n.charAt(0).toUpperCase() + n.slice(1));
+  const countRaw = b.count;
+  const count =
+    typeof countRaw === "number" && Number.isFinite(countRaw)
+      ? Math.max(3, Math.min(8, Math.floor(countRaw)))
+      : 6;
+
+  const result = await suggestProductNames(idea, { count });
   return {
     status: 200,
     body: {
       idea,
-      suggestions: unique.map((name, i) => ({
-        name,
-        score: 90 - i * 7,
-        style: i % 2 === 0 ? "compound" : "adjective-stem",
-      })),
-      note: "Deterministic name pack for agent builders. Pair with /builder/check_domains.",
+      suggestions: result.suggestions,
+      engine: result.engine,
+      model: result.model ?? null,
+      provider: result.provider ?? null,
+      next: {
+        checkDomains: "POST /builder/check_domains with names[]",
+        rank: "POST /builder/rank_options with names[]",
+        fullPack: "POST /builder/brand_pack for names+domains+rank+seo in one paid call",
+      },
+      note:
+        result.engine === "llm"
+          ? "LLM brand pack. Pair with live RDAP domain checks."
+          : "Heuristic brand pack (set XAI_API_KEY or OPENAI_API_KEY for LLM names). Pair with /builder/check_domains.",
     },
   };
 }
 
-/** Free — RDAP-style domain availability stubs (honest demo; replace with live registrar later). */
-export function handleCheckDomains(body: unknown): HandlerResult {
+/** Free — live RDAP domain availability. */
+export async function handleCheckDomains(body: unknown): Promise<HandlerResult> {
   const b = (body ?? {}) as Record<string, unknown>;
   const raw = b.names ?? b.domains;
-  const names: string[] = Array.isArray(raw)
-    ? raw.map((x) => String(x).toLowerCase().trim()).filter(Boolean).slice(0, 12)
-    : typeof raw === "string"
-      ? raw.split(/[,\s]+/).map((s) => s.toLowerCase().trim()).filter(Boolean).slice(0, 12)
-      : [];
-  if (names.length === 0) {
-    return { status: 400, body: errorEnvelope("NAMES_REQUIRED", "provide `names` array or space/comma-separated string") };
+  const bases = parseNameList(raw, 10);
+  if (bases.length === 0) {
+    return {
+      status: 400,
+      body: errorEnvelope("NAMES_REQUIRED", "provide `names` array or space/comma-separated string"),
+    };
   }
-  const tlds = [".xyz", ".com", ".ai", ".dev"];
-  const results = names.flatMap((base) => {
-    const clean = base.replace(/\.(xyz|com|ai|dev)$/i, "");
-    return tlds.map((tld) => {
-      const domain = `${clean}${tld}`;
-      // deterministic pseudo-availability from hash of domain
-      const h = [...domain].reduce((a, c) => a + c.charCodeAt(0), 0);
-      const available = h % 5 !== 0;
-      const premium = h % 11 === 0;
-      return {
-        domain,
-        available,
-        premium,
-        priceUsdt: available ? (premium ? "18.00" : "9.99") : null,
-        status: available ? (premium ? "AVAILABLE_PREMIUM" : "AVAILABLE") : "TAKEN",
-      };
-    });
-  });
+
+  const tldInput = Array.isArray(b.tlds)
+    ? b.tlds.map((t) => String(t).toLowerCase().replace(/^\.?/, ".")).filter(Boolean)
+    : [...DEFAULT_TLDS];
+  const tlds = (tldInput.length > 0 ? tldInput : [...DEFAULT_TLDS]).slice(0, 6);
+
+  const domains: string[] = [];
+  for (const base of bases) {
+    const clean = base.toLowerCase().replace(/\.(xyz|com|ai|dev|io|org|net|app)$/i, "");
+    const brand = clean.replace(/[^a-z0-9-]/g, "");
+    if (!brand) continue;
+    if (base.includes(".") && /\.(xyz|com|ai|dev|io|org|net|app)$/i.test(base)) {
+      domains.push(base.toLowerCase());
+    } else {
+      for (const tld of tlds) domains.push(`${brand}${tld.startsWith(".") ? tld : `.${tld}`}`);
+    }
+  }
+
+  const unique = [...new Set(domains)].slice(0, 24);
+  const results = await checkDomainsLive(unique, { timeoutMs: 7_000, concurrency: 5 });
+
   return {
     status: 200,
     body: {
       results,
       currency: "USDT0",
-      note: "Demo availability model (deterministic). Live registrar API can replace this without changing the tool contract.",
+      source: "rdap",
+      note: "Live RDAP lookup. AVAILABLE/TAKEN when the registry answers; UNKNOWN on timeout or ambiguous response. Not a purchase or reservation.",
     },
   };
 }
 
-/** Free — rank name options by simple heuristics. */
+/** Free — rank name options by brand heuristics. */
 export function handleRankOptions(body: unknown): HandlerResult {
   const b = (body ?? {}) as Record<string, unknown>;
-  const raw = b.names ?? b.options;
-  const names: string[] = Array.isArray(raw) ? raw.map(String).filter(Boolean).slice(0, 20) : [];
+  const names = parseNameList(b.names ?? b.options, 24);
   if (names.length === 0) {
     return { status: 400, body: errorEnvelope("NAMES_REQUIRED", "provide `names` string array") };
   }
-  const ranked = names
-    .map((name) => {
-      const len = name.length;
-      const lengthScore = len >= 5 && len <= 10 ? 40 : len < 5 ? 20 : 25;
-      const alpha = /^[a-zA-Z]+$/.test(name) ? 30 : 15;
-      const noHyphen = name.includes("-") ? 0 : 15;
-      const score = lengthScore + alpha + noHyphen + (name.length % 7);
-      return { name, score, reasons: ["length", "charset", "hyphen"].filter(Boolean) };
-    })
-    .sort((a, b) => b.score - a.score);
-  return { status: 200, body: { ranked, top: ranked[0]?.name ?? null } };
+  const { ranked, top } = rankBrandNames(names);
+  return {
+    status: 200,
+    body: {
+      ranked,
+      top,
+      note: "Heuristic rank (length, charset, pronounceability). Not trademark clearance.",
+    },
+  };
 }
 
-/** Free — SEO / launch checklist tips for a chosen name. */
+/** Free — launch checklist for a chosen name. */
 export function handleSeoTips(body: unknown): HandlerResult {
   const b = (body ?? {}) as Record<string, unknown>;
   const name = asString(b.name ?? b.brand, 64);
   if (!name) {
     return { status: 400, body: errorEnvelope("NAME_REQUIRED", "provide `name` (brand string)") };
   }
+  const idea = asString(b.idea ?? b.product, 200);
+  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "");
   return {
     status: 200,
     body: {
       name,
+      idea: idea ?? null,
       tips: [
-        `Claim ${name.toLowerCase()}.xyz or .com before marketing.`,
-        "Write a one-line job-to-be-done on the homepage hero.",
+        `Secure ${slug}.com and ${slug}.xyz before public launch.`,
+        idea
+          ? `Homepage hero: one sentence on the job-to-be-done for “${idea.slice(0, 80)}”.`
+          : "Homepage hero: one-line job-to-be-done, not a feature list.",
+        `Use “${name}” consistently in X bio, ASP listing, docs, and product chrome.`,
+        "Ship a free health endpoint so agents can ping your service before paying.",
         "Publish a public receipt or demo proof page for trust.",
-        "Use the brand name consistently in X bio, ASP listing, and docs.",
-        "Target category keywords: agent, payments, automation, marketplace.",
-        "Ship a free ping tool so agents can health-check your ASP.",
+        "File trademark only after domain + social handles are secured in target markets.",
+        "Target category keywords: agent, automation, payments, marketplace — only if true.",
       ],
+      handles: {
+        x: `@${slug.slice(0, 15)}`,
+        domains: [`${slug}.com`, `${slug}.xyz`, `${slug}.ai`],
+      },
+      disclaimer: "Not legal advice. Not trademark or domain registration.",
+    },
+  };
+}
+
+/**
+ * Paid full hireable pack: idea → names → RDAP domains → rank → SEO.
+ * One agent call for the “name my product” job.
+ */
+export async function handleBrandPack(body: unknown): Promise<HandlerResult> {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const idea = asString(b.idea ?? b.query ?? b.prompt, 280);
+  if (!idea) {
+    return { status: 400, body: errorEnvelope("IDEA_REQUIRED", "provide `idea` (string, max 280 chars)") };
+  }
+
+  const named = await suggestProductNames(idea, { count: 6 });
+  const nameList = named.suggestions.map((s) => s.name);
+  const brandSlugs = nameList.map((n) => n.toLowerCase().replace(/[^a-z0-9]/g, "")).filter(Boolean);
+
+  const domains: string[] = [];
+  for (const slug of brandSlugs.slice(0, 6)) {
+    for (const tld of [".com", ".xyz", ".ai"]) domains.push(`${slug}${tld}`);
+  }
+  const domainResults = await checkDomainsLive([...new Set(domains)].slice(0, 18), {
+    timeoutMs: 7_000,
+    concurrency: 5,
+  });
+
+  const { ranked, top } = rankBrandNames(nameList);
+
+  // Attach domain summary per top names
+  const availableBySlug = new Map<string, string[]>();
+  for (const r of domainResults) {
+    if (r.status !== "AVAILABLE") continue;
+    const slug = r.domain.split(".")[0] ?? "";
+    const list = availableBySlug.get(slug) ?? [];
+    list.push(r.domain);
+    availableBySlug.set(slug, list);
+  }
+
+  const picks = ranked.slice(0, 6).map((r) => ({
+    ...r,
+    availableDomains: availableBySlug.get(r.name.toLowerCase().replace(/[^a-z0-9]/g, "")) ?? [],
+  }));
+
+  const topName = top ?? nameList[0] ?? "Brand";
+  const seo = handleSeoTips({ name: topName, idea });
+  const seoBody = seo.status === 200 ? seo.body : null;
+
+  return {
+    status: 200,
+    body: {
+      idea,
+      engine: named.engine,
+      model: named.model ?? null,
+      suggestions: named.suggestions,
+      ranked: picks,
+      top: topName,
+      domains: domainResults,
+      seo: seoBody,
+      currency: "USDT0",
+      paidTool: "brand_pack",
+      note: "Hireable launch pack: names (LLM when configured) + live RDAP + rank + SEO checklist. Not trademark clearance or domain purchase.",
     },
   };
 }
 
 /** Free catalog — what agents should list under this ASP. */
 export function handleCatalog(): HandlerResult {
+  const llm = loadLlmConfig();
   return {
     status: 200,
     body: {
@@ -220,11 +307,35 @@ export function handleCatalog(): HandlerResult {
           { path: "POST /cafe/order/latte", price: "0.04", role: "demo coffee voucher" },
         ],
         builder: [
-          { path: "POST /builder/suggest_names", price: "0.01", role: "name ideas" },
-          { path: "POST /builder/check_domains", price: "free", role: "domain options" },
+          {
+            path: "POST /builder/brand_pack",
+            price: "0.05",
+            role: "hireable: names + live domains + rank + SEO",
+          },
+          {
+            path: "POST /builder/suggest_names",
+            price: "0.01",
+            role: llm ? "LLM product names" : "heuristic product names (set XAI_API_KEY for LLM)",
+          },
+          { path: "POST /builder/check_domains", price: "free", role: "live RDAP domain check" },
           { path: "POST /builder/rank_options", price: "free", role: "rank names" },
           { path: "POST /builder/seo_tips", price: "free", role: "launch tips" },
         ],
+      },
+      launchPack: {
+        llmConfigured: Boolean(llm),
+        llmProvider: llm?.provider ?? null,
+        naming: "Untch-style compressions (untouched→untch); AI-slop stems banned",
+        hireFlow: [
+          "POST /builder/brand_pack { idea } — one paid call",
+          "or suggest_names → check_domains → rank_options → seo_tips",
+        ],
+      },
+      identity: {
+        registration: "GET /agent-registration.json",
+        domainProof: "GET /.well-known/agent-registration.json",
+        standard: "ERC-8004 registration-v1",
+        network: "eip155:196",
       },
       tagline: "Agents spend. Untch keeps the mandate.",
     },

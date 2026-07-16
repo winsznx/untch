@@ -62,6 +62,8 @@ export const CAFE_LATTE_ROUTE = "/cafe/order/latte" as const;
 export const CAFE_LATTE_PRICE = "$0.04" as const;
 export const SUGGEST_NAMES_ROUTE = "/builder/suggest_names" as const;
 export const SUGGEST_NAMES_PRICE = "$0.01" as const;
+export const BRAND_PACK_ROUTE = "/builder/brand_pack" as const;
+export const BRAND_PACK_PRICE = "$0.05" as const;
 export const CHECK_DOMAINS_ROUTE = "/builder/check_domains" as const;
 export const RANK_OPTIONS_ROUTE = "/builder/rank_options" as const;
 export const SEO_TIPS_ROUTE = "/builder/seo_tips" as const;
@@ -101,6 +103,7 @@ export const DEFAULT_PORT = 4021;
 export const CONSUMER_PRICED_ROUTES = {
   cafeLatte: { methodPath: `POST ${CAFE_LATTE_ROUTE}` as const, price: CAFE_LATTE_PRICE },
   suggestNames: { methodPath: `POST ${SUGGEST_NAMES_ROUTE}` as const, price: SUGGEST_NAMES_PRICE },
+  brandPack: { methodPath: `POST ${BRAND_PACK_ROUTE}` as const, price: BRAND_PACK_PRICE },
 } as const;
 
 export type SellerConfig = {

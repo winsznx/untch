@@ -3,6 +3,8 @@ import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import {
+  BRAND_PACK_PRICE,
+  BRAND_PACK_ROUTE,
   CAFE_LATTE_PRICE,
   CAFE_LATTE_ROUTE,
   CAFE_MENU_ROUTE,
@@ -44,6 +46,7 @@ import {
   type SellerConfig,
 } from "./config";
 import {
+  handleBrandPack,
   handleCafeMenu,
   handleCafeOrderLatte,
   handleCatalog,
@@ -81,6 +84,12 @@ import { initPolicyWiring, type PolicyWiring } from "./policy-wiring";
 import { initEscalationWiring, type EscalationWiring } from "./escalation-wiring";
 import { initScoreWiring, type ScoreWiring } from "./score-wiring";
 import { initReportWiring, type ReportWiring } from "./report-wiring";
+import { assertIdentityRegistry } from "./erc8004/assert-identity";
+import { buildRegistrationCard } from "./erc8004/registration-card";
+import {
+  AGENT_REGISTRATION_PATH,
+  DEFAULT_WELL_KNOWN_PATH,
+} from "./erc8004/constants";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -181,7 +190,12 @@ export function createSellerApp(
         },
         [`POST ${SUGGEST_NAMES_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SUGGEST_NAMES_PRICE },
-          description: "Untch Launch Pack — deterministic product name suggestions for builders",
+          description: "Untch Launch Pack — product name suggestions (LLM when configured; structured fallback)",
+          mimeType: "application/json",
+        },
+        [`POST ${BRAND_PACK_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
+          description: "Untch Launch Pack — hireable brand pack: names + live RDAP domains + rank + SEO",
           mimeType: "application/json",
         },
         [`POST ${DETECT_DUP_ROUTE}`]: {
@@ -217,12 +231,32 @@ export function createSellerApp(
     res.json({ ok: true, tool: "ping_untch", ts: new Date().toISOString() });
   });
 
-  // ── Consumer catalog + free builder/lifestyle tools ────────────────────────
+  // ── ERC-8004 registration card (unpriced; required for marketplace card render) ──
+  const serveRegistrationCard = (_req: Request, res: Response) => {
+    const card = buildRegistrationCard({
+      payTo: config.payTo,
+      baseUrl: process.env.ASP_PUBLIC_URL?.trim() || "https://asp.untch.xyz",
+    });
+    res.setHeader("cache-control", "public, max-age=60");
+    res.setHeader("access-control-allow-origin", "*");
+    res.type("application/json").status(200).json(card);
+  };
+  app.get(AGENT_REGISTRATION_PATH, serveRegistrationCard);
+  app.get(DEFAULT_WELL_KNOWN_PATH, serveRegistrationCard);
+
+  // ── Consumer catalog + lifestyle + Launch Pack ─────────────────────────────
   app.get(CATALOG_ROUTE, (_req, res) => send(res, handleCatalog()));
   app.get(CAFE_MENU_ROUTE, (_req, res) => send(res, handleCafeMenu()));
   app.post(CAFE_LATTE_ROUTE, (req, res) => send(res, handleCafeOrderLatte(req.body)));
-  app.post(SUGGEST_NAMES_ROUTE, (req, res) => send(res, handleSuggestNames(req.body)));
-  app.post(CHECK_DOMAINS_ROUTE, (req, res) => send(res, handleCheckDomains(req.body)));
+  app.post(SUGGEST_NAMES_ROUTE, (req, res, next) => {
+    handleSuggestNames(req.body).then((r) => send(res, r)).catch(next);
+  });
+  app.post(BRAND_PACK_ROUTE, (req, res, next) => {
+    handleBrandPack(req.body).then((r) => send(res, r)).catch(next);
+  });
+  app.post(CHECK_DOMAINS_ROUTE, (req, res, next) => {
+    handleCheckDomains(req.body).then((r) => send(res, r)).catch(next);
+  });
   app.post(RANK_OPTIONS_ROUTE, (req, res) => send(res, handleRankOptions(req.body)));
   app.post(SEO_TIPS_ROUTE, (req, res) => send(res, handleSeoTips(req.body)));
 
@@ -455,9 +489,21 @@ if (isMain) {
           console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
           console.log(`[asp]   GET  ${ESCALATION_STATUS_ROUTE}  (escalation status poll, §7.2)`);
           console.log(`[asp]   GET  ${CATALOG_ROUTE}  free  ·  GET ${CAFE_MENU_ROUTE} free  ·  POST ${CAFE_LATTE_ROUTE} ${CAFE_LATTE_PRICE}`);
-          console.log(`[asp]   POST ${SUGGEST_NAMES_ROUTE} ${SUGGEST_NAMES_PRICE}  ·  free builder: check_domains / rank_options / seo_tips`);
+          console.log(`[asp]   POST ${BRAND_PACK_ROUTE} ${BRAND_PACK_PRICE}  ·  POST ${SUGGEST_NAMES_ROUTE} ${SUGGEST_NAMES_PRICE}`);
+          console.log(`[asp]   free builder: check_domains (RDAP) / rank_options / seo_tips`);
+          console.log(`[asp]   GET  ${AGENT_REGISTRATION_PATH}  ·  GET ${DEFAULT_WELL_KNOWN_PATH}  (ERC-8004 card)`);
           console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
         });
+        // Non-blocking integrity probe — logs only; never blocks serving the card.
+        assertIdentityRegistry()
+          .then((r) => {
+            if (r.ok) {
+              console.log(`[asp] ERC-8004 Identity OK ${r.address} name=${r.name} symbol=${r.symbol}`);
+            } else {
+              console.warn(`[asp] ERC-8004 Identity assert failed: ${r.error}`);
+            }
+          })
+          .catch((e) => console.warn(`[asp] ERC-8004 Identity probe error: ${(e as Error).message}`));
       },
     )
     .catch((err) => {

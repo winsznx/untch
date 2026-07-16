@@ -17,9 +17,14 @@ export interface DeploymentArtifact {
   readonly vaultFactory?: Address;
 }
 
-const artifactAbi = (contract: string, file: string): Abi => {
-  const path = fileURLToPath(new URL(`../../../contracts/out/${contract}.sol/${file}.json`, import.meta.url));
-  return (JSON.parse(readFileSync(path, "utf8")) as { abi: Abi }).abi;
+/**
+ * Pinned ABIs live under packages/gov-watch/abi/ (extracted from forge out).
+ * contracts/out is gitignored — CI must never read it, or the suite only passes on a laptop
+ * that has already run forge build.
+ */
+const artifactAbi = (name: "UntchReceipts" | "SpendIntentRegistry"): Abi => {
+  const path = fileURLToPath(new URL(`../abi/${name}.json`, import.meta.url));
+  return JSON.parse(readFileSync(path, "utf8")) as Abi;
 };
 
 /**
@@ -35,12 +40,12 @@ export function loadTargets(input: { receipts: Address; spendIntentRegistry: Add
     {
       name: "UntchReceipts",
       address: getAddress(input.receipts),
-      abi: artifactAbi("UntchReceipts", "UntchReceipts"),
+      abi: artifactAbi("UntchReceipts"),
     },
     {
       name: "SpendIntentRegistry",
       address: getAddress(input.spendIntentRegistry),
-      abi: artifactAbi("SpendIntentRegistry", "SpendIntentRegistry"),
+      abi: artifactAbi("SpendIntentRegistry"),
     },
   ];
 }
