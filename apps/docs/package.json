@@ -1,0 +1,27 @@
+{
+  "name": "@untch/docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted Untch documentation (docs.untch.xyz). Renders repo-root docs/*.mdx with owned nav and search.",
+  "scripts": {
+    "dev": "next dev --port 3002",
+    "build": "next build",
+    "start": "next start --port ${PORT:-3002}",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.7.3"
+  }
+}

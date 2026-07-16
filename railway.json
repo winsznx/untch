@@ -2,10 +2,10 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"untch-web\" ]; then pnpm --filter @untch/web build; else echo \"no build step for $RAILWAY_SERVICE_NAME\"; fi"
+    "buildCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"untch-web\" ]; then pnpm --filter @untch/web build; elif [ \"$RAILWAY_SERVICE_NAME\" = \"untch-docs\" ]; then pnpm --filter @untch/docs build; else echo \"no build step for $RAILWAY_SERVICE_NAME\"; fi"
   },
   "deploy": {
-    "startCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"untch-receipt-writer\" ]; then pnpm --filter @untch/receipt-writer worker; elif [ \"$RAILWAY_SERVICE_NAME\" = \"untch-web\" ]; then pnpm --filter @untch/web start; else pnpm --filter @untch/asp start; fi",
+    "startCommand": "if [ \"$RAILWAY_SERVICE_NAME\" = \"untch-receipt-writer\" ]; then pnpm --filter @untch/receipt-writer worker; elif [ \"$RAILWAY_SERVICE_NAME\" = \"untch-web\" ]; then pnpm --filter @untch/web start; elif [ \"$RAILWAY_SERVICE_NAME\" = \"untch-docs\" ]; then pnpm --filter @untch/docs start; else pnpm --filter @untch/asp start; fi",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }

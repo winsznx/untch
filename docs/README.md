@@ -1,37 +1,43 @@
-# Untch documentation source
+# Untch documentation
 
-Mintlify site source for **docs.untch.xyz**.
+Source of truth for **docs.untch.xyz**.
+
+Content lives here as MDX (Markdown + frontmatter). The site is a self-hosted Next app at `apps/docs` that reads this folder. No Mintlify account required.
 
 ## Local preview
 
+From repo root:
+
 ```bash
-# from repo root
-cd docs
-npx mintlify dev
+pnpm install
+pnpm --filter @untch/docs dev
 ```
 
-Requires Node 18+. First run may prompt to install the Mintlify CLI.
+Open http://localhost:3002
 
-## Deploy
+## Deploy (Railway)
 
-1. Connect this repo (or the `docs/` folder) to [Mintlify](https://mintlify.com).
-2. Set custom domain `docs.untch.xyz` (CNAME per Mintlify DNS instructions).
-3. Push to the tracked branch. Mintlify builds from `docs.json` + MDX pages.
+1. Create a service named **`untch-docs`** in the untch project (root directory = monorepo root).
+2. `railway.json` builds and starts with:
+   - build: `pnpm --filter @untch/docs build`
+   - start: `pnpm --filter @untch/docs start`
+3. Attach custom domain **docs.untch.xyz** to that service.
+4. DNS: CNAME `docs` → Railway domain (or A/AAAA per Railway UI).
 
-## Writing rules
+## Content rules
 
 - Plain technical prose. No filler openers.
 - No em dashes. Use periods, commas, or parentheses.
 - Tables for parallel facts (endpoint, price, status).
-- Link to live surfaces: www.untch.xyz, asp.untch.xyz, OKLink.
-- Document honest limits (Mode D roadmap, free-tier stubs, writer timelock).
+- Link live surfaces: www.untch.xyz, asp.untch.xyz, OKLink.
+- Document honest limits (Mode D roadmap, writer timelock).
 
 ## Layout
 
 ```text
 docs/
-  docs.json          # Mintlify config + navigation
-  index.mdx          # Home
+  docs.json          # nav groups + site chrome links
+  index.mdx
   quickstart.mdx
   what-untch-is.mdx
   concepts/
@@ -39,4 +45,8 @@ docs/
   agents/
   reference/
   security/
+
+apps/docs/           # Next renderer (owned)
 ```
+
+Edit MDX here; the app picks up pages listed in `docs.json` navigation.
