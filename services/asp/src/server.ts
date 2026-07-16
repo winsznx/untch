@@ -144,6 +144,10 @@ export function createSellerApp(
 
   const app = express();
 
+  // Railway terminates TLS before forwarding to Express. Trust its forwarded
+  // protocol so x402's resource.url stays HTTPS and matches the marketplace URL.
+  app.set("trust proxy", 1);
+
   // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
   app.use(
     paymentMiddleware(
