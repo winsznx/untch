@@ -10,20 +10,9 @@ import { WordHighlight } from "./word-highlight";
  * weight 600; exactly one word in the WordHighlight box (the one-per-page signature device); sub-copy
  * in Pearl; a ghost pill CTA.
  *
- * NEW DECISIONS (confirm):
- *  - Headline copy: the PRD's primary tagline "The model never touches the money." WordHighlight on "never".
- *  - Eyebrow + sub-copy + the two CTAs are the PRD's own website-hero copy. Destinations /dashboard and
- *    /explorer are both real, working routes.
- *  - Visual: an owner-supplied product-flow illustration (untchflow.avif) showing the real loop — agent,
- *    policy checks, an approval, a blocked duplicate, an escalation. It floats on the Deep Iris canvas as a
- *    product mockup (its background is transparent). This is a deliberate product-shot, distinct from the
- *    "no white cards on the dark canvas" rule which governs design-system cards, not mockups.
- *  - Mobile: content leads, the visual follows below.
- *
- * Image loading (2026 best practices): AVIF (44 KB, from a 2.2 MB PNG); explicit width/height so there is
- * no layout shift; `priority` because it is the above-the-fold LCP visual (eager, high fetch priority,
- * preloaded); `sizes` so smaller viewports fetch a smaller variant; `next/image` generates the responsive
- * srcset and serves the best format per browser.
+ * Visual: phone escalation story (approve / deny coffee intent) + outcome chips — LCP-optimized AVIF
+ * from internal/brand, ~24KB at 1440×1080. `priority` + explicit dimensions + sizes for no layout shift.
+ * Mobile: content leads, the visual follows below.
  */
 export function Hero() {
   return (
@@ -55,15 +44,28 @@ export function Hero() {
           </div>
 
           <div className="flex justify-center lg:justify-end">
-            <Image
-              src="/untch-flow.avif"
-              alt="Untch decision flow: an agent's payments checked against policy, one approved, a duplicate blocked, and a larger one escalated for approval."
-              width={1024}
-              height={1536}
-              priority
-              sizes="(max-width: 1024px) 78vw, 440px"
-              className="h-auto w-full max-w-[360px] lg:max-w-[440px]"
-            />
+            {/*
+              Product art is Deep Iris on Deep Iris — without a frame it dissolves into the canvas.
+              Soft Teal ring + lift keeps the phone legible without inventing a second brand color.
+            */}
+            <div
+              className="relative w-full max-w-[420px] lg:max-w-[520px]"
+              style={{
+                borderRadius: 28,
+                boxShadow:
+                  "0 0 0 1px color-mix(in srgb, var(--color-signal) 28%, transparent), 0 32px 64px color-mix(in srgb, #000 45%, transparent)",
+              }}
+            >
+              <Image
+                src="/untch-hero.avif"
+                alt="Untch escalation on a phone: agent wants 4.00 USDT0 for an oat latte above the 3.50 auto limit, with Approve and Deny, and APPROVED, BLOCKED, and ESCALATED outcome chips."
+                width={1448}
+                height={1086}
+                priority
+                sizes="(max-width: 1024px) 88vw, 520px"
+                className="h-auto w-full rounded-[28px]"
+              />
+            </div>
           </div>
         </div>
       </div>

@@ -55,6 +55,17 @@ export const DISPUTE_PRICE = "$0.50" as const;
 export const RECONCILE_ROUTE = "/reconcile_agent_spend" as const;
 export const RECONCILE_PRICE = "$0.25" as const;
 
+/** Consumer / lifestyle / builder tools (multi-service ASP surface). */
+export const CATALOG_ROUTE = "/catalog" as const;
+export const CAFE_MENU_ROUTE = "/cafe/menu" as const;
+export const CAFE_LATTE_ROUTE = "/cafe/order/latte" as const;
+export const CAFE_LATTE_PRICE = "$0.04" as const;
+export const SUGGEST_NAMES_ROUTE = "/builder/suggest_names" as const;
+export const SUGGEST_NAMES_PRICE = "$0.01" as const;
+export const CHECK_DOMAINS_ROUTE = "/builder/check_domains" as const;
+export const RANK_OPTIONS_ROUTE = "/builder/rank_options" as const;
+export const SEO_TIPS_ROUTE = "/builder/seo_tips" as const;
+
 /** §7.4 receipt status poll (unpriced) — GET /receipt_status/:receiptId. */
 export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
 
@@ -77,6 +88,12 @@ export const PAUSE_POLICY_ROUTE = "/pause_policy" as const;
 export const RESUME_POLICY_ROUTE = "/resume_policy" as const;
 
 export const DEFAULT_PORT = 4021;
+
+/** All consumer priced routes for payment middleware registration. */
+export const CONSUMER_PRICED_ROUTES = {
+  cafeLatte: { methodPath: `POST ${CAFE_LATTE_ROUTE}` as const, price: CAFE_LATTE_PRICE },
+  suggestNames: { methodPath: `POST ${SUGGEST_NAMES_ROUTE}` as const, price: SUGGEST_NAMES_PRICE },
+} as const;
 
 export type SellerConfig = {
   okxApiKey: string;

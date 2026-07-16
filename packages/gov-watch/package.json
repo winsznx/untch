@@ -1,0 +1,31 @@
+{
+  "name": "@untch/gov-watch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Untch governance watcher. A lightweight poller over the low-volume governance events on the deployed contracts — UntchReceipts' OpProposed/OpExecuted/OpCancelled/WriterAdded/WriterRemoved/AdminTransferred and SpendIntentRegistry's writer/admin events — that alerts a human through the existing escalation channels the moment one fires. It is what makes UntchReceipts' timelock + cancel() a usable defense rather than a lever nobody is watching. Not an indexer: no history, no query surface, one durable cursor.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "watch": "tsx src/run-watcher.ts",
+    "prove:testnet": "tsx src/prove-testnet-alert.ts",
+    "prove:fork": "tsx src/prove-fork-live.ts"
+  },
+  "dependencies": {
+    "@untch/escalation": "workspace:*",
+    "@untch/shared": "workspace:*",
+    "viem": "^2.55.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.3"
+  }
+}

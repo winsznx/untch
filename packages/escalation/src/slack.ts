@@ -1,5 +1,11 @@
 import type { SlackConfig } from "./config";
-import type { Channel, ChannelReceiver, ChannelSendResult, EscalationMessage } from "./channel";
+import type {
+  Channel,
+  ChannelReceiver,
+  ChannelSendResult,
+  EscalationMessage,
+  GovernanceAlert,
+} from "./channel";
 import type { InboundResponse } from "./types";
 import {
   approvePayload,
@@ -7,6 +13,7 @@ import {
   parseButtonPayload,
   parseTextCommand,
   renderApprovalText,
+  renderGovernanceText,
 } from "./wire-format";
 import {
   defaultWebSocketFactory,
@@ -119,6 +126,39 @@ export class SlackChannel implements Channel {
         return { ok: false, detail: json.error ?? `chat.postMessage failed: HTTP ${res.status}` };
       }
       return { ok: true, meta: { ts: json.ts, channelId } };
+    } catch (err) {
+      return { ok: false, detail: (err as Error).message };
+    }
+  }
+
+  /** Same bot, same DM, same transport as `send` — minus the action blocks, because a governance
+   * alert is a notification, not a request. See `GovernanceAlert`. */
+  async notify(alert: GovernanceAlert): Promise<ChannelSendResult> {
+    try {
+      const open = await this.fetchImpl(this.api("conversations.open"), {
+        method: "POST",
+        headers: { authorization: `Bearer ${this.cfg.botToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ users: this.cfg.userId }),
+      });
+      const openJson = (await open.json()) as { ok?: boolean; error?: string; channel?: { id?: string } };
+      if (!openJson.ok || !openJson.channel?.id) {
+        return { ok: false, detail: openJson.error ?? `conversations.open failed: HTTP ${open.status}` };
+      }
+      const text = renderGovernanceText(alert);
+      const res = await this.fetchImpl(this.api("chat.postMessage"), {
+        method: "POST",
+        headers: { authorization: `Bearer ${this.cfg.botToken}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          channel: openJson.channel.id,
+          text,
+          blocks: [{ type: "section", text: { type: "mrkdwn", text } }],
+        }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string; ts?: string };
+      if (!json.ok) {
+        return { ok: false, detail: json.error ?? `chat.postMessage failed: HTTP ${res.status}` };
+      }
+      return { ok: true, meta: { ts: json.ts } };
     } catch (err) {
       return { ok: false, detail: (err as Error).message };
     }

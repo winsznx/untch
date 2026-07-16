@@ -3,6 +3,11 @@ import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import {
+  CAFE_LATTE_PRICE,
+  CAFE_LATTE_ROUTE,
+  CAFE_MENU_ROUTE,
+  CATALOG_ROUTE,
+  CHECK_DOMAINS_ROUTE,
   CREATE_INTENT_ROUTE,
   CREATE_POLICY_ROUTE,
   DISPUTE_PRICE,
@@ -15,6 +20,7 @@ import {
   PING_ROUTE,
   PREFLIGHT_PRICE,
   PREFLIGHT_ROUTE,
+  RANK_OPTIONS_ROUTE,
   RECEIPT_STATUS_ROUTE,
   RECONCILE_PRICE,
   RECONCILE_ROUTE,
@@ -22,12 +28,24 @@ import {
   SCORE_BUYER_ROUTE,
   SCORE_PRICE,
   SCORE_VENDOR_ROUTE,
+  SEO_TIPS_ROUTE,
+  SUGGEST_NAMES_PRICE,
+  SUGGEST_NAMES_ROUTE,
   SYNC_POLICY_ROUTE,
   UPDATE_POLICY_ROUTE,
   VERIFY_PRICE,
   VERIFY_ROUTE,
   type SellerConfig,
 } from "./config";
+import {
+  handleCafeMenu,
+  handleCafeOrderLatte,
+  handleCatalog,
+  handleCheckDomains,
+  handleRankOptions,
+  handleSeoTips,
+  handleSuggestNames,
+} from "./consumer-handlers";
 import {
   handleCreateSpendIntent,
   handlePreflightPayment,
@@ -142,6 +160,16 @@ export function createSellerApp(
           description: "Untch reconcile_agent_spend — assemble an agent's spend/blocked-waste report over a period, anchor via AuditAnchored (§10.3, no LLM)",
           mimeType: "application/json",
         },
+        [`POST ${CAFE_LATTE_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
+          description: "Untch demo café — paid oat latte order voucher (lifestyle / governed spend demo)",
+          mimeType: "application/json",
+        },
+        [`POST ${SUGGEST_NAMES_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SUGGEST_NAMES_PRICE },
+          description: "Untch Launch Pack — deterministic product name suggestions for builders",
+          mimeType: "application/json",
+        },
       },
       resourceServer,
     ),
@@ -153,6 +181,15 @@ export function createSellerApp(
   app.get(PING_ROUTE, (_req, res) => {
     res.json({ ok: true, tool: "ping_untch", ts: new Date().toISOString() });
   });
+
+  // ── Consumer catalog + free builder/lifestyle tools ────────────────────────
+  app.get(CATALOG_ROUTE, (_req, res) => send(res, handleCatalog()));
+  app.get(CAFE_MENU_ROUTE, (_req, res) => send(res, handleCafeMenu()));
+  app.post(CAFE_LATTE_ROUTE, (req, res) => send(res, handleCafeOrderLatte(req.body)));
+  app.post(SUGGEST_NAMES_ROUTE, (req, res) => send(res, handleSuggestNames(req.body)));
+  app.post(CHECK_DOMAINS_ROUTE, (req, res) => send(res, handleCheckDomains(req.body)));
+  app.post(RANK_OPTIONS_ROUTE, (req, res) => send(res, handleRankOptions(req.body)));
+  app.post(SEO_TIPS_ROUTE, (req, res) => send(res, handleSeoTips(req.body)));
 
   app.post(CREATE_INTENT_ROUTE, (req, res, next) => {
     if (!policyWiring) return send(res, policyStoreUnconfigured());
@@ -370,6 +407,8 @@ if (isMain) {
           console.log(`[asp]   POST ${UPDATE_POLICY_ROUTE} / ${PAUSE_POLICY_ROUTE} / ${RESUME_POLICY_ROUTE}  (operator-signed, on-chain)`);
           console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
           console.log(`[asp]   GET  ${ESCALATION_STATUS_ROUTE}  (escalation status poll, §7.2)`);
+          console.log(`[asp]   GET  ${CATALOG_ROUTE}  free  ·  GET ${CAFE_MENU_ROUTE} free  ·  POST ${CAFE_LATTE_ROUTE} ${CAFE_LATTE_PRICE}`);
+          console.log(`[asp]   POST ${SUGGEST_NAMES_ROUTE} ${SUGGEST_NAMES_PRICE}  ·  free builder: check_domains / rank_options / seo_tips`);
           console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
         });
       },

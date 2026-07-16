@@ -4,19 +4,38 @@ import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../wallet/wallet-context";
 
 /**
- * The self-serve channel-binding UI (§27 / §15). Once signed in, the operator links their own Telegram,
- * Discord, or Slack handle through a real code roundtrip, replacing the env-var single-operator interim.
- * Request a code, send it from the handle to the Untch bot (which the running channel receiver confirms),
- * then the binding is verified and persisted per operator.
+ * The self-serve channel-binding UI (§27 / §15). Once signed in, the operator claims their own Telegram,
+ * Discord, or Slack handle.
+ *
+ * HONEST STATE (internal/binding-lifecycle-audit.md): this flow cannot yet VERIFY a handle. The code is
+ * minted and shown by this dashboard, so pasting it back here proves only that you are the session that
+ * was shown it — nothing about the handle. Real verification needs the code to arrive FROM the handle,
+ * observed by that channel's receiver; that receiver is not built. So the flow ends at `unverified`, the
+ * UI says so, and no authority is conferred. Photon/iMessage is deliberately absent until this is real —
+ * adding it here would widen an unproved surface (audit §1).
  */
 
 const CHANNELS = ["telegram", "discord", "slack"] as const;
 type Channel = (typeof CHANNELS)[number];
+type Status = "pending" | "unverified" | "verified";
+
+const STATUS_LABEL: Record<Status, string> = {
+  pending: "awaiting code",
+  unverified: "unverified",
+  verified: "verified",
+};
+
+const STATUS_HELP: Record<Status, string> = {
+  pending: "A code was issued. It has not been submitted yet.",
+  unverified:
+    "You claimed this handle and echoed the dashboard code, which only proves you are this session. Untch has NOT confirmed you control this handle, so it grants no approval authority. Verifying needs the code sent from the handle itself, which is not built yet.",
+  verified: "Confirmed from the handle itself, over its own channel.",
+};
 
 interface BindingView {
   channel: Channel;
   handle: string;
-  status: "pending" | "verified";
+  status: Status;
   since: string;
 }
 
@@ -141,8 +160,18 @@ export function ChannelBindings({
                 {b.channel} · <span style={{ fontFamily: "ui-monospace, monospace", overflowWrap: "anywhere" }}>{b.handle}</span>
               </span>
               <div className="flex items-center gap-3">
-                <span className="rounded-tags px-3 py-1 text-caption-lg" style={{ border: `1px solid ${b.status === "verified" ? "var(--color-positive)" : "var(--color-signal)"}`, color: b.status === "verified" ? "var(--color-positive)" : "var(--color-signal)" }}>
-                  {b.status}
+                {/* Only a channel-proved binding gets the positive colour. An `unverified` claim is a
+                    handle the operator typed in and echoed a dashboard code for — it proves nothing
+                    about the handle and confers no authority, so it must never read as done. */}
+                <span
+                  className="rounded-tags px-3 py-1 text-caption-lg"
+                  title={STATUS_HELP[b.status]}
+                  style={{
+                    border: `1px solid ${b.status === "verified" ? "var(--color-positive)" : "var(--color-signal)"}`,
+                    color: b.status === "verified" ? "var(--color-positive)" : "var(--color-signal)",
+                  }}
+                >
+                  {STATUS_LABEL[b.status]}
                 </span>
                 <button type="button" onClick={() => void remove(b.channel)} disabled={busy} className="text-caption-lg underline-offset-4 hover:underline" style={{ color: "var(--color-inverse-muted)" }}>
                   remove

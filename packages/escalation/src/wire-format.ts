@@ -1,4 +1,4 @@
-import type { EscalationMessage } from "./channel";
+import type { EscalationMessage, GovernanceAlert } from "./channel";
 
 /**
  * The transport-neutral §27 approval wire format, shared by every real channel.
@@ -67,4 +67,60 @@ export function renderApprovalText(m: EscalationMessage): string {
     ``,
     `Approve or deny below. This expires at ${deadline} UTC. If you do not answer, it is denied.`,
   ].join("\n");
+}
+
+/** Plain-language headline per event kind. What a woken operator reads first. */
+function governanceHeadline(a: GovernanceAlert): string {
+  switch (a.kind) {
+    case "OpProposed":
+      return `Someone proposed a change to ${a.contract}. You have time to cancel it.`;
+    case "OpExecuted":
+      return `A proposed change to ${a.contract} just took effect.`;
+    case "OpCancelled":
+      return `A pending change to ${a.contract} was cancelled.`;
+    case "WriterAdded":
+      return `A new writer can now write to ${a.contract}.`;
+    case "WriterRemoved":
+      return `A writer lost access to ${a.contract}.`;
+    case "AdminTransferred":
+      return `${a.contract} has a new admin.`;
+    case "OracleChanged":
+      return `${a.contract} has a new oracle key. It signs spend authorizations.`;
+    case "OwnershipTransferStarted":
+      return `Someone started handing over ownership of ${a.contract}.`;
+    case "OwnershipTransferred":
+      return `${a.contract} has a new owner. The owner controls the funds.`;
+    case "Paused":
+      return `${a.contract} was paused.`;
+    case "Unpaused":
+      return `${a.contract} was unpaused. It can move funds again.`;
+  }
+}
+
+/**
+ * The governance alert copy — the notification twin of `renderApprovalText`, same plain-language rule,
+ * and deliberately with NO approve/deny grammar. The only lever an operator has here is an on-chain
+ * `cancel()` from the admin key, so the text says exactly that rather than implying a reply does anything.
+ */
+export function renderGovernanceText(a: GovernanceAlert): string {
+  const lines = [governanceHeadline(a), ``];
+
+  for (const [k, v] of Object.entries(a.fields)) lines.push(`${k}: ${v}`);
+
+  lines.push(``, `Contract: ${a.contract} ${a.contractAddress} (chain ${a.chainId})`, `Tx: ${a.txHash}`);
+  if (a.explorerUrl) lines.push(a.explorerUrl);
+
+  if (a.cancelWindow) {
+    const hrs = Math.floor(a.cancelWindow.secondsRemaining / 3600);
+    const mins = Math.floor((a.cancelWindow.secondsRemaining % 3600) / 60);
+    const left = a.cancelWindow.secondsRemaining <= 0 ? "it can be executed NOW" : `about ${hrs}h ${mins}m left`;
+    lines.push(
+      ``,
+      `This cannot take effect until ${a.cancelWindow.etaIso.replace("T", " ").slice(0, 19)} UTC (${left}).`,
+      `If you did not expect this, cancel it on-chain with the admin key before then:`,
+      `  cancel(kind, target) on ${a.contractAddress}`,
+      `Replying here does nothing. Cancelling is an on-chain admin call.`,
+    );
+  }
+  return lines.join("\n");
 }

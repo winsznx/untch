@@ -1,6 +1,12 @@
-import type { Channel, ChannelReceiver, ChannelSendResult, EscalationMessage } from "./channel";
+import type {
+  Channel,
+  ChannelReceiver,
+  ChannelSendResult,
+  EscalationMessage,
+  GovernanceAlert,
+} from "./channel";
 import type { InboundResponse } from "./types";
-import { parseTextCommand, renderApprovalText } from "./wire-format";
+import { parseTextCommand, renderApprovalText, renderGovernanceText } from "./wire-format";
 
 /**
  * The Photon `Channel` — the fifth real implementation of the same seam Telegram, Discord, Slack, and
@@ -123,6 +129,18 @@ export class PhotonChannel implements Channel {
       const res = await this.port.send(this.operatorHandle, renderPhotonMessage(message));
       // ok == Spectrum accepted the send RPC, NOT device-delivered (see header). meta records that
       // honestly; the §7.2 fail-closed timeout is the backstop if it never actually arrives.
+      return { ok: true, meta: { messageId: res.id, delivery: "accepted" } };
+    } catch (err) {
+      return { ok: false, detail: (err as Error).message };
+    }
+  }
+
+  /** Same Spectrum port, same bound operator handle as `send` — minus the "Reply APPROVE/DENY"
+   * grammar, because a governance alert has no code to reply with. See `GovernanceAlert`. */
+  async notify(alert: GovernanceAlert): Promise<ChannelSendResult> {
+    try {
+      const res = await this.port.send(this.operatorHandle, renderGovernanceText(alert));
+      // Same honesty as `send`: ok == Spectrum accepted the RPC, NOT device-delivered.
       return { ok: true, meta: { messageId: res.id, delivery: "accepted" } };
     } catch (err) {
       return { ok: false, detail: (err as Error).message };

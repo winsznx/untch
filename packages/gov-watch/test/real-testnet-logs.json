@@ -1,0 +1,55 @@
+{
+  "_source": "REAL logs read from X Layer testnet (chainId 1952) UntchReceipts 0x0C64997277b7D94d2999DEa22A123cac56334863 via eth_getLogs on 2026-07-14. These are the genuine OpProposed/WriterAdded/OpExecuted emitted by the real 60s-timelock writer provisioning (propose tx 0x253c8689…, execute tx 0x75b4128d…). Not hand-authored.",
+  "logs": [
+    {
+      "address": "0x0c64997277b7d94d2999dea22a123cac56334863",
+      "blockHash": "0xc4f9554b390d22bc10f2688b7effc931c300b35a32cd7bee027379e17fc08286",
+      "blockNumber": "0x219ab3a",
+      "blockTimestamp": "0x6a51088f",
+      "data": "0x000000000000000000000000000000000000000000000000000000006a5108cb",
+      "logIndex": "0x0",
+      "removed": false,
+      "topics": [
+        "0x0fdb7779f848a683c11cb120e1b255913de8fdee0ada42b3deb24a0542b3d57a",
+        "0xb4d6ce980c9c18a1d08e23abafa972cd4d82b78a0fc2e27935f7ced80ed4ddfa",
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x00000000000000000000000003e5abfd6aff41e9766bc1c34f136962404a1ab5"
+      ],
+      "transactionHash": "0x253c8689af25fe034c5a7515f2af0e1be9d368ab8d597f13d58c4ba793c4e81e",
+      "transactionIndex": "0x1"
+    },
+    {
+      "address": "0x0c64997277b7d94d2999dea22a123cac56334863",
+      "blockHash": "0x2482f884ad3aa691b1861f093cdfa3bc21bc447a15864da600876dd9ab2ec32a",
+      "blockNumber": "0x219ab81",
+      "blockTimestamp": "0x6a5108d6",
+      "data": "0x",
+      "logIndex": "0x0",
+      "removed": false,
+      "topics": [
+        "0xd70794aee7ce40a1d5b28381c62e215884808f1b1af74ca65ec351ceb3cc8f39",
+        "0x00000000000000000000000003e5abfd6aff41e9766bc1c34f136962404a1ab5",
+        "0x00000000000000000000000098f43eabcad380f4f1f0587ae945bc8c79e43c0b"
+      ],
+      "transactionHash": "0x75b4128dc704934723b8dfbcde1b67f3ef4f1f63942c6943fefa89ad42c4f7d1",
+      "transactionIndex": "0x1"
+    },
+    {
+      "address": "0x0c64997277b7d94d2999dea22a123cac56334863",
+      "blockHash": "0x2482f884ad3aa691b1861f093cdfa3bc21bc447a15864da600876dd9ab2ec32a",
+      "blockNumber": "0x219ab81",
+      "blockTimestamp": "0x6a5108d6",
+      "data": "0x",
+      "logIndex": "0x1",
+      "removed": false,
+      "topics": [
+        "0x67ff121b40f0ee7910933c0172d40661b8def8064c973396f7e8f6907f915a60",
+        "0xb4d6ce980c9c18a1d08e23abafa972cd4d82b78a0fc2e27935f7ced80ed4ddfa",
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x00000000000000000000000003e5abfd6aff41e9766bc1c34f136962404a1ab5"
+      ],
+      "transactionHash": "0x75b4128dc704934723b8dfbcde1b67f3ef4f1f63942c6943fefa89ad42c4f7d1",
+      "transactionIndex": "0x1"
+    }
+  ]
+}

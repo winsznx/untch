@@ -29,7 +29,11 @@
     "test:key-rotations": "tsx scripts/soak/test-key-rotations.ts",
     "verify:role-separation": "tsx scripts/soak/verify-role-separation.ts",
     "verify:deployment-roles": "tsx scripts/soak/verify-deployment-roles.ts",
-    "deploy:keyed-suite": "tsx scripts/deploy-keyed-suite.ts"
+    "deploy:keyed-suite": "tsx scripts/deploy-keyed-suite.ts",
+    "deploy:mainnet-suite": "tsx scripts/deploy-mainnet-suite.ts",
+    "test:gov-watch": "node --import tsx --test packages/gov-watch/test/*.test.ts",
+    "gov-watch": "pnpm --filter @untch/gov-watch watch",
+    "prove:gov-watch": "pnpm --filter @untch/gov-watch prove:testnet"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",

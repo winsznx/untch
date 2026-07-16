@@ -11,9 +11,11 @@ dist/
 # macOS
 .DS_Store
 
-# local-only Remotion scratch app for launch footage (also excluded from the pnpm workspace so the
-# committed lockfile stays reproducible from a clean checkout)
+# local-only Remotion: launch video app + installed skills/scratch (not product build)
 apps/video/
+.agents/
+**/remotion-best-practices/
+**/remotion-*/
 
 # next.js build output (apps/web)
 .next/

@@ -59,8 +59,8 @@ arrows are dropped — Untch's links are direct, with no submenus.
 
 ### Five open decisions (Impilo's spec answers none of these — proposed, flagged, not invented silently)
 
-1. **Logo — NEW DECISION, confirm.** A text wordmark "Untch" at the title role (24px/600), as an
-   explicit placeholder. No Untch mark exists yet; this needs a designed logo eventually.
+1. **Logo — settled.** Seal-gate mark (`/untch-logo.png`, from `internal/brand`) + text wordmark at
+   the title role (24px/600). Same mark in the dashboard nav and footer.
 
 2. **Nav links — NEW DECISION, confirm.** `Product`, `Receipts`, `Docs`, `Pricing`. Grounded in
    what is actually true about Untch, not generic About/Contact filler:

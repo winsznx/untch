@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 /**
  * Site footer — NEW INVENTION (confirm). §4d records that the design files specify only the
@@ -8,10 +9,8 @@ import Link from "next/link";
  * FAITHFUL TO SPEC: the one specified value, Iris Glow background (`--color-surface-raised`),
  * plus the system's geometry and type roles. Depth from tonal fill, no drop shadow.
  *
- * NEW DECISIONS (confirm):
- *  - Three link columns (Product / Developers / Proof), grounded in what is true about Untch.
- *  - Wordmark placeholder + the PRD tagline and the no-custody line (I4) verbatim.
- *  - Link destinations are structural; several pages do not exist yet (see apps/web/README.md).
+ * Brand: seal-gate mark + wordmark (same family as the site header). Tagline + I4 no-custody line.
+ * Link destinations are structural; several pages do not exist yet (see apps/web/README.md).
  */
 
 type FooterLink = { label: string; href: string; external?: boolean };
@@ -20,26 +19,24 @@ const COLUMNS: { heading: string; links: FooterLink[] }[] = [
   {
     heading: "Product",
     links: [
-      { label: "Product", href: "/product" },
+      { label: "How it works", href: "/#how-it-works" },
+      { label: "Modes", href: "/#modes" },
       { label: "Public receipts", href: "/explorer" },
-      { label: "Pricing", href: "/pricing" },
       { label: "Open dashboard", href: "/dashboard" },
     ],
   },
   {
-    heading: "Developers",
+    heading: "Agents",
     links: [
-      { label: "Docs", href: "/docs" },
-      { label: "Payment middleware", href: "/docs" },
-      { label: "Bureau methodology", href: "/methodology" },
-      { label: "MCP tools", href: "/docs" },
+      { label: "ASP catalog", href: "https://asp.untch.xyz/catalog", external: true },
+      { label: "Ping rail (x402)", href: "https://asp.untch.xyz/ping_untch", external: true },
+      { label: "Café menu", href: "https://asp.untch.xyz/cafe/menu", external: true },
     ],
   },
   {
     heading: "Proof",
     links: [
       { label: "Receipts explorer", href: "/explorer" },
-      { label: "Deployed contracts", href: "/explorer" },
       { label: "Verify on X Layer", href: "https://www.oklink.com/x-layer", external: true },
     ],
   },
@@ -70,9 +67,21 @@ export function SiteFooter() {
       <div className="mx-auto max-w-page px-6 py-16">
         <div className="flex flex-col gap-12 lg:flex-row lg:justify-between">
           <div className="flex max-w-sm flex-col gap-4">
-            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>
+            <Link
+              href="/"
+              aria-label="Untch home"
+              className="inline-flex items-center gap-2.5 text-title-sm transition-opacity duration-150 ease-out hover:opacity-80 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clinical-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+              style={{ color: "var(--color-text)" }}
+            >
+              <Image
+                src="/untch-logo.png"
+                alt=""
+                width={28}
+                height={28}
+                className="h-[28px] w-[28px] shrink-0"
+              />
               Untch
-            </span>
+            </Link>
             <p className="text-body" style={{ color: "var(--color-text)" }}>
               The model never touches the money.
             </p>

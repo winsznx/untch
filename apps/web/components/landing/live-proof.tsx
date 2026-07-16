@@ -2,10 +2,8 @@ import { DecisionChip } from "../hero";
 import { txUrl } from "../../lib/onchain";
 
 /**
- * Live proof — "Same intent. One variable." (dark canvas). Untch's answer to the classic
- * same-op-one-variable demo: the identical intent approved, then repeated and blocked as a duplicate,
- * with the difference living entirely in the receipts. Grounded in the PRD judge demo (§20).
- * NEW DECISION (confirm): the framing + copy. The blocked receipt links to a real on-chain block receipt.
+ * Live proof — "Same intent. One variable." The identical intent approved, then blocked as a
+ * duplicate, with the difference living in the receipts. Real block receipt link on OKLink.
  */
 
 const BLOCK_RECEIPT = "0x84f1eded3f2b9e7ac5c003b60c87f505b146d2aaf9366b8b9c1d84b848c05700";
@@ -38,9 +36,13 @@ export function LiveProof() {
               ["Result", "payment authorized"],
               ["Receipt", "written on X Layer"],
             ]}
+            emphasize
           />
           <div className="flex items-center justify-center">
-            <span className="rounded-tags px-3 py-1 text-caption-lg" style={{ border: "1px solid var(--color-border)", color: "var(--color-inverse-muted)" }}>
+            <span
+              className="rounded-tags px-3 py-1 text-caption-lg"
+              style={{ border: "1px solid var(--color-border)", color: "var(--color-inverse-muted)" }}
+            >
               vs
             </span>
           </div>
@@ -54,6 +56,7 @@ export function LiveProof() {
               ["Receipt", "block anchored on X Layer"],
             ]}
             receiptHref={txUrl("testnet", BLOCK_RECEIPT)}
+            emphasize
           />
         </div>
       </div>
@@ -67,29 +70,61 @@ function ProofColumn({
   amount,
   rows,
   receiptHref,
+  emphasize,
 }: {
   outcome: "APPROVED" | "BLOCKED" | "ESCALATED";
   label: string;
   amount: string;
   rows: [string, string][];
   receiptHref?: string;
+  emphasize?: boolean;
 }) {
+  const border =
+    outcome === "APPROVED"
+      ? "var(--color-positive)"
+      : outcome === "BLOCKED"
+        ? "var(--color-inverse-muted)"
+        : "var(--color-signal)";
+
   return (
-    <div className="flex flex-col gap-5 rounded-cards p-6" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+    <div
+      className="flex flex-col gap-5 rounded-cards p-6 transition duration-150 ease-out motion-reduce:transition-none"
+      style={{
+        background: "var(--color-surface)",
+        border: `1px solid ${emphasize ? border : "var(--color-border)"}`,
+        boxShadow: emphasize ? `0 0 0 1px ${border}22` : undefined,
+      }}
+    >
       <div className="flex items-center justify-between">
         <DecisionChip outcome={outcome} label={label} />
-        <span className="text-body" style={{ color: "var(--color-text)" }}>{amount}</span>
+        <span className="text-body" style={{ color: "var(--color-text)" }}>
+          {amount}
+        </span>
       </div>
       <div className="flex flex-col gap-3">
         {rows.map(([k, v]) => (
-          <div key={k} className="flex items-baseline justify-between gap-3" style={{ borderTop: "1px solid var(--color-border-soft)", paddingTop: 10 }}>
-            <span className="text-caption uppercase" style={{ color: "var(--color-inverse-muted)", letterSpacing: "0.24px" }}>{k}</span>
-            <span className="text-body-sm" style={{ color: "var(--color-inverse-canvas)" }}>{v}</span>
+          <div
+            key={k}
+            className="flex items-baseline justify-between gap-3"
+            style={{ borderTop: "1px solid var(--color-border-soft)", paddingTop: 10 }}
+          >
+            <span className="text-caption uppercase" style={{ color: "var(--color-inverse-muted)", letterSpacing: "0.24px" }}>
+              {k}
+            </span>
+            <span className="text-body-sm" style={{ color: "var(--color-inverse-canvas)" }}>
+              {v}
+            </span>
           </div>
         ))}
       </div>
       {receiptHref ? (
-        <a href={receiptHref} target="_blank" rel="noopener noreferrer" className="text-caption-lg underline-offset-4 hover:underline" style={{ color: "var(--color-data)" }}>
+        <a
+          href={receiptHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-caption-lg underline-offset-4 hover:underline"
+          style={{ color: "var(--color-data)" }}
+        >
           View the real block receipt on OKLink →
         </a>
       ) : null}

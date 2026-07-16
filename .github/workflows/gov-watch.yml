@@ -1,0 +1,75 @@
+# Untch governance watcher (§10.3 timelock defense). Covers the poller that watches UntchReceipts'
+# OpProposed/OpExecuted/OpCancelled/WriterAdded/WriterRemoved/AdminTransferred and SpendIntentRegistry's
+# writer/admin events, and alerts through the escalation channels' `notify` seam.
+#
+# Why this workflow exists: the same reason escalation.yml does. A new package whose tests run in no
+# workflow is a package whose tests do not really exist — and memory of this repo's last CI hole says a
+# suite green only on a laptop is a suite waiting to rot. This one guards code whose entire job is to be
+# the thing that notices a stolen admin key, so it is the last place to accept "green locally".
+#
+# The suite needs no network and no credentials: log fixtures are real bytes captured from the deployed
+# testnet UntchReceipts and committed, and the channels are injected fakes. The two REAL proofs
+# (prove:testnet → real Telegram, prove:fork → anvil fork) are deliberately NOT run here: they need live
+# bot credentials and a forked RPC. They are operator-run proofs, documented in the package README.
+#
+# Path filter includes packages/escalation/** because the `notify` seam and the governance copy live
+# there — a change to renderGovernanceText or the Channel interface must re-run these tests.
+name: gov-watch
+
+on:
+  push:
+    paths:
+      - "packages/gov-watch/**"
+      - "packages/escalation/**"
+      - "packages/shared/**"
+      - "contracts/out/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/gov-watch.yml"
+  pull_request:
+    paths:
+      - "packages/gov-watch/**"
+      - "packages/escalation/**"
+      - "packages/shared/**"
+      - "contracts/out/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/gov-watch.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  gov-watch:
+    name: §10.3 governance watcher — decode, chunking, fail-loud delivery
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Governance watcher suite
+        run: pnpm test:gov-watch
+
+      # The seam this package depends on lives in escalation. A notify()/copy change that breaks the
+      # approval path must fail here too, not just in escalation.yml's own path filter.
+      - name: Escalation suite (the notify seam it builds on)
+        run: pnpm test:escalation

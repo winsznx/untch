@@ -19,8 +19,8 @@ const DECISIONS: Decision[] = [
   {
     n: "1",
     title: "Logo",
-    flag: "NEW DECISION — CONFIRM",
-    body: "Text wordmark \"Untch\" at the settled title role (24px / 600), as an explicit placeholder. No real Untch mark exists yet; this needs a designed logo eventually.",
+    flag: "FAITHFUL TO SPEC",
+    body: "Seal-gate mark (white ring + clinical cyan aperture) from internal/brand, served as /untch-logo.png, plus text wordmark at title-sm (24px / 600). Same mark on mobile and desktop.",
   },
   {
     n: "2",
@@ -32,7 +32,7 @@ const DECISIONS: Decision[] = [
     n: "3",
     title: "Primary CTA",
     flag: "NEW DECISION — CONFIRM",
-    body: "\"Create a spend policy\" — the PRD's own canonical primary CTA — replacing Impilo's \"Request Demo\" (Untch has no demo-booking flow). Points at the product (/app), a structural placeholder for the dashboard.",
+    body: "\"Create a spend policy\" — the PRD's own canonical primary CTA — replacing Impilo's \"Request Demo\" (Untch has no demo-booking flow). Points at /dashboard.",
   },
   {
     n: "4",

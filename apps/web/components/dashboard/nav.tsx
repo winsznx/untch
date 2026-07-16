@@ -53,8 +53,15 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
 
 function Wordmark({ compact = false }: { compact?: boolean }) {
   return (
-    <Link href="/" className={`flex items-center gap-2 text-title-sm ${FOCUS} rounded-icons`} style={{ color: "var(--color-text)" }}>
-      <Image src="/untch-logo.png" alt="" width={26} height={26} priority className="rounded-icons shrink-0" />
+    <Link href="/" className={`flex items-center gap-2 text-title-sm ${FOCUS}`} style={{ color: "var(--color-text)" }} aria-label="Untch home">
+      <Image
+        src="/untch-logo.png"
+        alt=""
+        width={26}
+        height={26}
+        priority
+        className="h-[26px] w-[26px] shrink-0"
+      />
       {compact ? null : <span className="nav-label">Untch</span>}
     </Link>
   );

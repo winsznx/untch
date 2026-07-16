@@ -1,5 +1,11 @@
 import type { DiscordConfig } from "./config";
-import type { Channel, ChannelReceiver, ChannelSendResult, EscalationMessage } from "./channel";
+import type {
+  Channel,
+  ChannelReceiver,
+  ChannelSendResult,
+  EscalationMessage,
+  GovernanceAlert,
+} from "./channel";
 import type { InboundResponse } from "./types";
 import {
   approvePayload,
@@ -7,6 +13,7 @@ import {
   parseButtonPayload,
   parseTextCommand,
   renderApprovalText,
+  renderGovernanceText,
 } from "./wire-format";
 import {
   defaultWebSocketFactory,
@@ -181,6 +188,34 @@ export class DiscordChannel implements Channel {
         return { ok: false, detail: json.message ?? `send failed: HTTP ${res.status}` };
       }
       return { ok: true, meta: { messageId: json.id, dmChannelId: dmJson.id } };
+    } catch (err) {
+      return { ok: false, detail: (err as Error).message };
+    }
+  }
+
+  /** Same bot, same DM, same transport as `send` — minus the Approve/Deny components, because a
+   * governance alert is a notification, not a request. See `GovernanceAlert`. */
+  async notify(alert: GovernanceAlert): Promise<ChannelSendResult> {
+    try {
+      const dm = await this.fetchImpl(this.api("/users/@me/channels"), {
+        method: "POST",
+        headers: this.authHeaders(),
+        body: JSON.stringify({ recipient_id: this.cfg.userId }),
+      });
+      const dmJson = (await dm.json()) as { id?: string; message?: string };
+      if (!dm.ok || !dmJson.id) {
+        return { ok: false, detail: dmJson.message ?? `open DM failed: HTTP ${dm.status}` };
+      }
+      const res = await this.fetchImpl(this.api(`/channels/${dmJson.id}/messages`), {
+        method: "POST",
+        headers: this.authHeaders(),
+        body: JSON.stringify({ content: renderGovernanceText(alert) }),
+      });
+      const json = (await res.json()) as { id?: string; message?: string };
+      if (!res.ok || !json.id) {
+        return { ok: false, detail: json.message ?? `HTTP ${res.status}` };
+      }
+      return { ok: true, meta: { messageId: json.id } };
     } catch (err) {
       return { ok: false, detail: (err as Error).message };
     }

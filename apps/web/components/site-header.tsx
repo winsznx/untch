@@ -28,16 +28,17 @@ import { layout } from "@untch/design-tokens";
  *   - 9999px pill radius on the CTA (the non-negotiable "pill on all buttons" rule)
  *   - nav pill carries NO shadow on the dark canvas (tokens.ts elevationRules)
  *
- * FIVE OPEN DECISIONS — Impilo's spec does not answer these. Each is a real, reasoned proposal,
- * flagged here and in apps/web/README.md, NEVER presented as if the spec covered it:
- *   1. LOGO      → text wordmark "Untch" as an explicit placeholder; no real mark exists yet.
- *   2. NAV LINKS → Product / Receipts / Docs / Pricing. Receipts points at the real /explorer
+ * LOGO (settled): seal-gate mark from internal/brand — white ring + clinical cyan aperture on
+ * dark canvas (`/untch-logo.png`), plus text wordmark at title-sm. Same mark on mobile menu bar.
+ *
+ * OPEN DECISIONS — Impilo's spec does not answer these:
+ *   1. NAV LINKS → Product / Receipts / Docs / Pricing. Receipts points at the real /explorer
  *                  (the public receipts explorer, S6). Product / Docs / Pricing are structural
  *                  placeholders — those pages do not exist yet. Not generic About/Contact filler.
- *   3. CTA       → "Create a spend policy" (the PRD's own canonical primary CTA), not Impilo's
+ *   2. CTA       → "Create a spend policy" (the PRD's own canonical primary CTA), not Impilo's
  *                  "Request Demo" (Untch has no demo-booking flow). Points at /dashboard.
- *   4. MOBILE    → collapse below 768px (Tailwind `md`) to a hamburger + token-styled menu.
- *   5. MOTION    → snappy 150ms transitions; nav links lift on hover (opacity), CTA lifts
+ *   3. MOBILE    → collapse below 768px (Tailwind `md`) to a hamburger + token-styled menu.
+ *   4. MOTION    → snappy 150ms transitions; nav links lift on hover (opacity), CTA lifts
  *                  (brightness); reduced-motion respected. Nothing specified in the source docs.
  * ─────────────────────────────────────────────────────────────────────────────────────────
  */
@@ -53,18 +54,17 @@ const NAV_HEIGHT_PX = 80;
 type NavLink = { label: string; href: string };
 
 /**
- * NEW DECISION (confirm) — nav link set. Grounded in Untch as it exists today, no filler.
- * All hrefs are structurally correct but the destination pages are not built yet (placeholders):
- *   - Product   the product / how-it-works page
- *   - Receipts  the public receipts explorer (PRD S6), a real Untch surface
- *   - Docs      lives on Mintlify per the confirmed environment architecture (external once live)
- *   - Pricing   real per-call tool prices (PRD §11) + the A2A audit SKUs (PRD S2)
+ * Nav link set — only destinations that resolve today (no placeholder 404s for judges).
+ *   - Loop     homepage how-it-works band
+ *   - Modes    adoption ladder A–D (D labeled roadmap on the band)
+ *   - Receipts public explorer (PRD S6)
+ *   - Catalog  live A2MCP service map on asp.untch.xyz
  */
 const NAV_LINKS: readonly NavLink[] = [
-  { label: "Product", href: "/product" },
+  { label: "Loop", href: "/#how-it-works" },
+  { label: "Modes", href: "/#modes" },
   { label: "Receipts", href: "/explorer" },
-  { label: "Docs", href: "/docs" },
-  { label: "Pricing", href: "/pricing" },
+  { label: "Catalog", href: "https://asp.untch.xyz/catalog" },
 ];
 
 /**
@@ -125,14 +125,21 @@ export function SiteHeader() {
         className="mx-auto flex items-center justify-between px-6 md:grid md:grid-cols-[1fr_auto_1fr]"
         style={{ maxWidth: layout.pageMaxWidth, height: NAV_HEIGHT_PX }}
       >
-        {/* DECISION 1 — real logo mark + wordmark (settled title role, 24px/600). */}
+        {/* Logo: seal-gate mark (public/untch-logo.png) + wordmark at title-sm — desktop + mobile bar. */}
         <Link
           href="/"
           aria-label="Untch home"
           className={`flex items-center gap-2.5 text-title-sm transition-opacity duration-150 ease-out hover:opacity-80 motion-reduce:transition-none md:justify-self-start ${FOCUS_RING}`}
           style={{ color: "var(--color-text)" }}
         >
-          <Image src="/untch-logo.png" alt="" width={30} height={30} priority className="rounded-icons" />
+          <Image
+            src="/untch-logo.png"
+            alt=""
+            width={30}
+            height={30}
+            priority
+            className="h-[30px] w-[30px] shrink-0"
+          />
           Untch
         </Link>
 

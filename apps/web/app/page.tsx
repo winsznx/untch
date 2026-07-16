@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteHeader } from "../components/site-header";
 import { Hero } from "../components/hero";
 import { Problem } from "../components/landing/problem";
+import { OperatorStory } from "../components/landing/operator-story";
 import { HowItWorks } from "../components/landing/how-it-works";
 import { Modes } from "../components/landing/modes";
 import { LiveProof } from "../components/landing/live-proof";
@@ -15,9 +16,8 @@ export const metadata: Metadata = {
 };
 
 /**
- * Assembled homepage: the real header, hero, social proof, closing CTA (light inversion), and footer,
- * in order. Dark bands (hero, social proof) alternate with the Pearl light-inversion CTA and the Iris
- * Glow footer, per the design's stated dark/light rhythm.
+ * Homepage band order: hero → problem → operator story → loop → modes (scroll scrub) →
+ * live proof → on-chain verify → light CTA → footer.
  */
 export default function Home() {
   return (
@@ -25,6 +25,7 @@ export default function Home() {
       <SiteHeader />
       <Hero />
       <Problem />
+      <OperatorStory />
       <HowItWorks />
       <Modes />
       <LiveProof />

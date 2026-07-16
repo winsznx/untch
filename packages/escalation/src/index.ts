@@ -27,6 +27,8 @@ export {
   type ChannelReceiver,
   type ChannelSendResult,
   type EscalationMessage,
+  type GovernanceAlert,
+  type GovernanceEventKind,
 } from "./channel";
 export { TelegramChannel, parseCallbackData, parseTextCommand } from "./telegram";
 export { DiscordChannel, type DiscordChannelOptions } from "./discord";
@@ -50,6 +52,7 @@ export {
   approvePayload,
   denyPayload,
   renderApprovalText,
+  renderGovernanceText,
   type ParsedCommand,
 } from "./wire-format";
 export {

@@ -1,5 +1,11 @@
 import type { TelegramConfig } from "./config";
-import type { Channel, ChannelReceiver, ChannelSendResult, EscalationMessage } from "./channel";
+import type {
+  Channel,
+  ChannelReceiver,
+  ChannelSendResult,
+  EscalationMessage,
+  GovernanceAlert,
+} from "./channel";
 import type { InboundResponse } from "./types";
 import {
   approvePayload,
@@ -7,6 +13,7 @@ import {
   parseButtonPayload,
   parseTextCommand,
   renderApprovalText,
+  renderGovernanceText,
 } from "./wire-format";
 
 export { parseButtonPayload as parseCallbackData, parseTextCommand };
@@ -106,6 +113,29 @@ export class TelegramChannel implements Channel {
           chat_id: this.cfg.chatId,
           text,
           reply_markup,
+        }),
+      });
+      const json = (await res.json()) as { ok: boolean; description?: string; result?: TgMessage };
+      if (!res.ok || !json.ok) {
+        return { ok: false, detail: json.description ?? `HTTP ${res.status}` };
+      }
+      return { ok: true, meta: { messageId: json.result?.message_id } };
+    } catch (err) {
+      return { ok: false, detail: (err as Error).message };
+    }
+  }
+
+  /** Same bot, same chat, same transport as `send` — minus the inline keyboard, because there is
+   * nothing here to approve. See `GovernanceAlert`. */
+  async notify(alert: GovernanceAlert): Promise<ChannelSendResult> {
+    try {
+      const res = await this.fetchImpl(this.api("sendMessage"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chat_id: this.cfg.chatId,
+          text: renderGovernanceText(alert),
+          disable_web_page_preview: true,
         }),
       });
       const json = (await res.json()) as { ok: boolean; description?: string; result?: TgMessage };

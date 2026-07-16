@@ -71,6 +71,14 @@ export class DashboardChannel implements Channel {
     return { ok: true, meta: { rendered: true } };
   }
 
+  // NO `notify` — deliberate. `send` can return ok without delivering because an escalation record
+  // already exists in the repo, so the inbox genuinely shows it. A GovernanceAlert has no such record:
+  // nothing writes it to the repo and no dashboard view reads it, so a `notify` here could only return
+  // ok having made the alert readable NOWHERE. That is the one thing this channel must not do — a
+  // silent ok on a governance alert is worse than no channel at all, because the watcher would count
+  // the operator as notified. `notify` is optional on the seam exactly so this can stay unimplemented
+  // and be skipped loudly. Implementing it means a real governance-alert record + inbox view first.
+
   async startReceiving(
     onInbound: (r: InboundResponse) => Promise<void>,
   ): Promise<ChannelReceiver> {
