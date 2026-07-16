@@ -1,4 +1,6 @@
-:root {
+/* Dark (default) — Deep Iris canvas */
+:root,
+html[data-theme="dark"] {
   --canvas: #0b1f3a;
   --surface: #122744;
   --surface-raised: #183050;
@@ -6,9 +8,32 @@
   --muted: #9aa8b8;
   --data: #2ec4b6;
   --action: #3d7eff;
-  --border: rgba(255, 255, 255, 0.1);
-  --border-soft: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.12);
+  --border-soft: rgba(255, 255, 255, 0.07);
   --code-bg: #081628;
+  --topbar-bg: color-mix(in srgb, #0b1f3a 92%, transparent);
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  --th-bg: #122744;
+}
+
+/* Light — Pearl canvas + Cloud White surfaces (design tokens) */
+html[data-theme="light"] {
+  --canvas: #f4f4f6;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --text: #16165c;
+  --muted: #5a5a7a;
+  --data: #0d9488;
+  --action: #403cd5;
+  --border: rgba(22, 22, 92, 0.12);
+  --border-soft: rgba(22, 22, 92, 0.07);
+  --code-bg: #e8e8ee;
+  --topbar-bg: color-mix(in srgb, #f4f4f6 94%, transparent);
+  --shadow: 0 12px 32px rgba(22, 22, 92, 0.1);
+  --th-bg: #e8e8ee;
+}
+
+:root {
   --font: "Inter", system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --page: 1120px;
@@ -25,6 +50,10 @@ html {
   color-scheme: dark;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
@@ -33,6 +62,7 @@ body {
   color: var(--text);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 a {
@@ -61,7 +91,7 @@ a:hover {
   gap: 1rem;
   height: 56px;
   padding: 0 1.25rem;
-  background: color-mix(in srgb, var(--canvas) 92%, transparent);
+  background: var(--topbar-bg);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(10px);
 }
@@ -86,10 +116,15 @@ a:hover {
   height: 28px;
 }
 
+/* Seal is drawn light-on-transparent; darken for Pearl canvas */
+html[data-theme="light"] .brand img {
+  filter: brightness(0) saturate(100%) invert(12%) sepia(40%) saturate(2000%) hue-rotate(220deg);
+}
+
 .top-links {
   display: none;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.85rem;
 }
 
 @media (min-width: 768px) {
@@ -114,7 +149,7 @@ a:hover {
   border-radius: 9999px;
   padding: 0.45rem 0.95rem;
   background: var(--action);
-  color: var(--text) !important;
+  color: #f4f6f8 !important;
   font-size: 0.875rem;
   font-weight: 500;
   text-decoration: none !important;
@@ -123,6 +158,30 @@ a:hover {
 .cta:hover {
   filter: brightness(1.08);
   text-decoration: none !important;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  border-color: var(--data);
+}
+
+.theme-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .frame {
@@ -183,6 +242,11 @@ a:hover {
 .sidebar a.active {
   color: var(--text);
   background: color-mix(in srgb, var(--data) 16%, transparent);
+}
+
+html[data-theme="light"] .sidebar a.active {
+  background: color-mix(in srgb, var(--action) 12%, transparent);
+  color: var(--action);
 }
 
 .main {
@@ -255,7 +319,7 @@ a:hover {
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface-raised);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow);
   z-index: 50;
 }
 
@@ -289,30 +353,33 @@ a:hover {
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .prose h2 {
   margin: 2rem 0 0.75rem;
   font-size: 1.25rem;
   font-weight: 600;
+  color: var(--text);
 }
 
 .prose h3 {
   margin: 1.5rem 0 0.5rem;
   font-size: 1.05rem;
   font-weight: 600;
+  color: var(--text);
 }
 
 .prose p {
   margin: 0 0 1rem;
-  color: color-mix(in srgb, var(--text) 92%, var(--muted));
+  color: color-mix(in srgb, var(--text) 88%, var(--muted));
 }
 
 .prose ul,
 .prose ol {
   margin: 0 0 1rem;
   padding-left: 1.25rem;
-  color: color-mix(in srgb, var(--text) 92%, var(--muted));
+  color: color-mix(in srgb, var(--text) 88%, var(--muted));
 }
 
 .prose li {
@@ -360,12 +427,16 @@ a:hover {
 }
 
 .prose th {
-  background: var(--surface);
+  background: var(--th-bg);
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
   font-weight: 600;
+}
+
+.prose td {
+  background: var(--surface);
 }
 
 .prose blockquote {
@@ -438,4 +509,11 @@ a:hover {
   .drawer {
     display: none !important;
   }
+}
+
+/* Explorer address links */
+.prose a.addr-link {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  word-break: break-all;
 }

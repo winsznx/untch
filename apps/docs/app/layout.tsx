@@ -4,6 +4,7 @@ import Link from "next/link";
 import { loadDocsConfig } from "@/lib/nav";
 import { buildSearchIndex } from "@/lib/content";
 import { SearchBox } from "@/components/search";
+import { ThemeToggle, THEME_INIT_SCRIPT } from "@/components/theme-toggle";
 import "./globals.css";
 
 const cfg = loadDocsConfig();
@@ -20,7 +21,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const searchIndex = buildSearchIndex();
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
         <div className="shell">
           <header className="topbar">
@@ -29,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Untch docs
             </Link>
             <SearchBox index={searchIndex} />
+            <ThemeToggle />
             <nav className="top-links" aria-label="Product">
               {cfg.navbar.links.map((l) => (
                 <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer">
