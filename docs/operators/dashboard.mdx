@@ -1,0 +1,44 @@
+---
+title: Dashboard
+description: Operator proof surface for policies, intents, escalations, and ledger.
+---
+
+# Dashboard
+
+URL: [www.untch.xyz/dashboard](https://www.untch.xyz/dashboard)
+
+The dashboard is the operator surface. It is not the money path. Agents and Guard talk to the ASP and chain. You use the dashboard to set policy, answer escalations, and inspect history.
+
+## Sign in
+
+1. Connect a wallet (OKX first).
+2. Switch to **X Layer mainnet** when prompted.
+3. Sign the SIWE message.
+
+Sessions bind identity only. Every on-chain write still needs its own wallet signature.
+
+## Screens
+
+| Path | Purpose |
+| --- | --- |
+| `/dashboard/start` | First-run onboarding |
+| `/dashboard` | Overview |
+| `/dashboard/policies` | Create, update, pause policies |
+| `/dashboard/intents` | Decision stream |
+| `/dashboard/escalations` | Approve or deny pending escalations |
+| `/dashboard/ledger` | Spend and block history |
+| `/dashboard/vault` | Deploy and manage vaults |
+| `/dashboard/vendors` | Scores |
+| `/dashboard/reports` | Reconcile and reports |
+| `/dashboard/disputes` | Dispute packets |
+| `/dashboard/settings` | Operator settings and channel bindings |
+
+## Data scope
+
+Reads are scoped to your wallet as policy owner. You do not see another operator’s agents or ledger.
+
+## Related
+
+- [Policies](/operators/policies)
+- [Escalations](/operators/escalations)
+- [Channels](/operators/channels)

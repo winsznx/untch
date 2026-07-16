@@ -1,0 +1,35 @@
+---
+title: Lifestyle and Launch Pack
+description: Demo café and builder tools for volume and product stories.
+---
+
+# Lifestyle and Launch Pack
+
+Beyond the control plane, the ASP exposes two consumer-facing surfaces for demos and call volume.
+
+## Untch Café
+
+| Path | Price |
+| --- | --- |
+| `GET /cafe/menu` | free |
+| `POST /cafe/order/latte` | $0.04 |
+
+Story: agent wants a $4.00 oat latte above a $3.50 auto limit. Policy escalates. You approve. Agent pays. Voucher code returns.
+
+This is a **demo fulfillment** path for marketplace and video demos. It is not a partnership with a physical café.
+
+## Untch Launch Pack
+
+| Path | Price |
+| --- | --- |
+| `POST /builder/suggest_names` | $0.01 |
+| `POST /builder/check_domains` | free |
+| `POST /builder/rank_options` | free |
+| `POST /builder/seo_tips` | free |
+
+Use for Software Utility narratives and agent onboarding flows. Domain checks are deterministic stubs until a registrar API is connected.
+
+## Related
+
+- [ASP overview](/agents/asp-overview)
+- [Pricing](/reference/pricing)

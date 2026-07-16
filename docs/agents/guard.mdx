@@ -1,0 +1,32 @@
+---
+title: Untch Guard
+description: Operator-authorized payment middleware for x402 flows.
+---
+
+# Untch Guard
+
+Package: `@untch/x402-guard`
+
+Mode B middleware for buyer agents. On each 402 challenge it:
+
+1. Parses the challenge
+2. Runs **Challenge Binding Check** (expected vs presented fields)
+3. Calls Untch preflight (or your preflight adapter)
+4. Invokes your `signAndPay` only if checks pass
+
+## Install
+
+```bash
+npm install @untch/x402-guard
+```
+
+## Mental model
+
+You keep the key. The guard keeps the agent from signing a challenge that was swapped, replayed, or never preflighted.
+
+Binding failures map to `BLOCKED_REPLAY` or `REJECTED_BINDING` semantics. They never reach the signer.
+
+## Related
+
+- [Modes](/concepts/modes)
+- [x402](/agents/x402)

@@ -1,0 +1,97 @@
+---
+title: Quickstart
+description: Create a policy, run preflight, and verify a receipt on X Layer.
+---
+
+# Quickstart
+
+This path gets you from zero to a checked agent payment.
+
+## 1. Open the dashboard
+
+Go to [www.untch.xyz/dashboard](https://www.untch.xyz/dashboard).
+
+Connect a wallet (OKX Wallet is first-class). Sign in with SIWE. You must be on **X Layer mainnet** for production writes.
+
+## 2. Create a spend policy
+
+In **Policies**, create a policy with at least:
+
+- Daily budget
+- Per-call cap
+- Escalate-above threshold (spends over this need your approval)
+- Allowed categories (for example `market-data`, `security`, `research`)
+
+Register the policy on chain when prompted. You get a `policyId` and a `policyHash`. The agent must commit to that hash on every intent.
+
+Full field guide: [Policies](/operators/policies).
+
+## 3. Point the agent at Untch
+
+Base URL for the hosted ASP:
+
+```text
+https://asp.untch.xyz
+```
+
+Machine-readable service map:
+
+```bash
+curl -s https://asp.untch.xyz/catalog
+```
+
+## 4. Create an intent and preflight
+
+Typical agent sequence:
+
+1. `POST /create_spend_intent` with `policyId` and a full SpendIntent body. Returns `intentHash`.
+2. `POST /preflight_payment` with `policyId` and the intent (or `intentHash` on the same instance). Priced **$0.05** USDT0 via x402.
+
+Preflight returns a decision: `APPROVED`, `BLOCKED_*`, or `ESCALATED_*`, plus a rule trace.
+
+Details: [Tools](/agents/tools) and [Preflight](/concepts/preflight).
+
+## 5. Handle escalation
+
+If the decision is escalated, Untch notifies your bound channels. Reply with:
+
+```text
+APPROVE <code>
+```
+
+or
+
+```text
+DENY <code>
+```
+
+The agent polls `GET /escalation_status/:pollRef` until the state resolves. Default on timeout is **deny** (fail closed).
+
+Channel setup: [Channels](/operators/channels).
+
+## 6. Optional: Guard on the buyer
+
+Install `@untch/x402-guard` so the agent never signs a 402 challenge without binding check and preflight.
+
+See [Untch Guard](/agents/guard).
+
+## 7. Read public proof
+
+Open [www.untch.xyz/explorer](https://www.untch.xyz/explorer) for contract addresses and sample anchors.
+
+On-chain explorer: [OKLink X Layer](https://www.oklink.com/x-layer).
+
+## Smoke the rail without a policy
+
+```bash
+# Expects HTTP 402 with a Payment-Required challenge (USDT0 on eip155:196)
+curl -i https://asp.untch.xyz/ping_untch
+```
+
+A 402 here means the payment rail is up. A paid buyer settles $0.01 and receives `{ ok: true, tool: "ping_untch", ... }`.
+
+## Next
+
+- [What Untch is](/what-untch-is)
+- [ASP tools reference](/agents/tools)
+- [Pricing](/reference/pricing)

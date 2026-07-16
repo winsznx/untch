@@ -1,0 +1,45 @@
+---
+title: Control channels
+description: Telegram, Discord, Slack, iMessage, and dashboard as escalation surfaces.
+---
+
+# Control channels
+
+Channels transport notifications and operator replies. They do not evaluate policy.
+
+## Hosted ASP (Untch production)
+
+The public ASP is operated by Untch. Platform bot credentials live on the ASP host. End users never deploy Railway or Photon for themselves.
+
+| Channel | Role |
+| --- | --- |
+| Telegram | Notify + approve/deny |
+| Discord | Notify + approve/deny |
+| Slack | Notify + approve/deny |
+| iMessage (Photon) | Notify + text approve/deny |
+| Dashboard | SIWE identity path |
+
+## Why it can notify the platform operator
+
+Until each policy owner binds **their own** handles in onboarding, escalations for unbound owners may notify the interim platform operator channels. That is a deliberate bootstrap so something always rings.
+
+Target state: every owner binds Telegram, Discord, Slack, and/or iMessage in the dashboard. Fan-out is restricted to that owner’s bindings only.
+
+## Binding (dashboard)
+
+Use **Settings** / channel bindings on [the dashboard](https://www.untch.xyz/dashboard/settings):
+
+1. Start a binding with your handle (chat id, user id, phone).
+2. Prove ownership with the one-time code path.
+3. Verified bindings are stored against your operator id.
+
+## Photon / iMessage notes
+
+- Free plans use a **shared** Photon line. Only allowlisted phones can talk to it.
+- Escalations send to `PHOTON_OPERATOR_HANDLE` (E.164 or email).
+- Your personal phone must be allowed on the Photon project if you want messages on that device.
+
+## Related
+
+- [Escalations](/operators/escalations)
+- [Security](/security/invariants)

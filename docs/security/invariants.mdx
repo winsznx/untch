@@ -1,0 +1,23 @@
+---
+title: Invariants
+description: Guarantees Untch holds on every money-adjacent path.
+---
+
+# Invariants
+
+| Id | Guarantee |
+| --- | --- |
+| I1 | The model never touches the money. No LLM sits on approve, block, or escalate for spend. |
+| I2 | Fail closed. Dependency or data failure does not silent-approve. |
+| I3 | Untrusted input is validated at boundaries before evaluation. |
+| I4 | Owner keeps custody. Vault owner can withdraw and pause without Untch. Oracle cannot withdraw. |
+| I5 | Dogfood: Untch can run its own spend through the same control plane. |
+
+## Channel authority
+
+Chat channels never invent decisions. They only deliver operator replies for escalations the engine already created. Approvals are re-checked against policy, binding, code, caps, and timeout.
+
+## Related
+
+- [Threat model](/security/threat-model)
+- [Modes](/concepts/modes)

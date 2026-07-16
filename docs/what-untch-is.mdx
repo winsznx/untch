@@ -1,0 +1,53 @@
+---
+title: What Untch is
+description: Product definition, what Untch is not, and where it sits in the OKX stack.
+---
+
+# What Untch is
+
+Untch is **APP-compatible spend governance** for agents.
+
+OKX and x402 move the money. Untch decides whether a proposed payment is allowed, asks a human when the policy requires it, verifies delivery when you require it, and leaves a public hash trail on X Layer.
+
+## The job
+
+| Without Untch | With Untch |
+| --- | --- |
+| Agent holds keys or signs whatever a 402 returns | Policy and optional vault or guard sit in front of spend |
+| Overspend, duplicates, and bad vendors are after-the-fact | Caps, allowlists, vendor floors, and cooldowns run before payment |
+| No shared audit of blocked waste | Receipts for approve and block |
+
+## Product pieces
+
+1. **A2MCP ASP** on `asp.untch.xyz`: pay-per-call tools (preflight, verify, scores, reports, lifestyle and builder demos).
+2. **Operator dashboard** on `www.untch.xyz/dashboard`: policies, intent stream, escalations, ledger, vault, scores, reports.
+3. **Open middleware** `@untch/x402-guard`: buyer-side Challenge Binding Check and preflight before sign.
+4. **X Layer contracts**: PolicyRegistry, SpendIntentRegistry, UntchReceipts, UntchVaultFactory, UntchVault.
+
+## What Untch is not
+
+- A chat product. Control channels deliver escalations and alerts. They do not invent money decisions.
+- A replacement for OKX settlement, escrow, or Agentic Wallet.
+- A custodian of your funds. Vault owner withdraw is unconditional. Untch never holds user balances on its books as a bank.
+
+## Invariants (always true)
+
+| Id | Claim |
+| --- | --- |
+| I1 | The model never touches the money. Policy evaluation is deterministic code. |
+| I2 | Fail closed. Missing data or dependency failure blocks or escalates. It does not silent-approve. |
+| I4 | The owner keeps custody. Oracle keys cannot withdraw vault funds. |
+
+Full list: [Invariants](/security/invariants).
+
+## Listing and marketplace
+
+Untch registers as an **A2MCP** ASP on OKX.AI: fixed per-call prices, x402 settlement, no escrow negotiation. That matches pay-per-call tools.
+
+Optional later: A2A packages for custom audit work. Not required for the core product.
+
+## Related
+
+- [Modes](/concepts/modes)
+- [ASP overview](/agents/asp-overview)
+- [Networks](/reference/networks)

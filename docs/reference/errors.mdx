@@ -1,0 +1,39 @@
+---
+title: Errors
+description: Common ASP error codes and how to fix them.
+---
+
+# Errors
+
+ASP errors use a consistent envelope:
+
+```json
+{
+  "code": "STRING_CODE",
+  "message": "human-readable detail",
+  "retryable": false,
+  "docsUrl": null
+}
+```
+
+## Common codes
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| `POLICY_ID_REQUIRED` | Missing `policyId` | Pass decimal string policy id |
+| `POLICY_NOT_FOUND` | Unknown policy | Create or sync policy first |
+| `POLICY_BINDING_MISMATCH` | Intent hash ≠ stored policy hash | Rebuild intent from current rules |
+| `INTENT_REQUIRED` | No intent or intentHash | Send full intent or create first |
+| `INTENT_NOT_FOUND` | Hash not in this instance cache | Resubmit inline intent |
+| `INTENT_HASH_MISMATCH` | Inline body ≠ provided hash | Recompute or drop intentHash |
+| `IDEA_REQUIRED` / `NAMES_REQUIRED` / `NAME_REQUIRED` | Builder tools missing input | See tool body schema |
+| `RECEIPT_ID_REQUIRED` | log_receipt missing id | Pass receiptId from preflight |
+| `RECEIPT_WRITER_UNWIRED` | No durable receipt store | Retry later or contact operator |
+| `POLICY_STORE_NOT_CONFIGURED` | ASP missing policy DB | Operator infrastructure issue |
+
+HTTP **402** is not an application error envelope. It is payment required for a priced route.
+
+## Related
+
+- [Tools](/agents/tools)
+- [Preflight](/concepts/preflight)

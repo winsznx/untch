@@ -1,0 +1,54 @@
+---
+title: Preflight
+description: Deterministic policy evaluation before money moves.
+---
+
+# Preflight
+
+**Preflight** is the core check. Given a policy and a SpendIntent, Untch runs the policy engine and returns a decision plus a full rule trace.
+
+Hosted tool:
+
+```http
+POST https://asp.untch.xyz/preflight_payment
+```
+
+Price: **$0.05** USDT0 on X Layer mainnet via x402.
+
+## Outcomes
+
+| Family | Meaning |
+| --- | --- |
+| `APPROVED` | All rules passed. Agent may proceed to pay (and Mode C may return an oracle `sig` when configured). |
+| `BLOCKED_*` | Hard stop. No payment. |
+| `ESCALATED_*` | Withhold until a human approves or the timeout defaults to deny. |
+| `REJECTED_*` | Malformed input or binding failure. |
+
+Examples of block codes: duplicate, cooldown, recipient, agent, category, budget, rate limit, vendor risk, replay.
+
+Examples of escalate codes: amount above threshold, per-call cap (when policy says escalate), proof tier, vendor risk (when policy says escalate).
+
+## Rule evaluation
+
+All thirteen RULE_EVAL rules run in fixed order, plus the `policy.active` lookup. Order is load-bearing: the first failing rule wins.
+
+Inputs that need external state (vendor score, challenge binding) are injected into the ledger window by the ASP. The engine itself stays pure: no LLM, no silent skip.
+
+## Receipts and escalations
+
+On a decision, Untch can:
+
+- Enqueue a durable decision receipt (`receiptRef`)
+- Create a server-side escalation and fan out to your channels
+
+Poll escalations at `GET /escalation_status/:pollRef`.
+
+## Fail closed
+
+If the policy is missing, the ledger window is malformed, or a dependency fails in a way that would allow silent approve, Untch blocks or escalates. It does not invent an approval.
+
+## Related
+
+- [Policy](/concepts/policy)
+- [Escalations](/operators/escalations)
+- [Tools](/agents/tools)

@@ -1,0 +1,37 @@
+---
+title: Networks
+description: X Layer mainnet and testnet selection for Untch.
+---
+
+# Networks
+
+## Production default
+
+| Item | Value |
+| --- | --- |
+| Network | X Layer mainnet |
+| chainId | 196 |
+| CAIP-2 | `eip155:196` |
+| Settlement | USDT0 `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` |
+| ASP | `https://asp.untch.xyz` |
+| Site | `https://www.untch.xyz` |
+
+## Testnet
+
+| Item | Value |
+| --- | --- |
+| Network | X Layer testnet |
+| chainId | 1952 |
+| Role | Soak, contract drills, historical demos |
+
+Select testnet with `CHAIN_ID=1952` or `NEXT_PUBLIC_CHAIN_ID=1952`. Base contract addresses resolve from a single shared registry in `@untch/shared`.
+
+## Explorers
+
+- Mainnet: [oklink.com/x-layer](https://www.oklink.com/x-layer)
+- Testnet: [oklink.com/x-layer-testnet](https://www.oklink.com/x-layer-testnet)
+
+## Related
+
+- [Contracts](/reference/contracts)
+- [x402](/agents/x402)

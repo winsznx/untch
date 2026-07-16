@@ -1,0 +1,42 @@
+---
+title: Receipts and proof
+description: Decision and verification hashes anchored on UntchReceipts.
+---
+
+# Receipts and proof
+
+Every meaningful decision can become a **receipt**: a hash-only record anchored on X Layer. Payloads stay off-chain. Public proof is the hash and metadata on **UntchReceipts**.
+
+## Receipt kinds
+
+| Kind | Meaning |
+| --- | --- |
+| Decision | Preflight outcome (approve, block, escalate path) |
+| Verify | Delivery verification result |
+| Score | Trust Bureau epoch root |
+| Audit | Dispute packet or reconcile report anchor |
+
+## Proof tiers
+
+| Tier | Status |
+| --- | --- |
+| T0 Schema | Live. Delivery payload matches committed acceptance criteria. |
+| T1–T4 | Documented ladder. Higher tiers return honest not-implemented until shipped. |
+
+Policy can require a minimum tier by amount. If required tier is above available tier (today 0), preflight escalates with `ESCALATED_PROOF_TIER`.
+
+## Public explorer
+
+[www.untch.xyz/explorer](https://www.untch.xyz/explorer) lists:
+
+- Sample settled and anchored transactions
+- PolicyRegistry, SpendIntentRegistry, UntchReceipts, VaultFactory addresses (mainnet and historical testnet)
+
+## Writer status (mainnet)
+
+Mainnet UntchReceipts uses a writer bootstrap with a timelock. After Phase-1 deploy, writer authorization completes only after the delay. Reads and addresses are correct throughout. Continuous anchoring needs the writer live.
+
+## Related
+
+- [Contracts](/reference/contracts)
+- [Verify tool](/agents/tools)

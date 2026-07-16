@@ -7,9 +7,7 @@ import { PillButton } from "./pill-button";
  * Iris canvas to a Pearl section with Deep Iris text, no gradient. Centered single-column content
  * (Layout section). The Iris Pulse primary pill pops on Pearl.
  *
- * NEW DECISION (confirm): the copy. "Give your agent a budget and rules in minutes." is grounded in
- * the adoption story (Mode A works in minutes); the CTA is the PRD's canonical primary CTA. /app and
- * /docs are structural destinations.
+ * Primary CTA → dashboard. Docs → Mintlify (docs.untch.xyz).
  */
 export function CtaBand() {
   return (
@@ -27,11 +25,13 @@ export function CtaBand() {
             Create a spend policy
           </PillButton>
           <a
-            href="/docs"
+            href="https://docs.untch.xyz"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-body underline-offset-4 transition-opacity duration-150 ease-out hover:opacity-70 hover:underline motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clinical-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-pearl"
             style={{ color: "var(--color-canvas)" }}
           >
-            Read the docs →
+            Read the docs
           </a>
         </div>
       </div>

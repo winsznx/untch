@@ -1,0 +1,51 @@
+---
+title: ASP overview
+description: Untch as an A2MCP Agent Service Provider on OKX.AI.
+---
+
+# ASP overview
+
+Untch is listed and operated as an **A2MCP** ASP:
+
+- Pay-per-call tools
+- Fixed prices in USDT0
+- Settlement through OKX x402 on X Layer mainnet
+- No per-task escrow negotiation
+
+Base URL:
+
+```text
+https://asp.untch.xyz
+```
+
+Catalog (free JSON):
+
+```text
+https://asp.untch.xyz/catalog
+```
+
+## Who calls it
+
+- Buyer agents in any framework
+- Untch Guard middleware
+- Your own automation and tests
+
+Humans use the [dashboard](https://www.untch.xyz/dashboard) and [docs](https://docs.untch.xyz). Agents use the ASP.
+
+## Surfaces
+
+| Surface | Examples |
+| --- | --- |
+| Control | ping, intent, preflight, verify, scores, reports, ledger helpers |
+| Lifestyle | Café menu and demo latte order |
+| Builder | Name suggestions, domain check stubs, SEO tips |
+
+## Compatibility
+
+Per OKX Agent Payments Protocol guidance for A2MCP, sellers are plain priced HTTP services. Untch does not require a seller-side MCP protocol wrapper for listing validity. Buyers may wrap tools in MCP on their side.
+
+## Related
+
+- [Tools](/agents/tools)
+- [x402](/agents/x402)
+- [Pricing](/reference/pricing)

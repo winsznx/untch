@@ -2,15 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 
 /**
- * Site footer — NEW INVENTION (confirm). §4d records that the design files specify only the
- * footer background color (Iris Glow); no layout, columns, links, or content exist to translate.
- * So the structure below is a genuine decision within the token system.
- *
- * FAITHFUL TO SPEC: the one specified value, Iris Glow background (`--color-surface-raised`),
- * plus the system's geometry and type roles. Depth from tonal fill, no drop shadow.
- *
- * Brand: seal-gate mark + wordmark (same family as the site header). Tagline + I4 no-custody line.
- * Link destinations are structural; several pages do not exist yet (see apps/web/README.md).
+ * Site footer. Iris Glow surface. Every href resolves (in-app page, hash, or live external).
  */
 
 type FooterLink = { label: string; href: string; external?: boolean };
@@ -21,6 +13,7 @@ const COLUMNS: { heading: string; links: FooterLink[] }[] = [
     links: [
       { label: "How it works", href: "/#how-it-works" },
       { label: "Modes", href: "/#modes" },
+      { label: "Pricing", href: "/pricing" },
       { label: "Public receipts", href: "/explorer" },
       { label: "Open dashboard", href: "/dashboard" },
     ],
@@ -29,14 +22,15 @@ const COLUMNS: { heading: string; links: FooterLink[] }[] = [
     heading: "Agents",
     links: [
       { label: "ASP catalog", href: "https://asp.untch.xyz/catalog", external: true },
-      { label: "Ping rail (x402)", href: "https://asp.untch.xyz/ping_untch", external: true },
       { label: "Café menu", href: "https://asp.untch.xyz/cafe/menu", external: true },
+      { label: "Documentation", href: "https://docs.untch.xyz", external: true },
     ],
   },
   {
     heading: "Proof",
     links: [
       { label: "Receipts explorer", href: "/explorer" },
+      { label: "Contracts", href: "https://docs.untch.xyz/reference/contracts", external: true },
       { label: "Verify on X Layer", href: "https://www.oklink.com/x-layer", external: true },
     ],
   },

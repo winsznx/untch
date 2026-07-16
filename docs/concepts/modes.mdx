@@ -1,0 +1,65 @@
+---
+title: Enforcement modes
+description: Adoption ladder from advisory ASP through vault enforcement.
+---
+
+# Enforcement modes
+
+Untch offers a ladder of enforcement. Start soft for adoption. Tighten when you need physics.
+
+## Mode A: Advisory ASP
+
+The agent (or its framework) calls Untch tools before paying:
+
+- `create_spend_intent`
+- `preflight_payment`
+
+Software honesty only: if the agent skips preflight, Untch cannot stop the chain transaction. Use Mode B or C when you need stronger guarantees.
+
+**Status:** Live on `asp.untch.xyz`.
+
+## Mode B: Untch Guard
+
+Open-source middleware for x402 / APP-style flows:
+
+```text
+npm install @untch/x402-guard
+```
+
+On a 402 challenge the guard:
+
+1. Runs Challenge Binding Check (exact field match after normalization)
+2. Calls preflight
+3. Only then allows your signer to pay
+
+The guard never holds private keys. You pass a `signAndPay` function.
+
+**Status:** Live package. See [Untch Guard](/agents/guard).
+
+## Mode C: Untch Vault
+
+Funds live in an on-chain **UntchVault**. Spend requires an oracle EIP-712 signature within caps. Owner withdraw is always available without Untch.
+
+ASP path: on `APPROVED` preflight, pass `vaultAddress` when `ORACLE_PRIVATE_KEY` is configured to receive `sig`.
+
+**Status:** Contracts deployed. Continuous multi-tenant oracle map is operational configuration. Demo vault exists on testnet only.
+
+## Mode D: Broker Guard
+
+Broker-side gate for APP flows: hold challenge state, verify credentials against the original request, forward only after policy pass.
+
+**Status:** Roadmap. Not a live product path. Do not claim Mode D in production pitches until it ships.
+
+## Choosing a mode
+
+| Need | Mode |
+| --- | --- |
+| Fast integration, soft control | A |
+| Stop bad 402 challenges before sign | B |
+| Hard on-chain caps | C |
+| APP broker integration | D (future) |
+
+## Related
+
+- [Quickstart](/quickstart)
+- [Vault](/operators/vault)

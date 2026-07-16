@@ -1,0 +1,40 @@
+---
+title: x402 payments
+description: How paid ASP tools settle on X Layer with OKX x402.
+---
+
+# x402 payments
+
+Paid Untch tools use the **x402** protocol through OKX’s hosted facilitator on **X Layer mainnet**.
+
+## Network facts
+
+| Item | Value |
+| --- | --- |
+| Chain | X Layer mainnet |
+| chainId | 196 |
+| CAIP-2 | `eip155:196` |
+| Settlement token | USDT0 `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` (6 decimals) |
+
+There is no confirmed OKX x402 facilitator on testnet for this rail. Production agent payments use mainnet.
+
+## Call flow
+
+1. Agent `GET`/`POST` a priced route without payment.
+2. Server responds **402** with `Payment-Required` metadata.
+3. Buyer signs an EIP-3009 authorization for the exact amount.
+4. Facilitator settles; agent retries with proof of payment.
+5. Server returns the tool result.
+
+Untch never holds the buyer private key. The seller authenticates to the facilitator with its OKX API credentials.
+
+## Client options
+
+- Custom buyer using OKX x402 fetch helpers
+- `@untch/x402-guard` for CBC + preflight before sign
+- Any agent runtime that can complete an x402 402 challenge
+
+## Related
+
+- [Tools](/agents/tools)
+- [Networks](/reference/networks)

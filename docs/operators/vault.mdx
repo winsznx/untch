@@ -1,0 +1,39 @@
+---
+title: Vault
+description: Mode C on-chain enforcement with UntchVault.
+---
+
+# Vault
+
+URL: [www.untch.xyz/dashboard/vault](https://www.untch.xyz/dashboard/vault)
+
+## What a vault is
+
+An **UntchVault** holds ERC-20 funds for agent spend. Spend requires an oracle-signed approval within:
+
+- Per-transaction cap
+- Epoch budget
+- Token allowlist
+- Optional requirement that the intent is anchored and APPROVED on SpendIntentRegistry
+
+Owner withdraw and pause do not require Untch.
+
+## Deploy
+
+Use the vault factory on the product chain (mainnet in production). Dashboard actions build the transactions your wallet signs.
+
+Mainnet has **no fixed demo vault**. Testnet keeps a reference demo vault for historical proof.
+
+## Oracle signatures
+
+The ASP can attach `sig` on APPROVED preflight when:
+
+- `ORACLE_PRIVATE_KEY` is configured for the vault’s oracle address
+- Request body includes `vaultAddress`
+
+Multi-vault production needs a vault-to-oracle map. A single env key is enough for one demo vault.
+
+## Related
+
+- [Modes](/concepts/modes)
+- [Contracts](/reference/contracts)

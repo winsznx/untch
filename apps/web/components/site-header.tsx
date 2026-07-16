@@ -54,17 +54,19 @@ const NAV_HEIGHT_PX = 80;
 type NavLink = { label: string; href: string };
 
 /**
- * Nav link set — only destinations that resolve today (no placeholder 404s for judges).
+ * Nav link set — every href resolves today (page, hash, or external).
  *   - Loop     homepage how-it-works band
- *   - Modes    adoption ladder A–D (D labeled roadmap on the band)
- *   - Receipts public explorer (PRD S6)
- *   - Catalog  live A2MCP service map on asp.untch.xyz
+ *   - Modes    adoption ladder A–D (D labeled roadmap)
+ *   - Receipts public explorer
+ *   - Pricing  per-call tool prices
+ *   - Docs     Mintlify (docs.untch.xyz)
  */
 const NAV_LINKS: readonly NavLink[] = [
   { label: "Loop", href: "/#how-it-works" },
   { label: "Modes", href: "/#modes" },
   { label: "Receipts", href: "/explorer" },
-  { label: "Catalog", href: "https://asp.untch.xyz/catalog" },
+  { label: "Pricing", href: "/pricing" },
+  { label: "Docs", href: "https://docs.untch.xyz" },
 ];
 
 /**
@@ -145,11 +147,24 @@ export function SiteHeader() {
 
         {/* DECISION 2 — center nav links (desktop). FAITHFUL: centered, body role, Cloud White. */}
         <nav aria-label="Primary" className="hidden gap-8 md:flex md:justify-self-center">
-          {NAV_LINKS.map((link) => (
-            <Link key={link.href} href={link.href} className={NAV_LINK_CLASS} style={{ color: "var(--color-text)" }}>
-              {link.label}
-            </Link>
-          ))}
+          {NAV_LINKS.map((link) =>
+            link.href.startsWith("http") ? (
+              <a
+                key={link.href}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={NAV_LINK_CLASS}
+                style={{ color: "var(--color-text)" }}
+              >
+                {link.label}
+              </a>
+            ) : (
+              <Link key={link.href} href={link.href} className={NAV_LINK_CLASS} style={{ color: "var(--color-text)" }}>
+                {link.label}
+              </Link>
+            ),
+          )}
         </nav>
 
         <div className="flex items-center gap-4 md:justify-self-end">
@@ -193,18 +208,33 @@ export function SiteHeader() {
         }
         style={{ borderColor: "var(--color-border)" }}
       >
-        {NAV_LINKS.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            onClick={() => setOpen(false)}
-            tabIndex={open ? 0 : -1}
-            className={`text-body py-3 opacity-80 transition-opacity duration-150 ease-out hover:opacity-100 motion-reduce:transition-none ${FOCUS_RING}`}
-            style={{ color: "var(--color-text)" }}
-          >
-            {link.label}
-          </Link>
-        ))}
+        {NAV_LINKS.map((link) =>
+          link.href.startsWith("http") ? (
+            <a
+              key={link.href}
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setOpen(false)}
+              tabIndex={open ? 0 : -1}
+              className={`text-body py-3 opacity-80 transition-opacity duration-150 ease-out hover:opacity-100 motion-reduce:transition-none ${FOCUS_RING}`}
+              style={{ color: "var(--color-text)" }}
+            >
+              {link.label}
+            </a>
+          ) : (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={() => setOpen(false)}
+              tabIndex={open ? 0 : -1}
+              className={`text-body py-3 opacity-80 transition-opacity duration-150 ease-out hover:opacity-100 motion-reduce:transition-none ${FOCUS_RING}`}
+              style={{ color: "var(--color-text)" }}
+            >
+              {link.label}
+            </Link>
+          ),
+        )}
         <Link
           href={PRIMARY_CTA.href}
           onClick={() => setOpen(false)}

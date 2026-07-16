@@ -1,0 +1,97 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Untch",
+  "description": "Accounts payable for autonomous agents. Policy, proof, and receipts on X Layer.",
+  "colors": {
+    "primary": "#0B1F3A",
+    "light": "#2EC4B6",
+    "dark": "#0B1F3A"
+  },
+  "favicon": "/favicon.png",
+  "logo": {
+    "light": "/logo-light.svg",
+    "dark": "/logo-dark.svg",
+    "href": "https://www.untch.xyz"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Dashboard",
+        "href": "https://www.untch.xyz/dashboard"
+      },
+      {
+        "label": "ASP catalog",
+        "href": "https://asp.untch.xyz/catalog"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Create a spend policy",
+      "href": "https://www.untch.xyz/dashboard"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/untch"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Start here",
+        "pages": ["index", "quickstart", "what-untch-is"]
+      },
+      {
+        "group": "Concepts",
+        "pages": [
+          "concepts/spend-intent",
+          "concepts/policy",
+          "concepts/preflight",
+          "concepts/modes",
+          "concepts/receipts",
+          "concepts/bureau"
+        ]
+      },
+      {
+        "group": "For operators",
+        "pages": [
+          "operators/dashboard",
+          "operators/policies",
+          "operators/escalations",
+          "operators/channels",
+          "operators/vault"
+        ]
+      },
+      {
+        "group": "For agents",
+        "pages": [
+          "agents/asp-overview",
+          "agents/tools",
+          "agents/x402",
+          "agents/guard",
+          "agents/lifestyle-builder"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/networks",
+          "reference/contracts",
+          "reference/pricing",
+          "reference/errors"
+        ]
+      },
+      {
+        "group": "Security",
+        "pages": ["security/invariants", "security/threat-model"]
+      }
+    ]
+  },
+  "redirects": [
+    {
+      "source": "/docs",
+      "destination": "/"
+    }
+  ]
+}

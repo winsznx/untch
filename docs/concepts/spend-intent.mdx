@@ -1,0 +1,70 @@
+---
+title: SpendIntent
+description: The bounded object every agent payment is evaluated against.
+---
+
+# SpendIntent
+
+A **SpendIntent** is the unit of proposed spend. It is a fixed-shape record the agent (or Guard) builds before preflight. Untch hashes it with a shared canonicalization path so off-chain code and on-chain contracts agree.
+
+## Why it exists
+
+Agents do not freestyle payments from chat. They commit to:
+
+- Who pays (owner wallet)
+- Who spends (buyer / worker agent ids)
+- Token and max amount
+- Task and acceptance criteria hashes
+- Policy hash
+- Deadline and nonce
+
+That bound object is what policy evaluates and what receipts refer to.
+
+## Struct fields (§8.1)
+
+| Field | Meaning |
+| --- | --- |
+| `owner` | Operator wallet that owns the policy |
+| `buyerAgentId` | Buyer agent id (uint256) |
+| `workerAgentId` | Worker agent id; `0` for plain A2MCP endpoint calls |
+| `token` | ERC-20 address (mainnet USDT0 for the hosted ASP) |
+| `maxAmount` | Cap in token base units |
+| `taskHash` | Hash of the task description |
+| `acceptanceHash` | Hash of acceptance criteria (`0x0` if none: hygiene event) |
+| `schemaHash` | Schema for delivery verification |
+| `policyHash` | Must match the stored policy ruleset hash |
+| `deadline` | Unix seconds after which the intent expires |
+| `nonce` | Unique per intent |
+
+## Operational fields (preflight)
+
+Along with the struct, preflight reads:
+
+| Field | Meaning |
+| --- | --- |
+| `endpoint` | Absolute URL of the service being paid |
+| `paramsHash` | Hash of request parameters |
+| `recipientAddress` | Payout address |
+| `category` | Category slug checked against allow/deny lists |
+| `amount` | Display units for budget and escalate rules |
+
+## Creating an intent
+
+```http
+POST https://asp.untch.xyz/create_spend_intent
+Content-Type: application/json
+```
+
+Body includes `policyId` and the full intent. Response includes:
+
+- `intentHash`
+- `canonicalIntent`
+- `onchain`: registration status when SpendIntentRegistry is wired and amount meets `anchorIntentsAbove`
+
+Larger intents can be registered on chain. Micro A2MCP calls often stay off-chain with the hash carried in receipts.
+
+## Related
+
+- [Policy](/concepts/policy)
+- [Preflight](/concepts/preflight)
+- [Tools](/agents/tools)

@@ -1,0 +1,62 @@
+---
+title: Untch documentation
+description: Accounts payable for autonomous agents. Give every agent a budget, a policy, proof requirements, and a receipt trail on X Layer.
+---
+
+# Untch documentation
+
+Untch is accounts payable for autonomous agents.
+
+You set the mandate. The agent proposes spend. Untch checks the payment before money moves, asks you when the rules say to escalate, verifies delivery when you require it, and anchors every decision on X Layer.
+
+Tagline: **The model never touches the money.**
+
+## Who this is for
+
+| You are | Start here |
+| --- | --- |
+| Operator (you fund agents) | [Quickstart](/quickstart) and [Dashboard](/operators/dashboard) |
+| Builder wiring an agent | [ASP overview](/agents/asp-overview) and [Tools](/agents/tools) |
+| Integrator adding payment middleware | [Untch Guard](/agents/guard) |
+| Auditor or reviewer | [Receipts](/concepts/receipts) and [Contracts](/reference/contracts) |
+
+## Product surfaces
+
+| Surface | URL | Role |
+| --- | --- | --- |
+| Marketing site | [www.untch.xyz](https://www.untch.xyz) | Product story and public proof |
+| Operator dashboard | [www.untch.xyz/dashboard](https://www.untch.xyz/dashboard) | Policies, escalations, ledger, vault |
+| Public explorer | [www.untch.xyz/explorer](https://www.untch.xyz/explorer) | Anchored txs and contract addresses |
+| Pricing | [www.untch.xyz/pricing](https://www.untch.xyz/pricing) | Per-call tool prices |
+| A2MCP ASP | [asp.untch.xyz](https://asp.untch.xyz/catalog) | Agent-callable tools, x402 on mainnet |
+
+## How the loop works
+
+1. **Bind the spend.** The agent creates a canonical [SpendIntent](/concepts/spend-intent) with amount, deadline, and acceptance criteria.
+2. **Check before it moves.** [Preflight](/concepts/preflight) runs the deterministic policy engine. Approve, block, or escalate.
+3. **Human when needed.** Escalations go to your bound channels (Telegram, Discord, Slack, iMessage, dashboard). You approve or deny with a single-use code.
+4. **Verify delivery.** Optional [proof tiers](/concepts/receipts). T0 schema verification is live.
+5. **Receipt on chain.** Decisions and proofs are hashed and anchored on X Layer.
+
+Nothing in that path asks a language model to authorize money.
+
+## Enforcement modes
+
+Read the full ladder in [Modes](/concepts/modes).
+
+| Mode | Name | Status |
+| --- | --- | --- |
+| A | Advisory MCP / ASP | Live. Agent calls preflight before paying. |
+| B | Untch Guard | Live as `@untch/x402-guard`. CBC + preflight before sign. |
+| C | Untch Vault | Contracts live. Oracle signature path on ASP when configured. |
+| D | Broker Guard | Roadmap. Not a live product path. |
+
+## Settlement network
+
+Production rail: **X Layer mainnet** (`eip155:196`), USDT0 via OKX x402.
+
+Testnet remains available for soak and development. See [Networks](/reference/networks).
+
+## Next step
+
+[Quickstart](/quickstart): create a policy, call the ASP, read a receipt.

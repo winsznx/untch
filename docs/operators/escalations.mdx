@@ -1,0 +1,56 @@
+---
+title: Escalations
+description: Human approval when policy withholds a payment.
+---
+
+# Escalations
+
+When preflight returns `ESCALATED_*`, Untch creates an escalation record and notifies your bound channels.
+
+## What you receive
+
+- Amount and reason (for example threshold or vendor risk)
+- Single-use approval code
+- Timeout (default deny when time expires)
+
+## How to respond
+
+**Text baseline (all channels):**
+
+```text
+APPROVE <code>
+DENY <code>
+```
+
+**Dashboard:** open [Escalations](https://www.untch.xyz/dashboard/escalations) and approve or deny with SIWE identity (ownership checked).
+
+**Telegram / Discord / Slack:** buttons or text where configured.
+
+**iMessage (Photon):** text baseline. No native buttons.
+
+## Authority rules
+
+An approval counts only if:
+
+1. The intent is still active
+2. The policy allows escalation
+3. The sender matches a bound handle for an approver of that policy
+4. The code is valid and unused
+5. Channel caps and dual-channel rules pass when configured
+
+Failed checks are logged as failed control events. They never silent-approve money.
+
+## Agent side
+
+The agent polls:
+
+```http
+GET https://asp.untch.xyz/escalation_status/:pollRef
+```
+
+`pollRef` is typically `receiptRef.receiptId` or `intentHash`, matching Guard’s poll handle.
+
+## Related
+
+- [Channels](/operators/channels)
+- [Preflight](/concepts/preflight)

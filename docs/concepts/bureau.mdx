@@ -1,0 +1,34 @@
+---
+title: Trust Bureau
+description: Deterministic vendor and buyer scores with lower-confidence-bound enforcement.
+---
+
+# Trust Bureau
+
+The **Trust Bureau** scores counterparties from receipt-backed history. Scores are weighted features and uncertainty. Enforcement uses the **lower confidence bound (LCB)**, never a raw score alone.
+
+No language model is involved in scoring.
+
+## Tools
+
+| Tool | Price | Role |
+| --- | --- | --- |
+| `POST /score_vendor` | $0.20 | Vendor reliability |
+| `POST /score_buyer` | $0.20 | Buyer hygiene |
+
+## Vendor features (observed path)
+
+Built from durable receipts: order volume, delivery consistency, dispute signals, and similar. Marketplace listing features that Untch cannot observe are marked **cold-start prior** in the response. Priors are never presented as observed data.
+
+## Buyer hygiene
+
+Buyer scores track patterns such as paying without acceptance criteria, late escalation resolution, and out-of-policy attempt rate. Hygiene annotates counterparty risk. It does not seize the buyer’s own funds.
+
+## Policy floor
+
+Policies may set `vendors.minScoreLCB`. Preflight injects the latest vendor snapshot when the bureau is wired. Below floor: block or escalate per policy.
+
+## Related
+
+- [Preflight](/concepts/preflight)
+- [Tools](/agents/tools)

@@ -1,0 +1,81 @@
+---
+title: ASP tools
+description: Complete list of agent-callable endpoints on asp.untch.xyz.
+---
+
+# ASP tools
+
+Base: `https://asp.untch.xyz`
+
+Paid routes return **HTTP 402** with a Payment-Required challenge until settled with USDT0 on `eip155:196`.
+
+## Control plane
+
+| Method | Path | Price | Purpose |
+| --- | --- | --- | --- |
+| GET | `/ping_untch` | $0.01 | Health and rail proof |
+| POST | `/create_spend_intent` | bundled | Validate, hash, bind intent; optional on-chain register |
+| POST | `/preflight_payment` | $0.05 | Policy evaluation |
+| POST | `/verify_delivery` | $0.10 | T0 delivery proof |
+| POST | `/detect_duplicate` | $0.02 | Duplicate check against ledger window |
+| POST | `/redact_payment_metadata` | $0.02 | Strip PII patterns; return hash |
+| POST | `/get_ledger` | free | Ephemeral ledger window slice |
+| POST | `/log_receipt` | free | Receipt status façade |
+| POST | `/score_vendor` | $0.20 | Vendor score |
+| POST | `/score_buyer` | $0.20 | Buyer score |
+| POST | `/generate_dispute_packet` | $0.50 | Dispute evidence pack |
+| POST | `/reconcile_agent_spend` | $0.25 | Spend / waste report |
+| GET | `/receipt_status/:receiptId` | free | Receipt poll |
+| GET | `/escalation_status/:pollRef` | free | Escalation poll |
+
+## Operator policy routes (admin)
+
+Unpriced interim admin routes for policy registration helpers:
+
+- `POST /create_spend_policy`
+- `POST /sync_policy_registration`
+- `POST /update_policy`
+- `POST /pause_policy`
+- `POST /resume_policy`
+
+Production operators typically register from the dashboard wallet flow.
+
+## Lifestyle
+
+| Method | Path | Price |
+| --- | --- | --- |
+| GET | `/cafe/menu` | free |
+| POST | `/cafe/order/latte` | $0.04 |
+
+Demo café for governed spend demos. Fulfillment is a voucher code, not a real coffee shop.
+
+## Builder (Launch Pack)
+
+| Method | Path | Price |
+| --- | --- | --- |
+| POST | `/builder/suggest_names` | $0.01 |
+| POST | `/builder/check_domains` | free |
+| POST | `/builder/rank_options` | free |
+| POST | `/builder/seo_tips` | free |
+
+Domain availability is a deterministic demo model until a live registrar is wired. The tool contract stays stable.
+
+## Errors
+
+Error bodies use:
+
+```json
+{
+  "code": "POLICY_ID_REQUIRED",
+  "message": "…",
+  "retryable": false,
+  "docsUrl": null
+}
+```
+
+See [Errors](/reference/errors).
+
+## Related
+
+- [x402](/agents/x402)
+- [Preflight](/concepts/preflight)

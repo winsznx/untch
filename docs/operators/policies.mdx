@@ -1,0 +1,39 @@
+---
+title: Policies (operators)
+description: Create and manage spend policies from the dashboard.
+---
+
+# Policies (operators)
+
+Open [Policies](https://www.untch.xyz/dashboard/policies).
+
+## Create
+
+1. Edit rules (budget, caps, escalate-above, categories, lists).
+2. Sign `registerPolicy` on PolicyRegistry.
+3. Sync the confirmed registration so Postgres stores the durable row.
+
+You receive a `policyId`. Give that id to any agent that should spend under the policy. The agent must set `policyHash` to the registered ruleset hash.
+
+## Update and pause
+
+Update revises the on-chain hash and stored rules. Pause freezes the policy without deleting history. Resume restores ACTIVE status.
+
+All of these are owner-signed transactions on the product chain.
+
+## Suggested starter values
+
+| Field | Starter |
+| --- | --- |
+| Daily budget | 25 USDT |
+| Per-call cap | 1.00 |
+| Escalate above | 5.00 |
+| Categories allow | market-data, security, research |
+| Escalation timeout | 30 minutes (deny on expiry) |
+
+Tune after you watch real agent traffic.
+
+## Related
+
+- [Policy concept](/concepts/policy)
+- [Quickstart](/quickstart)

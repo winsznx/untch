@@ -1,0 +1,48 @@
+---
+title: Policy
+description: Rulesets that govern agent spend, anchored on PolicyRegistry.
+---
+
+# Policy
+
+A **policy** is the ruleset Untch evaluates against every SpendIntent. You create it in the dashboard or via ASP admin tools. The ruleset is hashed. That hash is what the intent must commit to.
+
+## What a policy controls
+
+| Area | Examples |
+| --- | --- |
+| Budgets | Daily spend limit and token symbol |
+| Caps | Per-call maximum |
+| Escalation | Amounts above a threshold need human approval |
+| Categories | Allow or deny slugs such as `market-data` |
+| Recipients | Address allow/deny lists |
+| Agents | Worker agent allow/deny |
+| Duplicates | TTL for task + endpoint + params repeats |
+| Cooldowns | Minimum minutes between calls to the same service |
+| Rate limits | Calls per rolling hour |
+| Vendors | Optional LCB floor (Trust Bureau) |
+| Proof | Optional required proof tier by amount |
+| Anchor | `anchorIntentsAbove` for on-chain intent registration |
+
+## Lifecycle
+
+1. Build rules (JSON or guided form in the dashboard).
+2. Register on **PolicyRegistry** (owner wallet signs).
+3. Receive `policyId` and durable store row.
+4. Update, pause, or resume as needed (operator-signed).
+
+Paused or expired policies fail closed: preflight returns `BLOCKED_NO_ACTIVE_POLICY`.
+
+## Binding integrity
+
+The intent’s `policyHash` must equal the stored policy’s hash. Mismatch returns `POLICY_BINDING_MISMATCH`. An agent cannot preflight under a different ruleset than it claimed.
+
+## Operator UX
+
+- Dashboard: [Policies](https://www.untch.xyz/dashboard/policies)
+- Docs: [Operator policies](/operators/policies)
+
+## Related
+
+- [SpendIntent](/concepts/spend-intent)
+- [Preflight](/concepts/preflight)
