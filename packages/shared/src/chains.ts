@@ -157,6 +157,46 @@ export function settlementToken(chainId: number): ConfirmedToken {
 }
 
 /**
+ * The four base Untch contracts (§10.1–10.4) deployed per network — the single source every service,
+ * library, and the dashboard resolves deployed addresses through. Testnet is the long-standing build;
+ * mainnet (X Layer 196) was deployed 2026-07-16 (deployments/mainnet-suite.json), Phase 1 of the
+ * two-phase suite. Per-vault instances (UntchVault) are NOT here — they are deployed per operator via
+ * the factory. An unknown chain resolves to nothing and fails loudly rather than pointing at a stale net.
+ */
+export interface DeployedContracts {
+  readonly policyRegistry: Address;
+  readonly spendIntentRegistry: Address;
+  readonly receipts: Address;
+  readonly vaultFactory: Address;
+}
+
+export const CONTRACTS_BY_CHAIN: Partial<Record<number, DeployedContracts>> = {
+  [X_LAYER_TESTNET_ID]: {
+    policyRegistry: "0xe1d74c90801db0fa806c72eb818b7671b8233532",
+    spendIntentRegistry: "0xf87e50f83172c2dace7d274e4c701212caeb1372",
+    receipts: "0x0c64997277b7d94d2999dea22a123cac56334863",
+    vaultFactory: "0x1562c6eb1813016c8562cf6771cbf715007bb7e9",
+  },
+  [X_LAYER_MAINNET_ID]: {
+    policyRegistry: "0xa2177e6d8682367637a3c2af53e2cf8088efa954",
+    spendIntentRegistry: "0x9c1f89dfddd9ae1f9adda4b30ff338e2aa2db202",
+    receipts: "0xb5b853684624aea2ecbcd0e888cbff46ff0a5f95",
+    vaultFactory: "0x6cc3bc686a7bc554dbd5636cb3eeee9171036805",
+  },
+};
+
+/** The deployed base contracts for a chain, or throw (never silently returns another network's set). */
+export function contractsForChain(chainId: number): DeployedContracts {
+  const c = CONTRACTS_BY_CHAIN[chainId];
+  if (!c) {
+    throw new Error(
+      `No deployed Untch contracts recorded for chainId ${chainId} — supported: ${Object.keys(CONTRACTS_BY_CHAIN).join(", ")} (see chains.ts CONTRACTS_BY_CHAIN / deployments/).`,
+    );
+  }
+  return c;
+}
+
+/**
  * Single network-selection source. Every service/library/script that talks to X Layer resolves its
  * chain, RPC, and token addresses through the functions below — driven by ONE env contract:
  *

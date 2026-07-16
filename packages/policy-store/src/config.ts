@@ -1,6 +1,7 @@
 import {
   activeChain,
   activeRpcUrl,
+  CONTRACTS_BY_CHAIN,
   X_LAYER_MAINNET_ID,
   X_LAYER_TESTNET_ID,
 } from "@untch/shared";
@@ -24,14 +25,16 @@ export { X_LAYER_MAINNET_ID, X_LAYER_TESTNET_ID, xLayerMainnet, xLayerTestnet } 
  * This is the POST-lint-fix redeploy (supersedes the earlier 0xc571…); see contracts/deploy/testnet-receipt.json.
  * Overridable via POLICY_REGISTRY, but never guess a different address — a stale one silently anchors to nothing.
  */
-export const POLICY_REGISTRY_DEFAULT: Address = "0xe1d74c90801db0fa806c72eb818b7671b8233532";
+export const POLICY_REGISTRY_DEFAULT: Address = CONTRACTS_BY_CHAIN[X_LAYER_TESTNET_ID]!.policyRegistry;
 
 /**
- * PolicyRegistry address per network. Only testnet is deployed today; mainnet has no default, so a
- * mainnet run must pass POLICY_REGISTRY explicitly rather than silently reusing a testnet address.
+ * PolicyRegistry address per network, sourced from the shared CONTRACTS_BY_CHAIN registry (chains.ts)
+ * so testnet + mainnet stay in one canonical place. Any other chain has no default and must pass
+ * POLICY_REGISTRY explicitly rather than silently reusing another network's address.
  */
 export const POLICY_REGISTRY_BY_CHAIN: Partial<Record<number, Address>> = {
-  [X_LAYER_TESTNET_ID]: POLICY_REGISTRY_DEFAULT,
+  [X_LAYER_TESTNET_ID]: CONTRACTS_BY_CHAIN[X_LAYER_TESTNET_ID]!.policyRegistry,
+  [X_LAYER_MAINNET_ID]: CONTRACTS_BY_CHAIN[X_LAYER_MAINNET_ID]!.policyRegistry,
 };
 
 export function resolvePolicyRegistry(chainId: number, override?: string): Address {

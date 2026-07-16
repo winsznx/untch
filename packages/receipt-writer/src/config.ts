@@ -1,6 +1,7 @@
 import {
   activeChain,
   activeRpcUrl,
+  CONTRACTS_BY_CHAIN,
   X_LAYER_MAINNET_ID,
   X_LAYER_TESTNET_ID,
 } from "@untch/shared";
@@ -21,15 +22,18 @@ export { X_LAYER_MAINNET_ID, X_LAYER_TESTNET_ID, xLayerMainnet, xLayerTestnet } 
 
 /** Deployed UntchReceipts (§10.3) on X Layer testnet — the anchoring target on the default network. */
 export const RECEIPTS_CONTRACT_DEFAULT: Address =
-  "0x0c64997277b7d94d2999dea22a123cac56334863";
+  CONTRACTS_BY_CHAIN[X_LAYER_TESTNET_ID]!.receipts;
 
 /**
- * UntchReceipts address per network. Only testnet is deployed today; mainnet has no default, so a
- * mainnet run must pass RECEIPTS_CONTRACT explicitly — this fails loudly rather than anchoring a
- * mainnet writer to a testnet address.
+ * UntchReceipts address per network, sourced from the shared CONTRACTS_BY_CHAIN registry (chains.ts)
+ * so there is one canonical address per net. Testnet + mainnet are both deployed; a run on any other
+ * chain has no default and must pass RECEIPTS_CONTRACT explicitly — fails loudly rather than anchoring
+ * to a stale-network address. NOTE: mainnet UntchReceipts is writer-dark until its 72h timelock elapses
+ * (deploy Phase 2) — this address is correct now; writes only succeed post-Phase-2.
  */
 export const RECEIPTS_CONTRACT_BY_CHAIN: Partial<Record<number, Address>> = {
-  [X_LAYER_TESTNET_ID]: RECEIPTS_CONTRACT_DEFAULT,
+  [X_LAYER_TESTNET_ID]: CONTRACTS_BY_CHAIN[X_LAYER_TESTNET_ID]!.receipts,
+  [X_LAYER_MAINNET_ID]: CONTRACTS_BY_CHAIN[X_LAYER_MAINNET_ID]!.receipts,
 };
 
 export function resolveReceiptsContract(chainId: number, override?: string): Address {

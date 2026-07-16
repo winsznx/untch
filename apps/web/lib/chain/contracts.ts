@@ -1,20 +1,28 @@
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
+import { contractsForChain, resolveChainId, X_LAYER_TESTNET_ID } from "@untch/shared";
 
 /**
  * Real deployed contract addresses + the exact ABI fragments the dashboard writes against.
  *
- * Addresses are the genuine X Layer testnet deployments from this build's history (see
- * contracts/deploy/*-testnet-receipt.json and lib/onchain.ts). The ABIs are transcribed verbatim
- * from the Foundry-compiled artifacts (contracts/out/**), narrowed to only the functions/events the
- * UI calls — same bytes the deploy scripts used, so a write built here is the same call that verified.
+ * The four base addresses are resolved PER NETWORK from the shared CONTRACTS_BY_CHAIN registry
+ * (packages/shared/chains.ts), selected by NEXT_PUBLIC_CHAIN_ID (inlined into the client bundle at
+ * build time; unset ⇒ X Layer testnet). So a `NEXT_PUBLIC_CHAIN_ID=196` build points the dashboard at
+ * the real mainnet contracts, while the default stays testnet. The ABIs are transcribed verbatim from
+ * the Foundry artifacts (contracts/out/**), narrowed to the functions/events the UI calls.
  */
 
-export const POLICY_REGISTRY: Address = "0xe1d74c90801db0fa806c72eb818b7671b8233532";
-export const VAULT_FACTORY: Address = "0x1562c6eb1813016c8562cf6771cbf715007bb7e9";
-export const INTENT_REGISTRY: Address = "0xf87e50f83172c2dace7d274e4c701212caeb1372";
-/** The demo UntchVault instance (real spend + withdraw tx history on its address page). */
+const ACTIVE_CHAIN_ID = resolveChainId({ CHAIN_ID: process.env.NEXT_PUBLIC_CHAIN_ID }, X_LAYER_TESTNET_ID);
+const CONTRACTS = contractsForChain(ACTIVE_CHAIN_ID);
+
+export const POLICY_REGISTRY: Address = getAddress(CONTRACTS.policyRegistry);
+export const VAULT_FACTORY: Address = getAddress(CONTRACTS.vaultFactory);
+export const INTENT_REGISTRY: Address = getAddress(CONTRACTS.spendIntentRegistry);
+/**
+ * The demo UntchVault instance + its ERC-20 — TESTNET ONLY (real spend/withdraw tx history on its
+ * address page). Mainnet has no fixed demo vault; there, operators deploy their own vault via the
+ * factory, so these are used only on the testnet demo surface.
+ */
 export const DEMO_VAULT: Address = "0x42e699ffd8215d48397a049b4f7a176db06f4848";
-/** The testnet ERC-20 the demo vault allows (from the factory deploy receipt). */
 export const VAULT_TOKEN: Address = "0xf202ce41d76ee1a2aec72e7a9180331d437ddd41";
 
 export const POLICY_REGISTRY_ABI = [

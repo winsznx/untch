@@ -1,16 +1,21 @@
-import { X_LAYER_TESTNET_ID } from "../chain/chains";
+import { resolveChainId, X_LAYER_TESTNET_ID } from "@untch/shared";
 
 /**
- * The single chain a connected wallet MUST be on before it can sign in or write — the product chain
- * (X Layer testnet). Sign-in identity is chain-agnostic in principle, but making the wallet deterministic
- * here removes an entire failure class: RainbowKit's SIWE step reads `useAccount().chain` (the viem chain
- * OBJECT), which wagmi resolves to `undefined` for any chain outside the configured set — and its sign
- * handler then silently returns without building a message or prompting a signature. A wallet parked on
- * Ethereum mainnet (or anything else) therefore fails sign-in with no error at all. Normalising every
- * connected wallet to this chain before the sign step is what closes that hole for ALL connectors, instead
- * of relying on individual wallets (MetaMask) happening to auto-switch on connect while others (OKX) don't.
+ * The single chain a connected wallet MUST be on before it can sign in or write — the product chain,
+ * selected by NEXT_PUBLIC_CHAIN_ID (inlined at build; unset ⇒ X Layer testnet), so a mainnet build
+ * (NEXT_PUBLIC_CHAIN_ID=196) requires wallets on mainnet and a testnet build requires testnet. Sign-in
+ * identity is chain-agnostic in principle, but making the wallet deterministic here removes an entire
+ * failure class: RainbowKit's SIWE step reads `useAccount().chain` (the viem chain OBJECT), which wagmi
+ * resolves to `undefined` for any chain outside the configured set — and its sign handler then silently
+ * returns without building a message or prompting a signature. A wallet parked on Ethereum mainnet (or
+ * anything else) therefore fails sign-in with no error at all. Normalising every connected wallet to
+ * this chain before the sign step closes that hole for ALL connectors, instead of relying on individual
+ * wallets (MetaMask) happening to auto-switch on connect while others (OKX) don't.
  */
-export const REQUIRED_CHAIN_ID: number = X_LAYER_TESTNET_ID;
+export const REQUIRED_CHAIN_ID: number = resolveChainId(
+  { CHAIN_ID: process.env.NEXT_PUBLIC_CHAIN_ID },
+  X_LAYER_TESTNET_ID,
+);
 
 export type NetworkAction =
   | { readonly kind: "ready" }
