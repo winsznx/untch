@@ -25,7 +25,7 @@ import type { EscalationWiring } from "../escalation-wiring";
 import type { ReceiptWiring } from "../receipts";
 import type { EscalationGateway } from "../handlers";
 import { projectConsumerIntent } from "./projection";
-import type { ConsumerEscalationGateway, ConsumerReceiptSink } from "./orchestrator";
+import type { ConsumerEscalationGateway, ConsumerReceiptSink, ReceiptRecordOutcome } from "./orchestrator";
 
 /**
  * The approval bridge.
@@ -120,7 +120,7 @@ export function makeConsumerReceiptSink(receiptWiring: ReceiptWiring | null): Co
 async function recordConsumerReceipt(
   enqueuer: ReceiptEnqueuer,
   args: { intent: ConsumerIntent; quote: ConsumerQuote; decision: Decision },
-): Promise<{ receiptId: string } | null> {
+): Promise<ReceiptRecordOutcome> {
   const { intent, quote, decision } = args;
   // Rebuild the exact §8.1 input the receipt maps from. Everything is derived from the stored intent
   // and quote, so the receipt describes the action that actually happened.
@@ -140,11 +140,18 @@ async function recordConsumerReceipt(
 
   try {
     const result = await enqueuer.enqueue(projected.input, decision);
-    return { receiptId: result.receiptId };
-  } catch {
-    // A receipt that cannot be written must not fail a completed purchase — the money already moved
-    // and the ledger already records it. The intent completes with a null receiptId, which is an
-    // honest "not anchored" rather than a fabricated id.
-    return null;
+    return { status: "recorded", receiptId: result.receiptId };
+  } catch (err) {
+    /**
+     * A receipt that cannot be written must not fail a completed purchase — the money already moved
+     * and the ledger already records it. The intent completes with a null receiptId, which is an
+     * honest "not anchored" rather than a fabricated id.
+     *
+     * The REASON is returned rather than discarded. This branch previously swallowed the error
+     * entirely, which made a misconfigured writer look identical to a rejected write: during
+     * activation an intent completed with a null receiptId and the only way to establish why was to
+     * replay the whole path by hand against production.
+     */
+    return { status: "failed", reason: err instanceof Error ? err.message : String(err) };
   }
 }

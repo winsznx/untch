@@ -90,13 +90,26 @@ export interface ConsumerEscalationGateway {
   pollApproval(pollRef: string): Promise<"PENDING" | "APPROVED" | "DENIED">;
 }
 
+/**
+ * The outcome of trying to record a §7.4 receipt.
+ *
+ * `failed` carries the reason. A receipt that cannot be written must never fail a purchase that has
+ * already settled — but the operator has to be able to find out WHY, and an earlier bare `catch {}`
+ * meant "no receipt" was indistinguishable from "no receipt writer configured". Both showed up as a
+ * null receiptId with nothing to investigate.
+ */
+export type ReceiptRecordOutcome =
+  | { readonly status: "recorded"; readonly receiptId: string }
+  | { readonly status: "unconfigured" }
+  | { readonly status: "failed"; readonly reason: string };
+
 /** How the orchestrator records a §7.4 receipt for a completed consumer action. */
 export interface ConsumerReceiptSink {
   record(args: {
     readonly intent: ConsumerIntent;
     readonly quote: ConsumerQuote;
     readonly decision: Decision;
-  }): Promise<{ readonly receiptId: string } | null>;
+  }): Promise<ReceiptRecordOutcome>;
 }
 
 export interface OrchestratorDeps {
@@ -908,14 +921,25 @@ export class ConsumerOrchestrator {
       }),
     );
 
-    let receiptId: string | null = null;
-    if (this.d.receipts && intent.policyDecision) {
-      const written = await this.d.receipts.record({
-        intent,
-        quote,
-        decision: intent.policyDecision as unknown as Decision,
-      });
-      receiptId = written?.receiptId ?? null;
+    /**
+     * The receipt is recorded but is NEVER allowed to fail the purchase: the money has moved and the
+     * ledger already records it, so refusing to complete here would strand a settled intent. What
+     * changed is that a failure is now named rather than swallowed — `receiptStatus` goes onto the
+     * completion event, so "no receipt" always comes with a reason an operator can act on.
+     */
+    const outcome: ReceiptRecordOutcome = !intent.policyDecision
+      ? { status: "failed", reason: "intent has no stored policy decision to build a receipt from" }
+      : this.d.receipts
+        ? await this.d.receipts.record({
+            intent,
+            quote,
+            decision: intent.policyDecision as unknown as Decision,
+          })
+        : { status: "unconfigured" };
+
+    const receiptId = outcome.status === "recorded" ? outcome.receiptId : null;
+    if (outcome.status === "failed") {
+      this.d.log?.(`[consumer] receipt NOT recorded for ${intent.intentId}: ${outcome.reason}`);
     }
 
     const { intent: completed } = await this.d.store.transition(
@@ -923,7 +947,14 @@ export class ConsumerOrchestrator {
       "DELIVERY_VERIFIED",
       "COMPLETED",
       receiptId === null ? {} : { receiptId },
-      { name: "consumer.completed", data: { receiptId } },
+      {
+        name: "consumer.completed",
+        data: {
+          receiptId,
+          receiptStatus: outcome.status,
+          ...(outcome.status === "failed" ? { receiptError: outcome.reason } : {}),
+        },
+      },
     );
     return completed;
   }

@@ -329,6 +329,7 @@ describe("cross-rail — the failure paths", () => {
     assertIntentSettled("ci_check", USDT0, groups);
 
     const recognition = groups[2];
+    assert.ok(recognition);
     // #then no zero-amount row is emitted — consumer_ledger_entries carries CHECK (amount <> 0)
     assert.equal(recognition.entries.length, 2, "obligation + clearing only");
     assert.equal(recognition.entries.some((e) => e.amount.amount === 0n), false);
@@ -464,10 +465,11 @@ describe("cross-rail — why the defect was invisible", () => {
         createdAt: AT,
       }),
     ];
-    const tampered = [
-      ...broken,
-      { ...broken[0], groupId: "f2", entries: [broken[0].entries[0]] },
-    ];
+    const funding = broken[0];
+    assert.ok(funding);
+    const oneSidedLeg = funding.entries[0];
+    assert.ok(oneSidedLeg);
+    const tampered: LedgerGroup[] = [...broken, { ...funding, groupId: "f2", entries: [oneSidedLeg] }];
     assert.throws(() => assertBookBalanced(tampered), /does not balance/);
   });
 });

@@ -73,7 +73,9 @@ import {
 } from "../packages/consumer-providers/src/index";
 import type { Ledger, LedgerWindowState, SpendIntentInput } from "../packages/policy-engine/src/index";
 import type { PolicyProvider, StoredPolicy } from "../packages/policy-store/src/index";
-import { ConsumerOrchestrator } from "../services/asp/src/consumer/orchestrator";
+import { ConsumerOrchestrator, type ConsumerReceiptSink } from "../services/asp/src/consumer/orchestrator";
+import { makeConsumerReceiptSink } from "../services/asp/src/consumer/bridges";
+import { initReceiptWiring } from "../services/asp/src/receipts";
 import { createPublicClient, decodeEventLog, erc20Abi, getAddress, http as viemHttp } from "viem";
 
 const BASE: CaipChainId = "eip155:8453";
@@ -185,6 +187,18 @@ async function main(): Promise<void> {
   const pool = dbUrl ? createPool(dbUrl) : null;
   const store: ConsumerStore = pool ? new PgConsumerStore(pool) : new InMemoryConsumerStore();
   info("store", pool ? "Postgres (durable)" : "in-memory (no DATABASE_URL)");
+
+  /**
+   * The REAL §7.4 receipt writer, not a stub.
+   *
+   * `initReceiptWiring` returns null without DATABASE_URL + REDIS_URL, and that is reported loudly
+   * rather than passed silently as `receipts: null` — a live run whose receipt never lands has not
+   * proven the receipt path, and the run should say so at the top instead of at the end.
+   */
+  const receiptWiring = await initReceiptWiring();
+  const receiptSink: ConsumerReceiptSink | null = makeConsumerReceiptSink(receiptWiring);
+  if (receiptSink) ok("receipt writer wired — this run will produce a real §7.4 receipt");
+  else warn("receipt writer NOT wired (needs DATABASE_URL + REDIS_URL) — receiptId will be null");
 
   await store.upsertTreasuryAccount({
     treasuryRef: "base-usdc-settlement",
@@ -336,7 +350,16 @@ async function main(): Promise<void> {
     policyProvider,
     ledger: new SmokeLedger(),
     escalation: null,
-    receipts: null,
+    /**
+     * The receipt writer is wired for real.
+     *
+     * The first activation run passed `null` here, so the completed intent recorded
+     * `receiptId: null` — and because the bridge swallowed failures, that was indistinguishable
+     * from a receipt the writer had REJECTED. A live run that settles real money must produce the
+     * same §7.4 receipt a production run produces, or the run has not exercised the thing it claims
+     * to have proven.
+     */
+    receipts: receiptSink,
     config: {
       allowSandboxExecution: false,
       maxSingleExecutionDisplay: formatMoney(cap),
