@@ -804,21 +804,59 @@ export class PgConsumerStore implements ConsumerStore {
     }
   }
 
+  async appendTreasuryTransfer(groups: readonly [LedgerGroup, LedgerGroup]): Promise<void> {
+    for (const g of groups) assertGroupBalanced(g);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const g of groups) await this.writeLedgerGroup(client, g);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  private static readonly LEDGER_SELECT = `
+    SELECT g.group_id, g.kind, g.intent_id, g.chain, g.token, g.created_at,
+           e.account_id, e.amount, e.decimals, e.contract, e.memo
+      FROM consumer_ledger_groups g
+      JOIN (SELECT le.group_id, le.account_id, le.amount, le.decimals, a.contract, le.memo, le.id
+              FROM consumer_ledger_entries le
+              JOIN consumer_ledger_accounts a ON a.account_id = le.account_id) e
+        ON e.group_id = g.group_id`;
+
+  async ledgerGroupsForAsset(asset: AssetRef, limit: number): Promise<readonly LedgerGroup[]> {
+    // The limit bounds GROUPS, not rows: slicing mid-group would hand the caller an unbalanced
+    // group and `assertBookBalanced` would report a phantom imbalance that is really a truncation.
+    const { rows } = await this.pool.query(
+      `${PgConsumerStore.LEDGER_SELECT}
+        WHERE g.group_id IN (
+          SELECT group_id FROM consumer_ledger_groups
+           WHERE chain = $1 AND token = $2
+           ORDER BY created_at DESC, group_id DESC
+           LIMIT $3)
+        ORDER BY g.created_at ASC, e.id ASC`,
+      [asset.chain, asset.symbol, limit],
+    );
+    return this.mapLedgerRows(rows as Row[]);
+  }
+
   async ledgerGroupsForIntent(intentId: string): Promise<readonly LedgerGroup[]> {
     const { rows } = await this.pool.query(
-      `SELECT g.group_id, g.kind, g.intent_id, g.chain, g.token, g.created_at,
-              e.account_id, e.amount, e.decimals, e.contract, e.memo
-         FROM consumer_ledger_groups g
-         JOIN (SELECT le.group_id, le.account_id, le.amount, le.decimals, a.contract, le.memo, le.id
-                 FROM consumer_ledger_entries le
-                 JOIN consumer_ledger_accounts a ON a.account_id = le.account_id) e
-           ON e.group_id = g.group_id
+      `${PgConsumerStore.LEDGER_SELECT}
         WHERE g.intent_id = $1
         ORDER BY g.created_at ASC, e.id ASC`,
       [intentId],
     );
+    return this.mapLedgerRows(rows as Row[]);
+  }
+
+  private mapLedgerRows(rows: readonly Row[]): readonly LedgerGroup[] {
     const byGroup = new Map<string, { group: Omit<LedgerGroup, "entries">; entries: LedgerGroup["entries"][number][] }>();
-    for (const raw of rows as Row[]) {
+    for (const raw of rows) {
       const groupId = str(raw.group_id);
       const asset: AssetRef = {
         symbol: str(raw.token),
@@ -832,7 +870,7 @@ export class PgConsumerStore implements ConsumerStore {
           group: {
             groupId,
             kind: str(raw.kind) as LedgerGroupKind,
-            intentId: str(raw.intent_id),
+            intentId: strOrNull(raw.intent_id),
             asset,
             createdAt: iso(raw.created_at),
           },

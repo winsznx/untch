@@ -214,6 +214,16 @@ export interface ConsumerStore {
   /** Validates balance, then appends. Rejects a duplicate (intentId, kind) for non-ADJUSTMENT groups. */
   appendLedgerGroup(group: LedgerGroup): Promise<void>;
   ledgerGroupsForIntent(intentId: string): Promise<readonly LedgerGroup[]>;
+  /**
+   * The two halves of a cross-rail treasury sweep, written in ONE transaction.
+   *
+   * Separate calls would be wrong, not merely untidy: a crash between them leaves one rail's clearing
+   * position retired and the other's not, and the book stops summing to zero with no single row to
+   * point at. They describe one movement, so they commit or fail as one.
+   */
+  appendTreasuryTransfer(groups: readonly [LedgerGroup, LedgerGroup]): Promise<void>;
+  /** Every group touching one rail, newest last. The reconciliation-report input. */
+  ledgerGroupsForAsset(asset: AssetRef, limit: number): Promise<readonly LedgerGroup[]>;
   accountBalance(accountId: string, asset: AssetRef): Promise<Money>;
   /** Sum of an account's entries within a UTC day — the daily-limit input. */
   accountDaySpend(accountId: string, asset: AssetRef, dayKeyUtc: string): Promise<Money>;

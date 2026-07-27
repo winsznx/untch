@@ -887,8 +887,15 @@ export class ConsumerOrchestrator {
 
   private async complete(intent: ConsumerIntent): Promise<ConsumerIntent> {
     const quote = await this.mustQuote(intent);
-    // Discharge the obligation into fee, spread and cost of goods. `assertIntentSettled` in the
-    // ledger asserts the user obligation lands on exactly zero.
+    /**
+     * Discharge the obligation. `assertIntentSettled` in the ledger asserts the user obligation
+     * lands on exactly zero.
+     *
+     * `settlementAsset` is passed, not assumed, and it decides whether the remainder is booked as
+     * COST_OF_GOODS (same rail — the expense) or CROSS_RAIL_CLEARING (different rail — a position
+     * owed to the rail that actually paid, where PROVIDER_SETTLEMENT already recorded the expense).
+     * Omitting it is what expensed cross-rail purchases twice.
+     */
     await this.d.store.appendLedgerGroup(
       recognitionGroup({
         groupId: `lg_${randomBytes(8).toString("hex")}`,
@@ -896,6 +903,7 @@ export class ConsumerOrchestrator {
         total: quote.totalUserAmount,
         fee: quote.untchFee,
         spread: quote.spread,
+        settlementAsset: quote.settlementAsset,
         createdAt: this.now(),
       }),
     );

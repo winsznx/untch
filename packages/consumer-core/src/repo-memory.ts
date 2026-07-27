@@ -360,7 +360,9 @@ export class InMemoryConsumerStore implements ConsumerStore {
 
   async appendLedgerGroup(group: LedgerGroup): Promise<void> {
     assertGroupBalanced(group);
-    if (group.kind !== "ADJUSTMENT") {
+    // Mirrors `consumer_ledger_group_once_idx`: ADJUSTMENT is the escape hatch, and a
+    // TREASURY_TRANSFER belongs to no intent, so neither is once-per-intent.
+    if (group.kind !== "ADJUSTMENT" && group.kind !== "TREASURY_TRANSFER" && group.intentId !== null) {
       const key = `${group.intentId}|${group.kind}`;
       if (this.ledgerGroupKeys.has(key)) {
         throw new Error(
@@ -375,6 +377,15 @@ export class InMemoryConsumerStore implements ConsumerStore {
 
   async ledgerGroupsForIntent(intentId: string): Promise<readonly LedgerGroup[]> {
     return this.ledgerGroups.filter((g) => g.intentId === intentId);
+  }
+
+  async appendTreasuryTransfer(groups: readonly [LedgerGroup, LedgerGroup]): Promise<void> {
+    for (const g of groups) assertGroupBalanced(g);
+    for (const g of groups) await this.appendLedgerGroup(g);
+  }
+
+  async ledgerGroupsForAsset(asset: AssetRef, limit: number): Promise<readonly LedgerGroup[]> {
+    return this.ledgerGroups.filter((g) => assetKey(g.asset) === assetKey(asset)).slice(-limit);
   }
 
   async accountBalance(accountId: string, asset: AssetRef): Promise<Money> {
