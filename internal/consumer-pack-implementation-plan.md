@@ -433,9 +433,22 @@ keys live only inside the rail clients, which are constructed by the router and 
 
 ### 6.4 Escrow: reuse, do not invent
 
-`UntchVault` / `UntchVaultFactory` exist, but **no vault instance is deployed on mainnet** and its
-lifecycle was designed for the agent-spend flow, not for a two-sided consumer settlement. Adding a new
-contract "to look complete" is explicitly out of scope.
+The brief asked me to "inspect the existing BudgetVault". **There is no `BudgetVault` in this
+repository** — `grep BudgetVault` returns zero hits. The contract that exists is `UntchVault`, and a
+full read of `contracts/src/UntchVault.sol` plus its 74 unit tests and 11-invariant suite establishes
+that it is a **budget-bounded spend vault, not an escrow**:
+
+| Lifecycle stage the Consumer Pack needs | `UntchVault` |
+|---|---|
+| deposit | ✅ `deposit(token, amount)`, permissionless, allowlisted token, `nonReentrant` |
+| **lock / earmark per intent** | ❌ **not supported** — no per-intent reservation, no `lockedOf`, no held balance. Funds are one pooled balance; an APPROVED intent is a permission checked at spend time, not a reservation. |
+| release | ✅ but as a *spend*: `spend(...)` under an EIP-712 oracle signature bounded by `perTxCap`, an epoch budget, a single-use nonce, an expiry and `intentRegistry.isUsable(intentHash)` |
+| **refund / cancel / dispute-return** | ❌ **no dedicated path.** The only exit is `ownerWithdraw`, which is unconditional, owner-only, never paused, never oracle-gated, and deliberately does not touch epoch accounting. It is the §16 I4 sovereign escape hatch — **not a refund primitive**, and using it as one would bypass every control the vault has. |
+| expiry on deposited funds | ❌ (there are two expiries, but both are on the *signature* and the *anchored intent*, not on the money) |
+
+So the vault cannot express the Consumer Intent lifecycle without new Solidity, and **no vault
+instance is deployed on mainnet** in any case. Adding a new contract "to look complete" is explicitly
+out of scope.
 
 **Decision: no new contract in this branch.** The funding leg uses the *already-proven* x402 rail, which
 gives an atomic, on-chain-settled, tx-hash-bearing funding receipt without new Solidity. The custodial gap
