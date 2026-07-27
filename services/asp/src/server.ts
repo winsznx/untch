@@ -490,7 +490,13 @@ export function createSellerApp(
   // ── Consumer Pack routes (governed consumer execution) ─────────────────────
   // Registered AFTER express.json so handlers see a parsed body, and after every existing route so
   // nothing already serving changes shape. A null wiring answers 503 with a named reason.
-  registerConsumerRoutes(app, consumerWiring);
+  registerConsumerRoutes(
+    app,
+    consumerWiring,
+    // The public receipt page reports the real anchor state. Without a receipt writer it degrades to
+    // "not recorded" rather than claiming a pending anchor that will never arrive.
+    receiptWiring ? (receiptId) => receiptWiring.status(receiptId) : null,
+  );
 
   // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

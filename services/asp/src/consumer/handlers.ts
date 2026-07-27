@@ -603,6 +603,157 @@ export async function handleConsumerReceipt(
   };
 }
 
+/**
+ * How a receipt looks to someone who was not part of the transaction.
+ *
+ * The five states are distinct on purpose. "no receipt" and "not anchored yet" and "the anchoring
+ * failed" are three different facts about the same intent, and collapsing them into a null id — which
+ * is what the receipt path did before — leaves a reader unable to tell a system that is still working
+ * from one that gave up.
+ */
+export type PublicReceiptAnchor =
+  /** The intent completed but no receipt was recorded. `reason` says why, when it is known. */
+  | { readonly state: "NOT_RECORDED"; readonly reason: string }
+  /** A receipt id exists but the receipt row does not — a genuine inconsistency, not a wait state. */
+  | { readonly state: "NOT_FOUND"; readonly receiptId: string }
+  /** Durable and queued. It WILL anchor; nothing is wrong. */
+  | { readonly state: "PENDING"; readonly receiptId: string; readonly status: string }
+  /** Anchored on chain, with the transaction to check it against. */
+  | {
+      readonly state: "ANCHORED";
+      readonly receiptId: string;
+      readonly txHash: string | null;
+      readonly blockNumber: number | null;
+      readonly batchId: number | null;
+    }
+  /** The writer gave up anchoring. The receipt is still durable and still true; it is just not on chain. */
+  | { readonly state: "ANCHOR_FAILED"; readonly receiptId: string; readonly status: string };
+
+function anchorFrom(
+  receiptId: string | null,
+  view: { status: string; txHash: string | null; blockNumber: number | null; batchId: number | null } | null,
+): PublicReceiptAnchor {
+  if (receiptId === null) {
+    return {
+      state: "NOT_RECORDED",
+      reason: "no §7.4 receipt was recorded for this intent — see the consumer.completed event for the reason",
+    };
+  }
+  if (view === null) return { state: "NOT_FOUND", receiptId };
+  if (view.status === "CONFIRMED") {
+    return {
+      state: "ANCHORED",
+      receiptId,
+      txHash: view.txHash,
+      blockNumber: view.blockNumber,
+      batchId: view.batchId,
+    };
+  }
+  if (view.status === "DEGRADED_UNANCHORED") return { state: "ANCHOR_FAILED", receiptId, status: view.status };
+  return { state: "PENDING", receiptId, status: view.status };
+}
+
+/**
+ * The PUBLIC receipt. Shareable, unauthenticated, and deliberately narrower than the private one.
+ *
+ * What is omitted is the point. The private receipt at `/consumer/intent/:id/receipt` carries the
+ * request payload, the correlation id and which operator channel resolved an approval. A public page
+ * that leaked any of those would publish, for instance, the exact domain a user was searching for or
+ * the address a gift was shipped to — for anyone holding a URL. So this view is built by NAMING the
+ * fields that may be published, never by deleting fields from the private view: a field added to the
+ * private receipt later cannot silently become public.
+ *
+ * Everything here is already public or already on chain: amounts, chains, transaction hashes, the
+ * policy id and hash, the decision, and what Untch independently verified. The integrity digest lets
+ * a holder of the private receipt confirm the two describe the same intent.
+ */
+export async function handlePublicConsumerReceipt(
+  intentId: string,
+  deps: ConsumerDeps,
+  receiptStatus: ((receiptId: string) => Promise<ReceiptStatusLike | null | "invalid">) | null,
+): Promise<HandlerResult> {
+  const intent = await deps.store.getIntent(intentId);
+  if (!intent) {
+    return { status: 404, body: envelope("INTENT_NOT_FOUND", `no consumer intent ${intentId}`) };
+  }
+
+  const [executions, evidence, quote] = await Promise.all([
+    deps.store.listExecutions(intentId),
+    deps.store.getDeliveryEvidence(intentId),
+    intent.quoteId === null ? Promise.resolve(null) : deps.store.getQuote(intent.quoteId),
+  ]);
+
+  const paid = executions.find((e) => e.state === "PAID" || e.state === "ACKNOWLEDGED") ?? null;
+  const decision = intent.policyDecision as { decision?: string } | null;
+
+  let statusView: ReceiptStatusLike | null = null;
+  if (intent.receiptId !== null && receiptStatus) {
+    const looked = await receiptStatus(intent.receiptId);
+    statusView = looked === "invalid" ? null : looked;
+  }
+
+  const publicView = {
+    intentId,
+    action: intent.action,
+    state: intent.state,
+    settlement:
+      paid === null || paid.settledAmount === null
+        ? null
+        : {
+            providerId: paid.providerId,
+            amount: moneyToJson(paid.settledAmount),
+            chain: paid.settlementChain ?? "",
+            // Already public: it is the `to` of the settlement transaction below.
+            recipient: quote?.settlementRecipient ?? "",
+            txHash: paid.settlementTxHash,
+          },
+    fee: intent.untchFee === null ? null : moneyToJson(intent.untchFee),
+    spread: intent.spread === null ? null : moneyToJson(intent.spread),
+    policy: {
+      policyId: intent.policyId,
+      policyVersion: intent.policyVersion,
+      policyHash: intent.policyHash,
+      decision: decision?.decision ?? null,
+    },
+    delivery:
+      evidence === null
+        ? null
+        : {
+            // Never merged. What the merchant asserted and what Untch proved are different claims,
+            // and a public page that conflated them would overstate what is actually known.
+            providerAttested: evidence.providerAttested.status,
+            untchVerified: evidence.untchVerified.verified,
+            method: evidence.untchVerified.method,
+            verifiedAt: evidence.untchVerified.verifiedAt,
+          },
+    quoteHash: intent.quoteHash,
+    spendIntentHash: intent.spendIntentHash,
+    createdAt: intent.createdAt,
+    updatedAt: intent.updatedAt,
+  };
+
+  return {
+    status: 200,
+    body: {
+      ...publicView,
+      receipt: anchorFrom(intent.receiptId, statusView),
+      integrity: { digest: `0x${sha256Hex(stableStringify(publicView))}` },
+      disclosure:
+        "Public view. The request payload, correlation id and approval channel are withheld; " +
+        "every field shown is already public or already on chain.",
+    },
+  };
+}
+
+/** The slice of the §7.4 status view a public receipt needs. Kept structural so the consumer routes
+ *  do not take a dependency on the receipt-writer package. */
+export interface ReceiptStatusLike {
+  readonly status: string;
+  readonly txHash: string | null;
+  readonly blockNumber: number | null;
+  readonly batchId: number | null;
+}
+
 /** Notify. Fixed-price, value-moving, and it goes through exactly the same lifecycle as a purchase. */
 export async function handleConsumerNotify(
   raw: unknown,

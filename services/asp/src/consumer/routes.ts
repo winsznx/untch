@@ -27,9 +27,11 @@ import {
   handleConsumerPayment,
   handleConsumerQuote,
   handleConsumerReceipt,
+  handlePublicConsumerReceipt,
   handleConsumerSearch,
   handleConsumerStatus,
   type ConsumerDeps,
+  type ReceiptStatusLike,
 } from "./handlers";
 import type { ConsumerWiring } from "./wiring";
 
@@ -65,6 +67,15 @@ export const INTENT_PAYMENT_ROUTE = "/consumer/intent/:intentId/payment" as cons
 export const INTENT_DELIVERY_ROUTE = "/consumer/intent/:intentId/delivery" as const;
 export const INTENT_RECEIPT_ROUTE = "/consumer/intent/:intentId/receipt" as const;
 export const INTENT_EVENTS_ROUTE = "/consumer/intent/:intentId/events" as const;
+
+/**
+ * The PUBLIC receipt. Unauthenticated and unscoped BY DESIGN — it is the link a user shares.
+ *
+ * It is a separate path from `/consumer/intent/:id/receipt` rather than a query flag on it, because
+ * the two have opposite defaults: the private one refuses without tenant scope, this one never asks
+ * for any. Making publicness a parameter of one route is how a scoping bug turns into a disclosure.
+ */
+export const PUBLIC_RECEIPT_ROUTE = "/consumer/receipt/:intentId" as const;
 
 export const FUND_ROUTE = "/consumer/fund/:intentId" as const;
 export const CONSUMER_CATALOG_ROUTE = "/consumer/catalog" as const;
@@ -159,7 +170,16 @@ function unconfigured(): HandlerResult {
   };
 }
 
-export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | null): void {
+export function registerConsumerRoutes(
+  app: Express,
+  wiring: ConsumerWiring | null,
+  /**
+   * Reads §7.4 anchor status. Passed in rather than imported so the consumer routes keep no
+   * dependency on the receipt-writer package, and so a deployment without a receipt writer degrades
+   * to an honest "not recorded" instead of failing the page.
+   */
+  receiptStatus: ((receiptId: string) => Promise<ReceiptStatusLike | null | "invalid">) | null = null,
+): void {
   if (!wiring) {
     for (const path of [
       SHOP_SEARCH_ROUTE, SHOP_QUOTE_ROUTE, SHOP_PURCHASE_ROUTE,
@@ -174,7 +194,7 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
     for (const path of [
       SHOP_ORDER_ROUTE, DOMAINS_STATUS_ROUTE, TRAVEL_BOOKING_ROUTE, GIFTS_STATUS_ROUTE,
       INTENT_STATUS_ROUTE, INTENT_PAYMENT_ROUTE, INTENT_DELIVERY_ROUTE, INTENT_RECEIPT_ROUTE,
-      INTENT_EVENTS_ROUTE, CONSUMER_CATALOG_ROUTE,
+      INTENT_EVENTS_ROUTE, CONSUMER_CATALOG_ROUTE, PUBLIC_RECEIPT_ROUTE,
     ]) {
       app.get(path, (_req, res) => send(res, unconfigured()));
     }
@@ -314,6 +334,18 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
     handleConsumerReceipt(req.params.intentId ?? "", policyIdOf(req), deps).then((r) => send(res, r)).catch(next);
   });
 
+  // Public and deliberately un-scoped. Cached briefly: a receipt is immutable once anchored, and the
+  // pending states change on the order of a batch interval, not a request.
+  app.get(PUBLIC_RECEIPT_ROUTE, (req, res, next) => {
+    handlePublicConsumerReceipt(req.params.intentId ?? "", deps, receiptStatus)
+      .then((r) => {
+        res.setHeader("Cache-Control", "public, max-age=15");
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        send(res, r);
+      })
+      .catch(next);
+  });
+
   // ── SSE ────────────────────────────────────────────────────────────────────
   app.get(INTENT_EVENTS_ROUTE, (req: Request, res: Response, next: NextFunction) => {
     const intentId = req.params.intentId ?? "";
@@ -446,6 +478,7 @@ export async function buildConsumerCatalog(wiring: ConsumerWiring): Promise<Reco
       travel: [TRAVEL_SEARCH_ROUTE, TRAVEL_COMPARE_ROUTE, TRAVEL_QUOTE_ROUTE, TRAVEL_BOOK_ROUTE, TRAVEL_BOOKING_ROUTE],
       gifts: [GIFTS_QUOTE_ROUTE, GIFTS_ORDER_ROUTE, GIFTS_STATUS_ROUTE],
       status: [INTENT_STATUS_ROUTE, INTENT_PAYMENT_ROUTE, INTENT_DELIVERY_ROUTE, INTENT_RECEIPT_ROUTE, INTENT_EVENTS_ROUTE],
+      publicReceipt: [PUBLIC_RECEIPT_ROUTE],
       notify: [NOTIFY_CONFIRMATION_ROUTE, NOTIFY_RECEIPT_ROUTE, NOTIFY_EXCEPTION_ROUTE],
     },
     funding: {
