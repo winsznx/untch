@@ -37,7 +37,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { randomBytes } from "node:crypto";
-import { eip3009DomainFor, parseChallenge, type X402PaymentOption } from "./challenge";
+import { eip3009DomainFor, parseChallenge, selectPayment, type X402PaymentOption } from "./challenge";
 
 /** The EIP-712 types for EIP-3009. Fixed by the standard; not provider-supplied. */
 const TRANSFER_WITH_AUTHORIZATION_TYPES = {
@@ -144,13 +144,23 @@ export class X402EvmExactClient implements RailClient {
     }
 
     const challenge = parseChallenge(req.challenge);
-    const option = challenge.accepts.find(
-      (o) =>
-        o.network === this.chain &&
-        o.payTo.toLowerCase() === req.recipient.toLowerCase() &&
-        o.amount === req.amount.amount,
-    );
-    if (!option) {
+    /**
+     * Re-select through the SAME `selectPayment` the orchestrator used, rather than scanning
+     * `accepts[]` for the first entry that happens to match amount + recipient.
+     *
+     * An independent re-find is exploitable: a provider can offer a decoy option carrying the same
+     * amount and payTo but a DIFFERENT asset or `extra` domain, place it earlier in the array, and
+     * have the signer bind the authorization to the decoy's terms while every upstream allowlist
+     * check passed against the entry `selectPayment` actually chose. Running one selector means
+     * there is exactly one answer to "which option is being paid".
+     */
+    const selected = selectPayment(challenge, {
+      signableChains: new Set([this.chain]),
+      ceilingFor: () => req.amount,
+      allowedRecipients: [req.recipient],
+    });
+    const option = selected.option;
+    if (option.amount !== req.amount.amount) {
       // The capability already checked amount/recipient against what was AUTHORISED. This checks
       // them against what the provider is actually ASKING FOR, right now, in the challenge being
       // paid. Both must agree, or the two sides of the payment do not describe the same purchase.
@@ -172,7 +182,12 @@ export class X402EvmExactClient implements RailClient {
     const domainParams = eip3009DomainFor(option, asset);
 
     const nowSec = Math.floor(this.clock() / 1000);
-    const validAfter = 0n;
+    // `now - 5` rather than 0, matching @okxweb3/x402-evm's own createEIP3009Payload. The five
+    // seconds of slack absorb clock skew between us and the settling node: USDC requires
+    // `block.timestamp > validAfter`, and a validAfter equal to now can lose that race on a fast
+    // block. Zero would also work, but there is no reason to diverge from the reference client on a
+    // field a facilitator may well compare.
+    const validAfter = BigInt(Math.max(0, nowSec - 5));
     const validBefore = BigInt(nowSec + Math.max(60, option.maxTimeoutSeconds));
     const nonce = `0x${Buffer.from(this.nonceSource()).toString("hex")}` as Hex;
 
@@ -197,12 +212,23 @@ export class X402EvmExactClient implements RailClient {
       message: authorization,
     });
 
+    /**
+     * The x402 v2 `PaymentPayload` envelope, byte-for-byte the shape the reference client builds.
+     *
+     * Verified against the INSTALLED packages rather than against a spec summary:
+     *   • `@okxweb3/x402-core`'s type      — { x402Version, resource?, accepted, payload, extensions? }
+     *   • its client's assembly            — payload + extensions + resource + accepted
+     *   • `@okxweb3/x402-evm`'s eip3009    — payload is exactly { authorization, signature }
+     *
+     * `resource` and `extensions` are echoed back from the challenge because the reference client
+     * echoes them: a facilitator is entitled to bind a payment to the resource it was issued for,
+     * and omitting the field would leave that binding unsatisfiable. There are deliberately NO
+     * top-level `scheme`/`network` keys — they live inside `accepted`, and a strict validator has
+     * every right to reject unknown members.
+     */
     const payload = {
       x402Version: challenge.x402Version,
-      scheme: "exact",
-      network: this.chain,
       payload: {
-        signature,
         authorization: {
           from: authorization.from,
           to: authorization.to,
@@ -211,7 +237,11 @@ export class X402EvmExactClient implements RailClient {
           validBefore: authorization.validBefore.toString(),
           nonce: authorization.nonce,
         },
+        signature,
       },
+      ...(Object.keys(challenge.extensions).length > 0 ? { extensions: challenge.extensions } : {}),
+      ...(challenge.resource.url === "" ? {} : { resource: challenge.resource }),
+      // The SELECTED requirements, verbatim. The facilitator matches its own challenge against this.
       accepted: {
         scheme: option.scheme,
         network: option.network,
@@ -225,7 +255,19 @@ export class X402EvmExactClient implements RailClient {
 
     return {
       paymentHeader: Buffer.from(JSON.stringify(payload), "utf8").toString("base64"),
-      headerName: "X-PAYMENT",
+      /**
+       * x402 v2 names this header `PAYMENT-SIGNATURE`. `X-PAYMENT` is the v1 name.
+       *
+       * Confirmed three ways rather than assumed: @okxweb3/x402-fetch emits PAYMENT-SIGNATURE;
+       * Untch's own first settled payment (internal/day0/D0.1-evidence/paid-call-transcript.json)
+       * shows the PAYMENT-REQUIRED / PAYMENT-RESPONSE pair; and a live probe against
+       * stabledomains.dev on 2026-07-27 reached signature verification under BOTH names, so the
+       * provider's facilitator accepts either. `aliasHeaderNames` keeps the v1 name on the wire for
+       * facilitators that only read it — sending both costs nothing and removes a whole class of
+       * "the payment was ignored" failure.
+       */
+      headerName: "PAYMENT-SIGNATURE",
+      aliasHeaderNames: ["X-PAYMENT"],
       txHash: null,
       amount: req.amount,
       recipient: option.payTo,

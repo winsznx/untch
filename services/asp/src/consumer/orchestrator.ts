@@ -221,10 +221,15 @@ export class ConsumerOrchestrator {
     const adapter = this.d.adapters.get(chosen.provider.providerId);
 
     const discoveryCap = await this.mintDiscoveryCapability(intent, chosen.provider.providerId);
-    const result = await adapter.discover(
-      { action: intent.action, params: intent.request, limit },
-      this.ctx(intent.correlationId, this.d.config.providerTimeoutMs, discoveryCap),
-    );
+    let result: DiscoveryResult;
+    try {
+      result = await adapter.discover(
+        { action: intent.action, params: intent.request, limit },
+        this.ctx(intent.correlationId, this.d.config.providerTimeoutMs, discoveryCap),
+      );
+    } finally {
+      await this.releaseDiscoveryCapability(discoveryCap);
+    }
 
     const { intent: advanced } = await this.d.store.transition(
       intentId,
@@ -263,15 +268,17 @@ export class ConsumerOrchestrator {
 
     const adapter = this.d.adapters.get(chosen.provider.providerId);
     const discoveryCap = await this.mintDiscoveryCapability(intent, chosen.provider.providerId);
-    const providerQuote = await adapter.quote(
-      {
-        action: intent.action,
-        intentId,
-        providerRef,
-        params: intent.request,
-      },
-      this.ctx(intent.correlationId, this.d.config.providerTimeoutMs, discoveryCap),
-    );
+    let providerQuote;
+    try {
+      providerQuote = await adapter.quote(
+        { action: intent.action, intentId, providerRef, params: intent.request },
+        this.ctx(intent.correlationId, this.d.config.providerTimeoutMs, discoveryCap),
+      );
+    } finally {
+      // Retire it whether the quote succeeded or threw — an abandoned live capability would block
+      // the execution capability for this intent.
+      await this.releaseDiscoveryCapability(discoveryCap);
+    }
 
     // The provider's cost is denominated in ITS asset; the user funds in USDT0. The two are both
     // 6-decimal dollar stablecoins, so the notional maps 1:1 and the disclosed spread is what
@@ -669,8 +676,13 @@ export class ConsumerOrchestrator {
     }
 
     // ── gates, all before any spending authority exists ──
+    //
+    // Ordered cheapest-and-most-absolute first. The FLAG gate leads because it is the one an
+    // operator flips in an incident: if execution is switched off, nothing else about this intent
+    // matters and no provider should even be consulted.
     let resolved;
     try {
+      this.d.registry.assertFlagsAllow(providerId, quote.settlementChain, quote.settlementAsset);
       this.assertQuoteFresh(quote);
       await this.assertApprovalStillBinds(intent, quote);
       resolved = await this.d.registry.assertExecutable(providerId, capabilityFor(intent.action, "execute"));
@@ -767,6 +779,18 @@ export class ConsumerOrchestrator {
         settledAmount: execution.settlement.amount,
         finishedAt: this.now(),
       });
+      /**
+       * The treasury ref must be the one the ACCOUNT is registered under, not a string derived from
+       * the chain.
+       *
+       * The derived form (`eip155:8453-settlement`) produced a ledger account id that nothing else
+       * ever read: `assertWithinLimits` and `reconcile` both key off
+       * `TREASURY:<assetKey>:<account.treasuryRef>` — `base-usdc-settlement`. The daily cap was
+       * therefore summing an account that was never written, so it always read zero and could never
+       * fire, and reconciliation compared the float against an empty ledger position. Resolving the
+       * real account makes both controls actually bind.
+       */
+      const settlementRef = await this.settlementTreasuryRef(quote);
       await this.d.store.recordSettlement(
         executionId,
         settlementGroup({
@@ -774,7 +798,7 @@ export class ConsumerOrchestrator {
           intentId,
           cost: execution.settlement.amount,
           providerId,
-          treasuryRef: `${quote.settlementChain}-settlement`,
+          treasuryRef: settlementRef,
           createdAt: this.now(),
         }),
       );
@@ -1074,6 +1098,44 @@ export class ConsumerOrchestrator {
 
   // ── helpers ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Retire a discovery capability once the read is done, used or not.
+   *
+   * `consumer_capability_intent_idx` is UNIQUE on intent_id WHERE consumed_at IS NULL — at most one
+   * LIVE authority per intent. A discovery capability that is minted, never spent, and never retired
+   * would hold that slot and make the execution capability unmintable. Retiring it with a zero spend
+   * is the honest record: authority issued, authority not used.
+   */
+  private async releaseDiscoveryCapability(
+    cap: import("@untch/consumer-core").PaymentCapability | null,
+  ): Promise<void> {
+    if (!cap) return;
+    try {
+      await this.d.store.consumeCapability(cap.capabilityId, money(0n, cap.asset), this.now());
+    } catch {
+      // Already consumed by a real payment, or gone. Either way there is nothing to retire.
+    }
+  }
+
+  /** The registered SETTLEMENT account for a quote's rail. Throws rather than inventing a ref. */
+  private async settlementTreasuryRef(quote: ConsumerQuote): Promise<string> {
+    const account = await this.d.store.findTreasuryAccount(
+      quote.settlementChain,
+      quote.settlementAsset.symbol,
+      "SETTLEMENT",
+    );
+    if (!account) {
+      throw new ProviderError(
+        normalizedError(
+          "TREASURY_INSUFFICIENT",
+          `no registered SETTLEMENT treasury account for ${quote.settlementAsset.symbol} on ` +
+            `${quote.settlementChain} — refusing to book a settlement against an account that does not exist`,
+        ),
+      );
+    }
+    return account.treasuryRef;
+  }
+
   private async mustGet(intentId: string): Promise<ConsumerIntent> {
     const intent = await this.d.store.getIntent(intentId);
     if (!intent) {
@@ -1183,7 +1245,12 @@ export class ConsumerOrchestrator {
     try {
       return await this.d.treasury.issueCapability({
         capabilityId: newCapabilityId(),
-        intentId: `${intent.intentId}:discovery:${randomBytes(4).toString("hex")}`,
+        // The REAL intent id. A synthetic `<intentId>:discovery:<rand>` violated
+        // consumer_payment_capabilities' foreign key against consumer_intents, so every paid
+        // discovery and every paid quote threw against Postgres while passing in memory — the
+        // in-memory store has no FK to enforce. `releaseDiscoveryCapability` consumes it afterwards
+        // so the "at most one LIVE capability per intent" index stays satisfiable for execution.
+        intentId: intent.intentId,
         providerId,
         asset: asset("base.usdc"),
         // Cents-scale. A read must never be able to consume purchase-scale authority.

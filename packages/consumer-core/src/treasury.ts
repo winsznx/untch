@@ -40,9 +40,16 @@ export interface PaymentRequest {
 }
 
 export interface PaymentResult {
-  /** The payment header value to replay on the paid retry (x402 `X-PAYMENT`). */
+  /** The payment header value to replay on the paid retry. */
   readonly paymentHeader: string;
+  /** The canonical header name for the scheme. x402 v2: `PAYMENT-SIGNATURE`. */
   readonly headerName: string;
+  /**
+   * Additional header names carrying the SAME value, for facilitators that only read an older name
+   * (x402 v1's `X-PAYMENT`). Sending both costs nothing and removes a whole class of silent
+   * "the payment header was ignored, here is your 402 again" failure.
+   */
+  readonly aliasHeaderNames?: readonly string[];
   /** Settlement tx hash when the rail exposes one at signing time. Often only known after the retry. */
   readonly txHash: string | null;
   readonly amount: Money;

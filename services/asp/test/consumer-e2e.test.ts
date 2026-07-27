@@ -20,6 +20,7 @@ import {
   type Money,
   type PaymentRequest,
   type PaymentResult,
+  type ConsumerFlags,
   type RailClient,
 } from "@untch/consumer-core";
 import {
@@ -215,6 +216,7 @@ async function harness(
     maturity?: "verified" | "sandbox";
     allowSandbox?: boolean;
     railBalance?: bigint;
+    flagsOff?: boolean;
   } = {},
 ): Promise<Harness> {
   const store = new InMemoryConsumerStore(() => NOW);
@@ -256,6 +258,9 @@ async function harness(
     registry: new ProviderRegistry({
       store,
       gate: { executionFloor: "verified", allowSandboxExecution: over.allowSandbox ?? false },
+      // Execution defaults OFF in every environment, so the harness must switch it on explicitly.
+      // `flagsOff: true` exercises the opposite: that an otherwise-perfect intent still refuses.
+      flags: over.flagsOff === true ? allFlagsOff : allFlagsOn,
       clock: () => NOW,
     }),
     adapters,
@@ -311,6 +316,28 @@ async function toQuoted(h: Harness): Promise<string> {
   await h.orchestrator.quote(intent.intentId, "untchprobe.com");
   return intent.intentId;
 }
+
+/** Every switch on — what a deliberately-activated production instance looks like. */
+const allFlagsOn: ConsumerFlags = {
+  packEnabled: true,
+  executionEnabled: true,
+  liveSmokeEnabled: false,
+  providerEnabled: () => true,
+  chainEnabled: () => true,
+  assetEnabled: () => true,
+  snapshot: () => ({}),
+};
+
+/** Every switch off — the default posture of a fresh deployment. */
+const allFlagsOff: ConsumerFlags = {
+  packEnabled: false,
+  executionEnabled: false,
+  liveSmokeEnabled: false,
+  providerEnabled: () => false,
+  chainEnabled: () => false,
+  assetEnabled: () => false,
+  snapshot: () => ({}),
+};
 
 const alwaysApprove: ConsumerEscalationGateway = {
   async requestApproval() {
@@ -604,6 +631,26 @@ describe("AC9 + AC10 — failure before payment refunds; ambiguity after payment
     const again = await h.orchestrator.executeIntent(intentId);
     assert.equal(again.state, "MANUAL_REVIEW");
     assert.equal((await h.store.listExecutions(intentId)).length, 1);
+  });
+});
+
+describe("feature flags — execution is OFF unless every switch says otherwise", () => {
+  test("a fully verified, funded, approved intent STILL refuses when execution is switched off", async () => {
+    // The default posture of every fresh deployment. Nothing about the intent is wrong; the
+    // instance simply has not been told it may spend.
+    const h = await harness({ fetchImpl: domainsFetch(), escalation: alwaysApprove, flagsOff: true });
+    const intentId = await toQuoted(h);
+    await h.orchestrator.runPolicy(intentId);
+    const { funding } = await h.orchestrator.requestFunding(intentId);
+    await h.orchestrator.confirmFunding(intentId, {
+      intentId, chain: "eip155:196", txHash: "0xflagoff", amount: funding.amount,
+      payer: null, settledAt: new Date(NOW).toISOString(), confirmations: 12, finalized: true,
+    });
+    await h.orchestrator.queueExecution(intentId);
+    const failed = await h.orchestrator.executeIntent(intentId);
+    assert.equal(failed.failureCode, "PROVIDER_NOT_EXECUTABLE");
+    assert.match(failed.failureDetail ?? "", /CONSUMER_PACK_ENABLED|CONSUMER_EXECUTION_ENABLED/);
+    assert.equal(h.rail.payments.length, 0, "no payment may be attempted with execution disabled");
   });
 });
 

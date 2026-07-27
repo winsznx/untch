@@ -24,6 +24,9 @@ import {
   loadRailRpc,
   loadSiwxKey,
   createPool,
+  flagOn,
+  loadConsumerFlags,
+  describeFlags,
   runMigrations,
   PgConsumerStore,
   ProviderRegistry,
@@ -97,11 +100,46 @@ export async function initConsumerWiring(
   const store = new PgConsumerStore(pool);
 
   // ── seed the durable registry ────────────────────────────────────────────
-  // Idempotent upserts. The seed is the source of truth for maturity and provenance; an operator can
-  // still pause a provider, but cannot promote one past what the seed asserts without editing it.
+  //
+  // The seed INTRODUCES a provider; it does not re-assert its status on every boot.
+  //
+  // An unconditional upsert here was a live control failure in both directions. A provider promoted
+  // to `verified` after a real observed settlement would be silently DEMOTED to the seed's `sandbox`
+  // on the next deploy, disabling a working integration for no visible reason. Worse, a provider
+  // deliberately set to `disabled` during an incident — the documented response to a compromised
+  // merchant — would be silently RE-ENABLED by the next deploy, which is the control failing at
+  // exactly the moment it matters.
+  //
+  // So: insert when absent, and afterwards only refresh the descriptive fields (base URL, chains,
+  // provenance) that the seed genuinely owns. Maturity and `enabled` are OPERATIONAL state and stay
+  // with the operator.
   for (const seed of PROVIDER_SEEDS) {
-    await store.upsertProvider(seed.provider);
-    for (const cap of seed.capabilities) await store.upsertCapability(cap);
+    const existing = await store.getProvider(seed.provider.providerId);
+    if (!existing) {
+      await store.upsertProvider(seed.provider);
+    } else if (
+      existing.baseUrl !== seed.provider.baseUrl ||
+      existing.provenance !== seed.provider.provenance
+    ) {
+      await store.upsertProvider({
+        ...seed.provider,
+        maturity: existing.maturity,
+        enabled: existing.enabled,
+      });
+      log(
+        `[consumer] refreshed ${seed.provider.providerId} descriptors; kept operator state ` +
+          `(maturity=${existing.maturity}, enabled=${existing.enabled})`,
+      );
+    }
+
+    const existingCaps = await store.listCapabilities(seed.provider.providerId);
+    for (const cap of seed.capabilities) {
+      const prior = existingCaps.find((c) => c.capability === cap.capability);
+      if (!prior) await store.upsertCapability(cap);
+      else if (prior.notes !== cap.notes) {
+        await store.upsertCapability({ ...cap, maturity: prior.maturity });
+      }
+    }
   }
 
   const adapters = buildAdapterRegistry();
@@ -146,6 +184,14 @@ export async function initConsumerWiring(
     },
   });
 
+  const flags = loadConsumerFlags();
+  log(`[consumer] ${describeFlags(flags, PROVIDER_SEEDS.map((s) => s.provider.providerId))}`);
+  if (!flags.packEnabled) {
+    log("[consumer] CONSUMER_PACK_ENABLED is not set — every consumer route will refuse.");
+  } else if (!flags.executionEnabled) {
+    log("[consumer] CONSUMER_EXECUTION_ENABLED is not set — discovery and quoting only. This is the default.");
+  }
+
   const availableRails = treasury.availableRails();
   if (availableRails.length === 0) {
     log(
@@ -163,14 +209,32 @@ export async function initConsumerWiring(
   // becomes real.
   const baseRail = rails.get(BASE_MAINNET);
   if (baseRail?.available()) {
+    // Same rule as the provider seed: introduce the account, then leave the operator's `enabled`
+    // alone. Re-asserting it on every boot would let a redeploy silently re-arm a float that an
+    // operator had deliberately disabled — the exact inverse of a kill switch.
+    const usdc = asset("base.usdc");
+    const existing = await store.getTreasuryAccount("base-usdc-settlement");
     await store.upsertTreasuryAccount({
       treasuryRef: "base-usdc-settlement",
-      asset: asset("base.usdc"),
+      asset: usdc,
       purpose: "SETTLEMENT",
       address: baseRail.address(),
-      minBalance: parseMoney(process.env.CONSUMER_BASE_MIN_BALANCE?.trim() || "5.00", asset("base.usdc")),
-      dailyLimit: parseMoney(process.env.CONSUMER_BASE_DAILY_LIMIT?.trim() || "500.00", asset("base.usdc")),
-      enabled: process.env.CONSUMER_BASE_TREASURY_ENABLED === "1",
+      minBalance: parseMoney(
+        process.env.CONSUMER_TREASURY_BASE_MIN_BALANCE_USDC?.trim() ||
+          process.env.CONSUMER_BASE_MIN_BALANCE?.trim() ||
+          "5.00",
+        usdc,
+      ),
+      dailyLimit: parseMoney(
+        process.env.CONSUMER_TREASURY_BASE_DAILY_LIMIT_USDC?.trim() ||
+          process.env.CONSUMER_BASE_DAILY_LIMIT?.trim() ||
+          "500.00",
+        usdc,
+      ),
+      enabled: existing
+        ? existing.enabled
+        : flagOn(process.env.CONSUMER_BASE_TREASURY_ENABLED) ||
+          flagOn(process.env.CONSUMER_TREASURY_BASE_ENABLED),
     });
   }
   await store.upsertTreasuryAccount({
@@ -192,6 +256,7 @@ export async function initConsumerWiring(
 
   const registry = new ProviderRegistry({
     store,
+    flags,
     gate: { executionFloor: "verified", allowSandboxExecution: config.allowSandboxExecution },
     onSandboxExecution: (providerId, capability) => {
       log(

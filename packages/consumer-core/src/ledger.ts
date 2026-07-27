@@ -240,32 +240,47 @@ export function recognitionGroup(args: {
         `(${formatMoney(args.total)} total − ${formatMoney(args.fee)} fee − ${formatMoney(args.spread)} spread)`,
     );
   }
+  /**
+   * Zero-value legs are OMITTED, not written as zero rows.
+   *
+   * An earlier version kept them for audit readability — "we charged nothing" being visible is a
+   * real virtue. The database disagrees, and it is right to: `consumer_ledger_entries` carries
+   * `CHECK (amount <> 0)`, because an entry that moves nothing is either a bug or noise. Keeping the
+   * zero rows meant that any action with no fee — `domains.check`, `travel.search`, anything absent
+   * from FEE_BPS — produced a RECOGNITION group Postgres would REJECT, and it would reject it
+   * *after* the merchant had already been paid. The intent would strand in DELIVERY_VERIFIED with
+   * the money unaccounted for.
+   *
+   * The group still balances: omitting a zero changes no sum. What "we charged nothing" now looks
+   * like is the absence of a FEE_REVENUE leg, which the receipt renders explicitly as a zero fee
+   * from the quote — so nothing is actually hidden.
+   */
+  const entries = [
+    {
+      accountId: userObligationAccount(asset, args.intentId),
+      amount: args.total,
+      memo: "obligation discharged",
+    },
+    { accountId: accountIdFor("FEE_REVENUE", asset, "global"), amount: neg(args.fee), memo: "untch fee" },
+    {
+      accountId: accountIdFor("SPREAD_REVENUE", asset, "global"),
+      amount: neg(args.spread),
+      memo: "disclosed cross-rail spread",
+    },
+    {
+      accountId: accountIdFor("COST_OF_GOODS", asset, args.intentId),
+      amount: neg(remainder),
+      memo: "cost of goods",
+    },
+  ].filter((e) => e.amount.amount !== 0n);
+
   const group: LedgerGroup = {
     groupId: args.groupId,
     kind: "RECOGNITION",
     intentId: args.intentId,
     asset,
     createdAt: args.createdAt,
-    entries: [
-      {
-        accountId: userObligationAccount(asset, args.intentId),
-        amount: args.total,
-        memo: "obligation discharged",
-      },
-      { accountId: accountIdFor("FEE_REVENUE", asset, "global"), amount: neg(args.fee), memo: "untch fee" },
-      {
-        accountId: accountIdFor("SPREAD_REVENUE", asset, "global"),
-        amount: neg(args.spread),
-        memo: "disclosed cross-rail spread",
-      },
-      {
-        accountId: accountIdFor("COST_OF_GOODS", asset, args.intentId),
-        amount: neg(remainder),
-        memo: "cost of goods",
-      },
-    ],
-    // A zero fee and a zero spread are legitimate and stay as explicit zero rows: an absent row and a
-    // zero row read very differently in an audit, and "we charged nothing" should be visible.
+    entries,
   };
   assertGroupBalanced(group);
   return group;

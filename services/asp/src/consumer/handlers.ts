@@ -393,15 +393,46 @@ export async function handleConsumerExecute(raw: unknown, deps: ConsumerDeps): P
   }
 }
 
+/**
+ * Every read below is tenant-scoped, and `policyId` is REQUIRED.
+ *
+ * An earlier version let `policyId` be omitted and fell back to an unscoped `getIntent`, which meant
+ * anyone holding an intent id could read another tenant's intent, payment detail, delivery evidence,
+ * full receipt and event stream. Intent ids are 96 bits of entropy, but they travel in URLs, logs
+ * and agent memory — "hard to guess" is not an authorisation model.
+ *
+ * `policyId` is a public on-chain value, so presenting it is NOT proof of ownership either. What it
+ * gives is scoping: a caller must name the policy an intent belongs to, and the query then refuses
+ * anything outside it. Genuine ownership proof (a SIWE session, as the dashboard uses) is the next
+ * step and is recorded as an open risk rather than quietly assumed.
+ */
+async function scopedIntent(
+  intentId: string,
+  policyId: string | null,
+  deps: ConsumerDeps,
+): Promise<ConsumerIntent | null> {
+  if (policyId === null) return null;
+  return deps.store.getIntentForTenant(tenantFor(policyId), intentId);
+}
+
+function scopeRequired(): HandlerResult {
+  return {
+    status: 400,
+    body: envelope(
+      "POLICY_ID_REQUIRED",
+      "`policyId` is required — consumer reads are tenant-scoped and there is no unscoped lookup",
+    ),
+  };
+}
+
 /** Status. Free, tenant-scoped. */
 export async function handleConsumerStatus(
   intentId: string,
   policyId: string | null,
   deps: ConsumerDeps,
 ): Promise<HandlerResult> {
-  const intent = policyId === null
-    ? await deps.store.getIntent(intentId)
-    : await deps.store.getIntentForTenant(tenantFor(policyId), intentId);
+  if (policyId === null) return scopeRequired();
+  const intent = await scopedIntent(intentId, policyId, deps);
   if (!intent) {
     return { status: 404, body: envelope("INTENT_NOT_FOUND", `no consumer intent ${intentId}`) };
   }
@@ -409,8 +440,13 @@ export async function handleConsumerStatus(
 }
 
 /** Payment status: what the user funded and what the provider was paid, as two separate facts. */
-export async function handleConsumerPayment(intentId: string, deps: ConsumerDeps): Promise<HandlerResult> {
-  const intent = await deps.store.getIntent(intentId);
+export async function handleConsumerPayment(
+  intentId: string,
+  policyId: string | null,
+  deps: ConsumerDeps,
+): Promise<HandlerResult> {
+  if (policyId === null) return scopeRequired();
+  const intent = await scopedIntent(intentId, policyId, deps);
   if (!intent) return { status: 404, body: envelope("INTENT_NOT_FOUND", `no consumer intent ${intentId}`) };
   const funding = await deps.store.getFunding(intentId);
   const executions = await deps.store.listExecutions(intentId);
@@ -447,7 +483,16 @@ export async function handleConsumerPayment(intentId: string, deps: ConsumerDeps
 }
 
 /** Delivery evidence: the merchant's claim and Untch's independent check, never merged. */
-export async function handleConsumerDelivery(intentId: string, deps: ConsumerDeps): Promise<HandlerResult> {
+export async function handleConsumerDelivery(
+  intentId: string,
+  policyId: string | null,
+  deps: ConsumerDeps,
+): Promise<HandlerResult> {
+  if (policyId === null) return scopeRequired();
+  // Resolve the intent under the tenant FIRST: the evidence table has no tenant column, so reading
+  // it directly would be an unscoped read wearing a different name.
+  const owned = await scopedIntent(intentId, policyId, deps);
+  if (!owned) return { status: 404, body: envelope("INTENT_NOT_FOUND", `no consumer intent ${intentId}`) };
   const evidence = await deps.store.getDeliveryEvidence(intentId);
   if (!evidence) {
     return { status: 404, body: envelope("NO_DELIVERY_EVIDENCE", `no delivery evidence for ${intentId} yet`) };
@@ -467,8 +512,13 @@ export async function handleConsumerDelivery(intentId: string, deps: ConsumerDep
 }
 
 /** The full cross-rail receipt. */
-export async function handleConsumerReceipt(intentId: string, deps: ConsumerDeps): Promise<HandlerResult> {
-  const intent = await deps.store.getIntent(intentId);
+export async function handleConsumerReceipt(
+  intentId: string,
+  policyId: string | null,
+  deps: ConsumerDeps,
+): Promise<HandlerResult> {
+  if (policyId === null) return scopeRequired();
+  const intent = await scopedIntent(intentId, policyId, deps);
   if (!intent) return { status: 404, body: envelope("INTENT_NOT_FOUND", `no consumer intent ${intentId}`) };
 
   const [funding, executions, evidence, approval, quote, ledgerGroups] = await Promise.all([

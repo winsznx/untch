@@ -65,9 +65,10 @@ describe("ledger — every group balances within one asset", () => {
     assert.equal(formatMoney(money(-cog.amount.amount, USDT0)), "20.100000");
   });
 
-  test("recognition keeps explicit ZERO rows for a zero fee and a zero spread", () => {
-    // An absent row and a zero row read very differently in an audit. "We charged nothing" should be
-    // visible, not inferred from a missing line.
+  test("recognition OMITS zero-value legs — Postgres rejects a zero-amount entry", () => {
+    // consumer_ledger_entries carries CHECK (amount <> 0). Writing a zero fee row would make every
+    // no-fee action (domains.check, travel.search — anything absent from FEE_BPS) fail its
+    // RECOGNITION write AFTER the merchant was paid, stranding the intent with money unaccounted for.
     const g = recognitionGroup({
       groupId: "g4",
       intentId: "ci_2",
@@ -76,9 +77,12 @@ describe("ledger — every group balances within one asset", () => {
       spread: zeroMoney(USDT0),
       createdAt: AT,
     });
-    assert.equal(g.entries.length, 4);
-    assert.ok(g.entries.some((e) => e.accountId.startsWith("FEE_REVENUE") && e.amount.amount === 0n));
-    assert.ok(g.entries.some((e) => e.accountId.startsWith("SPREAD_REVENUE") && e.amount.amount === 0n));
+    assert.equal(g.entries.length, 2, "obligation + cost of goods only");
+    assert.equal(g.entries.some((e) => e.amount.amount === 0n), false, "no zero-amount entry");
+    // Omitting a zero changes no sum, so the group still balances.
+    assertGroupBalanced(g);
+    const cog = g.entries.find((e) => e.accountId.startsWith("COST_OF_GOODS"));
+    assert.equal(cog?.amount.amount, -5_000_000n, "the whole total is cost of goods when there is no fee");
   });
 
   test("recognition refuses a fee+spread that exceeds the total", () => {

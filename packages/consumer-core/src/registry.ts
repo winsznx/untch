@@ -22,7 +22,9 @@
  * promote a provider.
  */
 
+import type { AssetRef, CaipChainId } from "./assets";
 import { ProviderError, normalizedError } from "./errors";
+import { checkExecutionFlags, loadConsumerFlags, type ConsumerFlags } from "./flags";
 import type {
   ConsumerStore,
   PauseFlag,
@@ -56,6 +58,8 @@ export interface MaturityGate {
 export interface RegistryDeps {
   readonly store: ConsumerStore;
   readonly gate: MaturityGate;
+  /** The environment switches. Omitted ⇒ read from process.env, which defaults everything OFF. */
+  readonly flags?: ConsumerFlags;
   readonly clock?: () => number;
   /** Surfaces a sandbox execution to the operator. Wired to the alert channel by the ASP. */
   readonly onSandboxExecution?: (providerId: string, capability: string) => void;
@@ -72,14 +76,32 @@ export interface ResolvedProvider {
 export class ProviderRegistry {
   private readonly store: ConsumerStore;
   private readonly gate: MaturityGate;
+  private readonly flags: ConsumerFlags;
   private readonly clock: () => number;
   private readonly onSandboxExecution: (providerId: string, capability: string) => void;
 
   constructor(deps: RegistryDeps) {
     this.store = deps.store;
     this.gate = deps.gate;
+    this.flags = deps.flags ?? loadConsumerFlags();
     this.clock = deps.clock ?? Date.now;
     this.onSandboxExecution = deps.onSandboxExecution ?? (() => {});
+  }
+
+  /**
+   * The FLAG half of the execution gate — has an operator switched this combination on?
+   *
+   * Deliberately separate from `assertExecutable`, which asks whether the provider has EARNED the
+   * right to execute. Both must pass, and neither can substitute for the other: a flag is
+   * permission, maturity is proof, and conflating them is how a switch ends up meaning "this works".
+   */
+  assertFlagsAllow(providerId: string, chain: CaipChainId, asset: AssetRef): void {
+    const result = checkExecutionFlags(this.flags, { providerId, chain, asset });
+    if (!result.allowed) {
+      throw new ProviderError(
+        normalizedError("PROVIDER_NOT_EXECUTABLE", result.detail, { providerCode: result.reason }),
+      );
+    }
   }
 
   /** The lower of the provider's and the capability's maturity. Never the higher. */

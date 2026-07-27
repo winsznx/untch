@@ -227,6 +227,20 @@ export {
 } from "./config";
 
 export {
+  type ConsumerFlags,
+  type ExecutionBlockReason,
+  type GateInput,
+  type GateResult,
+  assetFlagName,
+  chainFlagName,
+  checkExecutionFlags,
+  describeFlags,
+  flagOn,
+  loadConsumerFlags,
+  providerFlagName,
+} from "./flags";
+
+export {
   type MaturityGate,
   type RegistryDeps,
   type ResolvedProvider,

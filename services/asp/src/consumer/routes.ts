@@ -181,10 +181,13 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
     return;
   }
 
+  // `wiring` is non-null past the guard above, but the narrowing does not survive into the route
+  // closures. Bind it once so every handler below sees the narrowed type.
+  const w = wiring;
   const deps: ConsumerDeps = {
-    store: wiring.store,
-    orchestrator: wiring.orchestrator,
-    publicBaseUrl: wiring.publicBaseUrl,
+    store: w.store,
+    orchestrator: w.orchestrator,
+    publicBaseUrl: w.publicBaseUrl,
   };
 
   const post = (
@@ -204,7 +207,12 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
     post(path, (b) => handleConsumerNotify(b, action, deps));
 
   search(SHOP_SEARCH_ROUTE, "shop.search");
-  quote(SHOP_QUOTE_ROUTE, "shop.quote");
+  // The intent's action is the action it will ULTIMATELY perform, not the route that created it.
+  // Stamping "shop.quote" here meant feeBpsFor() found no entry and returned a 0 fee for every
+  // purchase, and capabilityFor(action,"execute") resolved to a non-value-moving capability — so the
+  // execution gate checked the wrong thing. The quote route creates a PURCHASE intent that has not
+  // been funded yet; the same is true of travel.
+  quote(SHOP_QUOTE_ROUTE, "shop.purchase");
   post(SHOP_PURCHASE_ROUTE, (b) => handleConsumerExecute(b, deps));
 
   search(DOMAINS_CHECK_ROUTE, "domains.check");
@@ -214,7 +222,7 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
 
   search(TRAVEL_SEARCH_ROUTE, "travel.search");
   search(TRAVEL_COMPARE_ROUTE, "travel.compare");
-  quote(TRAVEL_QUOTE_ROUTE, "travel.quote");
+  quote(TRAVEL_QUOTE_ROUTE, "travel.book");
   post(TRAVEL_BOOK_ROUTE, (b) => handleConsumerExecute(b, deps));
 
   quote(GIFTS_QUOTE_ROUTE, "gifts.order");
@@ -237,16 +245,30 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
           body: { code: "INTENT_NOT_FOUND", message: `no fundable intent ${intentId}`, retryable: false, docsUrl: null },
         };
       }
+      /**
+       * The x402 middleware sets `PAYMENT-RESPONSE` on the way OUT, after this handler returns, so
+       * it is not readable here. An earlier version read it anyway and, finding nothing, recorded
+       * the funding with a fabricated `unsettled:<intentId>` hash and a real-looking `settledAt` —
+       * a row that asserts money arrived, carrying an identifier that is unique per intent by
+       * construction and therefore defeats the very `(chain, tx_hash)` uniqueness index meant to
+       * make double-funding impossible.
+       *
+       * Reaching this handler DOES mean the middleware settled the payment — an unpaid request is
+       * 402'd before it gets here. So the funding is real; what is unknown is its transaction hash.
+       * That is recorded honestly: a `pending:` marker, zero confirmations, `finalized: false`. The
+       * reconciler resolves the hash from the chain afterwards, and until it does the receipt says
+       * "settled, hash not yet known" rather than inventing one.
+       */
       const settlement = readSettlement(req);
       const funded = await wiring.orchestrator.confirmFunding(intentId, {
         intentId,
         chain: intent.fundingAmount.asset.chain,
-        txHash: settlement.txHash ?? `unsettled:${intentId}`,
+        txHash: settlement.txHash ?? `pending:${intentId}`,
         amount: intent.fundingAmount,
         payer: settlement.payer,
         settledAt: new Date().toISOString(),
         confirmations: settlement.txHash === null ? 0 : 1,
-        finalized: false,
+        finalized: settlement.txHash !== null,
       });
       await wiring.orchestrator.queueExecution(intentId).catch(() => undefined);
       return {
@@ -255,7 +277,9 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
           intentId,
           state: funded.state,
           funded: true,
+          // Null when the facilitator's hash is not yet known — never a synthesised value.
           settlementTx: settlement.txHash,
+          settlementTxPending: settlement.txHash === null,
           statusUrl: `${wiring.publicBaseUrl.replace(/\/+$/, "")}/consumer/intent/${intentId}`,
           eventsUrl: `${wiring.publicBaseUrl.replace(/\/+$/, "")}/consumer/intent/${intentId}/events`,
           note: "Execution is queued. Watch the event stream; this request does not wait for it.",
@@ -277,19 +301,53 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
     app.get(path, statusHandler);
   }
 
+  const policyIdOf = (req: Request): string | null =>
+    typeof req.query.policyId === "string" ? req.query.policyId : null;
+
   app.get(INTENT_PAYMENT_ROUTE, (req, res, next) => {
-    handleConsumerPayment(req.params.intentId ?? "", deps).then((r) => send(res, r)).catch(next);
+    handleConsumerPayment(req.params.intentId ?? "", policyIdOf(req), deps).then((r) => send(res, r)).catch(next);
   });
   app.get(INTENT_DELIVERY_ROUTE, (req, res, next) => {
-    handleConsumerDelivery(req.params.intentId ?? "", deps).then((r) => send(res, r)).catch(next);
+    handleConsumerDelivery(req.params.intentId ?? "", policyIdOf(req), deps).then((r) => send(res, r)).catch(next);
   });
   app.get(INTENT_RECEIPT_ROUTE, (req, res, next) => {
-    handleConsumerReceipt(req.params.intentId ?? "", deps).then((r) => send(res, r)).catch(next);
+    handleConsumerReceipt(req.params.intentId ?? "", policyIdOf(req), deps).then((r) => send(res, r)).catch(next);
   });
 
   // ── SSE ────────────────────────────────────────────────────────────────────
   app.get(INTENT_EVENTS_ROUTE, (req: Request, res: Response, next: NextFunction) => {
     const intentId = req.params.intentId ?? "";
+    // The stream is tenant-scoped like every other read. An unscoped SSE endpoint would hand a
+    // caller another tenant's whole lifecycle — amounts, provider, decisions — in real time, which
+    // is strictly more than the equivalent unscoped GET would have leaked.
+    const policyId = typeof req.query.policyId === "string" ? req.query.policyId : null;
+    if (policyId === null) {
+      send(res, {
+        status: 400,
+        body: {
+          code: "POLICY_ID_REQUIRED",
+          message: "`policyId` is required — the event stream is tenant-scoped",
+          retryable: false,
+          docsUrl: null,
+        },
+      });
+      return;
+    }
+    void w.store
+      .getIntentForTenant(`policy:${policyId}`, intentId)
+      .then((owned) => {
+        if (!owned) {
+          send(res, {
+            status: 404,
+            body: { code: "INTENT_NOT_FOUND", message: `no consumer intent ${intentId}`, retryable: false, docsUrl: null },
+          });
+          return;
+        }
+        openStream();
+      })
+      .catch(next);
+
+    function openStream(): void {
     res.status(200);
     res.setHeader("content-type", "text/event-stream");
     res.setHeader("cache-control", "no-cache, no-transform");
@@ -297,9 +355,19 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
     res.setHeader("x-accel-buffering", "no");
     res.flushHeaders?.();
 
+    // Register the disconnect handler BEFORE the await. A client that aborts during replay would
+    // otherwise never have its subscriber removed, leaking it for the process's lifetime.
+    let unsubscribe: (() => void) | null = null;
+    let closed = false;
+    req.on("close", () => {
+      closed = true;
+      unsubscribe?.();
+      res.end();
+    });
+
     attachSseStream({
-      store: wiring.store,
-      hub: wiring.hub,
+      store: w.store,
+      hub: w.hub,
       intentId,
       lastEventId: req.headers["last-event-id"] ?? req.query.lastEventId,
       subscriber: {
@@ -308,13 +376,13 @@ export function registerConsumerRoutes(app: Express, wiring: ConsumerWiring | nu
         close: () => res.end(),
       },
     })
-      .then((unsubscribe) => {
-        req.on("close", () => {
-          unsubscribe();
-          res.end();
-        });
+      .then((unsub) => {
+        unsubscribe = unsub;
+        // The client may have disconnected while we were replaying from the durable record.
+        if (closed) unsub();
       })
       .catch(next);
+    }
   });
 
   // ── catalogue ──────────────────────────────────────────────────────────────

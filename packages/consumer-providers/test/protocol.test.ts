@@ -271,7 +271,10 @@ describe("x402 — the EVM exact signer", () => {
     const a = await client().pay(req);
     const b = await client().pay(req);
     assert.equal(a.paymentHeader, b.paymentHeader);
-    assert.equal(a.headerName, "X-PAYMENT");
+    // x402 v2 names this PAYMENT-SIGNATURE; X-PAYMENT is v1 and is sent as an alias so a
+    // facilitator that only reads the old name still sees the payment.
+    assert.equal(a.headerName, "PAYMENT-SIGNATURE");
+    assert.deepEqual(a.aliasHeaderNames, ["X-PAYMENT"]);
   });
 
   test("the payload carries an EXACT value, recipient, expiry and nonce", async () => {
@@ -284,16 +287,31 @@ describe("x402 — the EVM exact signer", () => {
       method: "POST",
     });
     const decoded = JSON.parse(Buffer.from(res.paymentHeader, "base64").toString("utf8")) as {
-      scheme: string;
-      network: string;
+      x402Version: number;
+      resource?: { url: string };
+      accepted: Record<string, unknown>;
       payload: { signature: string; authorization: Record<string, string> };
+      scheme?: unknown;
+      network?: unknown;
     };
-    assert.equal(decoded.scheme, "exact");
-    assert.equal(decoded.network, BASE);
+    // The v2 envelope: scheme and network live inside `accepted`, NOT at the top level. Verified
+    // against the installed @okxweb3/x402-core client assembly, not against a spec summary.
+    assert.equal(decoded.scheme, undefined, "no top-level scheme — a strict validator may reject it");
+    assert.equal(decoded.network, undefined, "no top-level network");
+    assert.equal(decoded.accepted.scheme, "exact");
+    assert.equal(decoded.accepted.network, BASE);
+    assert.equal(decoded.accepted.amount, "20000000");
+    assert.deepEqual(decoded.accepted.extra, { name: "USD Coin", version: "2" });
+    // `resource` is echoed back so a facilitator can bind the payment to what it was issued for.
+    assert.equal(typeof decoded.resource?.url, "string");
     assert.equal(decoded.payload.authorization.value, "20000000");
     assert.equal(decoded.payload.authorization.to, "0xABcb091D90419E1c8AD4818f1B33FC4645501892");
     // An expiry exists and is bounded — a captured authorization goes stale on its own.
     assert.ok(Number(decoded.payload.authorization.validBefore) > 1_700_000_000);
+    // validAfter is now-5, matching the reference client: five seconds of slack for clock skew,
+    // because USDC requires block.timestamp > validAfter and equality loses that race.
+    const va = Number(decoded.payload.authorization.validAfter);
+    assert.ok(va > 0 && va < Number(decoded.payload.authorization.validBefore));
     assert.equal(decoded.payload.authorization.nonce, `0x${"07".repeat(32)}`);
     assert.match(decoded.payload.signature, /^0x[0-9a-f]{130}$/);
   });
@@ -312,7 +330,10 @@ describe("x402 — the EVM exact signer", () => {
 
   test("signing is REFUSED when the challenge does not offer that amount to that recipient", async () => {
     // The capability already checked the amount against what was AUTHORISED. This checks it against
-    // what the provider is asking for right now. Both must agree.
+    // what the provider is asking for right now. Both must agree, and the refusal now happens inside
+    // the SHARED selector — so it is caught one step earlier than before, as PAYMENT_CHALLENGE_
+    // UNACCEPTABLE rather than PAYMENT_BINDING_MISMATCH. Either is a refusal; what matters is that
+    // nothing is signed.
     const challenge = parseChallenge(FIXTURES.stabledomainsRegister402);
     await assert.rejects(
       () =>
@@ -324,10 +345,58 @@ describe("x402 — the EVM exact signer", () => {
           method: "POST",
         }),
       (e: unknown) => {
-        assert.ok(isProviderError(e) && e.normalized.code === "PAYMENT_BINDING_MISMATCH");
+        assert.ok(isProviderError(e));
+        assert.ok(
+          e.normalized.code === "PAYMENT_CHALLENGE_UNACCEPTABLE" ||
+            e.normalized.code === "PAYMENT_BINDING_MISMATCH",
+          `unexpected code ${e.normalized.code}`,
+        );
         return true;
       },
     );
+  });
+
+  test("a DECOY option cannot hijack the signature — one selector decides, not two", async () => {
+    // The attack: a provider puts a decoy FIRST carrying the same amount and payTo but a different
+    // asset. A signer that re-scans accepts[] for "amount + recipient match" binds the authorization
+    // to the decoy's token while every upstream allowlist check passed against the real entry.
+    const decoyed = parseChallenge({
+      x402Version: 2,
+      resource: { url: "https://stabledomains.dev/api/register" },
+      accepts: [
+        {
+          scheme: "exact",
+          network: BASE,
+          amount: "20000000",
+          asset: "0x000000000000000000000000000000000000BEEF",
+          payTo: "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+          maxTimeoutSeconds: 300,
+          extra: { name: "Not USDC", version: "1" },
+        },
+        {
+          scheme: "exact",
+          network: BASE,
+          amount: "20000000",
+          asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          payTo: "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+          maxTimeoutSeconds: 300,
+          extra: { name: "USD Coin", version: "2" },
+        },
+      ],
+    });
+    const res = await client().pay({
+      amount: money(20_000_000n, USDC_BASE),
+      recipient: "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+      challenge: decoyed as unknown as Record<string, unknown>,
+      resourceUrl: "https://stabledomains.dev/api/register",
+      method: "POST",
+    });
+    const decoded = JSON.parse(Buffer.from(res.paymentHeader, "base64").toString("utf8")) as {
+      accepted: Record<string, unknown>;
+    };
+    // The decoy is at index 0. The allowlisted USDC entry must be the one paid.
+    assert.equal(decoded.accepted.asset, "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+    assert.deepEqual(decoded.accepted.extra, { name: "USD Coin", version: "2" });
   });
 
   test("a client with no key reports unavailable and refuses to pay", async () => {

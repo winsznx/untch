@@ -283,6 +283,9 @@ export abstract class BaseAdapter implements ConsumerProviderAdapter {
     });
 
     headers[result.headerName] = result.paymentHeader;
+    // Same value under any legacy alias the scheme declares (x402 v1's `X-PAYMENT`). A facilitator
+    // reads whichever it knows; one of them lands.
+    for (const alias of result.aliasHeaderNames ?? []) headers[alias] = result.paymentHeader;
 
     // The paid retry. From here on the outcome is AMBIGUOUS on any transport failure: the payment
     // header has left the building and the provider may act on it even if we never see the response.
@@ -311,7 +314,19 @@ export abstract class BaseAdapter implements ConsumerProviderAdapter {
       );
     }
 
-    const settlementTx = readSettlementTx(paidRes.headers["payment-response"]);
+    const settlement = readSettlement(paidRes.headers["payment-response"]);
+    if (settlement.failed) {
+      // The facilitator said the settlement did NOT succeed. Recording it as a settlement would put
+      // a false "money moved" into the receipt and the ledger.
+      throw new ProviderError(
+        normalizedError(
+          "PAYMENT_FAILED",
+          `${this.providerId} reported the settlement as failed` +
+            (settlement.reason === null ? "" : `: ${settlement.reason}`),
+          { httpStatus: paidRes.status },
+        ),
+      );
+    }
 
     return {
       response: paidRes,
@@ -320,7 +335,7 @@ export abstract class BaseAdapter implements ConsumerProviderAdapter {
         amount: selected.amount,
         recipient: selected.recipient,
         chain: selected.option.network,
-        txHash: settlementTx ?? result.txHash,
+        txHash: settlement.txHash ?? result.txHash,
       },
     };
   }
@@ -420,18 +435,42 @@ export abstract class BaseAdapter implements ConsumerProviderAdapter {
   }
 }
 
-/** Read the settlement tx out of the x402 `PAYMENT-RESPONSE` header, if the provider sent one. */
-function readSettlementTx(header: string | undefined): string | null {
-  if (!header) return null;
+export interface SettlementReport {
+  readonly txHash: string | null;
+  /** Explicitly false only when the facilitator SAID the settlement failed. */
+  readonly failed: boolean;
+  readonly reason: string | null;
+}
+
+/**
+ * Read the settlement out of the x402 `PAYMENT-RESPONSE` header.
+ *
+ * The header carries more than a hash: a facilitator reports `success` / `status` / `errorReason`,
+ * and a settlement can FAIL while the HTTP response is still 200. Reading only `transaction` would
+ * record a failed settlement as a completed one — a receipt asserting money moved when it did not.
+ * So failure is detected explicitly and surfaced, and an absent hash stays null rather than being
+ * invented.
+ */
+function readSettlement(header: string | undefined): SettlementReport {
+  if (!header) return { txHash: null, failed: false, reason: null };
   try {
     const decoded: unknown = JSON.parse(Buffer.from(header.trim(), "base64").toString("utf8"));
-    if (decoded && typeof decoded === "object") {
-      const tx = (decoded as Record<string, unknown>).transaction;
-      if (typeof tx === "string" && tx.length > 0) return tx;
-    }
+    if (!decoded || typeof decoded !== "object") return { txHash: null, failed: false, reason: null };
+    const o = decoded as Record<string, unknown>;
+    const tx = typeof o.transaction === "string" && o.transaction.length > 0 ? o.transaction : null;
+    const status = typeof o.status === "string" ? o.status.toLowerCase() : null;
+    const failed =
+      o.success === false ||
+      status === "failed" ||
+      status === "error" ||
+      (typeof o.errorReason === "string" && o.errorReason.length > 0);
+    const reason =
+      typeof o.errorReason === "string" && o.errorReason.length > 0
+        ? sanitizeProviderText(o.errorReason, 200)
+        : status;
+    return { txHash: tx, failed, reason };
   } catch {
-    // A provider that sends an undecodable PAYMENT-RESPONSE has not given us a hash. Reporting null
-    // is correct; inventing one would put a fabricated reference into a receipt.
+    // An undecodable PAYMENT-RESPONSE has told us nothing. Null is the honest answer.
+    return { txHash: null, failed: false, reason: null };
   }
-  return null;
 }
