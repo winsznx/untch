@@ -1,10 +1,29 @@
 import { DashCard, MastheadLink, Mono, SectionTitle, StatTile } from "../../../../components/dashboard/ui";
 import { MaturityChip } from "../../../../components/dashboard/consumer-ui";
 import { providerRegistry } from "../../../../lib/dashboard/consumer";
+import { OperatorOnly } from "../../../../components/dashboard/operator-only";
+import { getScope } from "../../../../lib/dashboard/scope";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConsumerProviders() {
+  // Provenance notes carry settlement transaction hashes and the treasury address that paid them.
+  // That is an integration audit trail, not public marketing copy, and this page shipped ungated.
+  const scope = await getScope();
+  if (!scope.isDemoOperator) {
+    return (
+      <div className="flex flex-col gap-10">
+        <SectionTitle
+          kicker="Consumer Pack"
+          title="Provider registry"
+          subtitle="What each integration actually is, and what has actually been proven about it."
+          action={<MastheadLink href="/dashboard/consumer">← Consumer Pack</MastheadLink>}
+        />
+        <OperatorOnly authenticated={scope.authenticated} address={scope.address} what="The provider registry" />
+      </div>
+    );
+  }
+
   const providers = await providerRegistry();
   const counts = {
     verified: providers.filter((p) => p.maturity === "verified").length,

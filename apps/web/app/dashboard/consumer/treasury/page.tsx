@@ -1,10 +1,35 @@
 import { DashCard, MastheadLink, Mono, SectionTitle, StatTile } from "../../../../components/dashboard/ui";
 import { Field } from "../../../../components/dashboard/consumer-ui";
 import { shortAddress, treasuryView } from "../../../../lib/dashboard/consumer";
+import { OperatorOnly } from "../../../../components/dashboard/operator-only";
+import { getScope } from "../../../../lib/dashboard/scope";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConsumerTreasury() {
+  /**
+   * Gated BEFORE the query, not after.
+   *
+   * This page shipped ungated: any visitor could read the settlement wallet addresses, their
+   * balances and floors, which rails were paused, and the observed drift — an operational map of
+   * where Untch keeps money. Loading the data and then hiding it would still put it in the server
+   * render; refusing first means it is never fetched.
+   */
+  const scope = await getScope();
+  if (!scope.isDemoOperator) {
+    return (
+      <div className="flex flex-col gap-10">
+        <SectionTitle
+          kicker="Consumer Pack"
+          title="Treasury operations"
+          subtitle="Pre-funded operational floats, one per settlement rail."
+          action={<MastheadLink href="/dashboard/consumer">← Consumer Pack</MastheadLink>}
+        />
+        <OperatorOnly authenticated={scope.authenticated} address={scope.address} what="Treasury operations" />
+      </div>
+    );
+  }
+
   const view = await treasuryView();
   const settlement = view.rails.filter((r) => r.purpose === "SETTLEMENT");
   const funding = view.rails.filter((r) => r.purpose === "FUNDING");
