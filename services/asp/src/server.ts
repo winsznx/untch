@@ -90,6 +90,9 @@ import {
   AGENT_REGISTRATION_PATH,
   DEFAULT_WELL_KNOWN_PATH,
 } from "./erc8004/constants";
+import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes";
+import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
+import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -125,6 +128,7 @@ export function createSellerApp(
   escalationWiring: EscalationWiring | null = null,
   scoreWiring: ScoreWiring | null = null,
   reportWiring: ReportWiring | null = null,
+  consumerWiring: ConsumerWiring | null = null,
 ): Express {
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey: config.okxApiKey,
@@ -157,9 +161,37 @@ export function createSellerApp(
           description: "Untch hello-world ping — D0.1 proof-of-rail health check",
           mimeType: "application/json",
         },
+        // Some marketplace validators probe a listed endpoint with GET/HEAD even when
+        // the service is invoked with POST. Keep those probes paid and explicit rather
+        // than letting Express turn them into an unhelpful 404.
+        [`HEAD ${PING_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PING_PRICE },
+          description: "Untch hello-world ping — D0.1 proof-of-rail health check",
+          mimeType: "application/json",
+        },
+        [`GET ${PREFLIGHT_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
+          description: "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
+          mimeType: "application/json",
+        },
+        [`HEAD ${PREFLIGHT_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
+          description: "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
+          mimeType: "application/json",
+        },
         [`POST ${PREFLIGHT_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
           description: "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
+          mimeType: "application/json",
+        },
+        [`GET ${VERIFY_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
+          description: "Untch verify_delivery — deterministic §13/§7.3 T0 proof of a delivery vs committed acceptance criteria",
+          mimeType: "application/json",
+        },
+        [`HEAD ${VERIFY_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
+          description: "Untch verify_delivery — deterministic §13/§7.3 T0 proof of a delivery vs committed acceptance criteria",
           mimeType: "application/json",
         },
         [`POST ${VERIFY_ROUTE}`]: {
@@ -192,12 +224,32 @@ export function createSellerApp(
           description: "Untch demo café — paid oat latte order voucher (lifestyle / governed spend demo)",
           mimeType: "application/json",
         },
+        [`GET ${CAFE_LATTE_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
+          description: "Untch demo café — paid oat latte order voucher (lifestyle / governed spend demo)",
+          mimeType: "application/json",
+        },
+        [`HEAD ${CAFE_LATTE_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
+          description: "Untch demo café — paid oat latte order voucher (lifestyle / governed spend demo)",
+          mimeType: "application/json",
+        },
         [`POST ${SUGGEST_NAMES_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SUGGEST_NAMES_PRICE },
           description: "Untch Launch Pack — product name suggestions (LLM when configured; structured fallback)",
           mimeType: "application/json",
         },
         [`POST ${BRAND_PACK_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
+          description: "Untch Launch Pack — hireable brand pack: names + live RDAP domains + rank + SEO",
+          mimeType: "application/json",
+        },
+        [`GET ${BRAND_PACK_ROUTE}`]: {
+          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
+          description: "Untch Launch Pack — hireable brand pack: names + live RDAP domains + rank + SEO",
+          mimeType: "application/json",
+        },
+        [`HEAD ${BRAND_PACK_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
           description: "Untch Launch Pack — hireable brand pack: names + live RDAP domains + rank + SEO",
           mimeType: "application/json",
@@ -212,6 +264,15 @@ export function createSellerApp(
           description: "Untch redact_payment_metadata — strip PII patterns and hash redacted metadata",
           mimeType: "application/json",
         },
+        // ── Consumer Pack ──────────────────────────────────────────────────
+        // Fixed prices are the ORCHESTRATION fee. The variable purchase value is a separate leg:
+        // POST /consumer/fund/:intentId carries a DynamicPrice function that resolves each intent's
+        // own exact authorised amount at request time.
+        ...consumerPricedRoutes({
+          network: NETWORK,
+          payTo: config.payTo,
+          fundingPrice: consumerWiring?.fundingPrice ?? null,
+        }),
       },
       resourceServer,
     ),
@@ -230,6 +291,21 @@ export function createSellerApp(
 
   // Body parsing AFTER the gate: only paid/unpriced requests that reach a handler get parsed.
   app.use(express.json({ limit: "64kb" }));
+
+  // HEAD is accepted only as a paid compatibility probe. It must never execute a
+  // business operation or settle a payment, so a verified HEAD remains 405.
+  for (const route of [PING_ROUTE, PREFLIGHT_ROUTE, VERIFY_ROUTE, CAFE_LATTE_ROUTE, BRAND_PACK_ROUTE]) {
+    app.head(route, (_req, res) => res.status(405).end());
+  }
+
+  // GET is accepted as a paid compatibility probe on the four POST-only business
+  // routes (marketplace validators that GET-probe a listed endpoint). Same rule as
+  // HEAD: a verified GET here must never execute a business operation, since query
+  // parameters are not an acceptable transport for SpendIntent/policy/delivery
+  // payloads (proxy + access logs). Real calls stay POST-only.
+  for (const route of [PREFLIGHT_ROUTE, VERIFY_ROUTE, CAFE_LATTE_ROUTE, BRAND_PACK_ROUTE]) {
+    app.get(route, (_req, res) => res.status(405).json(errorBody("USE_POST", "this endpoint is POST-only; GET is accepted only as a paid compatibility probe")));
+  }
 
   app.get(PING_ROUTE, (_req, res) => {
     res.json({ ok: true, tool: "ping_untch", ts: new Date().toISOString() });
@@ -411,6 +487,11 @@ export function createSellerApp(
       .catch(next);
   });
 
+  // ── Consumer Pack routes (governed consumer execution) ─────────────────────
+  // Registered AFTER express.json so handlers see a parsed body, and after every existing route so
+  // nothing already serving changes shape. A null wiring answers 503 with a named reason.
+  registerConsumerRoutes(app, consumerWiring);
+
   // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err instanceof SyntaxError && "body" in err) {
@@ -472,14 +553,36 @@ if (isMain) {
     initReportWiring(),
   ])
     .then(
-      ([receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring]: [
+      async ([receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring]: [
         ReceiptWiring | null,
         PolicyWiring | null,
         EscalationWiring | null,
         ScoreWiring | null,
         ReportWiring | null,
       ]) => {
-        createSellerApp(config, receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring).listen(config.port, () => {
+        // The Consumer Pack composes the wirings above rather than duplicating them: it borrows the
+        // real policy provider, the real §7.1 ledger window, the real §7.2 approval pipeline and the
+        // real §7.4 receipt writer. It is null when DATABASE_URL is unset, and every consumer route
+        // then answers 503 with a named reason.
+        const ledgerState2 = createLedgerState();
+        const consumerWiring = policyWiring
+          ? await initConsumerWiring({
+              policyProvider: policyWiring.provider,
+              ledger: ledgerState2.ledger,
+              escalation: makeConsumerEscalationGateway(
+                escalationWiring,
+                escalationWiring ? escalationWiring.gateway : null,
+              ),
+              receipts: makeConsumerReceiptSink(receiptWiring),
+            })
+          : null;
+        if (consumerWiring) {
+          startConsumerWorkers(consumerWiring, { log: (line) => console.log(line) });
+        } else {
+          console.log("[asp] Consumer Pack NOT wired (needs DATABASE_URL + a policy store) — /consumer/* returns 503");
+        }
+
+        createSellerApp(config, receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring, consumerWiring).listen(config.port, () => {
           console.log(`[asp] listening on http://localhost:${config.port}`);
           console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
           console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canon hash + real-policy binding)`);
@@ -496,6 +599,13 @@ if (isMain) {
           console.log(`[asp]   POST ${BRAND_PACK_ROUTE} ${BRAND_PACK_PRICE}  ·  POST ${SUGGEST_NAMES_ROUTE} ${SUGGEST_NAMES_PRICE}`);
           console.log(`[asp]   free builder: check_domains (RDAP) / rank_options / seo_tips`);
           console.log(`[asp]   GET  ${AGENT_REGISTRATION_PATH}  ·  GET ${DEFAULT_WELL_KNOWN_PATH}  (ERC-8004 card)`);
+          if (consumerWiring) {
+            console.log(`[asp]   Consumer Pack: GET /consumer/catalog free · shop/domains/travel/gifts/notify`);
+            console.log(`[asp]     variable purchase value funds at POST /consumer/fund/:intentId (x402 DynamicPrice)`);
+            console.log(
+              `[asp]     settlement rails: ${consumerWiring.availableRails.length > 0 ? consumerWiring.availableRails.join(", ") : "NONE (discovery + quoting only)"}`,
+            );
+          }
           console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
         });
         // Non-blocking integrity probe — logs only; never blocks serving the card.

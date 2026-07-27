@@ -473,6 +473,12 @@ importers:
       '@untch/canon':
         specifier: workspace:*
         version: link:../../packages/canon
+      '@untch/consumer-core':
+        specifier: workspace:*
+        version: link:../../packages/consumer-core
+      '@untch/consumer-providers':
+        specifier: workspace:*
+        version: link:../../packages/consumer-providers
       '@untch/escalation':
         specifier: workspace:*
         version: link:../../packages/escalation
