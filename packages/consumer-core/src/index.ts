@@ -1,0 +1,251 @@
+/**
+ * @untch/consumer-core — the Consumer Pack domain core.
+ *
+ * What lives here (and nowhere else):
+ *   • Money  — integer atomic units bound to a (chain, token, decimals). No float ever holds money.
+ *   • Assets — the confirmed/unconfirmed chain + token registry, and the settlement allowlist.
+ *   • State  — the 22-state Consumer Intent machine and the single `assertTransition` authority.
+ *   • Ledger — append-only double entry; every group is single-asset and sums to zero.
+ *   • Events — the outbox contract, SSE framing, webhook signing.
+ *   • Store  — the storage interface, implemented in memory and against Postgres.
+ *
+ * What does NOT live here: HTTP, provider adapters, signing keys. Those are @untch/consumer-providers
+ * and the ASP wiring, so the domain stays testable with no network and no secrets.
+ */
+
+export {
+  type AssetRef,
+  type AssetEntry,
+  type CaipChainId,
+  type ChainFamily,
+  type ChainProfile,
+  type ConfirmedAsset,
+  type UnconfirmedAsset,
+  ASSETS,
+  BASE_MAINNET,
+  CHAIN_PROFILES,
+  SOLANA_MAINNET,
+  TEMPO_MAINNET,
+  X_LAYER_MAINNET,
+  asset,
+  assetKey,
+  chainProfile,
+  confirmedAssetsFor,
+  describeAsset,
+  isAllowedSettlementAsset,
+  isConfirmedAsset,
+  lookupAsset,
+  maybeAsset,
+  settlementAllowlist,
+} from "./assets";
+
+export {
+  type Money,
+  type MoneyJson,
+  type RoundingMode,
+  MoneyAssetMismatchError,
+  MoneyParseError,
+  NegativeMoneyError,
+  addMoney,
+  applyBasisPoints,
+  cmpMoney,
+  displayMoney,
+  eqMoney,
+  formatMoney,
+  gtMoney,
+  gteMoney,
+  isNegative,
+  isZero,
+  ltMoney,
+  lteMoney,
+  maxMoney,
+  minMoney,
+  money,
+  moneyFromJson,
+  moneyToJson,
+  parseMoney,
+  sameAsset,
+  subMoney,
+  subMoneyChecked,
+  sumMoney,
+  zeroMoney,
+} from "./money";
+
+export {
+  type ConsumerIntentState,
+  CONSUMER_INTENT_STATES,
+  EXPIRABLE_STATES,
+  EXPIRY_TARGET,
+  InvalidStateTransitionError,
+  POST_PAYMENT_STATES,
+  StaleIntentStateError,
+  TERMINAL_STATES,
+  assertTransition,
+  canTransition,
+  isConsumerIntentState,
+  isPostPayment,
+  isTerminal,
+  successorsOf,
+} from "./state";
+
+export {
+  type ErrorEnvelope,
+  type NormalizedProviderError,
+  type ProviderErrorCode,
+  ProviderError,
+  isProviderError,
+  normalizedError,
+  sanitizeProviderText,
+  toErrorEnvelope,
+  unknownProviderError,
+} from "./errors";
+
+export {
+  type ConsumerIntentId,
+  deriveIdempotencyKey,
+  hashQuote,
+  newCapabilityId,
+  newCorrelationId,
+  newDiscoveryId,
+  newIntentId,
+  newQuoteId,
+  normalizeIdempotencyKey,
+  providerIdempotencyKey,
+  safeEqual,
+  sha256Hex,
+  stableStringify,
+  isIntentId,
+} from "./ids";
+
+export {
+  type ConsumerEvent,
+  type ConsumerEventName,
+  type OutboxRecord,
+  type ParsedWebhookSignature,
+  CONSUMER_EVENT_NAMES,
+  EVENT_FOR_STATE,
+  TERMINAL_EVENTS,
+  WEBHOOK_BACKOFF_MS,
+  eventForState,
+  isConsumerEventName,
+  parseLastEventId,
+  parseWebhookSignatureHeader,
+  sseHeartbeat,
+  toSseFrame,
+  webhookRetryDelayMs,
+  webhookSignatureHeader,
+  webhookSigningPayload,
+} from "./events";
+
+export {
+  type LedgerAccount,
+  type LedgerAccountKind,
+  type LedgerEntry,
+  type LedgerGroup,
+  type LedgerGroupKind,
+  LedgerAssetMixError,
+  LedgerImbalanceError,
+  accountIdFor,
+  assertGroupBalanced,
+  assertIntentSettled,
+  clearingAccount,
+  fundingGroup,
+  projectBalances,
+  recognitionGroup,
+  refundGroup,
+  settlementGroup,
+  suspenseGroup,
+  treasuryAccount,
+  userObligationAccount,
+} from "./ledger";
+
+export {
+  type CanonicalQuote,
+  type ConsumerActionType,
+  type ConsumerApproval,
+  type ConsumerCategory,
+  type ConsumerIntent,
+  type ConsumerIntentPatch,
+  type ConsumerQuote,
+  type ConsumerReceiptView,
+  type DeliveryEvidence,
+  type DiscoveryInput,
+  type DiscoveryOption,
+  type DiscoveryResult,
+  type ExecuteInput,
+  type FundingReceipt,
+  type FundingRequest,
+  type ProviderCancellation,
+  type ProviderExecution,
+  type ProviderExecutionRecord,
+  type ProviderQuote,
+  type ProviderReference,
+  type ProviderStatus,
+  type QuoteInput,
+  VALUE_MOVING_ACTIONS,
+  policyCategoryFor,
+} from "./types";
+
+export {
+  type CapabilityRecord,
+  type ConsumerStore,
+  type CreateIntentInput,
+  type PauseFlag,
+  type PauseScope,
+  type ProviderCapabilityRecord,
+  type ProviderHealthRecord,
+  type ProviderLimitRecord,
+  type ProviderMaturity,
+  type ProviderRecord,
+  type TransitionEvent,
+  type TransitionResult,
+  type TreasuryAccountRecord,
+  type TreasuryBalanceObservation,
+} from "./repo";
+
+export { InMemoryConsumerStore } from "./repo-memory";
+export { PgConsumerStore } from "./repo-pg";
+export { createPool, runMigrations, type Pool } from "./db";
+
+export {
+  type ExecutionPolicyConfig,
+  type RailKey,
+  type RailKeys,
+  type RailRpcConfig,
+  type StorageConfig,
+  FEE_BPS,
+  FUNDING_CHAIN,
+  MissingEnvError,
+  SPREAD_BPS,
+  feeBpsFor,
+  loadExecutionPolicy,
+  loadPublicBaseUrl,
+  loadRailKeys,
+  loadRailRpc,
+  loadSiwxKey,
+  loadStorageConfig,
+} from "./config";
+
+export {
+  type MaturityGate,
+  type RegistryDeps,
+  type ResolvedProvider,
+  ProviderRegistry,
+  compareMaturity,
+  firstEngagedPause,
+  maturityAtLeast,
+} from "./registry";
+
+export {
+  type PauseChecker,
+  type PaymentCapability,
+  type PaymentRequest,
+  type PaymentResult,
+  type RailClient,
+  type Rebalancer,
+  type TreasuryRouterDeps,
+  NoopRebalancer,
+  StorePauseChecker,
+  TreasuryRouter,
+  assertRebalancingDisabled,
+} from "./treasury";

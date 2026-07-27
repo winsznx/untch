@@ -32,6 +32,8 @@
     "deploy:keyed-suite": "tsx scripts/deploy-keyed-suite.ts",
     "deploy:mainnet-suite": "tsx scripts/deploy-mainnet-suite.ts",
     "register:erc8004": "tsx scripts/register-erc8004-agent.ts",
+    "test:consumer-core": "node --import tsx --test packages/consumer-core/test/*.test.ts",
+    "migrate:consumer": "pnpm --filter @untch/consumer-core migrate",
     "test:gov-watch": "node --import tsx --test packages/gov-watch/test/*.test.ts",
     "gov-watch": "pnpm --filter @untch/gov-watch watch",
     "prove:gov-watch": "pnpm --filter @untch/gov-watch prove:testnet"
