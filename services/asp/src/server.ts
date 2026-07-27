@@ -91,6 +91,7 @@ import {
   DEFAULT_WELL_KNOWN_PATH,
 } from "./erc8004/constants";
 import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes";
+import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 
@@ -490,12 +491,33 @@ export function createSellerApp(
   // ── Consumer Pack routes (governed consumer execution) ─────────────────────
   // Registered AFTER express.json so handlers see a parsed body, and after every existing route so
   // nothing already serving changes shape. A null wiring answers 503 with a named reason.
+  /**
+   * Ownership proof for tenant-scoped consumer reads.
+   *
+   * It needs three things that only exist here: a secret to sign sessions with, the policy store to
+   * check who actually owns a policy, and the Consumer Pack's own pool so nonces live in the
+   * database migration 009 created. Any of them missing means sessions cannot be minted, and the
+   * auth routes say so with a 503 instead of pretending.
+   */
+  const consumerAuthConfig = loadConsumerAuthConfig();
+  const consumerAuth =
+    consumerAuthConfig.secret && consumerWiring && policyWiring
+      ? {
+          config: consumerAuthConfig,
+          nonces: new PgNonceStore(consumerWiring.pool),
+          verifier: makeSiweVerifier(process.env.XLAYER_RPC_URL?.trim() || "https://rpc.xlayer.tech"),
+          policyProvider: policyWiring.provider,
+        }
+      : null;
+  console.log(describeAuthMode(consumerAuthConfig));
+
   registerConsumerRoutes(
     app,
     consumerWiring,
     // The public receipt page reports the real anchor state. Without a receipt writer it degrades to
     // "not recorded" rather than claiming a pending anchor that will never arrive.
     receiptWiring ? (receiptId) => receiptWiring.status(receiptId) : null,
+    consumerAuth,
   );
 
   // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.

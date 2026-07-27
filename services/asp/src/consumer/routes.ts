@@ -33,7 +33,26 @@ import {
   type ConsumerDeps,
   type ReceiptStatusLike,
 } from "./handlers";
+import {
+  authenticateSiwe,
+  describeAuthMode,
+  loadConsumerAuthConfig,
+  resolveScope,
+  type ConsumerAuthConfig,
+  type NonceStore,
+  type ScopeResolution,
+  type SiweVerifier,
+} from "./auth";
 import type { ConsumerWiring } from "./wiring";
+import type { PolicyProvider } from "@untch/policy-store";
+
+/** Everything the two auth routes need. Assembled in server.ts, where the policy store already lives. */
+export interface ConsumerAuthRoutesDeps {
+  readonly config: ConsumerAuthConfig;
+  readonly nonces: NonceStore;
+  readonly verifier: SiweVerifier;
+  readonly policyProvider: PolicyProvider;
+}
 
 // ── route constants ──────────────────────────────────────────────────────────
 
@@ -76,6 +95,10 @@ export const INTENT_EVENTS_ROUTE = "/consumer/intent/:intentId/events" as const;
  * for any. Making publicness a parameter of one route is how a scoping bug turns into a disclosure.
  */
 export const PUBLIC_RECEIPT_ROUTE = "/consumer/receipt/:intentId" as const;
+
+/** Ownership proof. Both are free and neither is tenant-scoped — they are how scope is obtained. */
+export const AUTH_NONCE_ROUTE = "/consumer/auth/nonce" as const;
+export const AUTH_VERIFY_ROUTE = "/consumer/auth/verify" as const;
 
 export const FUND_ROUTE = "/consumer/fund/:intentId" as const;
 export const CONSUMER_CATALOG_ROUTE = "/consumer/catalog" as const;
@@ -179,6 +202,12 @@ export function registerConsumerRoutes(
    * to an honest "not recorded" instead of failing the page.
    */
   receiptStatus: ((receiptId: string) => Promise<ReceiptStatusLike | null | "invalid">) | null = null,
+  /**
+   * Ownership proof. Null means this instance cannot mint sessions at all, and the auth routes
+   * answer 503 rather than 404 — "not configured here" is a different fact from "no such route",
+   * and a caller debugging a 404 would look for a typo instead of a missing secret.
+   */
+  auth: ConsumerAuthRoutesDeps | null = null,
 ): void {
   if (!wiring) {
     for (const path of [
@@ -197,6 +226,9 @@ export function registerConsumerRoutes(
       INTENT_EVENTS_ROUTE, CONSUMER_CATALOG_ROUTE, PUBLIC_RECEIPT_ROUTE,
     ]) {
       app.get(path, (_req, res) => send(res, unconfigured()));
+    }
+    for (const path of [AUTH_NONCE_ROUTE, AUTH_VERIFY_ROUTE]) {
+      app.post(path, (_req, res) => send(res, unconfigured()));
     }
     return;
   }
@@ -310,10 +342,154 @@ export function registerConsumerRoutes(
       .catch(next);
   });
 
+  /**
+   * Tenant scope, resolved from a PROOF where one exists.
+   *
+   * `?policyId=` alone was never authorisation: a policy id is public on-chain data, so the old
+   * behaviour handed any caller who read one off the explorer that tenant's intents. A verified
+   * bearer always wins; the query parameter survives only while CONSUMER_AUTH_REQUIRED is off, and
+   * the boot log says which mode is live.
+   */
+  const authConfig: ConsumerAuthConfig = auth?.config ?? {
+    secret: null,
+    domain: "asp.untch.xyz",
+    required: false,
+  };
+
+  const scopeOf = (req: Request): ScopeResolution =>
+    resolveScope(
+      {
+        authorization: req.header("authorization"),
+        queryPolicyId: typeof req.query.policyId === "string" ? req.query.policyId : null,
+      },
+      authConfig,
+      Date.now(),
+    );
+
+  const scopeDenied = (r: Extract<ScopeResolution, { kind: "NONE" }>): HandlerResult => ({
+    status: r.code === "SCOPE_REQUIRED" ? 400 : 401,
+    body: { code: r.code, message: r.reason, retryable: false, docsUrl: null },
+  });
+
+  /** Runs `fn` with a resolved policy id, or answers with the reason there is not one. */
+  const scoped = (
+    req: Request,
+    fn: (policyId: string) => Promise<HandlerResult>,
+  ): Promise<HandlerResult> => {
+    const scope = scopeOf(req);
+    return scope.kind === "NONE" ? Promise.resolve(scopeDenied(scope)) : fn(scope.policyId);
+  };
+
+  // ── ownership proof (free, and NOT tenant-scoped — this is how scope is obtained) ──────────
+  /**
+   * The nonce is issued by the SERVER and recorded before it is ever shown.
+   *
+   * A client-chosen nonce proves nothing: a caller could pre-sign a message and replay it forever.
+   * Recording it first is what makes the single-use check in /verify meaningful.
+   */
+  app.post(AUTH_NONCE_ROUTE, (req: Request, res: Response, next: NextFunction) => {
+    if (!auth) {
+      send(res, {
+        status: 503,
+        body: {
+          code: "AUTH_NOT_CONFIGURED",
+          message: "this instance cannot mint sessions (CONSUMER_AUTH_SECRET unset)",
+          retryable: false,
+          docsUrl: null,
+        },
+      });
+      return;
+    }
+    const declared = typeof (req.body as { address?: unknown } | undefined)?.address === "string"
+      ? ((req.body as { address: string }).address)
+      : null;
+    auth.nonces
+      .issue(declared, Date.now())
+      .then(({ nonce, expiresAt }) => {
+        // No caching, ever. A cached nonce is a reusable nonce.
+        res.setHeader("Cache-Control", "no-store");
+        send(res, {
+          status: 200,
+          body: {
+            nonce,
+            expiresAt,
+            domain: auth.config.domain,
+            statement: "Sign in to Untch to read your governed consumer intents.",
+            requiredResources: [
+              "untch:policy:<policyId> — REQUIRED. Binds this session to one policy; the signer must be its on-chain owner.",
+              "untch:agent:<agentId> — optional. Recorded on the session for audit.",
+            ],
+            chains: [196, 195],
+            note:
+              "Sign a SIWE message naming this domain, this nonce and an X Layer chainId, then POST " +
+              "{message, signature} to /consumer/auth/verify.",
+          },
+        });
+      })
+      .catch(next);
+  });
+
+  app.post(AUTH_VERIFY_ROUTE, (req: Request, res: Response, next: NextFunction) => {
+    if (!auth) {
+      send(res, {
+        status: 503,
+        body: {
+          code: "AUTH_NOT_CONFIGURED",
+          message: "this instance cannot mint sessions (CONSUMER_AUTH_SECRET unset)",
+          retryable: false,
+          docsUrl: null,
+        },
+      });
+      return;
+    }
+    const b = (req.body ?? {}) as { message?: unknown; signature?: unknown };
+    if (typeof b.message !== "string" || typeof b.signature !== "string") {
+      send(res, {
+        status: 400,
+        body: {
+          code: "AUTH_BAD_REQUEST",
+          message: "both `message` (the SIWE message) and `signature` are required",
+          retryable: false,
+          docsUrl: null,
+        },
+      });
+      return;
+    }
+    authenticateSiwe(
+      { message: b.message, signature: b.signature as `0x${string}` },
+      { config: auth.config, nonces: auth.nonces, verifier: auth.verifier, policyProvider: auth.policyProvider },
+    )
+      .then((outcome) => {
+        res.setHeader("Cache-Control", "no-store");
+        if (!outcome.ok) {
+          // 401 for a failed proof, 403 for a proof that succeeded but does not entitle. The
+          // distinction matters to a caller: one says "sign again", the other says "wrong wallet".
+          send(res, {
+            status: outcome.code === "NOT_POLICY_OWNER" ? 403 : outcome.code === "AUTH_NOT_CONFIGURED" ? 503 : 401,
+            body: { code: outcome.code, message: outcome.reason, retryable: false, docsUrl: null },
+          });
+          return;
+        }
+        send(res, {
+          status: 200,
+          body: {
+            token: outcome.token,
+            tokenType: "Bearer",
+            expiresAt: new Date(outcome.session.expiresAt).toISOString(),
+            address: outcome.session.address,
+            policyId: outcome.session.policyId,
+            agentId: outcome.session.agentId,
+            usage: "Send `Authorization: Bearer <token>` on tenant-scoped reads. The SSE stream " +
+              "accepts `?token=` because EventSource cannot set headers.",
+          },
+        });
+      })
+      .catch(next);
+  });
+
   // ── status surfaces (all free) ─────────────────────────────────────────────
   const statusHandler = (req: Request, res: Response, next: NextFunction): void => {
-    const policyId = typeof req.query.policyId === "string" ? req.query.policyId : null;
-    handleConsumerStatus(req.params.intentId ?? "", policyId, deps)
+    scoped(req, (policyId) => handleConsumerStatus(req.params.intentId ?? "", policyId, deps))
       .then((r) => send(res, r))
       .catch(next);
   };
@@ -321,17 +497,20 @@ export function registerConsumerRoutes(
     app.get(path, statusHandler);
   }
 
-  const policyIdOf = (req: Request): string | null =>
-    typeof req.query.policyId === "string" ? req.query.policyId : null;
-
   app.get(INTENT_PAYMENT_ROUTE, (req, res, next) => {
-    handleConsumerPayment(req.params.intentId ?? "", policyIdOf(req), deps).then((r) => send(res, r)).catch(next);
+    scoped(req, (policyId) => handleConsumerPayment(req.params.intentId ?? "", policyId, deps))
+      .then((r) => send(res, r))
+      .catch(next);
   });
   app.get(INTENT_DELIVERY_ROUTE, (req, res, next) => {
-    handleConsumerDelivery(req.params.intentId ?? "", policyIdOf(req), deps).then((r) => send(res, r)).catch(next);
+    scoped(req, (policyId) => handleConsumerDelivery(req.params.intentId ?? "", policyId, deps))
+      .then((r) => send(res, r))
+      .catch(next);
   });
   app.get(INTENT_RECEIPT_ROUTE, (req, res, next) => {
-    handleConsumerReceipt(req.params.intentId ?? "", policyIdOf(req), deps).then((r) => send(res, r)).catch(next);
+    scoped(req, (policyId) => handleConsumerReceipt(req.params.intentId ?? "", policyId, deps))
+      .then((r) => send(res, r))
+      .catch(next);
   });
 
   // Public and deliberately un-scoped. Cached briefly: a receipt is immutable once anchored, and the
@@ -349,22 +528,32 @@ export function registerConsumerRoutes(
   // ── SSE ────────────────────────────────────────────────────────────────────
   app.get(INTENT_EVENTS_ROUTE, (req: Request, res: Response, next: NextFunction) => {
     const intentId = req.params.intentId ?? "";
-    // The stream is tenant-scoped like every other read. An unscoped SSE endpoint would hand a
-    // caller another tenant's whole lifecycle — amounts, provider, decisions — in real time, which
-    // is strictly more than the equivalent unscoped GET would have leaked.
-    const policyId = typeof req.query.policyId === "string" ? req.query.policyId : null;
-    if (policyId === null) {
-      send(res, {
-        status: 400,
-        body: {
-          code: "POLICY_ID_REQUIRED",
-          message: "`policyId` is required — the event stream is tenant-scoped",
-          retryable: false,
-          docsUrl: null,
-        },
-      });
+    /**
+     * The stream is scoped like every other read, and the stakes here are the highest of the set: an
+     * unscoped SSE endpoint hands a caller another tenant's whole lifecycle — amounts, provider,
+     * decisions — continuously, which is strictly more than the equivalent GET would have leaked.
+     *
+     * EventSource cannot set an Authorization header, so a browser client passes the session as
+     * `?token=`. That is a real trade-off: the token lands in access logs and Referer headers. It is
+     * acceptable only because these sessions live 30 minutes and carry no capability beyond reading
+     * one tenant's intents — and it is still strictly better than the policy id, which never
+     * expires and is published on chain.
+     */
+    const scope = resolveScope(
+      {
+        authorization:
+          req.header("authorization") ??
+          (typeof req.query.token === "string" ? `Bearer ${req.query.token}` : undefined),
+        queryPolicyId: typeof req.query.policyId === "string" ? req.query.policyId : null,
+      },
+      authConfig,
+      Date.now(),
+    );
+    if (scope.kind === "NONE") {
+      send(res, scopeDenied(scope));
       return;
     }
+    const policyId = scope.policyId;
     void w.store
       .getIntentForTenant(`policy:${policyId}`, intentId)
       .then((owned) => {
@@ -479,7 +668,28 @@ export async function buildConsumerCatalog(wiring: ConsumerWiring): Promise<Reco
       gifts: [GIFTS_QUOTE_ROUTE, GIFTS_ORDER_ROUTE, GIFTS_STATUS_ROUTE],
       status: [INTENT_STATUS_ROUTE, INTENT_PAYMENT_ROUTE, INTENT_DELIVERY_ROUTE, INTENT_RECEIPT_ROUTE, INTENT_EVENTS_ROUTE],
       publicReceipt: [PUBLIC_RECEIPT_ROUTE],
+      auth: [AUTH_NONCE_ROUTE, AUTH_VERIFY_ROUTE],
       notify: [NOTIFY_CONFIRMATION_ROUTE, NOTIFY_RECEIPT_ROUTE, NOTIFY_EXCEPTION_ROUTE],
+    },
+    /**
+     * Which surfaces need a session, stated in the catalog so a calling agent discovers it here
+     * rather than by receiving a 401 it did not expect.
+     */
+    auth: {
+      scheme: "SIWE → Bearer",
+      obtain: [AUTH_NONCE_ROUTE, AUTH_VERIFY_ROUTE],
+      required: loadConsumerAuthConfig().required,
+      scopedRoutes: [
+        INTENT_STATUS_ROUTE, INTENT_PAYMENT_ROUTE, INTENT_DELIVERY_ROUTE, INTENT_RECEIPT_ROUTE,
+        INTENT_EVENTS_ROUTE, SHOP_ORDER_ROUTE, DOMAINS_STATUS_ROUTE, TRAVEL_BOOKING_ROUTE,
+        GIFTS_STATUS_ROUTE,
+      ],
+      publicRoutes: [PUBLIC_RECEIPT_ROUTE, CONSUMER_CATALOG_ROUTE, AUTH_NONCE_ROUTE, AUTH_VERIFY_ROUTE],
+      note:
+        "A scoped read is tenant-scoped to the POLICY OWNER. Prove control of the owner wallet by " +
+        "signing a SIWE message that names this domain, a nonce from /consumer/auth/nonce, an X " +
+        "Layer chainId, and `untch:policy:<policyId>` in Resources. `?policyId=` alone is " +
+        "namespacing, not authorisation: a policy id is public on-chain data.",
     },
     funding: {
       route: FUND_ROUTE,

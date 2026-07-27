@@ -24,6 +24,7 @@ import {
   loadRailRpc,
   loadSiwxKey,
   createPool,
+  type Pool,
   flagOn,
   loadConsumerFlags,
   describeFlags,
@@ -58,6 +59,7 @@ import type { PolicyProvider } from "@untch/policy-store";
 import { ConsumerOrchestrator, type ConsumerEscalationGateway, type ConsumerReceiptSink } from "./orchestrator";
 import { OutboxDispatcher, SseHub } from "./dispatcher";
 import { makeFundingPrice } from "./funding-price";
+import { PgNonceStore } from "./auth";
 
 export interface ConsumerWiring {
   readonly store: ConsumerStore;
@@ -72,6 +74,14 @@ export interface ConsumerWiring {
   readonly publicBaseUrl: string;
   /** Rails a key is configured for. Surfaced so the operator UI can say what is actually live. */
   readonly availableRails: readonly CaipChainId[];
+  /**
+   * The same pool the Consumer Pack migrates and reads through.
+   *
+   * Exposed so the SIWE nonce store shares it rather than opening a second one: nonces live in a
+   * table created by THIS package's migrations, and a separate pool would mean a deployment could
+   * have a nonce store pointing at a database where 009 had never run.
+   */
+  readonly pool: Pool;
   close(): Promise<void>;
 }
 
@@ -305,6 +315,7 @@ export async function initConsumerWiring(
     config,
     publicBaseUrl,
     availableRails,
+    pool,
     async close(): Promise<void> {
       hub.closeAll();
       await pool.end();
@@ -327,6 +338,7 @@ export function startConsumerWorkers(
     readonly dispatchIntervalMs?: number;
     readonly executeIntervalMs?: number;
     readonly sweepIntervalMs?: number;
+    readonly nonceSweepIntervalMs?: number;
     readonly log?: (line: string, data?: unknown) => void;
   } = {},
 ): { stop(): void } {
@@ -350,6 +362,19 @@ export function startConsumerWorkers(
     for (const intent of acked) await wiring.orchestrator.verifyAndComplete(intent.intentId);
     const delivering = await wiring.store.listIntents({ state: "DELIVERY_PENDING", limit: 5 });
     for (const intent of delivering) await wiring.orchestrator.verifyAndComplete(intent.intentId);
+  });
+
+  /**
+   * Expired SIWE nonces.
+   *
+   * They are harmless once expired — the consume query already refuses them — so this is hygiene, not
+   * a control. It runs on its own slow timer rather than inside the 30s sweep because a nonce table
+   * that grows unboundedly is a disk problem, and coupling it to the money sweep would make a slow
+   * DELETE able to delay expiry and ambiguity reconciliation.
+   */
+  every(opts.nonceSweepIntervalMs ?? 15 * 60_000, "nonce sweep", async () => {
+    const removed = await new PgNonceStore(wiring.pool).sweep(Date.now());
+    if (removed > 0) log(`[consumer] swept ${removed} expired auth nonces`);
   });
 
   every(opts.sweepIntervalMs ?? 30_000, "sweep", async () => {
