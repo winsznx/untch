@@ -1,0 +1,173 @@
+[
+  {
+    "seq": 1,
+    "name": "consumer.intent.created",
+    "state": "CREATED",
+    "data": {
+      "action": "domains.check",
+      "policyId": "9001"
+    },
+    "occurred_at": "2026-07-27T22:41:27.647Z"
+  },
+  {
+    "seq": 2,
+    "name": "consumer.quote.created",
+    "state": "QUOTED",
+    "data": {
+      "fee": {
+        "chain": "eip155:196",
+        "token": "USDT0",
+        "amount": "0",
+        "display": "0.000000",
+        "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+        "decimals": 6
+      },
+      "total": {
+        "chain": "eip155:196",
+        "token": "USDT0",
+        "amount": "50250",
+        "display": "0.050250",
+        "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+        "decimals": 6
+      },
+      "spread": {
+        "chain": "eip155:196",
+        "token": "USDT0",
+        "amount": "250",
+        "display": "0.000250",
+        "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+        "decimals": 6
+      },
+      "expiresAt": "2026-07-27T22:51:31.007Z",
+      "providerId": "stabledomains"
+    },
+    "occurred_at": "2026-07-27T22:41:31.536Z"
+  },
+  {
+    "seq": 3,
+    "name": "consumer.quote.created",
+    "state": "POLICY_CHECKING",
+    "data": {
+      "policyId": "9001"
+    },
+    "occurred_at": "2026-07-27T22:41:32.636Z"
+  },
+  {
+    "seq": 4,
+    "name": "consumer.policy.approved",
+    "state": "APPROVED",
+    "data": {
+      "decision": "APPROVED"
+    },
+    "occurred_at": "2026-07-27T22:41:33.421Z"
+  },
+  {
+    "seq": 5,
+    "name": "consumer.funding.requested",
+    "state": "AWAITING_FUNDING",
+    "data": {
+      "url": "https://asp.untch.xyz/consumer/fund/ci_82bb2216c02366bc1b839a00",
+      "amount": {
+        "chain": "eip155:196",
+        "token": "USDT0",
+        "amount": "50250",
+        "display": "0.050250",
+        "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+        "decimals": 6
+      },
+      "expiresAt": "2026-07-27T22:56:34.177Z"
+    },
+    "occurred_at": "2026-07-27T22:41:34.516Z"
+  },
+  {
+    "seq": 6,
+    "name": "consumer.funding.confirmed",
+    "state": "FUNDED",
+    "data": {
+      "chain": "eip155:196",
+      "amount": {
+        "chain": "eip155:196",
+        "token": "USDT0",
+        "amount": "50250",
+        "display": "0.050250",
+        "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+        "decimals": 6
+      }
+    },
+    "occurred_at": "2026-07-27T22:41:36.878Z"
+  },
+  {
+    "seq": 7,
+    "name": "consumer.execution.started",
+    "state": "EXECUTION_QUEUED",
+    "data": {
+      "providerId": "stabledomains"
+    },
+    "occurred_at": "2026-07-27T22:41:38.228Z"
+  },
+  {
+    "seq": 8,
+    "name": "consumer.execution.started",
+    "state": "PROVIDER_PAYMENT_PENDING",
+    "data": {
+      "providerId": "stabledomains",
+      "sandboxOverride": false
+    },
+    "occurred_at": "2026-07-27T22:41:39.482Z"
+  },
+  {
+    "seq": 9,
+    "name": "consumer.provider.paid",
+    "state": "PROVIDER_PAID",
+    "data": {
+      "chain": "eip155:8453",
+      "amount": {
+        "chain": "eip155:8453",
+        "token": "USDC",
+        "amount": "50000",
+        "display": "0.050000",
+        "contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "decimals": 6
+      },
+      "providerId": "stabledomains"
+    },
+    "occurred_at": "2026-07-27T22:41:45.879Z"
+  },
+  {
+    "seq": 10,
+    "name": "consumer.provider.acknowledged",
+    "state": "PROVIDER_ACKNOWLEDGED",
+    "data": {
+      "status": "available",
+      "reference": "untchactivation3t9vvf.xyz"
+    },
+    "occurred_at": "2026-07-27T22:41:45.881Z"
+  },
+  {
+    "seq": 11,
+    "name": "consumer.provider.acknowledged",
+    "state": "DELIVERY_PENDING",
+    "data": {},
+    "occurred_at": "2026-07-27T22:41:45.977Z"
+  },
+  {
+    "seq": 12,
+    "name": "consumer.delivery.verified",
+    "state": "DELIVERY_VERIFIED",
+    "data": {
+      "method": "HTTP_PROBE",
+      "untchVerified": true
+    },
+    "occurred_at": "2026-07-27T22:41:45.980Z"
+  },
+  {
+    "seq": 13,
+    "name": "consumer.completed",
+    "state": "COMPLETED",
+    "data": {
+      "receiptId": "0x7ac7b23bf08dd631dc7b40d3c67bf19f847da0355361b0ccc6586ec47fbf009e",
+      "receiptStatus": "recorded"
+    },
+    "occurred_at": "2026-07-27T22:41:46.008Z"
+  }
+]

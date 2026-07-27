@@ -303,6 +303,10 @@ Ticked items were verified against live production on 2026-07-27.
 - [x] Existing services unchanged and still 402ing
 - [x] Public receipt reachable with no auth, and withholding the request payload and correlation id
 - [x] SIWE ownership proof live; replay, cross-tenant, wrong-domain and wrong-chain all refused
+- [x] A production-path execution completed with a **non-null `receiptId`** and a corrected
+      cross-rail ledger; whole book sums to zero on both rails
+- [ ] **Fund the receipt-writer wallet with OKB** — see §10.1; without it every new receipt anchors
+      as `DEGRADED_UNANCHORED`
 - [ ] **`CONSUMER_AUTH_REQUIRED=1`** — deliberately not yet set; see §6
 - [ ] An externally funded Consumer Intent — blocked, see §10
 
@@ -312,11 +316,24 @@ Ticked items were verified against live production on 2026-07-27.
 
 Three things a reviewer might otherwise assume are true.
 
-1. **No production execution has produced a §7.4 receipt yet.** The one real settled purchase was
-   driven by the live smoke script, which passed no receipt writer, so it reads `NOT_RECORDED`. The
-   receipt path itself is sound — projection, draft and both durable inserts were replayed against
-   the production schema in a rolled-back transaction and all succeed for that exact intent — and the
-   driver now wires the real writer. It has simply not been run again since.
+1. **CLOSED — a production execution has now produced a real receipt.** Intent
+   `ci_82bb2216c02366bc1b839a00`, executed **by the deployed ASP worker itself**: it picked the
+   intent up from `EXECUTION_QUEUED`, paid StableDomains 0.050000 USDC on Base
+   (`0x6815d60e1be688451d36007a4113f858e0a10433dccef01dc3b3d0f8d283e489`, block 49201380, success),
+   verified delivery against public RDAP, booked the corrected cross-rail ledger, and wrote receipt
+   `0x7ac7b23bf08dd631dc7b40d3c67bf19f847da0355361b0ccc6586ec47fbf009e`.
+
+   **The anchor then failed, and this is worth a reviewer's attention because of how it failed.**
+   The receipt-writer wallet `0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5` holds **0 OKB** on X Layer
+   mainnet, so `logReceipts` could not pay gas. The writer retried five times, marked the batch
+   `DEGRADED_UNANCHORED`, left the durable ledger authoritative, and the public receipt now reports
+   `ANCHOR_FAILED` with the wording "the payment and delivery facts below are unaffected — only the
+   on-chain commitment is missing". That is the system reporting its own gap accurately rather than
+   claiming an anchor it does not have.
+
+   **Operational fix, not a code change:** fund `0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5` with
+   OKB on X Layer mainnet. 20 of 21 receipts in production are `CONFIRMED`; this is the first that
+   is not, and gas exhaustion is the only reason.
 
 2. **The user-funded leg has not been exercised by an external wallet.** Every execution so far was
    funded from Untch's own treasury. Proving the leg requires an independent funder key
