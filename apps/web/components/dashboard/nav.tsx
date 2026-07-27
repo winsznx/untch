@@ -13,6 +13,7 @@ const LINKS: { href: string; label: string; icon: NavIconName }[] = [
   { href: "/dashboard/policies", label: "Policies", icon: "policies" },
   { href: "/dashboard/escalations", label: "Escalations", icon: "escalations" },
   { href: "/dashboard/ledger", label: "Ledger", icon: "ledger" },
+  { href: "/dashboard/consumer", label: "Consumer Pack", icon: "consumer" },
   { href: "/dashboard/vault", label: "Vault", icon: "vault" },
   { href: "/dashboard/vendors", label: "Vendors", icon: "vendors" },
   { href: "/dashboard/reports", label: "Reports", icon: "reports" },

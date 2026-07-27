@@ -4,6 +4,7 @@
  * mobile drawer both lean on these being instantly recognizable at a glance).
  */
 export type NavIconName =
+  | "consumer"
   | "start"
   | "overview"
   | "intents"
@@ -110,6 +111,14 @@ export function NavIcon({ name, className }: { name: NavIconName; className?: st
         <svg {...svg}>
           <circle cx="10" cy="10" r="2.9" />
           <path d="M10 2.6v2.3M10 15.1v2.3M2.6 10h2.3M15.1 10h2.3M4.75 4.75l1.6 1.6M13.65 13.65l1.6 1.6M15.25 4.75l-1.6 1.6M4.75 15.25l1.6-1.6" />
+        </svg>
+      );
+    case "consumer":
+      // A bounded parcel: the consumer action, kept inside an authority boundary.
+      return (
+        <svg {...svg}>
+          <path d="M4 6.5h12l-1 9.5a1.5 1.5 0 0 1-1.5 1.3h-7A1.5 1.5 0 0 1 5 16L4 6.5Z" />
+          <path d="M7.25 6.5V5a2.75 2.75 0 0 1 5.5 0v1.5" />
         </svg>
       );
     case "explorer":

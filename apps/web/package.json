@@ -15,6 +15,7 @@
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@tanstack/react-query": "^5.101.2",
     "@untch/canon": "workspace:*",
+    "@untch/consumer-core": "workspace:*",
     "@untch/design-tokens": "workspace:*",
     "@untch/escalation": "workspace:*",
     "@untch/policy-engine": "workspace:*",
