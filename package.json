@@ -32,6 +32,8 @@
     "deploy:keyed-suite": "tsx scripts/deploy-keyed-suite.ts",
     "deploy:mainnet-suite": "tsx scripts/deploy-mainnet-suite.ts",
     "register:erc8004": "tsx scripts/register-erc8004-agent.ts",
+    "consumer:migrate:verify": "tsx scripts/consumer-migrate-verify.ts",
+    "consumer:smoke:live": "tsx scripts/consumer-smoke-live.ts",
     "consumer:demo": "tsx scripts/consumer-demo.ts",
     "consumer:smoke": "tsx scripts/consumer-smoke.ts",
     "test:consumer-core": "node --import tsx --test packages/consumer-core/test/*.test.ts",

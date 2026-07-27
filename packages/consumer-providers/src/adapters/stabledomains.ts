@@ -169,6 +169,39 @@ export class StableDomainsAdapter extends BaseAdapter {
   async quote(input: QuoteInput, ctx: AdapterContext): Promise<ProviderQuote> {
     const domain = normalizeDomain(input.providerRef || input.params.domain);
     const action = input.action;
+
+    /**
+     * `domains.check` is a quotable action in its own right, and it is the SAFEST one this provider
+     * offers: the deliverable is an availability answer, the price is a flat $0.05, and it is a read,
+     * so re-asking is free of consequence.
+     *
+     * It gets its own branch because the registration path below would otherwise price a *check*
+     * against `/api/register` — quoting $20 for a five-cent call. There is also no paid pre-flight
+     * here: the price comes from `/api/check`'s own unpaid 402, and `execute` performs the one paid
+     * call. Paying twice to answer one question would be absurd.
+     */
+    if (action === "domains.check") {
+      const priced = await this.probe402("POST", "/api/check", ctx, { domain });
+      return {
+        providerId: this.providerId,
+        providerRef: domain,
+        cost: priced.amount,
+        settlementRecipient: priced.recipient,
+        settlementChain: priced.option.network,
+        settlementAsset: priced.asset,
+        summary: `Check availability and price for ${domain}`,
+        terms: {
+          domain,
+          action,
+          deliverable: "availability + current registration price",
+          // The delivered answer is independently checkable against public RDAP — the registry
+          // itself, not this merchant. That is what makes untchVerified mean something here.
+          verification: "public RDAP cross-check",
+        },
+        expiresAt: new Date((ctx.clock?.() ?? Date.now()) + 10 * 60_000).toISOString(),
+      };
+    }
+
     const isRenew = action === "domains.renew";
 
     let readyToRegister = true;
@@ -243,6 +276,67 @@ export class StableDomainsAdapter extends BaseAdapter {
     ctx: AdapterContext,
   ): Promise<ProviderExecution> {
     const domain = normalizeDomain(input.providerRef);
+
+    // The paid availability check. Idempotent by nature — it is a read — so unlike registration it
+    // carries no double-purchase hazard at all.
+    if (input.action === "domains.check") {
+      const result = await this.paid(
+        {
+          method: "POST",
+          path: "/api/check",
+          body: { domain },
+          payment,
+          allowedRecipients: [input.quote.settlementRecipient],
+          ceilingFor: () => input.quote.cost,
+          headers: { "x-untch-request-id": input.idempotencyKey },
+        },
+        ctx,
+      );
+      if (result.response.status >= 400) {
+        throw this.classifyStatus(result.response, `${this.providerId} /api/check`);
+      }
+      if (!result.settlement) {
+        throw new ProviderError(
+          normalizedError(
+            "PROVIDER_MALFORMED_RESPONSE",
+            "/api/check returned success without demanding payment — refusing to record a " +
+              "settlement that did not happen",
+          ),
+        );
+      }
+      const checked = validated("StableDomains /api/check", () => {
+        const o = obj(result.json, "check");
+        return {
+          domain: str(o.domain, "check.domain", 253),
+          available: bool(o.available, "check.available"),
+          premium: o.premium === undefined ? false : bool(o.premium, "check.premium"),
+          tld: optStr(o.tld, "check.tld", 16),
+          currentPrice: optStr(o.currentPrice, "check.currentPrice", 40),
+          readyToRegister:
+            o.readyToRegister === undefined ? null : bool(o.readyToRegister, "check.readyToRegister"),
+        };
+      });
+      return {
+        providerReference: checked.domain,
+        settlement: {
+          txHash: result.settlement.txHash,
+          chain: result.settlement.chain,
+          amount: result.settlement.amount,
+          recipient: result.settlement.recipient,
+        },
+        providerStatus: checked.available ? "available" : "taken",
+        payload: {
+          domain: checked.domain,
+          available: checked.available,
+          premium: checked.premium,
+          tld: checked.tld,
+          currentPrice: checked.currentPrice,
+          readyToRegister: checked.readyToRegister,
+        },
+        acknowledgedAt: new Date(ctx.clock?.() ?? Date.now()).toISOString(),
+      };
+    }
+
     const isRenew = input.action === "domains.renew";
 
     if (!isRenew && input.quote.terms.readyToRegister !== true) {
@@ -365,6 +459,49 @@ export class StableDomainsAdapter extends BaseAdapter {
       attestedAt: exec.acknowledgedAt,
       fields: exec.payload,
     };
+
+    /**
+     * For an availability CHECK, the delivered result is a claim about the public DNS registry — so
+     * it can be verified against the registry itself rather than against the merchant.
+     *
+     * RDAP is the authoritative source: a 404 means the domain is unregistered, a 200 means it is
+     * taken. If StableDomains and RDAP agree, the merchant delivered a correct answer and Untch can
+     * say so on its own authority. If they disagree, that is a real, reportable finding — and it is
+     * reported, not smoothed over.
+     */
+    if (typeof exec.payload.available === "boolean") {
+      const claimed = exec.payload.available;
+      const { checkDomainsLive } = await import("../../../../services/asp/src/launch-pack/rdap");
+      let verified = false;
+      let detail: string;
+      try {
+        const [rdap] = await checkDomainsLive([domain], { timeoutMs: 8_000, concurrency: 1 });
+        if (!rdap || rdap.status === "UNKNOWN") {
+          detail = `RDAP could not answer for ${domain} — availability not independently confirmed`;
+        } else {
+          const rdapAvailable = rdap.status === "AVAILABLE";
+          verified = rdapAvailable === claimed;
+          detail = verified
+            ? `public RDAP agrees: ${domain} is ${rdapAvailable ? "available" : "taken"}`
+            : `DISAGREEMENT: provider says ${claimed ? "available" : "taken"}, public RDAP says ` +
+              `${rdapAvailable ? "available" : "taken"}`;
+        }
+      } catch (err) {
+        detail = `RDAP lookup failed: ${this.normalizeError(err).message}`;
+      }
+      return {
+        intentId: "",
+        providerId: this.providerId,
+        providerAttested: attested,
+        untchVerified: {
+          verified,
+          method: "HTTP_PROBE",
+          detail,
+          verifiedAt: verified ? new Date(ctx.clock?.() ?? Date.now()).toISOString() : null,
+        },
+        evidenceHash: hashQuote({ attested, verified, detail }),
+      };
+    }
 
     let verified = false;
     let detail = "";

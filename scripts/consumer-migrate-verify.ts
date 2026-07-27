@@ -193,6 +193,22 @@ async function main(): Promise<void> {
       }
 
       step("5. Append-only ledger");
+      /**
+       * The behavioural probes below INSERT rows. In dry-run mode the whole transaction rolls back
+       * and they vanish; in --apply mode they would COMMIT.
+       *
+       * They did, once, on the first production apply — and the append-only RULE then correctly
+       * refused to let them be deleted again, which is the control working exactly as designed and a
+       * permanent reminder not to write test data down a path that commits. The artefact is one
+       * inert row (token PROBE, chain eip155:1, group relabelled
+       * `probe-migration-007-verification-artifact`) that no query for a real intent can return.
+       *
+       * Structural probes still run in both modes; only the ones that WRITE are dry-run-only.
+       */
+      const canProbeDestructively = !APPLY;
+      if (!canProbeDestructively) {
+        ok("skipping write-probes in --apply mode (they would commit); structure was verified above");
+      }
       // The RULEs are the enforcement. Prove they EXIST and that they actually bite.
       const rules = await client.query(
         `SELECT rulename FROM pg_rules WHERE schemaname = 'public' AND tablename = 'consumer_ledger_entries'`,
@@ -207,6 +223,7 @@ async function main(): Promise<void> {
       }
 
       // Behavioural proof, not just presence: insert a row, try to mutate it, confirm it survives.
+      if (canProbeDestructively) {
       await client.query(
         `INSERT INTO consumer_ledger_accounts (account_id, kind, chain, token, decimals, owner_ref)
          VALUES ('probe', 'SUSPENSE', 'eip155:1', 'PROBE', 6, 'probe')`,
@@ -255,7 +272,10 @@ async function main(): Promise<void> {
         failures += 1;
       }
 
+      }
+
       step("6. Tenant isolation");
+      if (canProbeDestructively) {
       // Two tenants using the SAME idempotency key must both succeed.
       await client.query(
         `INSERT INTO consumer_idempotency_records (tenant_id, key, intent_id, action, request_hash)
@@ -274,6 +294,8 @@ async function main(): Promise<void> {
       } else {
         bad("the SAME tenant reused a key and it was accepted");
         failures += 1;
+      }
+
       }
 
       step("7. Existing Untch data untouched (inside the transaction)");

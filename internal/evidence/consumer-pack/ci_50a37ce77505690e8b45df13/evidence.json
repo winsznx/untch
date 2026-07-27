@@ -1,0 +1,211 @@
+{
+  "schema": "untch.consumer-pack.live-evidence.v1",
+  "generatedAt": "2026-07-27T20:00:41.303Z",
+  "bootstrapRun": false,
+  "provider": {
+    "providerId": "stabledomains",
+    "baseUrl": "https://stabledomains.dev",
+    "capability": "domains.check",
+    "maturityAtRunStart": "verified",
+    "documentationVersion": "live OpenAPI fetched 2026-07-27 (14 paths); .well-known/x402",
+    "adapterVersion": "@untch/consumer-providers StableDomainsAdapter @ feat/consumer-pack"
+  },
+  "challenge": {
+    "network": "eip155:8453",
+    "scheme": "exact",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "amountAtomic": "50000",
+    "recipient": "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+    "maxTimeoutSeconds": 300,
+    "hash": "0xbce94f24a877f8fc56dd0bbd31857974ed1f417fa5b4e6ab90f39729faff21d8"
+  },
+  "intent": {
+    "intentId": "ci_50a37ce77505690e8b45df13",
+    "action": "domains.check",
+    "tenantId": "policy:9001",
+    "correlationId": "smoke-ms3ni92u"
+  },
+  "policy": {
+    "policyId": "9001",
+    "policyVersion": 1,
+    "policyHash": "0x01e75f62432f2dbe19915910e23f57be06d8172d5185d83e4b83675460198145",
+    "decision": "APPROVED",
+    "rulesEvaluated": 14,
+    "reasons": [
+      "all RULE_EVAL rules passed"
+    ]
+  },
+  "approval": {
+    "required": false,
+    "reason": "policy APPROVED without escalation"
+  },
+  "treasuryReservation": {
+    "address": "0x0e79371813e88F31c2B60C80bad391a952039095",
+    "reserved": {
+      "amount": "50250",
+      "display": "0.050250",
+      "token": "USDT0",
+      "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "chain": "eip155:196",
+      "decimals": 6
+    },
+    "note": "operator-funded: Untch is both funder and settler for this bootstrap run",
+    "fundingMarker": "operator-funded:ci_50a37ce77505690e8b45df13"
+  },
+  "settlement": {
+    "chain": "eip155:8453",
+    "txHash": "0xe7ce102f7a704e9c3113fc7fcc8626db8a9cdc330e614d023c231e88fce21e86",
+    "amount": {
+      "amount": "50000",
+      "display": "0.050000",
+      "token": "USDC",
+      "contract": null,
+      "chain": "eip155:8453",
+      "decimals": 6
+    },
+    "recipient": "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+    "providerReference": "untchactivation3ni92u.xyz",
+    "balanceBefore": "3.000000",
+    "balanceAfter": "2.950000",
+    "observedDelta": "0.050000",
+    "chainProof": {
+      "blockNumber": "49196541",
+      "status": "success",
+      "gasUsed": "86310",
+      "transfer": "0.050000 USDC 0x0e79…9095 → 0xABcb…1892",
+      "explorer": "https://basescan.org/tx/0xe7ce102f7a704e9c3113fc7fcc8626db8a9cdc330e614d023c231e88fce21e86"
+    }
+  },
+  "quote": {
+    "quoteId": "cq_37a1843eece4cb2387",
+    "quoteHash": "0x54e555f575274aeab46a2cd7e114cebd5b3fd6c010eed22228f9b62ead51e48c",
+    "providerCost": {
+      "amount": "50000",
+      "display": "0.050000",
+      "token": "USDC",
+      "contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "chain": "eip155:8453",
+      "decimals": 6
+    },
+    "untchFee": {
+      "amount": "0",
+      "display": "0.000000",
+      "token": "USDT0",
+      "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "chain": "eip155:196",
+      "decimals": 6
+    },
+    "spread": {
+      "amount": "250",
+      "display": "0.000250",
+      "token": "USDT0",
+      "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "chain": "eip155:196",
+      "decimals": 6
+    },
+    "total": {
+      "amount": "50250",
+      "display": "0.050250",
+      "token": "USDT0",
+      "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "chain": "eip155:196",
+      "decimals": 6
+    },
+    "expiresAt": "2026-07-27T20:10:00.382Z"
+  },
+  "providerResponseHash": "0x2bbae10e97a212874fe2609764fd59eac86d1786af78e5efc334e1e534946a71",
+  "delivery": {
+    "providerAttested": {
+      "status": "available",
+      "reference": "untchactivation3ni92u.xyz",
+      "attestedAt": "2026-07-27T20:00:28.930Z",
+      "fields": {
+        "tld": "xyz",
+        "domain": "untchactivation3ni92u.xyz",
+        "premium": false,
+        "available": true,
+        "currentPrice": "$20",
+        "readyToRegister": false
+      }
+    },
+    "untchVerified": {
+      "verified": true,
+      "method": "HTTP_PROBE",
+      "detail": "public RDAP agrees: untchactivation3ni92u.xyz is available",
+      "verifiedAt": "2026-07-27T20:00:35.475Z"
+    },
+    "evidenceHash": "0xd7724351e779896b53f473bef6b0d4b5d454338bdd89a1ecd9ce72c7489c2f4e"
+  },
+  "ledger": [
+    {
+      "kind": "FUNDING",
+      "asset": {
+        "token": "USDT0",
+        "chain": "eip155:196"
+      },
+      "entries": [
+        {
+          "account": "TREASURY:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:xlayer-usdt0-funding",
+          "amount": "50250",
+          "memo": "user funding received"
+        },
+        {
+          "account": "USER_OBLIGATION:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:ci_50a37ce77505690e8b45df13",
+          "amount": "-50250",
+          "memo": "obligation to intent opened"
+        }
+      ]
+    },
+    {
+      "kind": "SETTLEMENT",
+      "asset": {
+        "token": "USDC",
+        "chain": "eip155:8453"
+      },
+      "entries": [
+        {
+          "account": "PROVIDER_SETTLEMENT:eip155:8453|0x833589fcd6edb6e08f4c7c32d4f71b54bda02913:stabledomains",
+          "amount": "50000",
+          "memo": "provider paid"
+        },
+        {
+          "account": "TREASURY:eip155:8453|0x833589fcd6edb6e08f4c7c32d4f71b54bda02913:base-usdc-settlement",
+          "amount": "-50000",
+          "memo": "settlement float drawn"
+        }
+      ]
+    },
+    {
+      "kind": "RECOGNITION",
+      "asset": {
+        "token": "USDT0",
+        "chain": "eip155:196"
+      },
+      "entries": [
+        {
+          "account": "USER_OBLIGATION:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:ci_50a37ce77505690e8b45df13",
+          "amount": "50250",
+          "memo": "obligation discharged"
+        },
+        {
+          "account": "SPREAD_REVENUE:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:global",
+          "amount": "-250",
+          "memo": "disclosed cross-rail spread"
+        },
+        {
+          "account": "COST_OF_GOODS:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:ci_50a37ce77505690e8b45df13",
+          "amount": "-50000",
+          "memo": "cost of goods"
+        }
+      ]
+    }
+  ],
+  "ledgerBalanced": true,
+  "finalState": "COMPLETED",
+  "receiptId": null,
+  "timestamps": {
+    "intentCreated": "2026-07-27T19:59:57.954Z",
+    "completed": "2026-07-27T20:00:39.350Z"
+  },
+  "redaction": "No private key, no signature, no payment header, no API secret and no personal data appears in this file. Addresses are public. The provider response is represented by a hash."
+}

@@ -117,27 +117,29 @@ export async function initConsumerWiring(
     const existing = await store.getProvider(seed.provider.providerId);
     if (!existing) {
       await store.upsertProvider(seed.provider);
-    } else if (
-      existing.baseUrl !== seed.provider.baseUrl ||
-      existing.provenance !== seed.provider.provenance
-    ) {
+    } else if (existing.baseUrl !== seed.provider.baseUrl) {
+      // Only the BASE URL is refreshed from the seed. Maturity, `enabled` and `provenance` all stay
+      // with the operator: `provenance` is where a promotion records its evidence (the settlement
+      // transaction hash), and re-asserting the seed's generic text over it would erase the only
+      // durable record of WHY a provider is verified.
       await store.upsertProvider({
         ...seed.provider,
         maturity: existing.maturity,
         enabled: existing.enabled,
+        provenance: existing.provenance,
       });
       log(
-        `[consumer] refreshed ${seed.provider.providerId} descriptors; kept operator state ` +
-          `(maturity=${existing.maturity}, enabled=${existing.enabled})`,
+        `[consumer] refreshed ${seed.provider.providerId} base URL; kept operator state ` +
+          `(maturity=${existing.maturity}, enabled=${existing.enabled}) and its provenance`,
       );
     }
 
+    // A capability is INTRODUCED once. Its maturity and notes then belong to the operator, for the
+    // same reason: `notes` is where a promoted capability records its settlement evidence.
     const existingCaps = await store.listCapabilities(seed.provider.providerId);
     for (const cap of seed.capabilities) {
-      const prior = existingCaps.find((c) => c.capability === cap.capability);
-      if (!prior) await store.upsertCapability(cap);
-      else if (prior.notes !== cap.notes) {
-        await store.upsertCapability({ ...cap, maturity: prior.maturity });
+      if (!existingCaps.some((c) => c.capability === cap.capability)) {
+        await store.upsertCapability(cap);
       }
     }
   }

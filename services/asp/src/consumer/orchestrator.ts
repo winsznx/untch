@@ -1285,9 +1285,26 @@ function knownRecipientsFor(providerId: string): readonly string[] {
   }
 }
 
+/**
+ * Actions that ARE their own deliverable.
+ *
+ * A quote is a promise to execute something, so the quote phase gates on the capability that will
+ * ultimately run. For a purchase that is a separate `*.quote` capability — pricing a registration is
+ * not registering it. But a paid READ has nothing separate to quote: pricing `domains.check` IS
+ * `domains.check`, and routing it to `domains.quote` asks the registry for a capability that has
+ * nothing to do with the call being made.
+ */
+const SELF_QUOTING_ACTIONS: ReadonlySet<string> = new Set([
+  "domains.check",
+  "shop.search",
+  "travel.search",
+  "travel.compare",
+]);
+
 /** Map an action to the capability name the registry gates on, per phase. */
 export function capabilityFor(action: ConsumerActionType, phase: "discover" | "quote" | "execute"): string {
   const [family] = action.split(".");
+  if (phase !== "execute" && SELF_QUOTING_ACTIONS.has(action)) return action;
   if (phase === "discover") {
     return family === "shop" ? "shop.search"
       : family === "domains" ? "domains.check"
