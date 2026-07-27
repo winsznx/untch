@@ -37,6 +37,48 @@ export function chainFlagName(chain: CaipChainId): string {
   return `CONSUMER_CHAIN_${chain.trim().toUpperCase().replace(/[^A-Z0-9]/g, "_")}_ENABLED`;
 }
 
+/**
+ * Friendly aliases for the chains anyone actually types.
+ *
+ * The CAIP-derived name is CANONICAL because it is mechanical and cannot collide: every chain has
+ * exactly one CAIP-2 id, whereas "BASE" is a nickname that stops being unique the moment a second
+ * chain wants it. But operational documentation and runbooks were written against
+ * `CONSUMER_BASE_ENABLED`, and a flag layer whose documented name silently does nothing is worse
+ * than one with two names — the failure mode is an operator believing they enabled a rail.
+ *
+ * So both are read, with the canonical winning where it is explicitly set. That ordering matters:
+ * it means a canonical `=0` cannot be overridden by a stale friendly `=1` left in an environment.
+ */
+const CHAIN_ALIASES: Readonly<Record<string, string>> = {
+  "eip155:8453": "CONSUMER_BASE_ENABLED",
+  "eip155:196": "CONSUMER_XLAYER_ENABLED",
+  "eip155:195": "CONSUMER_XLAYER_TESTNET_ENABLED",
+};
+
+const ASSET_ALIASES: Readonly<Record<string, string>> = {
+  "eip155:8453|USDC": "CONSUMER_BASE_USDC_ENABLED",
+  "eip155:196|USDT0": "CONSUMER_XLAYER_USDT0_ENABLED",
+};
+
+/** Canonical first, friendly second. Order IS the precedence rule. */
+export function chainFlagNames(chain: CaipChainId): readonly string[] {
+  const alias = CHAIN_ALIASES[chain.trim().toLowerCase()];
+  return alias ? [chainFlagName(chain), alias] : [chainFlagName(chain)];
+}
+
+export function assetFlagNames(asset: AssetRef): readonly string[] {
+  const alias = ASSET_ALIASES[`${asset.chain.trim().toLowerCase()}|${asset.symbol.trim().toUpperCase()}`];
+  return alias ? [assetFlagName(asset), alias] : [assetFlagName(asset)];
+}
+
+/** The first name that is SET decides. An unset name is not a vote for off; it is no vote at all. */
+function firstSet(env: NodeJS.ProcessEnv, names: readonly string[]): string | undefined {
+  for (const n of names) {
+    if (env[n] !== undefined) return env[n];
+  }
+  return undefined;
+}
+
 /** `USDC` on `eip155:8453` → `CONSUMER_ASSET_EIP155_8453_USDC_ENABLED`. */
 export function assetFlagName(asset: AssetRef): string {
   const chain = asset.chain.trim().toUpperCase().replace(/[^A-Z0-9]/g, "_");
@@ -72,16 +114,16 @@ export function loadConsumerFlags(env: NodeJS.ProcessEnv = process.env): Consume
      * A chain with no flag is OFF. That is why X Layer — the FUNDING rail, not a settlement rail —
      * has to be enabled explicitly too: there is no implicit trust for "the chain we already use".
      */
-    chainEnabled: (chain) => flagOn(env[chainFlagName(chain)]),
+    chainEnabled: (chain) => flagOn(firstSet(env, chainFlagNames(chain))),
     /**
      * An asset with no flag falls back to its CHAIN's flag. Enumerating every token would make
      * adding one a two-variable change that is easy to half-do; the asset flag exists to DENY a
      * specific token on an otherwise-enabled chain, which is the case that actually arises.
      */
     assetEnabled: (asset) => {
-      const explicit = env[assetFlagName(asset)];
+      const explicit = firstSet(env, assetFlagNames(asset));
       if (explicit !== undefined) return flagOn(explicit);
-      return flagOn(env[chainFlagName(asset.chain)]);
+      return flagOn(firstSet(env, chainFlagNames(asset.chain)));
     },
     snapshot: (providerIds) => {
       const out: Record<string, boolean> = {
@@ -90,6 +132,17 @@ export function loadConsumerFlags(env: NodeJS.ProcessEnv = process.env): Consume
         CONSUMER_LIVE_SMOKE_ENABLED: liveSmokeEnabled,
       };
       for (const id of providerIds) out[providerFlagName(id)] = flagOn(env[providerFlagName(id)]);
+      // Alias variables appear in the snapshot ONLY when actually set, so a boot log shows the
+      // operator the name they really used rather than a canonical form they never typed.
+      for (const [chain, alias] of Object.entries(CHAIN_ALIASES)) {
+        const canonical = chainFlagName(chain as CaipChainId);
+        if (env[canonical] !== undefined) out[canonical] = flagOn(env[canonical]);
+        if (env[alias] !== undefined) out[alias] = flagOn(env[alias]);
+      }
+      for (const [key, alias] of Object.entries(ASSET_ALIASES)) {
+        if (env[alias] !== undefined) out[alias] = flagOn(env[alias]);
+        void key;
+      }
       return out;
     },
   };
