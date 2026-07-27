@@ -1,0 +1,836 @@
+{
+  "note": "Real captures from live providers on 2026-07-27. Re-fetch with internal/consumer-pack-evidence/probe-*.mjs. These are the inputs the protocol tests assert against — not hand-written approximations.",
+  "capturedAt": "2026-07-27T17:14:00Z",
+  "stabledomainsRegister402": {
+    "x402Version": 2,
+    "resource": {
+      "url": "https://stabledomains.dev/api/register",
+      "method": "POST",
+      "description": "Register a domain. Prerequisite: verified profile via POST /api/profile + verify-email (after POST /api/check). Body: { domain } only — owner wallet is taken from the x402/MPP payment. Never ask the user for a wallet address. Never send wallet, firstName, email, or address in the body.",
+      "mimeType": "application/json",
+      "tags": [
+        "Register"
+      ],
+      "serviceName": "StableDomains"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "20000000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "20000000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "AssHGiwFsgsB8BXQrPnkyB8NoNtJRHxQgkYCwTB9jpt7",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+        }
+      }
+    ],
+    "extensions": {
+      "bazaar": {
+        "info": {
+          "input": {
+            "type": "http",
+            "method": "POST",
+            "bodyType": "json",
+            "body": {}
+          }
+        },
+        "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "http"
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "POST",
+                    "PUT",
+                    "PATCH"
+                  ]
+                },
+                "bodyType": {
+                  "type": "string",
+                  "enum": [
+                    "json",
+                    "form-data",
+                    "text"
+                  ]
+                },
+                "body": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "domain": {
+                      "type": "string",
+                      "description": "Full domain (e.g. \"example.com\"). Supported TLDs (28): .ai, .app, .biz, .cloud, .co, .com, .dev, .email, .info, .io, .link, .live, .me, .mobi, .name, .net, .online, .org, .page, .pro, .shop, .site, .store, .studio, .tech, .tv, .uk, .xyz."
+                    }
+                  },
+                  "required": [
+                    "domain"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "method",
+                "bodyType",
+                "body"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "input"
+          ]
+        }
+      }
+    }
+  },
+  "stabledomainsCheck402": {
+    "x402Version": 2,
+    "resource": {
+      "url": "https://stabledomains.dev/api/check",
+      "method": "POST",
+      "description": "Check domain availability and registration price. Body: { domain }. First step when user names a domain. After purchase confirmation, if readyToRegister is false collect profile via POST /api/profile + verify-email, then POST /api/register with { domain } only — never ask the user for wallet.",
+      "mimeType": "application/json",
+      "tags": [
+        "Check"
+      ],
+      "serviceName": "StableDomains"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "50000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "50000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "AssHGiwFsgsB8BXQrPnkyB8NoNtJRHxQgkYCwTB9jpt7",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+        }
+      }
+    ],
+    "extensions": {
+      "bazaar": {
+        "info": {
+          "input": {
+            "type": "http",
+            "method": "POST",
+            "bodyType": "json",
+            "body": {}
+          }
+        },
+        "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "http"
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "POST",
+                    "PUT",
+                    "PATCH"
+                  ]
+                },
+                "bodyType": {
+                  "type": "string",
+                  "enum": [
+                    "json",
+                    "form-data",
+                    "text"
+                  ]
+                },
+                "body": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "domain": {
+                      "type": "string",
+                      "description": "Full domain (e.g. \"example.com\"). Supported TLDs (28): .ai, .app, .biz, .cloud, .co, .com, .dev, .email, .info, .io, .link, .live, .me, .mobi, .name, .net, .online, .org, .page, .pro, .shop, .site, .store, .studio, .tech, .tv, .uk, .xyz."
+                    }
+                  },
+                  "required": [
+                    "domain"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "method",
+                "bodyType",
+                "body"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "input"
+          ]
+        }
+      }
+    }
+  },
+  "stableemailSend402": {
+    "x402Version": 2,
+    "resource": {
+      "url": "https://stableemail.dev/api/send",
+      "method": "POST",
+      "description": "Send an email from \"StableEmail\" <relay@stableemail.dev> ($0.02)",
+      "mimeType": "application/json",
+      "tags": [
+        "Send"
+      ],
+      "serviceName": "StableEmail"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "20000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "20000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "HvBMG7ezcwDssxXP7DPJJsveyDnvUm2wNySBR5WF2XEY",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+        }
+      }
+    ],
+    "extensions": {
+      "bazaar": {
+        "info": {
+          "input": {
+            "type": "http",
+            "method": "POST",
+            "bodyType": "json",
+            "body": {}
+          }
+        },
+        "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "http"
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "POST",
+                    "PUT",
+                    "PATCH"
+                  ]
+                },
+                "bodyType": {
+                  "type": "string",
+                  "enum": [
+                    "json",
+                    "form-data",
+                    "text"
+                  ]
+                },
+                "body": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "to": {
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "email",
+                        "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                      }
+                    },
+                    "cc": {
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "email",
+                        "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                      }
+                    },
+                    "subject": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 998
+                    },
+                    "html": {
+                      "type": "string",
+                      "maxLength": 256000
+                    },
+                    "text": {
+                      "type": "string",
+                      "maxLength": 256000
+                    },
+                    "replyTo": {
+                      "type": "string",
+                      "format": "email",
+                      "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    },
+                    "attachments": {
+                      "maxItems": 5,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "content": {
+                            "type": "string",
+                            "maxLength": 5000000
+                          },
+                          "contentType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          "filename": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          }
+                        },
+                        "required": [
+                          "content",
+                          "contentType",
+                          "filename"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "to",
+                    "subject"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "method",
+                "bodyType",
+                "body"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "input"
+          ]
+        }
+      }
+    }
+  },
+  "purchSearch402": {
+    "x402Version": 2,
+    "error": "Payment required",
+    "resource": {
+      "url": "http://api.purch.xyz/x402/search?q=wireless+headphones",
+      "description": "Product search with filters",
+      "mimeType": "application/json"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "10000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+        }
+      }
+    ],
+    "extensions": {
+      "bazaar": {
+        "info": {
+          "input": {
+            "type": "http",
+            "queryParams": {
+              "q": "wireless headphones"
+            },
+            "method": "GET"
+          },
+          "output": {
+            "type": "json",
+            "example": {
+              "products": [
+                {
+                  "asin": "B0CXYZ1234",
+                  "title": "Wireless Headphones",
+                  "price": 79.99,
+                  "currency": "USD",
+                  "source": "amazon"
+                }
+              ],
+              "totalResults": 150,
+              "page": 1,
+              "hasMore": true
+            }
+          }
+        },
+        "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "http"
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "GET"
+                  ]
+                },
+                "queryParams": {
+                  "type": "object",
+                  "properties": {
+                    "q": {
+                      "type": "string",
+                      "description": "Search query"
+                    },
+                    "priceMin": {
+                      "type": "number",
+                      "description": "Minimum price filter"
+                    },
+                    "priceMax": {
+                      "type": "number",
+                      "description": "Maximum price filter"
+                    },
+                    "brand": {
+                      "type": "string",
+                      "description": "Filter by brand"
+                    },
+                    "page": {
+                      "type": "integer",
+                      "description": "Page number for pagination"
+                    }
+                  },
+                  "required": [
+                    "q"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "method"
+              ],
+              "additionalProperties": false
+            },
+            "output": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "example": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "required": [
+            "input"
+          ]
+        }
+      }
+    }
+  },
+  "purchVaultDownload402": {
+    "x402Version": 2,
+    "error": "Payment required",
+    "resource": {
+      "url": "http://api.purch.xyz/x402/vault/download?id=1",
+      "description": "Download purchased vault item file. URL: /x402/vault/download/:purchaseId?downloadToken=...&txSignature=...",
+      "mimeType": "application/json"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "10000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+        }
+      }
+    ],
+    "extensions": {
+      "bazaar": {
+        "info": {
+          "input": {
+            "type": "http",
+            "queryParams": {
+              "purchaseId": "550e8400-e29b-41d4-a716-446655440000",
+              "downloadToken": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+            },
+            "method": "GET"
+          },
+          "output": {
+            "type": "json",
+            "example": "binary file download (ZIP)"
+          }
+        },
+        "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "http"
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "GET"
+                  ]
+                },
+                "queryParams": {
+                  "type": "object",
+                  "properties": {
+                    "purchaseId": {
+                      "type": "string",
+                      "description": "Purchase ID (UUID) — path parameter"
+                    },
+                    "downloadToken": {
+                      "type": "string",
+                      "description": "Secret download token from buy response"
+                    },
+                    "txSignature": {
+                      "type": "string",
+                      "description": "On-chain tx signature. Required for first download, optional for re-downloads."
+                    }
+                  },
+                  "required": [
+                    "purchaseId",
+                    "downloadToken"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "method"
+              ],
+              "additionalProperties": false
+            },
+            "output": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "example": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "required": [
+            "input"
+          ]
+        }
+      }
+    }
+  },
+  "stabledomainsDnsSiwx402": {
+    "x402Version": 2,
+    "error": "SIWX authentication required",
+    "resource": {
+      "url": "https://stabledomains.dev/api/domain/dns",
+      "description": "SIWX-protected endpoint",
+      "mimeType": "application/json"
+    },
+    "accepts": [],
+    "extensions": {
+      "sign-in-with-x": {
+        "info": {
+          "domain": "stabledomains.dev",
+          "uri": "https://stabledomains.dev/api/domain/dns",
+          "version": "1",
+          "chainId": "eip155:8453",
+          "type": "eip191",
+          "nonce": "3fcfeb904a1d44328110efcf938cb5b7",
+          "issuedAt": "2026-07-27T17:14:27.113Z",
+          "expirationTime": "2026-07-27T17:19:27.113Z",
+          "statement": "Sign in to verify your wallet identity"
+        },
+        "supportedChains": [
+          {
+            "chainId": "eip155:8453",
+            "type": "eip191"
+          },
+          {
+            "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            "type": "ed25519"
+          }
+        ],
+        "schema": {
+          "sign-in-with-x": {
+            "info": {
+              "version": "1"
+            },
+            "supportedChains": [],
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "string"
+                },
+                "statement": {
+                  "type": "string"
+                },
+                "uri": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "chainId": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "nonce": {
+                  "type": "string"
+                },
+                "issuedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "expirationTime": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "notBefore": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "requestId": {
+                  "type": "string"
+                },
+                "resources": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "signature": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "domain",
+                "address",
+                "uri",
+                "version",
+                "chainId",
+                "type",
+                "nonce",
+                "issuedAt",
+                "signature"
+              ]
+            },
+            "_options": {}
+          }
+        }
+      }
+    }
+  },
+  "stablemerchDraftsSiwx402": {
+    "x402Version": 2,
+    "error": "SIWX authentication required",
+    "resource": {
+      "url": "https://stablemerch.dev/api/drafts",
+      "description": "Create or resume an unpaid StableMerch preview draft. This creates the Printify product mockups without requiring shipping/contact details or creating a Printify order.",
+      "mimeType": "application/json"
+    },
+    "accepts": [],
+    "extensions": {
+      "sign-in-with-x": {
+        "info": {
+          "domain": "stablemerch.dev",
+          "uri": "https://stablemerch.dev/api/drafts",
+          "version": "1",
+          "chainId": "eip155:8453",
+          "type": "eip191",
+          "nonce": "aa4ce3ae76564628bfdb8a5142f7eb9c",
+          "issuedAt": "2026-07-27T17:14:29.755Z",
+          "expirationTime": "2026-07-27T17:19:29.755Z",
+          "statement": "Sign in to verify your wallet identity"
+        },
+        "supportedChains": [
+          {
+            "chainId": "eip155:8453",
+            "type": "eip191"
+          },
+          {
+            "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            "type": "ed25519"
+          }
+        ],
+        "schema": {
+          "sign-in-with-x": {
+            "info": {
+              "version": "1"
+            },
+            "supportedChains": [],
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "string"
+                },
+                "statement": {
+                  "type": "string"
+                },
+                "uri": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "chainId": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "nonce": {
+                  "type": "string"
+                },
+                "issuedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "expirationTime": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "notBefore": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "requestId": {
+                  "type": "string"
+                },
+                "resources": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "signature": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "domain",
+                "address",
+                "uri",
+                "version",
+                "chainId",
+                "type",
+                "nonce",
+                "issuedAt",
+                "signature"
+              ]
+            },
+            "_options": {}
+          }
+        }
+      }
+    }
+  },
+  "mppWwwAuthenticate": {
+    "stabledomainsDns": "Payment id=\"WhXuST4cvJuPoWup9yJQ1WAnBdnmdCzkTEDkOL6-kdQ\", realm=\"stabledomains.dev\", method=\"tempo\", intent=\"charge\", request=\"eyJhbW91bnQiOiIwIiwiY3VycmVuY3kiOiIweDIwYzAwMDAwMDAwMDAwMDAwMDAwMDAwMGI5NTM3ZDExYzYwZThiNTAiLCJtZXRob2REZXRhaWxzIjp7ImNoYWluSWQiOjQyMTd9LCJyZWNpcGllbnQiOiIweEFCY2IwOTFEOTA0MTlFMWM4QUQ0ODE4ZjFCMzNGQzQ2NDU1MDE4OTIifQ\", expires=\"2026-07-27T17:19:27.114Z\"",
+    "stablemerchDrafts": "Payment id=\"VWNFyro5dCaGCHACBH44B40ggjw86mt2vTGn-DHA4JA\", realm=\"stablemerch.dev\", method=\"tempo\", intent=\"charge\", request=\"eyJhbW91bnQiOiIwIiwiY3VycmVuY3kiOiIweDIwYzAwMDAwMDAwMDAwMDAwMDAwMDAwMGI5NTM3ZDExYzYwZThiNTAiLCJtZXRob2REZXRhaWxzIjp7ImNoYWluSWQiOjQyMTd9LCJyZWNpcGllbnQiOiIweENBM0NmRmRjMjE2NDQzYTk1RmNkZTFkNTJhMzI2NDVhMzRDN0I1RjAifQ\", expires=\"2026-07-27T17:19:29.756Z\""
+  }
+}

@@ -1,0 +1,240 @@
+/**
+ * The provider registry seed.
+ *
+ * This file is the single place where a provider's maturity is asserted, and every `provenance`
+ * string below is a factual statement about a request that was actually made on 2026-07-27. The raw
+ * evidence is committed under internal/consumer-pack-evidence/ and can be re-fetched with
+ * `probe-discovery.mjs` / `probe-paid-endpoints.mjs`.
+ *
+ * NOTHING here is `verified`, and that is not an oversight. Promotion to `verified` requires a real
+ * settled payment from an Untch treasury wallet plus a verified delivery, which requires a funded
+ * treasury key. No such key exists in this environment (see docs/consumer-pack-runbook.md →
+ * "Promoting a provider"), so `verified` is unreachable and the seed says so rather than asserting a
+ * status nobody has earned.
+ *
+ * Read the maturity column as: "what is the weakest link in this integration?"
+ */
+
+import {
+  BASE_MAINNET,
+  SOLANA_MAINNET,
+  type ProviderCapabilityRecord,
+  type ProviderRecord,
+} from "@untch/consumer-core";
+import { PURCH_BASE_URL } from "./adapters/purch";
+import { STABLEDOMAINS_BASE_URL } from "./adapters/stabledomains";
+import { STABLEEMAIL_BASE_URL } from "./adapters/stableemail";
+import { STABLEMERCH_BASE_URL } from "./adapters/stablemerch";
+import { STABLETRAVEL_BASE_URL } from "./adapters/stabletravel";
+
+export interface ProviderSeed {
+  readonly provider: ProviderRecord;
+  readonly capabilities: readonly ProviderCapabilityRecord[];
+}
+
+export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
+  {
+    provider: {
+      providerId: "stabledomains",
+      displayName: "StableDomains",
+      maturity: "sandbox",
+      baseUrl: STABLEDOMAINS_BASE_URL,
+      protocol: "x402",
+      chains: [BASE_MAINNET, SOLANA_MAINNET],
+      provenance:
+        "2026-07-27: POST /api/search, /api/check, /api/register and /api/domain/renew each returned a " +
+        "402 with a populated accepts[] offering Base USDC (0x8335…2913, payTo 0xABcb…1892, EIP-3009 " +
+        "domain {name:'USD Coin',version:'2'}) and Solana USDC. Live prices read from those challenges: " +
+        "search $0.01, check $0.05, register $20.00, renew $20.00. Full OpenAPI (14 paths) and " +
+        ".well-known/x402 both fetched. SANDBOX, not verified: no settlement has ever been made from an " +
+        "Untch treasury wallet, because no Base treasury key is configured.",
+      enabled: true,
+    },
+    capabilities: [
+      {
+        providerId: "stabledomains",
+        capability: "domains.check",
+        maturity: "sandbox",
+        notes: "POST /api/check, $0.05, Base USDC. Returns availability, currentPrice and readyToRegister.",
+      },
+      {
+        providerId: "stabledomains",
+        capability: "domains.quote",
+        maturity: "sandbox",
+        notes: "check + an unpaid 402 probe of /api/register for the exact atomic price.",
+      },
+      {
+        providerId: "stabledomains",
+        capability: "domains.register",
+        maturity: "sandbox",
+        notes:
+          "POST /api/register, dynamic price. PREREQUISITE: a verified ICANN registrant profile, " +
+          "created and email-verified over SIWX. execute() refuses without it rather than spending first.",
+      },
+      {
+        providerId: "stabledomains",
+        capability: "domains.renew",
+        maturity: "sandbox",
+        notes: "POST /api/domain/renew, 1-10 years, dynamic price.",
+      },
+      {
+        providerId: "stabledomains",
+        capability: "domains.dns",
+        maturity: "experimental",
+        notes:
+          "SIWX-gated (402 with an empty accepts[] plus a sign-in-with-x extension). The SIWX leg has " +
+          "never been exercised against the live service, so the EIP-4361 rendering this build produces " +
+          "is unproven.",
+      },
+    ],
+  },
+
+  {
+    provider: {
+      providerId: "stableemail",
+      displayName: "StableEmail",
+      maturity: "sandbox",
+      baseUrl: STABLEEMAIL_BASE_URL,
+      protocol: "x402",
+      chains: [BASE_MAINNET, SOLANA_MAINNET],
+      provenance:
+        "2026-07-27: POST /api/send returned a 402 offering Base USDC (payTo 0xdb5a…0671) and Solana " +
+        "USDC at a fixed $0.02, matching its OpenAPI x-payment-info. Full OpenAPI (25 paths) and " +
+        ".well-known/x402 fetched. SANDBOX: no settlement from an Untch treasury wallet has occurred.",
+      enabled: true,
+    },
+    capabilities: [
+      { providerId: "stableemail", capability: "notify.confirmation", maturity: "sandbox", notes: "POST /api/send, $0.02." },
+      { providerId: "stableemail", capability: "notify.receipt", maturity: "sandbox", notes: "POST /api/send, $0.02." },
+      { providerId: "stableemail", capability: "notify.exception", maturity: "sandbox", notes: "POST /api/send, $0.02." },
+    ],
+  },
+
+  {
+    provider: {
+      providerId: "stabletravel",
+      displayName: "StableTravel",
+      maturity: "sandbox",
+      baseUrl: STABLETRAVEL_BASE_URL,
+      protocol: "x402",
+      chains: [BASE_MAINNET, SOLANA_MAINNET],
+      provenance:
+        "2026-07-27: OpenAPI fetched — 45 paths, zero booking paths. Its own x-guidance states the API " +
+        "'does not issue tickets, hold reservations, or take payment for travel' and that there are 'no " +
+        "hotel, activity, or ground-transfer endpoints'. This CONTRADICTS deep-research-report (4).md, " +
+        "which described 74 endpoints with end-to-end booking and cancellation. Registered as a flight " +
+        "DATA provider only: it declares no travel.quote or travel.book capability, so the registry " +
+        "cannot route a booking to it.",
+      enabled: true,
+    },
+    capabilities: [
+      {
+        providerId: "stabletravel",
+        capability: "travel.search",
+        maturity: "sandbox",
+        notes: "GET /api/google-flights/search, $0.02. Live cash fares with price_insights.",
+      },
+      {
+        providerId: "stabletravel",
+        capability: "travel.compare",
+        maturity: "sandbox",
+        notes: "GET /api/google-flights/booking, $0.02. Airline and OTA booking links for one itinerary.",
+      },
+    ],
+  },
+
+  {
+    provider: {
+      providerId: "purch",
+      displayName: "Purch",
+      maturity: "experimental",
+      baseUrl: PURCH_BASE_URL,
+      protocol: "x402",
+      chains: [SOLANA_MAINNET],
+      provenance:
+        "2026-07-27: /x402/search, /x402/shop, /x402/vault/search and /x402/vault/download all returned " +
+        "402s offering exactly ONE option, on solana:5eykt4Us… in USDC (mint EPjFWd…Dt1v, payTo " +
+        "8LiXrHC6…6HT2, sponsoring feePayer BENrLoUb…R9SP). NO Base option appears in any Purch " +
+        "challenge, and its OpenAPI states 'All endpoints are payable via the x402 protocol (USDC on " +
+        "Solana).' EXPERIMENTAL: this build cannot construct a Solana x402 payload it can vouch for, so " +
+        "every Purch call — including search — ends at PROTOCOL_NOT_EXECUTABLE. Promotion needs the " +
+        "Solana rail finished AND a funded Solana treasury.",
+      enabled: true,
+    },
+    capabilities: [
+      {
+        providerId: "purch",
+        capability: "shop.search",
+        maturity: "experimental",
+        notes: "GET /x402/search, $0.01, Solana only — unpayable in this build.",
+      },
+      {
+        providerId: "purch",
+        capability: "shop.quote",
+        maturity: "experimental",
+        notes: "Unpaid 402 probe of /x402/buy (pricingMode 'quote' — total includes tax and shipping).",
+      },
+      {
+        providerId: "purch",
+        capability: "shop.purchase",
+        maturity: "experimental",
+        notes: "POST /x402/buy, dynamic total, Solana only — unpayable in this build.",
+      },
+      {
+        providerId: "purch",
+        capability: "shop.track",
+        maturity: "experimental",
+        notes: "GET /x402/track, $0.52 per call, Solana only.",
+      },
+    ],
+  },
+
+  {
+    provider: {
+      providerId: "stablemerch",
+      displayName: "StableMerch",
+      maturity: "experimental",
+      baseUrl: STABLEMERCH_BASE_URL,
+      protocol: "siwx",
+      chains: [BASE_MAINNET, SOLANA_MAINNET],
+      provenance:
+        "2026-07-27: GET /api/catalog and POST /api/drafts both returned a 402 with an EMPTY accepts[] " +
+        "plus a sign-in-with-x extension (eip155:8453/eip191 or solana/ed25519) — i.e. SIWX " +
+        "authentication, NOT payment. Its OpenAPI declares securitySchemes.siwx as a SIGN-IN-WITH-X " +
+        "header and marks /api/drafts security:[{siwx:[]}]. Only /api/drafts/{id}/commit carries " +
+        "x-payment-info (dynamic $0.01-$50.00, x402 + MPP). EXPERIMENTAL: four of the five steps need a " +
+        "wallet identity, CONSUMER_SIWX_PRIVATE_KEY is unset here, and the EIP-4361 rendering this build " +
+        "produces has never been accepted by StableMerch's verifier.",
+      enabled: true,
+    },
+    capabilities: [
+      {
+        providerId: "stablemerch",
+        capability: "gifts.quote",
+        maturity: "experimental",
+        notes: "SIWX draft → prepare-order → unpaid 402 probe of commit.",
+      },
+      {
+        providerId: "stablemerch",
+        capability: "gifts.order",
+        maturity: "experimental",
+        notes: "POST /api/drafts/{id}/commit, dynamic $0.01-$50.00.",
+      },
+      {
+        providerId: "stablemerch",
+        capability: "gifts.track",
+        maturity: "experimental",
+        notes: "GET /api/drafts/{id}, SIWX-gated.",
+      },
+    ],
+  },
+]);
+
+/** Every capability any seeded provider declares — what the ASP's routes can possibly resolve. */
+export function seededCapabilities(): readonly string[] {
+  const out = new Set<string>();
+  for (const seed of PROVIDER_SEEDS) {
+    for (const cap of seed.capabilities) out.add(cap.capability);
+  }
+  return [...out].sort();
+}
