@@ -1,0 +1,3551 @@
+[
+  {
+    "provider": "purch",
+    "method": "GET",
+    "url": "https://api.purch.xyz/x402/search?q=wireless+headphones",
+    "status": 402,
+    "contentType": "application/json",
+    "paymentRequired": {
+      "x402Version": 2,
+      "error": "Payment required",
+      "resource": {
+        "url": "http://api.purch.xyz/x402/search?q=wireless+headphones",
+        "description": "Product search with filters",
+        "mimeType": "application/json"
+      },
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          "amount": "10000",
+          "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "payTo": "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2",
+          "maxTimeoutSeconds": 300,
+          "extra": {
+            "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+          }
+        }
+      ],
+      "extensions": {
+        "bazaar": {
+          "info": {
+            "input": {
+              "type": "http",
+              "queryParams": {
+                "q": "wireless headphones"
+              },
+              "method": "GET"
+            },
+            "output": {
+              "type": "json",
+              "example": {
+                "products": [
+                  {
+                    "asin": "B0CXYZ1234",
+                    "title": "Wireless Headphones",
+                    "price": 79.99,
+                    "currency": "USD",
+                    "source": "amazon"
+                  }
+                ],
+                "totalResults": 150,
+                "page": 1,
+                "hasMore": true
+              }
+            }
+          },
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "http"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "GET"
+                    ]
+                  },
+                  "queryParams": {
+                    "type": "object",
+                    "properties": {
+                      "q": {
+                        "type": "string",
+                        "description": "Search query"
+                      },
+                      "priceMin": {
+                        "type": "number",
+                        "description": "Minimum price filter"
+                      },
+                      "priceMax": {
+                        "type": "number",
+                        "description": "Maximum price filter"
+                      },
+                      "brand": {
+                        "type": "string",
+                        "description": "Filter by brand"
+                      },
+                      "page": {
+                        "type": "integer",
+                        "description": "Page number for pagination"
+                      }
+                    },
+                    "required": [
+                      "q"
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "method"
+                ],
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "example": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "required": [
+              "input"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "provider": "purch",
+    "method": "GET",
+    "url": "https://api.purch.xyz/x402/shop?q=coffee+mug",
+    "status": 402,
+    "contentType": "application/json"
+  },
+  {
+    "provider": "purch",
+    "method": "POST",
+    "url": "https://api.purch.xyz/x402/buy",
+    "status": 400,
+    "contentType": "application/json"
+  },
+  {
+    "provider": "purch",
+    "method": "GET",
+    "url": "https://api.purch.xyz/x402/vault/search?q=skill",
+    "status": 402,
+    "contentType": "application/json",
+    "paymentRequired": {
+      "x402Version": 2,
+      "error": "Payment required",
+      "resource": {
+        "url": "http://api.purch.xyz/x402/vault/search?q=skill",
+        "description": "Search vault items (skills, knowledge, personas)",
+        "mimeType": "application/json"
+      },
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          "amount": "10000",
+          "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          "payTo": "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2",
+          "maxTimeoutSeconds": 300,
+          "extra": {
+            "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+          }
+        }
+      ],
+      "extensions": {
+        "bazaar": {
+          "info": {
+            "input": {
+              "type": "http",
+              "queryParams": {
+                "q": "marketing automation"
+              },
+              "method": "GET"
+            },
+            "output": {
+              "type": "json",
+              "example": {
+                "items": [
+                  {
+                    "slug": "marketing-automation-pro",
+                    "title": "Marketing Automation Pro",
+                    "productType": "skill",
+                    "price": 5,
+                    "category": "marketing"
+                  }
+                ],
+                "nextCursor": null
+              }
+            }
+          },
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "http"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "GET"
+                    ]
+                  },
+                  "queryParams": {
+                    "type": "object",
+                    "properties": {
+                      "q": {
+                        "type": "string",
+                        "description": "Search query"
+                      },
+                      "category": {
+                        "type": "string",
+                        "description": "Filter by category",
+                        "enum": [
+                          "marketing",
+                          "development",
+                          "automation",
+                          "career",
+                          "ios",
+                          "productivity"
+                        ]
+                      },
+                      "productType": {
+                        "type": "string",
+                        "description": "Filter by type",
+                        "enum": [
+                          "skill",
+                          "knowledge",
+                          "persona"
+                        ]
+                      },
+                      "minPrice": {
+                        "type": "integer",
+                        "description": "Minimum price in USDC (whole units)"
+                      },
+                      "maxPrice": {
+                        "type": "integer",
+                        "description": "Maximum price in USDC (whole units)"
+                      },
+                      "cursor": {
+                        "type": "string",
+                        "description": "Pagination cursor (UUID)"
+                      },
+                      "limit": {
+                        "type": "integer",
+                        "description": "Items per page (1-100, default 30)"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "type",
+                  "method"
+                ],
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "example": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "required": [
+              "input"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "provider": "purch",
+    "method": "GET",
+    "url": "https://api.purch.xyz/",
+    "status": 200,
+    "contentType": "text/html; charset=UTF-8",
+    "bodySnippet": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n    <meta name=\"description\" content=\"Search and buy products on Amazon and Shopify, track shipments across 2,500 carriers, and get skills, knowledge or personas in Purch Vault\" />\n    <title>Purch</title>\n  </head>\n  <body>\n    \n    <div>\n      <div id=\"swagger-ui\"></div>\n      <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui.css\" />\n      <script src=\"https://cdn.jsdelivr.net/npm/swagger-ui-dist/swagger-ui-bundle"
+  },
+  {
+    "provider": "purch",
+    "method": "GET",
+    "url": "https://api.purch.xyz/x402/openapi.json",
+    "status": 404,
+    "contentType": "application/json",
+    "openapiSummary": {
+      "description": "",
+      "paths": [],
+      "securitySchemes": null
+    }
+  },
+  {
+    "provider": "purch",
+    "method": "GET",
+    "url": "https://purch.xyz/skills.md",
+    "status": 404,
+    "contentType": "text/html; charset=utf-8",
+    "bodySnippet": "<!DOCTYPE html><!--G5expoyCjA4xrQ3DCqFN0--><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/a29737bd256ab66c.css?dpl=dpl_BLiPtKaQA3viZw2YmbYs6eXV6Kqx\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks/f18e4cba10e9a0fa.js?dpl=dpl_BLiPtKaQA3viZw2YmbYs6eXV6Kqx\"/><script src=\"/_next/static/chunks/5a4c3adbd5d48f84.js?dpl=dpl_BLiPtKaQA3viZw2YmbYs6eXV6Kqx\" async=\"\"></script><script src=\"/_next/static/chunks/713f68c1ff38dbc0.js?dpl=dpl_"
+  },
+  {
+    "provider": "stabledomains",
+    "method": "GET",
+    "url": "https://stabledomains.dev/skills.md",
+    "status": 200,
+    "contentType": "text/markdown; charset=utf-8",
+    "bodySnippet": "# StableDomains — Agent Skill\n\nRegister a domain on [stabledomains.dev](https://stabledomains.dev) end-to-end using **AgentCash**. No API keys. Identity is your wallet; paid routes settle in USDC via x402/MPP.\n\nUse this when a user asks you to buy, register, check, renew, or manage DNS for a domain through StableDomains.\n\n## 1. Install AgentCash (if needed)\n\nAgentCash is invoked via `npx` — nothing to install globally. First run creates a wallet at `~/.agentcash/wallet.json`.\n\n```bash\n# Check whether a wallet already exists and see balance\nnpx agentcash@latest balance\n\n# First-time setup (wall"
+  },
+  {
+    "provider": "stabledomains",
+    "method": "GET",
+    "url": "https://stabledomains.dev/openapi.json",
+    "status": 200,
+    "contentType": "application/json",
+    "openapiSummary": {
+      "title": "StableDomains",
+      "version": "1.0.0",
+      "description": "Domain registration via micropayments. Pay with USDC. No API keys. No accounts.",
+      "paths": [
+        {
+          "method": "POST",
+          "path": "/api/domain/renew",
+          "summary": "Renew a domain for 1-10 years.",
+          "paymentInfo": {
+            "price": {
+              "mode": "dynamic",
+              "currency": "USD",
+              "min": "0",
+              "max": "1500.00"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/cron/complete-registrations",
+          "summary": "cron/complete-registrations",
+          "paymentInfo": null,
+          "auth": null,
+          "security": []
+        },
+        {
+          "method": "POST",
+          "path": "/api/check",
+          "summary": "Check domain availability and registration price. Body: { domain }. First step when user names a domain. After purchase ",
+          "paymentInfo": {
+            "price": {
+              "mode": "dynamic",
+              "currency": "USD",
+              "min": "0",
+              "max": "0.10"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/register",
+          "summary": "Register a domain. Prerequisite: verified profile via POST /api/profile + verify-email (after POST /api/check). Body: { ",
+          "paymentInfo": {
+            "price": {
+              "mode": "dynamic",
+              "currency": "USD",
+              "min": "0",
+              "max": "200.00"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/search",
+          "summary": "Search one domain name across every StableDomains-supported TLD. Body: { name }. Returns availableDomains[] and matching",
+          "paymentInfo": {
+            "price": {
+              "mode": "dynamic",
+              "currency": "USD",
+              "min": "0",
+              "max": "0.01"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/domain/list",
+          "summary": "domain/list",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/domain/status",
+          "summary": "domain/status",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/domain/dns",
+          "summary": "domain/dns",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/domain/dns",
+          "summary": "domain/dns",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/domain/transfer-out",
+          "summary": "domain/transfer-out",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/domain/verify",
+          "summary": "Look up the _stabledomains TXT attestation for a domain via public DNS. Optional wallet param checks a match.",
+          "paymentInfo": null,
+          "auth": null,
+          "security": []
+        },
+        {
+          "method": "GET",
+          "path": "/api/profile",
+          "summary": "profile",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/profile",
+          "summary": "Save ICANN registrant contact after POST /api/check purchase confirmation. Body: { firstName, lastName, email, addressLi",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/profile/verify-email",
+          "summary": "Verify email OTP. Body: { code } — 6-digit string. Field name is code, not otp. On success, proceed to POST /api/registe",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        }
+      ],
+      "securitySchemes": {
+        "siwx": {
+          "type": "apiKey",
+          "in": "header",
+          "name": "SIGN-IN-WITH-X"
+        }
+      }
+    }
+  },
+  {
+    "provider": "stabledomains",
+    "method": "GET",
+    "url": "https://stabledomains.dev/api/domains/check?domain=untchtest123.xyz",
+    "status": 404,
+    "contentType": "application/json"
+  },
+  {
+    "provider": "stabledomains",
+    "method": "GET",
+    "url": "https://stabledomains.dev/api/check?domain=untchtest123.xyz",
+    "status": 405,
+    "contentType": null
+  },
+  {
+    "provider": "stabledomains",
+    "method": "GET",
+    "url": "https://stabledomains.dev/.well-known/x402",
+    "status": 200,
+    "contentType": "application/json",
+    "wellKnown": {
+      "version": 1,
+      "resources": [
+        "https://stabledomains.dev/api/domain/renew",
+        "https://stabledomains.dev/api/check",
+        "https://stabledomains.dev/api/register",
+        "https://stabledomains.dev/api/search",
+        "https://stabledomains.dev/api/domain/list",
+        "https://stabledomains.dev/api/domain/status",
+        "https://stabledomains.dev/api/domain/dns",
+        "https://stabledomains.dev/api/domain/transfer-out",
+        "https://stabledomains.dev/api/profile",
+        "https://stabledomains.dev/api/profile/verify-email"
+      ],
+      "mppResources": [
+        "https://stabledomains.dev/api/domain/renew",
+        "https://stabledomains.dev/api/check",
+        "https://stabledomains.dev/api/register",
+        "https://stabledomains.dev/api/search"
+      ],
+      "description": "Domain registration via micropayments. Pay with USDC. No API keys. No accounts.",
+      "instructions": "# StableDomains API\n> Domain registration via x402/MPP micropayments. No accounts. Pay USDC on Base, Solana, or Tempo.\n\n## Base URL\nhttps://stabledomains.dev\n\n## Auth\n- x402/MPP: HTTP 402 payment protocol. Paid endpoints.\n- SIWX: Wallet signature. Domain management and profile endpoints.\n\n## Agent Workflow\n1. Discover with `agentcash discover https://stabledomains.dev --include-guidance`.\n2. Before the first POST fetch on any structured-body endpoint, call `check_endpoint_schema` (or `agentcash check <url> -m POST`) to confirm exact field names and pricing.\n3. Profile uses broken-down ICANN fields (`firstName`, `addressLine1`, etc.) — not `name` or `address`. Verify-email uses `code` — not `otp`.\n4. **Never ask the user for a wallet address.** Paid routes identify the owner from the x402/MPP payment. Register body is `{ domain }` only — no wallet field.\n\n## Happy path (register a domain)\n1. POST /api/search (x402/MPP) — optional when user has a name but no TLD. Body: { \"name\": \"coolstartup\" } (or \"coolstartup.com\" — uses the label before the first dot). Returns one row per supported TLD with availability only (no prices). Or skip to step 2 if they already picked a full domain.\n2. POST /api/check (x402/MPP) — body: { \"domain\": \"example.com\" }. Confirm availability and currentPrice for one exact domain before purchase. Quote price to user; get explicit purchase confirmation before step 3.\n3. Read `readyToRegister` from the search/check response (uses the paying wallet). If `true`, skip steps 4–5 — do not collect ICANN contact again. If `false`, continue below.\n4. POST /api/profile (SIWX) — ICANN registrant contact. Body: { firstName, lastName, email, addressLine1, addressLine2?, city, state?, postalCode, country } — not name, not address. Triggers a 6-digit OTP email. Only when `readyToRegister` is false and user confirms purchase at the quoted price.\n5. POST /api/profile/verify-email (SIWX) — body: { \"code\": \"482913\" }. Field is code, not otp. Confirms email before registration. Skip when `readyToRegister` is true.\n6. POST /api/register (x402/MPP) — body: { \"domain\": \"example.com\" } only. Owner wallet comes from the x402/MPP payment — never ask the user for wallet and never send wallet in the body. Do not send name, email, or address here — profile is already stored server-side.\n7. Poll GET /api/domain/status until active; a confirmation email is sent to the profile email on success.\n\n## Endpoints\n\n### GET /api/profile\nRead the authenticated wallet's profile. Auth: SIWX.\nResponse: { wallet, profile, emailVerified, readyToRegister, next }\nIf readyToRegister is true, skip ICANN contact collection and proceed to POST /api/register after purchase confirmation.\n\n### POST /api/profile\nSave or update ICANN registrant contact (required before register). Auth: SIWX.\nCall after POST /api/check when the user confirms purchase at the quoted price.\nBody: { firstName, lastName, email, addressLine1, addressLine2?, city, state?, postalCode, country }\nDo not send { name }, { address }, or combined name/address — use the broken-down fields below.\ncountry is ISO 3166-1 alpha-2 (e.g. \"US\"). Sends a 6-digit OTP to email.\n\nExample:\n```json\n{\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Lovelace\",\n  \"email\": \"ada@example.com\",\n  \"addressLine1\": \"123 Main St\",\n  \"city\": \"San Francisco\",\n  \"state\": \"CA\",\n  \"postalCode\": \"94105\",\n  \"country\": \"US\"\n}\n```\n\n### POST /api/profile/verify-email\nVerify the OTP from email. Auth: SIWX.\nBody: { \"code\": \"482913\" } — field name is code, not otp. Must be exactly 6 digits.\nDo not send { otp }.\nOn success, response nextStep directs you to POST /api/register — profile fields are not sent again in the register body.\n\nExample:\n```json\n{ \"code\": \"482913\" }\n```\n\n### POST /api/search\nSearch one name across every purchasable TLD. Auth: x402/MPP. Price: $0.01 flat.\nBody: { \"name\": \"coolstartup\" } — or { \"name\": \"coolstartup.com\" } (only the label before the first dot is used).\nAlways returns one row per supported TLD (28 total): .com, .org, .net, .info, .biz, .co, .me, .mobi, .name, .tv, .uk, .cloud, .shop, .store, .tech, .online, .site, .pro, .email, .studio, .page, .link, .live, .xyz, .dev, .app, .io, .ai.\nResponse: { name, tlds, results[], availableDomains[], availableCount, profile?, readyToRegister?, next } — **available domains only** (taken TLDs omitted).\nWhen presenting search results to the user, render **availableDomains** as a markdown bullet list with **one domain per line**. Never comma-join domains. Do not quote registration prices from search — use POST /api/check on the chosen domain.\nWhen availableCount > 0, includes profile readiness for the paying wallet: wallet (informational — do not ask the user), profile { hasProfile, emailVerified, email }, readyToRegister, and next links. If readyToRegister is true, next points to register only — do not ask for ICANN contact or wallet.\nEach result row in results[]: { domain, available, tld, premium } — available rows only; prefer availableDomains for user-facing output.\nAfter the user picks a domain, POST /api/check on that exact name for availability and currentPrice before profile/register.\n\n### POST /api/check\nCheck availability and pricing. Auth: x402/MPP. Use when the user already picked one exact domain — not for multi-TLD discovery (use POST /api/search instead).\nBody: { \"domain\": \"example.com\" }\nResponse: { domain, available, currentPrice, tld, profile?, readyToRegister?, next, ... } — ignore basePrice, bondingMultiplier, dailySlotsRemaining in user-facing text.\nWhen available is true, includes wallet (informational — do not ask the user) and profile readiness for the paying wallet. If readyToRegister is true, do not collect ICANN contact — follow next.register after user confirms purchase.\nIf available is false, the domain cannot be registered.\nWhen reporting to the user, quote only: available/not, domain, currentPrice (registration total), and TLD. Do not mention base price, bonding multiplier, or daily slots remaining.\nAfter user confirms purchase: if readyToRegister is false, collect profile via POST /api/profile + verify-email; then register.\n**Rate limit:** Shares a global 1-per-10-seconds Porkbun quota with registration pre-checks. Do not fire parallel /api/check calls — serialize them. On HTTP 503, read `retryAfter` (seconds) and wait before retrying.\n\n### POST /api/register\nRegister a domain. Auth: x402/MPP. Last step — requires verified profile from steps 2–3.\nBody: { \"domain\": \"example.com\" } only. Owner wallet is taken from the x402/MPP payment — never ask the user for wallet and never include wallet in the body. Never include firstName, email, or address.\nResponse: { domain, status, registrationEmailSent, next }\nUsually synchronous (~3s). If status is \"pending\", poll GET /api/domain/status until \"active\".\nRegistration publishes a _stabledomains TXT record: stabledomains-owner=v1;wallet={ownerWallet}\n\n### GET /api/domain/verify?domain=example.com\nPublic ownership attestation lookup. No auth.\nReads _stabledomains.{domain} TXT from public DNS.\nResponse: { domain, verified, attestation: { recordName, wallet, value }, registeredWithStableDomains, status? }\nOptional query: wallet=0x... adds walletMatches: true|false.\nPoll until verified is true after registration (DNS propagation may take minutes).\n\n### POST /api/domain/renew\nRenew for 1-10 years. Auth: x402/MPP.\nBody: { \"domain\": \"example.com\", \"count\": 3 }\ncount defaults to 1. Price = per-year renewal price × count.\n\n### GET /api/domain/list\nList domains owned by authenticated wallet. Auth: SIWX.\nResponse: array of { domain, status, expiresAt, daysRemaining, renewalPrice, icannVerified }\n\n### GET /api/domain/status?domain=example.com\nRegistration status and DNS propagation. Auth: SIWX.\nResponse: { domain, status, nsPropagated, nameservers, dnsRecords, expiresAt }\nAfter registration, poll until nsPropagated is true before configuring DNS.\n\n### GET/POST /api/domain/dns\nRead or modify DNS records. Auth: SIWX.\nGET query: ?domain=example.com\nPOST body: { \"domain\": \"example.com\", \"action\": \"upsert\"|\"delete\", \"records\": [{ \"type\": \"A\", \"name\": \"example.com\", \"value\": \"1.2.3.4\", \"ttl\": 300 }] }\nSupported types: A, AAAA, CNAME, MX, TXT, SRV, CAA. NS cannot be modified.\nThe _stabledomains.{domain} TXT attestation is owner-editable (upsert only, not deletable) and syncs ownerWallet when updated.\nAttestation format: stabledomains-owner=v1;wallet={address}\nMX values include priority (e.g., \"10 mail.example.com\"). ttl defaults to 300.\n\n### POST /api/domain/transfer-out\nTransfer to another registrar. Auth: SIWX.\nBody: { \"domain\": \"example.com\" }\n60-day lock after registration per ICANN policy.\n\n## TLDs and Pricing\n- Purchasable TLDs (28): .com, .org, .net, .info, .biz, .co, .me, .mobi, .name, .tv, .uk, .cloud, .shop, .store, .tech, .online, .site, .pro, .email, .studio, .page, .link, .live, .xyz, .dev, .app, .io, .ai\n- .com/.org/.net/.info/.biz/.co/.me/.mobi/.name/.uk: $20 reg, $20 renew, $0.01 check\n- .cloud/.shop/.store/.tech/.online/.site/.pro/.email/.studio/.page/.link/.live/.xyz: $20 reg, $20 renew, $0.05 check\n- .tv: $40 reg, $40 renew, $0.01 check\n- .dev/.app: $25 reg, $25 renew, $0.05 check\n- .io: $85 reg, $85 renew, $0.05 check\n- .ai: $150 reg, $150 renew, $0.05 check\n- POST /api/search: $0.01 flat (one row per supported TLD)\n\n## Bonding Curve (internal — do not quote to users)\nPrices increase as daily slots fill (max 10/day): slots 1-5 at 1.0x, 6-7 at 1.5x, 8-9 at 2.5x, slot 10 at 5.0x. Users only see currentPrice from /api/check.\n"
+    }
+  },
+  {
+    "provider": "stablemerch",
+    "method": "GET",
+    "url": "https://stablemerch.dev/skills.md",
+    "status": 404,
+    "contentType": "text/html; charset=utf-8",
+    "bodySnippet": "<!DOCTYPE html><!--BQwHjRqdprrF5cSkJtwnF--><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/518cea193ff69008.css?dpl=dpl_Ab7Pakt4f8Wj9LmELpCFCQJXZuGj\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks/2435f2f3bd4a4e85.js?dpl=dpl_Ab7Pakt4f8Wj9LmELpCFCQJXZuGj\"/><script src=\"/_next/static/chunks/c9d3f070b659f1b2.js?dpl=dpl_Ab7Pakt4f8Wj9LmELpCFCQJXZuGj\" async=\"\"></script><script src=\"/_next/static/chunks/cf33e3efad133f5b.js?dpl=dpl_"
+  },
+  {
+    "provider": "stablemerch",
+    "method": "GET",
+    "url": "https://stablemerch.dev/openapi.json",
+    "status": 200,
+    "contentType": "application/json",
+    "openapiSummary": {
+      "title": "StableMerch API",
+      "version": "1.0.0",
+      "description": "Custom merch API for making custom shirts, custom t-shirts, heavyweight shirts, and mugs from provided images. Agents create preview drafts, show mockups, then complete x402 or mpp checkout after approval. Supports optional referral commissions added on top of the base price.",
+      "paths": [
+        {
+          "method": "GET",
+          "path": "/api/catalog",
+          "summary": "List StableMerch products available for the draft-and-commit flow.",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/drafts",
+          "summary": "Create or resume an unpaid StableMerch preview draft. This creates the Printify product mockups without requiring shippi",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/drafts",
+          "summary": "List StableMerch drafts and orders for the signing wallet.",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/drafts/{draftId}",
+          "summary": "Retrieve an unpaid preview draft, prepared order, or committed StableMerch order by draft ID. Requires the signing walle",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/drafts/{draftId}/retry",
+          "summary": "Retry a failed unpaid draft. StableMerch resumes from the first missing Printify preview side effect and never recreates",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/drafts/{draftId}/cancel",
+          "summary": "Cancel an unpaid StableMerch draft and its prepared Printify order. Requires the signing wallet that owns the draft.",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/drafts/{draftId}/prepare-order",
+          "summary": "Prepare a Printify order for a preview-ready StableMerch draft after the user approves the mockups and provides UCP buye",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/drafts/{draftId}/commit",
+          "summary": "Pay for a prepared StableMerch draft and send its existing Manual-approval Printify order to production. Requires draft ",
+          "paymentInfo": {
+            "price": {
+              "mode": "dynamic",
+              "currency": "USD",
+              "min": "0.01",
+              "max": "50.00"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ],
+            "has_checkout": true
+          },
+          "auth": null,
+          "security": null
+        }
+      ],
+      "securitySchemes": {
+        "siwx": {
+          "type": "apiKey",
+          "in": "header",
+          "name": "SIGN-IN-WITH-X"
+        }
+      }
+    }
+  },
+  {
+    "provider": "stablemerch",
+    "method": "GET",
+    "url": "https://stablemerch.dev/.well-known/x402",
+    "status": 200,
+    "contentType": "application/json",
+    "wellKnown": {
+      "version": 1,
+      "resources": [
+        "http://stablemerch.dev/api/catalog",
+        "http://stablemerch.dev/api/drafts",
+        "http://stablemerch.dev/api/drafts/{draftId}",
+        "http://stablemerch.dev/api/drafts/{draftId}/retry",
+        "http://stablemerch.dev/api/drafts/{draftId}/cancel",
+        "http://stablemerch.dev/api/drafts/{draftId}/prepare-order",
+        "http://stablemerch.dev/api/drafts/{draftId}/commit"
+      ],
+      "mppResources": [
+        "http://stablemerch.dev/api/drafts/{draftId}/commit"
+      ],
+      "description": "Custom merch API for making custom shirts, custom t-shirts, heavyweight shirts, and mugs from provided images. Agents create preview drafts, show mockups, then complete x402 or mpp checkout after approval. Supports optional referral commissions added on top of the base price.",
+      "instructions": "\n# StableMerch API\n\nStableMerch is a custom merch API for making custom shirts, custom t-shirts, heavyweight shirts, and mugs from provided images. Use the preview-prepare-commit flow: create a preview draft first with SIWX, immediately show the Printify preview images, prepare the unpaid Printify order only after the user approves the preview, then pay only after the order is prepared.\n\n## Required Flow\n\n1. GET /api/catalog\n   Browse supported products and variants. Current products are:\n   - shirt\n   - heavyweight-shirt\n   - mug\n\n2. POST /api/drafts with SIWX\n   Create or resume an unpaid draft. The request must include:\n   - client_request_id: idempotency key for this intended order\n   - product_slug: shirt, heavyweight-shirt, or mug\n   - image_url: HTTP/HTTPS URL or base64 data URL\n   - product options such as size, color, placement when applicable\n   - optional commission_address and commission_rate\n\n   Do not ask for shipping address, phone, or email before this step. StableMerch validates the product options, uploads the image to Printify, and creates a Printify product for mockup previews. No Printify order is created and no payment is requested during draft creation.\n\n   A successful preview draft returns status preview_ready, preview_urls, prepare_order_url, and commit_url: null. Immediately render the preview_urls as Markdown image embeds for the user. Do not respond with only text, IDs, bare links, or commit instructions. If the client supports image sizing, render preview embeds at about 300px wide. The first preview_url is usually the primary/front mockup; show it using Markdown image syntax:\n   ![Front view](<first preview_url>)\n\n   Then show 1-2 additional useful angles as Markdown image embeds:\n   ![Left view](<left preview_url>)\n   ![Right view](<right preview_url>)\n   ![Context view](<context preview_url>)\n\n   Do not paste bare preview URLs for the primary/front, left, or right previews. If there are many preview_urls, embed the primary/front preview plus the best 1-2 alternate angles at about 300px wide when the client supports sizing, and optionally mention that more preview angles are available. This applies to both shirts and mugs. After showing the images, ask whether the user is happy with the draft and wants to buy it, wants to modify it by creating a new draft, or wants to cancel it.\n\n3. GET /api/drafts/{draftId} with SIWX\n   Inspect draft status, preview_urls, selected options, price, expiration, prepare_order_url, commit_url, and printify_order_id. If preview_urls are present, render the primary/front preview and 1-2 useful alternate angles as Markdown image embeds with descriptive alt text. If the client supports image sizing, keep these embeds about 300px wide. Do not paste bare URLs for those primary previews. Then ask whether the user is happy and wants to buy, wants to modify the product by creating a new draft, or wants to cancel. Only discuss prepare-order after the user has seen the images and explicitly says they are happy with the preview. Only discuss or call commit after status is order_ready and commit_url is non-null.\n\n4. POST /api/drafts/{draftId}/prepare-order with SIWX\n   Call this only after the user has seen the preview images and says they want to buy. Collect UCP buyer and fulfillment shipping/contact details at this point, including buyer.email and phone_number. Clients may autofill buyer/fulfillment from an address book, but the user should review it before submission. Body must include { \"draft_id\": \"<same draft id from URL>\", \"buyer\": { ... }, \"fulfillment\": { \"methods\": [{ \"type\": \"shipping\", \"selected_destination_id\": \"ship_to\", \"destinations\": [{ \"id\": \"ship_to\", ... }] }] } }. StableMerch creates the Manual-approval Printify order for the existing preview product and returns status order_ready, printify_order_id, commit_url, optional checkout_session, and prepare_order_url: null. This step is unpaid.\n\n5. POST /api/drafts/{draftId}/retry with SIWX\n   Retry a failed retryable draft. Reuse this when Printify returns 429 or a temporary error. StableMerch resumes from the last stored Printify preview side effect and does not recreate stored uploads or products.\n\n6. POST /api/drafts/{draftId}/cancel with SIWX\n   Cancel an unpaid draft when the user does not like the preview or no longer wants the order. If a Printify order exists, StableMerch cancels it before marking the draft cancelled. Do not use cancel for committed or paid drafts.\n\n7. POST /api/drafts/{draftId}/commit with x402 or mpp\n   Body must be { \"draft_id\": \"<same draft id from URL>\" }. This is the only paid step. Use it only when status is order_ready. StableMerch sends the existing Printify order to production after payment verification. If checkout_session is present, clients can use it to render the high-intent review UI and then call its complete handler, which points at this same paid commit URL.\n\n8. GET /api/drafts or GET /api/drafts/{draftId} with SIWX\n   Recover previous drafts, committed orders, or drafts needing review.\n\n## Idempotency\n\nPOST /api/drafts requires client_request_id. Reuse the same client_request_id only when retrying the exact same intended draft. Reusing it with different input returns a conflict.\n\nCommit is idempotent by draft_id. If a draft is already committed, calling commit again returns the stored committed result rather than creating another Printify order.\n\nCancel is idempotent by draft_id. If a draft is already cancelled, calling cancel again returns the stored cancelled result.\n\n## UCP Shipping Fulfillment\n\nprepare-order accepts UCP buyer plus fulfillment metadata. Use buyer.email for the contact email. The selected shipping destination must include:\n- id\n- first_name/last_name or full_name split into first/last names\n- phone_number: required for Printify shipping\n- address_country: ISO-3166-1 alpha-2 country code, e.g. US\n- address_region: state/province code\n- street_address\n- extended_address: optional\n- address_locality\n- postal_code\n\nWhen EasyPost is configured, prepare-order validates the shipping address before creating the Printify order. Address validation errors return 400 and leave the draft in preview_ready so the agent can retry with corrected fulfillment.\n\n400 address errors use this JSON shape: { \"success\": false, \"error\": \"<code>\", \"message\": \"<human-readable>\", \"details\": { ... } }.\n\nINVALID_ADDRESS example:\n{ \"success\": false, \"error\": \"INVALID_ADDRESS\", \"message\": \"Shipping address could not be verified\", \"details\": { \"easypost_code\": \"E.ADDRESS.NOT_FOUND\", \"submitted_address\": { \"first_name\", \"last_name\", \"email\", \"phone\", \"country\", \"region\", \"address1\", \"address2\", \"city\", \"zip\" } } }\n\nADDRESS_CORRECTION_REQUIRED example:\n{ \"success\": false, \"error\": \"ADDRESS_CORRECTION_REQUIRED\", \"message\": \"EasyPost normalized the shipping address; update fulfillment and retry prepare-order\", \"details\": { \"submitted_address\": { ... }, \"suggested_address\": { ... }, \"changed_fields\": [\"zip\"] } }\n\n- 400 INVALID_ADDRESS — fix the shipping destination and retry prepare-order with the same draft_id\n- 400 ADDRESS_CORRECTION_REQUIRED — read details.suggested_address, map address1/address2/city/region/zip/country back into fulfillment.methods[].destinations[] (street_address, extended_address, address_locality, address_region, postal_code, address_country), then retry prepare-order\n- EasyPost outages are fail-open — prepare-order proceeds with the submitted address when verification is unavailable\n\n## Commissions\n\nDraft creation accepts optional commission fields. When provided, commission is added on top of the base price and forwarded after the paid commit settles.\n\n- commission_address: EVM wallet address\n- commission_rate: decimal between 0 and 1, e.g. 0.1 for 10%\n\n## Important Notes\n\nDo not call old direct product endpoints. StableMerch orders must use previews and drafts so the user can inspect the product before providing shipping/contact details and before payment.\n\nNever ask for shipping/contact details before preview creation. Never present payment as the next action before displaying the preview images. Never call commit while commit_url is null. The correct next action after a successful preview draft is: show the mockup images using Markdown image syntax, then ask whether the user is happy and wants to buy, wants to modify the product by creating a new draft, or wants to cancel.\n\ncheckout_session is display/flow metadata, not the source of truth for payment terms. The paid commit challenge still supplies the exact x402/MPP payment options.\n\nWhen present after prepare-order, checkout_session includes UCP buyer and fulfillment metadata that mirrors the prepared buyer/fulfillment input. Clients with address books should map their stored address into UCP fulfillment for prepare-order, then render checkout_session.fulfillment as the final shipping review before commit.\n"
+    }
+  },
+  {
+    "provider": "stableemail",
+    "method": "GET",
+    "url": "https://stableemail.dev/skills.md",
+    "status": 404,
+    "contentType": "text/html; charset=utf-8",
+    "bodySnippet": "<!DOCTYPE html><!--hkAtW9_fxERjG82YjCCD_--><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/40111ae4fc4254c9.css?dpl=dpl_36ms1cnECcSzU3rRUnteeDvSHHAn\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks/7236f3cfbf2ed7c1.js?dpl=dpl_36ms1cnECcSzU3rRUnteeDvSHHAn\"/><script src=\"/_next/static/chunks/d2b887256cd80b33.js?dpl=dpl_36ms1cnECcSzU3rRUnteeDvSHHAn\" async=\"\"></script><script src=\"/_next/static/chunks/0809af79bf7bbc63.js?dpl=dpl_"
+  },
+  {
+    "provider": "stableemail",
+    "method": "GET",
+    "url": "https://stableemail.dev/openapi.json",
+    "status": 200,
+    "contentType": "application/json",
+    "openapiSummary": {
+      "title": "StableEmail",
+      "version": "0.1.0",
+      "description": "Pay-per-send email delivery. No API keys, no accounts.",
+      "paths": [
+        {
+          "method": "POST",
+          "path": "/api/send",
+          "summary": "Send an email from \"StableEmail\" <relay@stableemail.dev> ($0.02)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.02"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/buy",
+          "summary": "Purchase a custom email subdomain on stableemail.dev ($5)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "5"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/send",
+          "summary": "Send email from your custom subdomain on stableemail.dev ($0.005)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.005"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/buy",
+          "summary": "Buy an inbox on stableemail.dev ($1, 30 days). forwardTo is optional — omit it to use as a programmatic mailbox via the ",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "1"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/send",
+          "summary": "Send email from your forwarding inbox on stableemail.dev ($0.005)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.005"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/topup",
+          "summary": "Top up a forwarding inbox for 30 days ($1)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "1"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/topup/quarter",
+          "summary": "Top up a forwarding inbox for 90 days ($2.50, save 17%)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "2.5"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/topup/year",
+          "summary": "Top up a forwarding inbox for 365 days ($8, save 34%)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "8"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/messages",
+          "summary": "List messages in your inbox ($0.001)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.001"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/messages/read",
+          "summary": "Read a single inbox message ($0.001). Returns text, HTML, and attachment download URLs (1hr expiry). Message content ava",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.001"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/inbox/create",
+          "summary": "Create an inbox on your subdomain ($0.25). Max 100 inboxes, 500 messages each. Message content and attachments retained ",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.25"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/inbox/messages",
+          "summary": "List messages in a subdomain inbox ($0.001)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.001"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/inbox/messages/read",
+          "summary": "Read a single subdomain inbox message ($0.001). Returns text, HTML, and attachment download URLs (1hr expiry). Message c",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.001"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/subdomain/status",
+          "summary": "Check subdomain status (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/signers",
+          "summary": "Manage authorized signers for a subdomain (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/update",
+          "summary": "Update subdomain settings (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/api/inbox/status",
+          "summary": "Check inbox status (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/list",
+          "summary": "List all inboxes owned by the authenticated wallet (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/update",
+          "summary": "Update inbox settings (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/cancel",
+          "summary": "Cancel inbox and get pro-rata refund (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/inbox/messages/delete",
+          "summary": "Delete a single inbox message (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/inbox/list",
+          "summary": "List inboxes on a subdomain (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/inbox/delete",
+          "summary": "Delete an inbox on a subdomain (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/inbox/update",
+          "summary": "Update subdomain inbox settings (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/subdomain/inbox/messages/delete",
+          "summary": "Delete a single subdomain inbox message (free)",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        }
+      ],
+      "securitySchemes": {
+        "siwx": {
+          "type": "apiKey",
+          "in": "header",
+          "name": "SIGN-IN-WITH-X"
+        }
+      }
+    }
+  },
+  {
+    "provider": "stableemail",
+    "method": "GET",
+    "url": "https://stableemail.dev/.well-known/x402",
+    "status": 200,
+    "contentType": "application/json",
+    "wellKnown": {
+      "version": 1,
+      "resources": [
+        "https://stableemail.dev/api/send",
+        "https://stableemail.dev/api/subdomain/buy",
+        "https://stableemail.dev/api/subdomain/send",
+        "https://stableemail.dev/api/inbox/buy",
+        "https://stableemail.dev/api/inbox/send",
+        "https://stableemail.dev/api/inbox/topup",
+        "https://stableemail.dev/api/inbox/topup/quarter",
+        "https://stableemail.dev/api/inbox/topup/year",
+        "https://stableemail.dev/api/inbox/messages",
+        "https://stableemail.dev/api/inbox/messages/read",
+        "https://stableemail.dev/api/subdomain/inbox/create",
+        "https://stableemail.dev/api/subdomain/inbox/messages",
+        "https://stableemail.dev/api/subdomain/inbox/messages/read",
+        "https://stableemail.dev/api/subdomain/status",
+        "https://stableemail.dev/api/subdomain/signers",
+        "https://stableemail.dev/api/subdomain/update",
+        "https://stableemail.dev/api/inbox/status",
+        "https://stableemail.dev/api/inbox/list",
+        "https://stableemail.dev/api/inbox/update",
+        "https://stableemail.dev/api/inbox/cancel",
+        "https://stableemail.dev/api/inbox/messages/delete",
+        "https://stableemail.dev/api/subdomain/inbox/list",
+        "https://stableemail.dev/api/subdomain/inbox/delete",
+        "https://stableemail.dev/api/subdomain/inbox/update",
+        "https://stableemail.dev/api/subdomain/inbox/messages/delete"
+      ],
+      "mppResources": [
+        "https://stableemail.dev/api/send",
+        "https://stableemail.dev/api/subdomain/buy",
+        "https://stableemail.dev/api/subdomain/send",
+        "https://stableemail.dev/api/inbox/buy",
+        "https://stableemail.dev/api/inbox/send",
+        "https://stableemail.dev/api/inbox/topup",
+        "https://stableemail.dev/api/inbox/topup/quarter",
+        "https://stableemail.dev/api/inbox/topup/year",
+        "https://stableemail.dev/api/inbox/messages",
+        "https://stableemail.dev/api/inbox/messages/read",
+        "https://stableemail.dev/api/subdomain/inbox/create",
+        "https://stableemail.dev/api/subdomain/inbox/messages",
+        "https://stableemail.dev/api/subdomain/inbox/messages/read"
+      ],
+      "description": "Pay-per-send email delivery. No API keys, no accounts.",
+      "instructions": "# StableEmail — Pay-per-send email via micropayments\n\n> Send email with a single HTTP request. No API keys. No accounts. Pay $0.02 per email.\n\n## Base URL\n\nhttps://stableemail.dev\n\n## Discovery\n\nGET /openapi.json\n\n## Endpoints\n\n### POST /api/send — Send email (shared domain)\n- Protection: x402/MPP payment ($0.02 USDC on Base, Solana, or Tempo)\n- Sends from: relay@stableemail.dev\n- Body: { \"to\": [\"email\"], \"cc\": [\"email\"], \"subject\": \"string\", \"html\": \"string\", \"text\": \"string\", \"replyTo\": \"email\", \"attachments\": [{\"content\": \"base64...\", \"contentType\": \"application/pdf\", \"filename\": \"file.pdf\"}] }\n- Requires either \"html\" or \"text\" (or both)\n- \"attachments\" is optional, max 5, each with base64 content (~3.75MB decoded limit), MIME contentType, and filename\n- For calendar invites (.ics), use contentType: \"text/calendar; method=REQUEST\"\n- Returns: { \"success\": true, \"messageId\": \"string\", \"from\": \"string\" }\n\n### POST /api/subdomain/buy — Purchase a custom subdomain\n- Protection: x402/MPP payment ($5 USDC)\n- Body: { \"subdomain\": \"yourname\" }\n- Subdomain rules: 3-30 chars, lowercase alphanumeric + hyphens\n- Creates yourname.stableemail.dev with full email sending capability\n- DNS verification takes ~5 minutes after purchase\n- Returns: { \"success\": true, \"subdomain\": \"yourname.stableemail.dev\", \"dnsStatus\": \"pending\" }\n\n### POST /api/subdomain/send — Send from custom subdomain\n- Protection: x402/MPP payment ($0.005 USDC)\n- Payer wallet must be owner or authorized signer for the subdomain\n- Body: { \"from\": \"you@yourname.stableemail.dev\", \"to\": [\"email\"], \"cc\": [\"email\"], \"subject\": \"string\", \"html\": \"string\", \"text\": \"string\", \"replyTo\": \"email\" }\n- Returns: { \"success\": true, \"messageId\": \"string\", \"from\": \"string\" }\n\n### POST /api/subdomain/signers — Manage authorized wallets\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the subdomain owner can manage signers\n- Body: { \"action\": \"add\" | \"remove\", \"subdomain\": \"yourname\", \"walletAddress\": \"0x...\" }\n- Max 50 signers per subdomain\n\n### POST /api/subdomain/update — Update subdomain settings\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the subdomain owner can update\n- Body: { \"subdomain\": \"yourname\", \"catchAllForwardTo\": \"catch-all@example.com\" }\n- Set catchAllForwardTo to null to remove catch-all forwarding\n- Catch-all forwards emails to unmatched addresses on the subdomain\n\n### GET /api/subdomain/status?subdomain=yourname — Check subdomain status\n- Protection: SIWX wallet proof only (free, no payment)\n- Owner or any signer can check status\n- Returns: { \"subdomain\": \"string\", \"ownerWallet\": \"string\", \"dnsVerified\": bool, \"sesVerified\": bool, \"signerCount\": number, \"signers\": [\"0x...\"] }\n\n## Subdomain Inboxes — Receive Email on Subdomains\n\nSubdomain owners can create per-address inboxes on their subdomain (e.g., `biden@craig.stableemail.dev`). $0.25 to create (x402/MPP payment), cap 100 per subdomain. Each inbox optionally forwards to a real address and/or retains messages for programmatic API access. Unmatched addresses go to the subdomain's catch-all forwarder if set, otherwise silently dropped.\n\n### POST /api/subdomain/inbox/create — Create inbox on subdomain ($0.25)\n- Protection: x402/MPP payment ($0.25 USDC on Base, Solana, or Tempo)\n- Payer wallet must be the subdomain owner\n- Body: { \"subdomain\": \"craig\", \"localPart\": \"biden\", \"forwardTo\": \"joe@gmail.com\" }\n- forwardTo is optional — omit for programmatic-only mailbox (retainMessages auto-enabled)\n- Max 100 inboxes per subdomain, 500 messages per inbox\n- Returns: { \"success\": true, \"inbox\": \"biden@craig.stableemail.dev\", \"retainMessages\": true, \"messageLimit\": 500 }\n\n### POST /api/subdomain/inbox/list — List subdomain inboxes\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the subdomain owner can list\n- Body: { \"subdomain\": \"craig\" }\n- Returns: { \"success\": true, \"inboxes\": [{ \"localPart\": \"string\", \"address\": \"string\", \"forwardTo\": \"string?\", \"retainMessages\": bool, \"active\": bool, \"messageCount\": number, \"unreadCount\": number }] }\n\n### POST /api/subdomain/inbox/update — Update inbox settings\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the subdomain owner can update\n- Body: { \"subdomain\": \"craig\", \"localPart\": \"biden\", \"forwardTo\": \"newemail@example.com\", \"retainMessages\": true }\n- At least one of \"forwardTo\" or \"retainMessages\" is required\n- Set forwardTo to null to remove forwarding\n- Returns: { \"success\": true, \"inbox\": \"biden@craig.stableemail.dev\", \"forwardTo\": \"string?\", \"retainMessages\": bool }\n\n### POST /api/subdomain/inbox/delete — Delete inbox from subdomain\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the subdomain owner can delete\n- Body: { \"subdomain\": \"craig\", \"localPart\": \"biden\" }\n- Cascades: deletes all messages from DB and S3\n- Returns: { \"success\": true, \"deleted\": \"biden@craig.stableemail.dev\", \"messagesDeleted\": number }\n\n### POST /api/subdomain/inbox/messages — List inbox messages\n- Protection: x402/MPP payment ($0.001 USDC on Base, Solana, or Tempo)\n- Payer wallet must be the subdomain owner\n- Body: { \"subdomain\": \"craig\", \"localPart\": \"biden\", \"cursor\": \"message id (optional)\", \"limit\": 20 }\n- Returns: { \"success\": true, \"messages\": [...], \"nextCursor\": \"string?\", \"messageCount\": number, \"messageLimit\": 500, \"warning\": \"string?\" }\n- Warning field appears when inbox is at or near capacity (>=80%). Delete old messages to free space.\n\n### POST /api/subdomain/inbox/messages/read — Read a single message\n- Protection: x402/MPP payment ($0.001 USDC on Base, Solana, or Tempo)\n- Payer wallet must be the subdomain owner\n- Body: { \"messageId\": \"string\" }\n- Returns: { \"success\": true, \"message\": { \"id\": \"string\", \"from\": \"string\", \"to\": [\"string\"], \"subject\": \"string\", \"date\": \"ISO date\", \"text\": \"string\", \"html\": \"string\", \"attachments\": [{ \"filename\": \"string\", \"contentType\": \"string\", \"size\": number }], \"receivedAt\": \"ISO date\" } }\n- Marks the message as read\n\n### POST /api/subdomain/inbox/messages/delete — Delete a message\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the subdomain owner can delete messages\n- Body: { \"messageId\": \"string\" }\n- Returns: { \"success\": true, \"deleted\": \"string\" }\n\n## Forwarding Inbox\n\nBuy `username@stableemail.dev` for $1/month. Use it as a forwarding inbox (emails forwarded to your real address), a programmatic mailbox (read messages via API), or both. You can also send from your inbox address. Duration-based pricing with bulk discounts. Anyone can top up any inbox. Cancel anytime for a pro-rata refund.\n\n### POST /api/inbox/buy — Buy an inbox ($1, 30 days)\n- Protection: x402/MPP payment ($1 USDC on Base, Solana, or Tempo)\n- Body: { \"username\": \"alice\", \"forwardTo\": \"alice@gmail.com\" }\n- forwardTo is optional — omit it to use as a programmatic mailbox (retainMessages enabled automatically, read messages via /api/inbox/messages)\n- Username rules: 3-30 chars, lowercase alphanumeric + hyphens\n- Subdomain owners can buy the matching inbox name (e.g., owner of alice.stableemail.dev can buy alice@stableemail.dev)\n- Returns: { \"success\": true, \"inbox\": \"alice@stableemail.dev\", \"retainMessages\": true, \"expiresAt\": \"ISO date\", \"daysRemaining\": 30 }\n\n### POST /api/inbox/topup — Top up inbox 30 days ($1)\n- Protection: x402/MPP payment ($1 USDC)\n- Anyone can top up any inbox — no SIWX required\n- Body: { \"username\": \"alice\" }\n- Returns: { \"success\": true, \"inbox\": \"alice\", \"expiresAt\": \"ISO date\", \"daysRemaining\": number, \"daysAdded\": 30 }\n\n### POST /api/inbox/topup/quarter — Top up inbox 90 days ($2.50, save 17%)\n- Protection: x402/MPP payment ($2.50 USDC)\n- Anyone can top up any inbox — no SIWX required\n- Body: { \"username\": \"alice\" }\n- Returns: { \"success\": true, \"inbox\": \"alice\", \"expiresAt\": \"ISO date\", \"daysRemaining\": number, \"daysAdded\": 90 }\n\n### POST /api/inbox/topup/year — Top up inbox 365 days ($8, save 34%)\n- Protection: x402/MPP payment ($8 USDC)\n- Anyone can top up any inbox — no SIWX required\n- Body: { \"username\": \"alice\" }\n- Returns: { \"success\": true, \"inbox\": \"alice\", \"expiresAt\": \"ISO date\", \"daysRemaining\": number, \"daysAdded\": 365 }\n\n### POST /api/inbox/send — Send from your inbox address ($0.005)\n- Protection: x402/MPP payment ($0.005 USDC)\n- Payer wallet must be the inbox owner\n- Body: { \"username\": \"alice\", \"to\": [\"bob@example.com\"], \"cc\": [\"carol@example.com\"], \"subject\": \"Hello\", \"html\": \"<p>Hi</p>\", \"text\": \"Hi\", \"replyTo\": \"alice@gmail.com\" }\n- Requires either \"html\" or \"text\" (or both)\n- Returns: { \"success\": true, \"messageId\": \"string\", \"from\": \"alice@stableemail.dev\" }\n\n### GET /api/inbox/status?username=alice — Check inbox status\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the inbox owner can check status\n- Returns: { \"inbox\": \"alice@stableemail.dev\", \"ownerWallet\": \"0x...\", \"forwardTo\": \"email\", \"retainMessages\": bool, \"expiresAt\": \"ISO date\", \"daysRemaining\": number, \"daysOwned\": number, \"active\": bool, \"pricing\": {...} }\n\n### GET /api/inbox/list — List all inboxes owned by the authenticated wallet\n- Protection: SIWX wallet proof only (free, no payment)\n- Returns both standalone inboxes and subdomain inboxes for the caller's wallet\n- Returns: { \"success\": true, \"walletAddress\": \"0x...\", \"standaloneInboxes\": [{ \"username\": \"string\", \"address\": \"string\", \"forwardTo\": \"string?\", \"retainMessages\": bool, \"active\": bool, \"expiresAt\": \"ISO date\", \"daysRemaining\": number, \"messageCount\": number, \"unreadCount\": number, \"createdAt\": \"ISO date\" }], \"subdomains\": [{ \"subdomain\": \"string\", \"inboxes\": [{ \"localPart\": \"string\", \"address\": \"string\", \"forwardTo\": \"string?\", \"retainMessages\": bool, \"active\": bool, \"messageCount\": number, \"unreadCount\": number, \"createdAt\": \"ISO date\" }] }] }\n\n### POST /api/inbox/update — Update inbox settings\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the inbox owner can update\n- Body: { \"username\": \"alice\", \"forwardTo\": \"newemail@example.com\", \"retainMessages\": true }\n- At least one of \"forwardTo\" or \"retainMessages\" is required\n- \"retainMessages\": when true, inbound emails are kept in S3 for programmatic access via the messages API\n- Returns: { \"success\": true, \"inbox\": \"alice@stableemail.dev\", \"forwardTo\": \"newemail@example.com\", \"retainMessages\": true }\n\n### POST /api/inbox/cancel — Cancel inbox and get pro-rata USDC refund\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the inbox owner can cancel\n- Body: { \"username\": \"alice\" }\n- Refund is sent on-chain to the caller's wallet automatically\n- Refunds below $0.01 are waived (too small to transfer)\n- Returns: { \"success\": true, \"inbox\": \"alice@stableemail.dev\", \"cancelled\": true, \"refund\": { \"amount\": \"0.50\", \"currency\": \"USDC\", \"network\": \"eip155:8453\", \"to\": \"0x...\", \"status\": \"completed\", \"transactionHash\": \"0x...\" }, \"daysRemaining\": 15 }\n\n## Inbox Messages API\n\nRead inbound emails programmatically. Requires \"retainMessages\": true on the inbox (set via POST /api/inbox/update).\n\n### POST /api/inbox/messages — List messages\n- Protection: x402/MPP payment ($0.001 USDC on Base, Solana, or Tempo)\n- Payer wallet must be the inbox owner\n- Body: { \"username\": \"alice\", \"cursor\": \"message id (optional)\", \"limit\": 20 }\n- Returns: { \"success\": true, \"messages\": [{ \"id\": \"string\", \"fromEmail\": \"string\", \"subject\": \"string\", \"receivedAt\": \"ISO date\", \"read\": bool }], \"nextCursor\": \"message id (optional)\" }\n- Paginated: pass \"nextCursor\" as \"cursor\" in the next request\n\n### POST /api/inbox/messages/read — Read a single message\n- Protection: x402/MPP payment ($0.001 USDC on Base, Solana, or Tempo)\n- Payer wallet must be the inbox owner\n- Body: { \"messageId\": \"string\" }\n- Returns: { \"success\": true, \"message\": { \"id\": \"string\", \"from\": \"string\", \"to\": [\"string\"], \"subject\": \"string\", \"date\": \"ISO date\", \"text\": \"string\", \"html\": \"string\", \"attachments\": [{ \"filename\": \"string\", \"contentType\": \"string\", \"size\": number }], \"receivedAt\": \"ISO date\" } }\n- Marks the message as read\n\n### POST /api/inbox/messages/delete — Delete a message\n- Protection: SIWX wallet proof only (free, no payment)\n- Only the inbox owner can delete messages\n- Body: { \"messageId\": \"string\" }\n- Removes the message from DB and S3 storage\n- Returns: { \"success\": true, \"deleted\": \"string\" }\n\n## Images in Emails\n\nTo include images, use `<img src=\"url\">` in the \"html\" body. Host images on stableupload.dev (x402/MPP-powered file uploads, see https://stableupload.dev/llms.txt). Upload via x402/MPP payment → get a public URL → reference in HTML. Prefer hosted URLs over base64 data URIs — most email clients strip data URIs.\n\n## Agent Integration\n\nThe recommended way for AI agents to interact with StableEmail is via [agentcash-skills](https://github.com/Merit-Systems/agentcash-skills) — available as an MCP server (`npx -y agentcash@latest`) or CLI (`npx agentcash fetch ...`). It handles payment negotiation and retry logic automatically. Any x402/MPP-compatible client paying USDC on Base, Solana, or Tempo will also work.\n\n## Payment Details\n\n- Network: Base (eip155:8453), Solana, or Tempo\n- Currency: USDC\n- Protocol: x402 (https://www.x402.org) / MPP (https://mpp.dev)\n- Send first request → receive 402 with PAYMENT-REQUIRED header → sign payment → resend with payment header\n\n## SIWX Authentication\n\nFree management endpoints (status, update, cancel, signers) use SIWX for wallet identity verification. These endpoints return a 402 with SIWX challenge in the PAYMENT-REQUIRED header (same flow as x402/MPP payment). x402/MPP-compatible clients (like agentcash) handle this automatically — no special handling needed.\n\nPaid send endpoints identify the wallet from the x402/MPP payment header instead.\n\nSIWX is part of the x402/MPP protocol extensions (CAIP-122 compliant, supports EVM + Solana).\n"
+    }
+  },
+  {
+    "provider": "stabletravel",
+    "method": "GET",
+    "url": "https://stabletravel.dev/skills.md",
+    "status": 404,
+    "contentType": "text/html; charset=utf-8",
+    "bodySnippet": "<!DOCTYPE html><!--rJmi37OZbWptjliNSJUjW--><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/902cce9c745f55ce.css?dpl=dpl_9LDvmcbi3sEKecXJnLecXigtNwgR\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks/a675adf830e727cf.js?dpl=dpl_9LDvmcbi3sEKecXJnLecXigtNwgR\"/><script src=\"/_next/static/chunks/d2b887256cd80b33.js?dpl=dpl_9LDvmcbi3sEKecXJnLecXigtNwgR\" async=\"\"></script><script src=\"/_next/static/chunks/d4ff29fbdbebb0b8.js?dpl=dpl_"
+  },
+  {
+    "provider": "stabletravel",
+    "method": "GET",
+    "url": "https://stabletravel.dev/openapi.json",
+    "status": 200,
+    "contentType": "application/json",
+    "openapiSummary": {
+      "title": "StableTravel",
+      "version": "1.0.0",
+      "description": "Pay-per-request access to flight prices and booking links (Google Flights via SerpAPI), award availability (Seats.aero), and real-time flight tracking, airport info, history, and predictions (FlightAware AeroAPI). No auth, no subscriptions.",
+      "paths": [
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/flights/arrivals",
+          "summary": "Get arrival flights for a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/routes/dest_id",
+          "summary": "Get routes between two airports with historical filing data",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports",
+          "summary": "List all airports with optional pagination",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/disruption-counts/entity_type/id",
+          "summary": "Get disruption counts for a specific entity",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/disruption-counts/entity_type",
+          "summary": "Get disruption counts by entity type (airline, origin, destination)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/flightaware/flights/id/intents",
+          "summary": "Set a flight intent for push notifications",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.001000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/id/position",
+          "summary": "Get the latest position for a flight by fa_flight_id",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/google-flights/booking",
+          "summary": "Get booking options for a specific flight. Requires a departure_token from a search result.",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/seats-aero/routes",
+          "summary": "List airline flight route pairs covered by a Seats.aero mileage program source. These are origin/destination airport pai",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/delays",
+          "summary": "Get all current airport delays across the system",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.100000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/nearby",
+          "summary": "Find airports near a given latitude/longitude coordinate",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.008000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/search/advanced",
+          "summary": "Advanced flight search with extended query syntax",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.100000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/search/count",
+          "summary": "Count the number of flights matching a search query",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/search/positions",
+          "summary": "Search for flights with position data",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.100000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/search",
+          "summary": "Search for flights by query string (-latlong, -idents, -airline syntax)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.100000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/google-flights/search",
+          "summary": "Search Google Flights for flight offers. Returns best flights, other flights, price insights, and airport info.",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/seats-aero/availability",
+          "summary": "Retrieve bulk cached Seats.aero award availability for a mileage program, optionally filtered by region, date, and cabin",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/seats-aero/search",
+          "summary": "Search cached Seats.aero award availability by origin, destination, dates, cabin, carriers, and pagination.",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/id",
+          "summary": "Get flight information by ident (designator, registration, or fa_flight_id)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/id/canonical",
+          "summary": "Get the canonical flight identifier for a given ident",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.002000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/id/track",
+          "summary": "Get the flight track (position history) for a flight",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.024000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/id/route-info",
+          "summary": "Get the filed route for a flight",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/flights/id/map",
+          "summary": "Get a flight track map payload (proxied from FlightAware)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.060000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id",
+          "summary": "Get detailed information for a specific airport by its code",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.030000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/canonical",
+          "summary": "Get the canonical airport code for a given airport identifier",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.002000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/nearby",
+          "summary": "Get airports near a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.008000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/delays",
+          "summary": "Get current delay information for a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/flights",
+          "summary": "Get all flights (arrivals, departures, enroute, scheduled) for an airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/flights/departures",
+          "summary": "Get departure flights for a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/flights/scheduled-departures",
+          "summary": "Get scheduled departure flights for a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/flights/scheduled-arrivals",
+          "summary": "Get scheduled arrival flights for a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/flights/to/dest_id",
+          "summary": "Get flights from one airport to another specific destination airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.100000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/flights/counts",
+          "summary": "Get flight counts (departed, enroute, scheduled) for a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.200000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/weather/observations",
+          "summary": "Get weather observations (METAR) for a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.004000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/airports/id/weather/forecast",
+          "summary": "Get weather forecast (TAF) for a specific airport",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.004000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/flights/id",
+          "summary": "Get historical flight information by ident",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/flights/id/track",
+          "summary": "Get the historical flight track (position history)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.120000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/flights/id/map",
+          "summary": "Get a historical flight map payload (proxied from FlightAware)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.280000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/flights/id/route-info",
+          "summary": "Get the filed route for a historical flight",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.080000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/airports/id/flights/arrivals",
+          "summary": "Get historical airport arrivals",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/airports/id/flights/departures",
+          "summary": "Get historical airport departures",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/airports/id/flights/to/dest_id",
+          "summary": "Get historical flights from one airport to another",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.240000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/aircraft/registration/last-flight",
+          "summary": "Get the last flight for an aircraft by registration",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.400000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/flightaware/history/operators/id/flights",
+          "summary": "Get historical flights for an operator",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/seats-aero/trips/id",
+          "summary": "Retrieve flight-level trip details and booking links for a Seats.aero availability ID.",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        }
+      ],
+      "securitySchemes": null
+    }
+  },
+  {
+    "provider": "stabletravel",
+    "method": "GET",
+    "url": "https://stabletravel.dev/.well-known/x402",
+    "status": 404,
+    "contentType": "text/html; charset=utf-8",
+    "bodySnippet": "<!DOCTYPE html><!--rJmi37OZbWptjliNSJUjW--><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/902cce9c745f55ce.css?dpl=dpl_9LDvmcbi3sEKecXJnLecXigtNwgR\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks/a675adf830e727cf.js?dpl=dpl_9LDvmcbi3sEKecXJnLecXigtNwgR\"/><script src=\"/_next/static/chunks/d2b887256cd80b33.js?dpl=dpl_9LDvmcbi3sEKecXJnLecXigtNwgR\" async=\"\"></script><script src=\"/_next/static/chunks/d4ff29fbdbebb0b8.js?dpl=dpl_"
+  },
+  {
+    "provider": "stableenrich",
+    "method": "GET",
+    "url": "https://stableenrich.dev/openapi.json",
+    "status": 200,
+    "contentType": "application/json",
+    "openapiSummary": {
+      "title": "StableEnrich",
+      "version": "1.0.0",
+      "description": "Pay-per-request access to FullEnrich, CompanyEnrich, LeadMagic, Clado, Exa, Firecrawl, Google Maps, Serper, and Whitepages APIs. No auth, no subscriptions.",
+      "paths": [
+        {
+          "method": "POST",
+          "path": "/api/exa/search",
+          "summary": "Exa Search - Neural search across the web",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/reddit/search",
+          "summary": "Reddit Search - Search Reddit posts",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/clado/contacts-enrich",
+          "summary": "Clado Contacts Enrichment - Enrich contact info from LinkedIn URL, email, or phone",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.200000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/google-maps/place-details/partial",
+          "summary": "Google Maps Place Details (Partial)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/fullenrich/people-search",
+          "summary": "FullEnrich People Search — filter by company domain/name/LinkedIn URL, seniority, title, location, skills, and 20+ FullE",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.140000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/companyenrich/properties-enrich",
+          "summary": "CompanyEnrich Enrich by properties — match by name or social URL when domain is unknown. Best-match disambiguation; veri",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.060000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/exa/contents",
+          "summary": "Exa Contents - Retrieve content from URLs",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.002000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/fullenrich/company-search",
+          "summary": "FullEnrich Company Search — filter by domain, name, LinkedIn URL/ID, industry, type, HQ, headcount, founding year, keywo",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.140000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/pdl/people-enrich",
+          "summary": "PDL Person Enrich — career history, emails, phone. Requires one of: `email`, `profile` (LinkedIn URL), or `first_name` +",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.280000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/firecrawl/search",
+          "summary": "Firecrawl Search - Search the web",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.025200"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/minerva/enrich",
+          "summary": "Minerva Enrich - Enrich person records with demographics, work history, education, contact info, addresses, and financia",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.050000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/whitepages/person-search",
+          "summary": "Whitepages Person Search - Find people by name, phone, address",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.220000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/companyenrich/org-enrich",
+          "summary": "CompanyEnrich Organization Enrich — full company profile by domain. employees/revenue are range strings. Known issue: op",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.060000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/exa/find-similar",
+          "summary": "Exa Find Similar - Find pages similar to a given URL",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/exa/answer",
+          "summary": "Exa Answer - Get AI-generated answers with citations",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/firecrawl/scrape",
+          "summary": "Firecrawl Scrape - Scrape a URL with full JavaScript rendering. Use as a fallback when WebFetch returns empty/JS-only co",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.012600"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/google-maps/text-search/partial",
+          "summary": "Google Maps Text Search (Partial). Pagination: repeat the full original body including textQuery on every page; pageToke",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/google-maps/text-search/full",
+          "summary": "Google Maps Text Search (Full). Pagination: repeat the full original body including textQuery on every page; pageToken i",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.080000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/google-maps/nearby-search/partial",
+          "summary": "Google Maps Nearby Search (Partial). Finds places near a latitude/longitude using Google Places supported type filters. ",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/google-maps/nearby-search/full",
+          "summary": "Google Maps Nearby Search (Full). Finds places near a latitude/longitude using Google Places supported type filters. Use",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.080000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/google-maps/place-details/full",
+          "summary": "Google Maps Place Details (Full)",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.050000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/google-maps/solar/building-insights",
+          "summary": "Google Solar API - Closest building roof insights including imageryDate",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/google-maps/solar/data-layers",
+          "summary": "Google Solar API - Aerial GeoTIFF data layers (rgbUrl, dsmUrl, fluxUrl) with imageryDate",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.080000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/google-maps/solar/rgb-image",
+          "summary": "Google Solar API - Render a Solar GeoTIFF layer (rgb, dsm, flux, shade, or mask) as PNG/JPEG. Pass either a GeoTIFF id o",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.050000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/google-maps/aerial-view/lookup-video",
+          "summary": "Google Aerial View - Look up a previously rendered flyover video by address or videoId",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/google-maps/aerial-view/render-video",
+          "summary": "Google Aerial View - Request rendering of a new aerial flyover video for an address",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/serper/news",
+          "summary": "Serper - Google News search",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/serper/shopping",
+          "summary": "Serper - Google Shopping search",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/serper/images",
+          "summary": "Serper - Google Images search",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/serper/people-image-search",
+          "summary": "Serper - Google Images search tuned for people/headshots. For ambiguous people, resolve the profile slug/company/title f",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.040000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/serper/lens",
+          "summary": "Serper - Google Lens reverse image search",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.200000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/whitepages/property-search",
+          "summary": "Whitepages Property Search — property ownership and residents by address. Use street (aliases: address, street_line, str",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.220000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/reddit/post-comments",
+          "summary": "Reddit Post Comments - Get post details and comments",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/hunter/email-verifier",
+          "summary": "Hunter - Verify email deliverability. Fast and cached verifications return the final result immediately; Hunter pending ",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.030000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/hunter/email-verifier/jobs/{jobId}",
+          "summary": "Poll Hunter email verifier job status. Requires SIWX wallet auth from the same wallet that paid for the verification.",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/api/minerva/resolve",
+          "summary": "Minerva Resolve - Resolve person identity to a Minerva PID and LinkedIn URL. Supports fuzzy matching and reverse lookup ",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.020000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/minerva/validate-emails",
+          "summary": "Minerva Validate Emails - Check if email addresses exist in the Minerva database and retrieve validation status and last",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.010000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "POST",
+          "path": "/api/cloudflare/crawl",
+          "summary": "Cloudflare Browser Rendering Crawl - Start a crawl job and return a token to poll for results. Respects robots.txt and s",
+          "paymentInfo": {
+            "price": {
+              "mode": "fixed",
+              "currency": "USD",
+              "amount": "0.100000"
+            },
+            "protocols": [
+              {
+                "x402": {}
+              },
+              {
+                "mpp": {
+                  "method": "tempo",
+                  "intent": "charge",
+                  "currency": "0x20c000000000000000000000b9537d11c60e8b50"
+                }
+              }
+            ]
+          },
+          "auth": null,
+          "security": null
+        },
+        {
+          "method": "GET",
+          "path": "/api/cloudflare/jobs",
+          "summary": "Poll Cloudflare crawl job status and retrieve results. Requires SIWX wallet auth — only the wallet that paid can poll.",
+          "paymentInfo": null,
+          "auth": null,
+          "security": [
+            {
+              "siwx": []
+            }
+          ]
+        }
+      ],
+      "securitySchemes": {
+        "siwx": {
+          "type": "apiKey",
+          "in": "header",
+          "name": "SIGN-IN-WITH-X"
+        }
+      }
+    }
+  }
+]
