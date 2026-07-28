@@ -66,6 +66,7 @@ const NAV_LINKS: readonly NavLink[] = [
   { label: "Modes", href: "/#modes" },
   { label: "Receipts", href: "/explorer" },
   { label: "Pricing", href: "/pricing" },
+  { label: "Changelog", href: "/changelog" },
   { label: "Docs", href: "https://docs.untch.xyz" },
 ];
 
