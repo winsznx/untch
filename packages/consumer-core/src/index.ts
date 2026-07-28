@@ -222,6 +222,7 @@ export {
   MissingEnvError,
   SPREAD_BPS,
   feeBpsFor,
+  isWellKnownDevKey,
   loadExecutionPolicy,
   loadPublicBaseUrl,
   loadRailKeys,
