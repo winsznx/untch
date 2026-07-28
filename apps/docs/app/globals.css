@@ -522,7 +522,8 @@ html[data-theme="light"] .sidebar a.active {
 .drawer-scrim {
   position: fixed;
   inset: 56px 0 0 0;
-  z-index: 29;
+  /* Above the sticky header's stacking context (z-index 40), below the drawer. */
+  z-index: 55;
   background: rgb(0 0 0 / 45%);
 }
 
@@ -535,8 +536,15 @@ html[data-theme="light"] .sidebar a.active {
 .drawer {
   display: none;
   position: fixed;
-  inset: 56px 0 0 0;
-  z-index: 30;
+  /*
+   * `top: 56px` clears the sticky header; `bottom: 0` makes it full height. `right: auto` is explicit
+   * because `inset` shorthand would otherwise set right:0 and fight the width.
+   */
+  top: 56px;
+  bottom: 0;
+  left: 0;
+  right: auto;
+  z-index: 60;
   width: min(20rem, 86vw);
   border-right: 1px solid var(--border);
   background: var(--canvas);

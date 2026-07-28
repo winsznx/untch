@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { NavGroup } from "@/lib/nav";
 
 /**
@@ -24,6 +25,9 @@ type Item = { readonly slug: string; readonly title: string };
 export function MobileNav({ items, groups }: { items: readonly Item[]; groups: readonly NavGroup[] }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   const activeSlug = pathname === "/" ? "index" : pathname.replace(/^\//, "");
 
@@ -44,6 +48,43 @@ export function MobileNav({ items, groups }: { items: readonly Item[]; groups: r
     };
   }, [open]);
 
+  /**
+   * The drawer is PORTALLED to <body>, and it has to be.
+   *
+   * This component renders inside `<header class="topbar">`, and that header carries
+   * `backdrop-filter: blur(10px)`. A `backdrop-filter` (like `transform` and `filter`) makes the
+   * element a CONTAINING BLOCK for `position: fixed` descendants — so `inset: 56px 0 0 0` resolved
+   * against the 56px-tall header rather than the viewport, and the drawer collapsed to a sliver whose
+   * first line ("START HERE") bled over the article.
+   *
+   * Portalling to <body> escapes that containing block entirely. Moving the markup out of the header
+   * in the layout would work too, but this keeps the trigger and the thing it triggers in one
+   * component, where the relationship is obvious.
+   *
+   * Rendered only after mount: `document` does not exist during the server pass.
+   */
+  const overlay = (
+    <>
+      {open ? <div className="drawer-scrim" onClick={() => setOpen(false)} aria-hidden="true" /> : null}
+      <nav className={`drawer ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Documentation">
+        {groups.map((g) => (
+          <div key={g.group} className="sidebar-group">
+            <p className="sidebar-group-title">{g.group}</p>
+            {g.pages.map((slug) => {
+              const item = items.find((i) => i.slug === slug);
+              const href = slug === "index" ? "/" : `/${slug}`;
+              return (
+                <a key={slug} href={href} className={slug === activeSlug ? "active" : undefined}>
+                  {item?.title ?? slug}
+                </a>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+    </>
+  );
+
   return (
     <>
       <button
@@ -62,24 +103,7 @@ export function MobileNav({ items, groups }: { items: readonly Item[]; groups: r
         </svg>
       </button>
 
-      {open ? <div className="drawer-scrim" onClick={() => setOpen(false)} aria-hidden="true" /> : null}
-
-      <nav className={`drawer ${open ? "open" : ""}`} aria-hidden={!open} aria-label="Documentation">
-        {groups.map((g) => (
-          <div key={g.group} className="sidebar-group">
-            <p className="sidebar-group-title">{g.group}</p>
-            {g.pages.map((slug) => {
-              const item = items.find((i) => i.slug === slug);
-              const href = slug === "index" ? "/" : `/${slug}`;
-              return (
-                <a key={slug} href={href} className={slug === activeSlug ? "active" : undefined}>
-                  {item?.title ?? slug}
-                </a>
-              );
-            })}
-          </div>
-        ))}
-      </nav>
+      {mounted ? createPortal(overlay, document.body) : null}
     </>
   );
 }
