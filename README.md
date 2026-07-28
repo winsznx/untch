@@ -61,14 +61,14 @@ The model proposes. The policy engine decides. **The model never touches the mon
 | **Receipts** | Every decision receipted and publicly checkable; anchored on X Layer **testnet** today. | 🟡 **BETA** — mainnet anchoring pending a 3-day writer timelock |
 | **Trust Bureau** | Receipt-backed vendor and buyer scores with a lower-confidence bound. | 🟢 **LIVE** |
 | **Consumer Pack** | Governed real-world purchasing across merchant rails. | 🟡 **BETA** — one verified capability |
-| **UntchVault** | On-chain fund-holding with oracle-signed spend. | 🟠 **EXPERIMENTAL** — testnet only |
+| **UntchVault** | On-chain fund-holding with oracle-signed spend, deployed via VaultFactory. | 🟡 **BETA** — mainnet, not yet on the production money path |
 
 ---
 
 ## 5. Architecture
 
 ```mermaid
-flowchart TB
+flowchart LR
     A["Agent<br/>(any model, any framework)"] -->|proposes a bounded SpendIntent| B
 
     subgraph UNTCH["Untch authority layer"]
@@ -87,11 +87,6 @@ flowchart TB
     G -->|exact amount, exact recipient| K["Merchant<br/>on the merchant's own rail"]
     H -.->|RDAP, HTTP probe, registry| L["Public source"]
     J --> M["UntchReceipts contract<br/>X Layer"]
-
-    style UNTCH fill:#0d1117,stroke:#30363d,color:#c9d1d9
-    style C fill:#1f6feb,color:#fff
-    style F fill:#8b1a1a,color:#fff
-    style M fill:#238636,color:#fff
 ```
 
 **The model is outside the box.** It can propose anything; it cannot widen what the box permits.
@@ -158,7 +153,6 @@ Every decision returns the rules evaluated and the reason, verbatim, into the re
 ## 8. Exact approvals and mutation rejection 🟢 LIVE
 
 An approval does not authorise "a domain purchase". It authorises **one hash**.
-
 ```
 quoteHash = sha256(canonical quote)
 approval  = signature over that hash
@@ -204,7 +198,6 @@ ledger that can be made to balance by moving the price.
 ## 10. Consumer Sessions 🟢 LIVE
 
 Reading a tenant's intents requires **proof of policy ownership**, not knowledge of a policy id.
-
 ```
 POST /consumer/auth/nonce          → server-issued, single-use, expiring nonce
   ↓ sign a SIWE message naming this domain, that nonce, an X Layer chainId,
@@ -311,10 +304,17 @@ an anchor that does not exist.
 | UntchReceipts | [`0xb5b853684624aea2ecbcd0e888cbff46ff0a5f95`](https://www.oklink.com/x-layer/address/0xb5b853684624aea2ecbcd0e888cbff46ff0a5f95) |
 | VaultFactory | [`0x6cc3bc686a7bc554dbd5636cb3eeee9171036805`](https://www.oklink.com/x-layer/address/0x6cc3bc686a7bc554dbd5636cb3eeee9171036805) |
 
-**UntchVault** (fund-holding, oracle-signed spend) is deployed on **X Layer testnet only** and is
-🟠 EXPERIMENTAL. It is not part of the production money path.
+All four are **live on X Layer mainnet** — verified by reading bytecode at each address.
+`VaultFactory` deploys `UntchVault` instances (fund-holding, EIP-712 oracle-signed spend, gated on a
+cross-contract APPROVED-intent check against the real `SpendIntentRegistry`).
 
-None of the base contracts hold funds — no `payable`, no `receive`, no `fallback` (invariant I4).
+**UntchVault is on mainnet but is not yet on the production money path** — the Consumer Pack settles
+from operator-held floats today, not from vaults. That is a sequencing decision, not a limitation of
+the contract.
+
+None of the four **base** contracts holds funds — no `payable`, no `receive`, no `fallback`
+(invariant I4). A deployed `UntchVault` does hold ERC-20 by design, and only ERC-20: it has no
+payable, receive or fallback either, so it cannot take native OKB.
 
 ---
 
@@ -375,7 +375,6 @@ than against this document.
 ---
 
 ## 18. Repository structure
-
 ```
 contracts/               Solidity — PolicyRegistry, SpendIntentRegistry, UntchReceipts, UntchVault
 packages/
@@ -441,7 +440,6 @@ so a canonical `=0` cannot be re-enabled by a stale friendly `=1`.
 Forward-only, numbered `NNN_name.sql`, each applied once and recorded in a shared
 `schema_migrations` table under one advisory lock, so several packages can migrate the same database
 concurrently.
-
 ```
 001_init            receipts + ledger entries
 002_policies        policy store
@@ -548,8 +546,6 @@ flowchart LR
     WORKER --> RD
     WORKER -->|logReceipts| XL["X Layer mainnet"]
     ASP -->|EIP-3009| BASE["Base mainnet"]
-
-    style RW fill:#0d1117,stroke:#30363d,color:#c9d1d9
 ```
 
 The ASP only ever **enqueues** receipts; it never holds the anchoring key and never touches the
@@ -623,7 +619,8 @@ Stated plainly, because a reviewer will find them anyway.
    provider attestation, which is labelled as such and never presented as independent.
 5. **Solana and Tempo/MPP are not executable.** The payload serialisation could not be confirmed from
    an authoritative source for Solana; MPP is parsed but not settleable.
-6. **UntchVault is testnet only.**
+6. **UntchVault is deployed on mainnet but not yet on the production money path.** The Consumer Pack
+   settles from operator floats; vault-backed settlement is sequenced after it.
 7. **Mainnet receipt anchoring is not yet enabled.** The writer key is not an authorised writer on the
    mainnet `UntchReceipts`, and the contract's writer-set timelock is an immutable **3 days**. All 20
    confirmed receipts to date are **X Layer testnet** anchors. New receipts stay durable and report
@@ -641,7 +638,7 @@ Stated plainly, because a reviewer will find them anyway.
 - Tempo / MPP settlement
 - Gift ordering once the SIWX identity leg is accepted by the provider's verifier
 - Travel **booking** — needs a provider that actually sells inventory
-- UntchVault to mainnet
+- Move Consumer Pack settlement onto vault-backed floats
 - Multi-tenant operator accounts beyond the policy-owner model
 
 ---
