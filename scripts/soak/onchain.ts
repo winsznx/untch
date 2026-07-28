@@ -41,6 +41,9 @@ const APPROVED_INTENT: Hex = "0xc55751e84cd9ae642d583e70c868672ccf8c51ca6d93e884
 const OWNER: Address = "0x98F43eABcaD380f4f1F0587aE945Bc8c79E43c0b";
 
 // anvil account #1 — the vault's current oracle (0x7099…79C8). Publicly known; holds no real funds.
+// ANVIL DEFAULT ACCOUNT #1 — a publicly documented local-dev key, not a secret. It exists in
+// every Anvil install, is used here only against a local fork, and protects nothing. Secret
+// scanners flag it by pattern; that finding is a true positive by shape and a false positive by risk.
 const OLD_ORACLE_KEY: Hex = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
 // anvil account #2 — the rotation target (0x3C44…93BC).
 const NEW_ORACLE_KEY: Hex = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";

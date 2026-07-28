@@ -70,6 +70,9 @@ const DEFAULT_INTENT_HASH: Hex =
 // Fixed throwaway testnet demo oracle key (anvil account #1) — holds no funds, exists only so the demo
 // has an oracle DISTINCT from the owner, showing the oracle key that signs is not the fund sovereign.
 const DEFAULT_ORACLE_KEY: Hex =
+// ANVIL DEFAULT ACCOUNT #1 — a publicly documented local-dev key, not a secret. It exists in
+// every Anvil install, is used here only against a local fork, and protects nothing. Secret
+// scanners flag it by pattern; that finding is a true positive by shape and a false positive by risk.
   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
 
 const DECIMALS = 6;

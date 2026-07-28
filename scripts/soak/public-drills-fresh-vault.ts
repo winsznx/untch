@@ -39,6 +39,9 @@ const CHAIN_ID = 1952;
 const PAYEE: Address = getAddress("0x000000000000000000000000000000000000beef");
 const DUMMY_INTENT: Hex = `0x${"0".repeat(64)}`;
 
+// ANVIL DEFAULT ACCOUNT #1 — a publicly documented local-dev key, not a secret. It exists in
+// every Anvil install, is used here only against a local fork, and protects nothing. Secret
+// scanners flag it by pattern; that finding is a true positive by shape and a false positive by risk.
 const OLD_ORACLE_KEY: Hex = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"; // anvil #1
 const NEW_ORACLE_KEY: Hex = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"; // anvil #2
 const IMPOSTOR_KEY: Hex = "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"; // anvil #3
