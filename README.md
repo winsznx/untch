@@ -69,24 +69,19 @@ The model proposes. The policy engine decides. **The model never touches the mon
 
 ```mermaid
 flowchart LR
-    A["Agent<br/>(any model, any framework)"] -->|proposes a bounded SpendIntent| B
-
-    subgraph UNTCH["Untch authority layer"]
-        B["ASP — x402 seller<br/>asp.untch.xyz"] --> C["Policy engine<br/>14 deterministic rules"]
-        C -->|ALLOW| D["Treasury router<br/>capability-scoped, one intent<br/>one asset, one ceiling"]
-        C -->|ESCALATE| E["Human approval<br/>Telegram · Discord · Slack · dashboard"]
-        C -->|BLOCK| F["Refusal<br/>with a named reason"]
-        E -->|APPROVED| D
-        E -->|DENIED / EXPIRED| F
-        D --> G["Provider adapter<br/>x402 v2 · EIP-3009"]
-        G --> H["Delivery verification<br/>independent source"]
-        H --> I["Double-entry ledger<br/>append-only, sums to zero"]
-        I --> J["Receipt writer<br/>batch → X Layer"]
-    end
-
-    G -->|exact amount, exact recipient| K["Merchant<br/>on the merchant's own rail"]
-    H -.->|RDAP, HTTP probe, registry| L["Public source"]
-    J --> M["UntchReceipts contract<br/>X Layer"]
+    Agent --> ASP["Untch ASP<br/>asp.untch.xyz"]
+    ASP --> Policy["Policy engine<br/>14 rules"]
+    Policy -->|allow| Treasury["Treasury router"]
+    Policy -->|escalate| Human["Human approval"]
+    Policy -->|block| Refusal
+    Human -->|approved| Treasury
+    Human -->|denied| Refusal
+    Treasury --> Adapter["Provider adapter<br/>x402 · EIP-3009"]
+    Adapter --> Merchant["Merchant<br/>own rail"]
+    Adapter --> Verify["Delivery check<br/>RDAP"]
+    Verify --> Ledger["Double-entry ledger"]
+    Ledger --> Writer["Receipt writer"]
+    Writer --> XLayer["X Layer"]
 ```
 
 **The model is outside the box.** It can propose anything; it cannot widen what the box permits.
@@ -530,22 +525,14 @@ Scope ladder: everything → all spending → one provider → one rail → one 
 
 ```mermaid
 flowchart LR
-    subgraph RW["Railway"]
-        ASP["untch-asp<br/>asp.untch.xyz"]
-        WEB["untch-web<br/>untch.xyz"]
-        DOCS["untch-docs<br/>docs.untch.xyz"]
-        WORKER["untch-receipt-writer<br/>anchoring worker"]
-        PG[("Postgres")]
-        RD[("Redis")]
-    end
-
-    ASP --> PG
-    ASP --> RD
-    WEB --> PG
-    WORKER --> PG
-    WORKER --> RD
-    WORKER -->|logReceipts| XL["X Layer mainnet"]
-    ASP -->|EIP-3009| BASE["Base mainnet"]
+    ASP["untch-asp<br/>asp.untch.xyz"] --> Postgres[("Postgres")]
+    ASP --> Redis[("Redis")]
+    ASP -->|EIP-3009| Base["Base mainnet"]
+    Web["untch-web<br/>untch.xyz"] --> Postgres
+    Docs["untch-docs<br/>docs.untch.xyz"]
+    Worker["untch-receipt-writer<br/>anchoring worker"] --> Postgres
+    Worker --> Redis
+    Worker -->|logReceipts| XLayer["X Layer mainnet"]
 ```
 
 The ASP only ever **enqueues** receipts; it never holds the anchoring key and never touches the
