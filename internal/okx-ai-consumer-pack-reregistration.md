@@ -14,6 +14,17 @@ not from source. Where something is not true yet it says so, in the row, without
 
 ---
 
+## 0a. The two sanctioned boundaries — reproduce verbatim in any listing copy
+
+> Current live executions use Untch's operator-funded provider treasury.
+>
+> Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.
+
+Both retire automatically when the underlying fact changes; conditions are in
+`internal/public-claims-matrix.md`.
+
+---
+
 ## 0. What changed since the last submission
 
 | Change | Why a reviewer should care |
