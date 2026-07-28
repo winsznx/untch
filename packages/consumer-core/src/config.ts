@@ -60,17 +60,69 @@ export interface RailKeys {
   readonly tempo: RailKey | null;
 }
 
+
+/**
+ * Well-known DEVELOPMENT keys, rejected outright wherever a real key is expected.
+ *
+ * These are the default accounts every Anvil and Hardhat install ships with. They are published in
+ * the tools' own documentation, they appear in this repository's local-fork scripts and tests, and
+ * anyone in the world can spend from them. Shape validation cannot catch them — they are perfectly
+ * well-formed 32-byte keys.
+ *
+ * The failure this prevents is mundane and therefore likely: someone copies a key out of a soak
+ * script or a test fixture into a `.env` while debugging, and it survives into a deployment. Without
+ * this check the treasury router would accept it and every settlement would sign with an address the
+ * public controls.
+ *
+ * Rejected in EVERY environment, not just production. A "dev-only" escape hatch is exactly the flag
+ * that gets set in production during an incident, and no legitimate local flow needs these keys to
+ * pass through `loadRailKeys` — the local scripts import them directly.
+ */
+const WELL_KNOWN_DEV_KEYS: ReadonlySet<string> = new Set([
+  // Anvil / Hardhat default account #0
+  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  // Anvil / Hardhat default account #1 — the one GitGuardian flags in this repository
+  "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+  // Anvil / Hardhat default account #2
+  "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
+  // Anvil / Hardhat default account #3
+  "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
+  // Anvil / Hardhat default account #4
+  "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a",
+]);
+
+/**
+ * Validates a private key's shape AND that it is not a published development key.
+ *
+ * The error deliberately names the variable and says what to do, because the person who hits it is
+ * mid-incident and should not have to work out why a syntactically valid key was refused.
+ */
+function assertUsableEvmKey(varName: string, value: string): void {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(value)) {
+    throw new Error(`${varName} is not a valid 0x 32-byte private key`);
+  }
+  if (WELL_KNOWN_DEV_KEYS.has(value.toLowerCase())) {
+    throw new Error(
+      `${varName} is a PUBLISHED development key (an Anvil/Hardhat default account). ` +
+        "Anyone can spend from it. Generate a fresh key; never promote one out of a test fixture or a soak script.",
+    );
+  }
+}
+
+/** Exported so a deployment check can assert the same rule without constructing a treasury router. */
+export function isWellKnownDevKey(value: string): boolean {
+  return WELL_KNOWN_DEV_KEYS.has(value.trim().toLowerCase());
+}
+
 export function loadRailKeys(env: NodeJS.ProcessEnv = process.env): RailKeys {
   const base = env.CONSUMER_TREASURY_BASE_PRIVATE_KEY?.trim();
   const solana = env.CONSUMER_TREASURY_SOLANA_SECRET_KEY?.trim();
   const tempo = env.CONSUMER_TREASURY_TEMPO_PRIVATE_KEY?.trim();
 
-  if (base && !/^0x[0-9a-fA-F]{64}$/.test(base)) {
-    throw new Error("CONSUMER_TREASURY_BASE_PRIVATE_KEY is not a valid 0x 32-byte private key");
-  }
-  if (tempo && !/^0x[0-9a-fA-F]{64}$/.test(tempo)) {
-    throw new Error("CONSUMER_TREASURY_TEMPO_PRIVATE_KEY is not a valid 0x 32-byte private key");
-  }
+  if (base) assertUsableEvmKey("CONSUMER_TREASURY_BASE_PRIVATE_KEY", base);
+  if (tempo) assertUsableEvmKey("CONSUMER_TREASURY_TEMPO_PRIVATE_KEY", tempo);
+  // Solana secrets are a different encoding entirely, so the EVM shape check does not apply. The
+  // published-key check still would, but no Solana rail is executable in this build.
 
   return {
     base: base ? { chain: BASE_MAINNET, kind: "evm", secret: base } : null,
@@ -83,9 +135,7 @@ export function loadRailKeys(env: NodeJS.ProcessEnv = process.env): RailKeys {
 export function loadSiwxKey(env: NodeJS.ProcessEnv = process.env): string | null {
   const k = env.CONSUMER_SIWX_PRIVATE_KEY?.trim();
   if (!k) return null;
-  if (!/^0x[0-9a-fA-F]{64}$/.test(k)) {
-    throw new Error("CONSUMER_SIWX_PRIVATE_KEY is not a valid 0x 32-byte private key");
-  }
+  assertUsableEvmKey("CONSUMER_SIWX_PRIVATE_KEY", k);
   return k;
 }
 

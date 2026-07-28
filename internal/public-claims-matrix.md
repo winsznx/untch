@@ -70,12 +70,12 @@ Legend — **✅ VERIFIED** (independently checkable) · **⚠️ NEEDS QUALIFIE
 
 | Surface | State | Remaining work |
 |---|---|---|
-| **README** | ✅ current | none — written this phase with the qualifiers in place |
-| **Changelog** (`untch.xyz/changelog`) | ✅ current | none — receipts entry is BETA, and a closing section names what is deliberately absent |
+| **README** | ✅ **current** | maturity box directly under the badges carries the strongest verified claim plus both boundaries |
+| **Changelog** (`untch.xyz/changelog`) | ✅ **current** | standing "Production maturity" banner carries both sanctioned boundaries above the entries |
 | **`/consumer/catalog`** | ✅ self-verifying | none — it reports real maturity, so it cannot drift from reality |
 | **Repository metadata** | ✅ current | none |
 | **OKX.AI listing** | ⚠️ pending | submit the 3 Consumer Pack services per `internal/okx-ai-consumer-pack-reregistration.md`; do **not** list registration/shop/gifts/booking/notify |
-| **docs.untch.xyz** | ⚠️ needs one edit | any "anchored on X Layer" phrasing must gain the testnet qualifier |
+| **docs.untch.xyz** | ✅ **current** | `/consumer-pack-proof` published with both boundaries verbatim; verified live 200 |
 | **X article** | ⚠️ needs one edit | same qualifier; and check it does not imply user-funded intents |
 | **YouTube description** | ⚠️ needs review | same two checks |
 | **HackQuest submission** | ⚠️ needs review | same two checks; ASP #6086 and the one-verified-capability boundary must match |
@@ -99,3 +99,47 @@ Every one is verifiable today by someone who does not trust us.
 1. ~~"Users fund their intents"~~ — unproven; every execution was operator-funded.
 2. ~~"Book flights / register domains / buy products"~~ — none of those capabilities can execute.
 3. ~~"Trustless"~~ — custodial between funding and completion, by design and by documentation.
+
+
+---
+
+# ADDENDUM — 2026-07-28, sanctioned wordings
+
+Three sentences are now the source of truth and appear verbatim across README, changelog, docs and
+every draft. They must be updated **only** when the underlying fact changes.
+
+**The strongest currently verified claim:**
+
+> Untch completed real production-governed provider settlements in Base USDC, independently verified
+> the delivered domain result through public RDAP data, and generated durable Consumer Pack receipts.
+
+**Until mainnet writer activation completes:**
+
+> Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt
+> anchoring is pending writer activation through the contract's three-day timelock.
+
+**Until the external-funder test completes:**
+
+> Current live executions use Untch's operator-funded provider treasury.
+
+## Where each appears
+
+| Surface | Strongest claim | Receipts boundary | Funding boundary |
+|---|---|---|---|
+| README | ✅ maturity box | ✅ box + §29.3 | ✅ box + §13 + §29.2 |
+| Changelog | — | ✅ banner + entry | ✅ banner + entry |
+| docs `/consumer-pack-proof` | ✅ evidence section | ✅ callout + limitations | ✅ callout + limitations |
+| OKX.AI re-registration draft | ✅ | ✅ §10 | ✅ §10 |
+| X article draft | pending your edit | pending your edit | pending your edit |
+| YouTube description draft | pending your edit | pending your edit | pending your edit |
+| HackQuest submission | pending your edit | pending your edit | pending your edit |
+
+## When each boundary retires
+
+- **Funding boundary** — retires the moment the external-funder intent reaches `COMPLETED` with a
+  funder address distinct from the treasury. Replace with: *"Consumer Intents can be funded by an
+  external wallet; Untch settles with the provider from its own treasury."*
+- **Receipts boundary** — retires when `isWriter(0x03e5…1ab5)` returns `true` on mainnet **and** a
+  re-driven receipt reaches `CONFIRMED` with a tx whose `to` is
+  `0xb5b853684624aea2ecbcd0e888cbff46ff0a5f95`. Not before. A tx hash alone does not prove which
+  network it is on.

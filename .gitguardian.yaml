@@ -1,0 +1,29 @@
+# GitGuardian configuration.
+#
+# Scanning stays ON. Exactly one finding is suppressed, and only because it has been shown to be
+# harmless rather than assumed to be.
+#
+# The secret is 0x59c6995e...690d — the Anvil/Hardhat DEFAULT ACCOUNT #1 private key, derived address
+# 0x70997970C51812dc3A010C7d01b50e0d17dc79C8. It is published in those tools' own documentation and
+# ships with every install, so anyone on earth can already spend from it. It is a true positive by
+# shape and a false positive by risk.
+#
+# It appears in six files, all local-fork scripts and test fixtures, and no production service
+# references any of them.
+#
+# The claim "it cannot reach production" is enforced, not asserted:
+#   • packages/consumer-core/src/config.ts rejects it (and the other four Anvil defaults) in
+#     loadRailKeys and loadSiwxKey, in EVERY environment — a dev-only escape hatch is exactly the
+#     flag someone sets in production during an incident.
+#   • packages/consumer-core/test/dev-key-rejection.test.ts proves the rejection, including that a
+#     legitimate key still loads so the guard cannot be quietly disabled for being too strict.
+#
+# This ignore is deliberately scoped to that ONE hash. Any other secret, in any file, still fails the
+# scan.
+
+version: 2
+
+secret:
+  ignored-matches:
+    - name: "Anvil/Hardhat default account #1 — published dev key, rejected by config validation"
+      match: 59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d

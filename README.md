@@ -11,6 +11,16 @@
 
 ---
 
+> **Production maturity, stated up front.**
+>
+> Untch completed real production-governed provider settlements in Base USDC, independently verified the delivered domain result through public RDAP data, and generated durable Consumer Pack receipts.
+>
+> Current live executions use Untch's operator-funded provider treasury. Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.
+>
+> These boundaries are published rather than hidden. Section 29 lists every limitation.
+
+---
+
 ## 1. What this is
 
 **Untch is a deterministic authority layer that decides whether an autonomous agent is allowed to
@@ -262,6 +272,9 @@ takes the **minimum** of provider and capability, so promoting a provider promot
 Two real settled provider executions. Both paid **0.050000 USDC on Base** from the Untch settlement
 float to StableDomains' own `payTo`, under an EIP-3009 authorisation scoped to one amount and one
 recipient.
+
+Current live executions use Untch's operator-funded provider treasury. The externally funded intent flow is implemented and undergoing final
+production proof.
 
 | Intent | Settlement transaction | Block | Driven by |
 |---|---|---|---|
@@ -599,8 +612,9 @@ curl -X POST https://asp.untch.xyz/consumer/domains/check \
 Stated plainly, because a reviewer will find them anyway.
 
 1. **One verified consumer capability.** `stabledomains × domains.check`. Everything else refuses.
-2. **The external-funder leg is unproven.** Every execution so far was operator-funded — Untch was
-   both funder and settler. The novel leg under test was the outbound merchant settlement.
+2. **Current live executions use Untch's operator-funded provider treasury.** Untch has been both funder and settler; the leg actually proven is the
+   outbound merchant settlement. The externally funded intent flow is implemented and undergoing
+   final production proof.
 3. **Custodial between funding and completion.** Not trustless.
 4. **Delivery verification is not universal.** RDAP works for domains; other categories fall back to
    provider attestation, which is labelled as such and never presented as independent.
@@ -638,6 +652,7 @@ Stated plainly, because a reviewer will find them anyway.
 | Docs | https://docs.untch.xyz |
 | Public receipts explorer | https://untch.xyz/explorer |
 | Changelog | https://untch.xyz/changelog |
+| Consumer Pack proof | https://docs.untch.xyz/consumer-pack-proof |
 | Live ASP catalog | https://asp.untch.xyz/catalog |
 | Consumer Pack catalog | https://asp.untch.xyz/consumer/catalog |
 | ERC-8004 card | https://asp.untch.xyz/agent-registration.json |

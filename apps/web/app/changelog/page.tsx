@@ -92,7 +92,7 @@ const ENTRIES: readonly Entry[] = [
     what:
       "An agent proposes a real-world action; Untch decides whether it is authorised, funds it for the exact approved amount, pays the merchant on the merchant's rail, verifies delivery and produces one receipt spanning both payments.",
     why:
-      "The purchase value is separate from the call fee, an ambiguous outcome goes to a human rather than a retry, and what the merchant says is never presented as what Untch proved.",
+      "The purchase value is separate from the call fee, an ambiguous outcome goes to a human rather than a retry, and what the merchant says is never presented as what Untch proved. Current live executions use Untch's operator-funded provider treasury.",
     status: "BETA",
     evidence: { label: "live capability matrix", href: "https://asp.untch.xyz/consumer/catalog" },
   },
@@ -134,7 +134,7 @@ const ENTRIES: readonly Entry[] = [
     title: "Receipts anchored on chain",
     what: "Durable Postgres receipts, batched and anchored to the UntchReceipts contract with retry, reorg re-verification and honest degradation.",
     why:
-      "The ledger is authoritative; anchoring is publication. When anchoring fails the receipt says so rather than implying an anchor that does not exist.",
+      "The ledger is authoritative; anchoring is publication. When anchoring fails the receipt says so rather than implying an anchor that does not exist. Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.",
     status: "BETA",
   },
   {
@@ -203,6 +203,24 @@ export default function Changelog() {
               evidence you can check without trusting us, the link goes to the chain.
             </p>
           </header>
+
+          <section
+            className="flex flex-col gap-3 rounded-cards p-6"
+            style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
+          >
+            <span
+              className="text-caption uppercase"
+              style={{ color: "var(--color-data)", letterSpacing: "0.24px" }}
+            >
+              Production maturity
+            </span>
+            <p className="max-w-3xl text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
+              {"Current live executions use Untch's operator-funded provider treasury. The externally funded intent flow is implemented and undergoing final production proof."}
+            </p>
+            <p className="max-w-3xl text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
+              {"Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock."}
+            </p>
+          </section>
 
           <ol className="flex flex-col gap-4" style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {ENTRIES.map((e) => (
@@ -273,7 +291,17 @@ export default function Changelog() {
                 /consumer/catalog
               </a>{" "}
               reports each provider&rsquo;s real maturity, so any claim here can be checked against the
-              machine rather than against this page.
+              machine rather than against this page. The full production-proof page lives at{" "}
+              <a
+                className="underline"
+                style={{ color: "var(--color-data)" }}
+                href="https://docs.untch.xyz/consumer-pack-proof"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                docs.untch.xyz/consumer-pack-proof
+              </a>
+              .
             </p>
           </section>
         </div>
