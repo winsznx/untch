@@ -1,0 +1,80 @@
+[
+  {
+    "seq": 1,
+    "name": "consumer.intent.created",
+    "state": "CREATED",
+    "at": "2026-07-27T19:59:58.181Z"
+  },
+  {
+    "seq": 2,
+    "name": "consumer.quote.created",
+    "state": "QUOTED",
+    "at": "2026-07-27T20:00:00.883Z"
+  },
+  {
+    "seq": 3,
+    "name": "consumer.quote.created",
+    "state": "POLICY_CHECKING",
+    "at": "2026-07-27T20:00:01.827Z"
+  },
+  {
+    "seq": 4,
+    "name": "consumer.policy.approved",
+    "state": "APPROVED",
+    "at": "2026-07-27T20:00:02.470Z"
+  },
+  {
+    "seq": 5,
+    "name": "consumer.funding.requested",
+    "state": "AWAITING_FUNDING",
+    "at": "2026-07-27T20:00:03.442Z"
+  },
+  {
+    "seq": 6,
+    "name": "consumer.funding.confirmed",
+    "state": "FUNDED",
+    "at": "2026-07-27T20:00:05.469Z"
+  },
+  {
+    "seq": 7,
+    "name": "consumer.execution.started",
+    "state": "EXECUTION_QUEUED",
+    "at": "2026-07-27T20:00:06.238Z"
+  },
+  {
+    "seq": 8,
+    "name": "consumer.execution.started",
+    "state": "PROVIDER_PAYMENT_PENDING",
+    "at": "2026-07-27T20:00:09.764Z"
+  },
+  {
+    "seq": 9,
+    "name": "consumer.provider.paid",
+    "state": "PROVIDER_PAID",
+    "at": "2026-07-27T20:00:33.230Z"
+  },
+  {
+    "seq": 10,
+    "name": "consumer.provider.acknowledged",
+    "state": "PROVIDER_ACKNOWLEDGED",
+    "at": "2026-07-27T20:00:33.900Z"
+  },
+  {
+    "seq": 11,
+    "name": "consumer.provider.acknowledged",
+    "state": "DELIVERY_PENDING",
+    "at": "2026-07-27T20:00:36.263Z"
+  },
+  {
+    "seq": 12,
+    "name": "consumer.delivery.verified",
+    "state": "DELIVERY_VERIFIED",
+    "at": "2026-07-27T20:00:37.039Z"
+  },
+  {
+    "seq": 13,
+    "name": "consumer.completed",
+    "state": "COMPLETED",
+    "at": "2026-07-27T20:00:39.493Z"
+  }
+]

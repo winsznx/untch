@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { checkSameOrigin } from "../../../lib/auth/csrf";
 import { getServerSession } from "../../../lib/auth/server";
 import { isBindableChannel, listBindings, startBinding } from "../../../lib/dashboard/binding-runtime";
 
@@ -10,6 +11,13 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // State-changing: same-origin only. SameSite=Lax already blocks a cross-site POST; this makes
+  // the guarantee explicit so a future cookie change cannot remove it silently.
+  const origin = checkSameOrigin(req);
+  if (!origin.ok) {
+    return NextResponse.json({ error: origin.reason }, { status: 403 });
+  }
+
   const session = await getServerSession();
   if (!session) return NextResponse.json({ error: "not signed in" }, { status: 401 });
 

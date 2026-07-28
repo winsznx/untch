@@ -1,0 +1,24 @@
+{
+  "name": "@untch/consumer-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "description": "Untch Consumer Pack domain core — safe money, the Consumer Intent state machine, the double-entry ledger, the routed treasury, the provider registry + adapter contract, and the transactional outbox.",
+  "scripts": {
+    "migrate": "tsx src/migrate.ts",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@untch/shared": "workspace:*",
+    "pg": "^8.13.1",
+    "viem": "^2.55.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

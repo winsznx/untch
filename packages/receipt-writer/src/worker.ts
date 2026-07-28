@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
 import type { Worker } from "bullmq";
-import { flushOnce, reconcileOnce, type AnchorerDeps } from "./anchorer";
+import { flushOnce, flushPendingOnce, reconcileOnce, type AnchorerDeps } from "./anchorer";
 import { Batcher } from "./batcher";
 import { ViemChainAnchor } from "./chain";
 import { loadWorkerConfig, type WorkerConfig } from "./config";
@@ -108,6 +108,24 @@ export async function startWorker(config: WorkerConfig = loadWorkerConfig()): Pr
     (err) => log("reconcile error", { error: String(err) }),
   );
 
+  /**
+   * Pick up batches RESTING in PENDING.
+   *
+   * Two ways one gets there: an operator re-drove a degraded batch after fixing whatever the anchorer
+   * was failing against, or a process died between claiming a batch and submitting it. Neither is
+   * covered by flushOnce (QUEUED only) or reconcileOnce (SUBMITTED only), so without this the batch
+   * sits forever with its receipts stuck at BATCHED.
+   *
+   * Shares the reconcile interval: both are recovery sweeps, and neither is on the hot path.
+   */
+  const stopPending = loop(
+    async () => {
+      await flushPendingOnce(anchorer);
+    },
+    config.reconcileIntervalMs,
+    (err) => log("pending flush error", { error: String(err) }),
+  );
+
   log("worker started", {
     writer: chain.writerAddress,
     contract: config.receiptsContract,
@@ -121,6 +139,7 @@ export async function startWorker(config: WorkerConfig = loadWorkerConfig()): Pr
   const stop = async (): Promise<void> => {
     stopSweep();
     stopReconcile();
+    stopPending();
     await batcher.stop();
     await tickWorker.close();
     await redis.quit();

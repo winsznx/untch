@@ -216,6 +216,42 @@ export class PgReceiptsRepo implements ReceiptsRepo {
     );
   }
 
+  async redriveDegraded(batchId: number): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      /**
+       * The status guard lives in the WHERE clause, not in a prior SELECT.
+       *
+       * A read-then-write would let two operators re-drive the same batch concurrently, or let one
+       * re-drive a batch that confirmed between the read and the write — double-anchoring a receipt
+       * that is already on chain. `rowCount === 1` IS the proof that this call did the transition.
+       */
+      const { rowCount } = await client.query(
+        `UPDATE batches SET status = 'PENDING', attempts = 0, last_error = NULL, updated_at = now()
+          WHERE id = $1 AND status = 'DEGRADED_UNANCHORED'`,
+        [batchId],
+      );
+      if ((rowCount ?? 0) !== 1) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      // The receipts go back to BATCHED, not QUEUED: they still belong to this batch, and QUEUED
+      // would make `claimQueuedBatch` sweep them into a SECOND batch alongside this one.
+      await client.query(
+        `UPDATE receipts SET status = 'BATCHED', updated_at = now() WHERE batch_id = $1`,
+        [batchId],
+      );
+      await client.query("COMMIT");
+      return true;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async markDegraded(batchId: number): Promise<void> {
     const client = await this.pool.connect();
     try {

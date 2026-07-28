@@ -116,6 +116,17 @@ export class InMemoryReceiptsRepo implements ReceiptsRepo {
     if (b) b.attempts += 1;
   }
 
+  async redriveDegraded(batchId: number): Promise<boolean> {
+    const b = this.batches.get(batchId);
+    if (!b || b.status !== "DEGRADED_UNANCHORED") return false;
+    b.status = "PENDING";
+    b.attempts = 0;
+    for (const r of this.receipts.values()) {
+      if (r.batchId === batchId) r.status = "BATCHED";
+    }
+    return true;
+  }
+
   async markDegraded(batchId: number): Promise<void> {
     const b = this.batches.get(batchId);
     if (b) b.status = "DEGRADED_UNANCHORED";

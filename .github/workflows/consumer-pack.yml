@@ -1,0 +1,118 @@
+# Untch Consumer Pack — the governed consumer-execution suite.
+#
+# This workflow ALSO closes a pre-existing CI hole that predates the Consumer Pack, and it is worth
+# naming because the repository has been bitten by exactly this shape before (see web.yml's header):
+#
+#   services/asp was covered by NO workflow. `pnpm test:asp` — 92 tests before this branch, 121 after
+#   — ran nowhere. The service's own tsconfig was never run in CI either; the root `pnpm typecheck`
+#   covers only packages/** + scripts/**, so a type error reachable only under services/asp/tsconfig
+#   could sit in the tree indefinitely, which is precisely how the 15 TS2559 errors that motivated
+#   web.yml survived. The Consumer Pack's entire HTTP surface, its orchestrator and its funding leg
+#   live in that directory, so shipping it while the hole stayed open would have been adding the
+#   largest untested surface in the repo to the one place CI does not look.
+#
+# Three gates, in order of how much they cost to run:
+#
+#   1. the root tsconfig (packages/** + scripts/**) — parity with every other JS workflow;
+#   2. services/asp's OWN tsconfig — the gate that closes the hole;
+#   3. the three suites: consumer-core, consumer-providers, and the ASP suite that contains the
+#      end-to-end lifecycle tests.
+#
+# No credentials, no network, no Postgres and no Redis are needed. The provider fixtures are REAL 402
+# responses captured from the live services on 2026-07-27 and committed under
+# packages/consumer-providers/fixtures/; every adapter test drives an injected fetch. The one thing
+# that would need the network — a live provider smoke test — is deliberately NOT here: it spends real
+# money, and it is an operator-run proof (see docs/consumer-pack-runbook.md), not a CI step.
+#
+# The path filter is wide on purpose. The Consumer Pack depends on nine @untch packages, and the
+# lesson web.yml records is that a change under packages/shared can break a consumer three
+# directories away and nothing else.
+name: consumer-pack
+
+on:
+  push:
+    paths:
+      - "packages/consumer-core/**"
+      - "packages/consumer-providers/**"
+      - "packages/policy-engine/**"
+      - "packages/policy-store/**"
+      - "packages/escalation/**"
+      - "packages/receipt-writer/**"
+      - "packages/x402-guard/**"
+      - "packages/canon/**"
+      - "packages/shared/**"
+      - "services/asp/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/consumer-pack.yml"
+  pull_request:
+    paths:
+      - "packages/consumer-core/**"
+      - "packages/consumer-providers/**"
+      - "packages/policy-engine/**"
+      - "packages/policy-store/**"
+      - "packages/escalation/**"
+      - "packages/receipt-writer/**"
+      - "packages/x402-guard/**"
+      - "packages/canon/**"
+      - "packages/shared/**"
+      - "services/asp/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/consumer-pack.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  consumer-pack:
+    name: money safety + state machine + protocol clients + governed lifecycle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Parity with every other JS workflow: the root tsconfig (packages/** + scripts/**).
+      - name: Typecheck (root tsconfig)
+        run: pnpm typecheck
+
+      # THE GATE THAT CLOSES THE HOLE. The root config cannot see these files at all — the ASP has
+      # its own tsconfig with the same strict flags (strict, noUncheckedIndexedAccess,
+      # exactOptionalPropertyTypes) and, until this step, nothing ran it.
+      - name: Typecheck (services/asp tsconfig)
+        run: pnpm --filter @untch/asp exec tsc --noEmit -p tsconfig.json
+
+      - name: Consumer core suite (money, state machine, ledger, treasury, registry)
+        run: pnpm test:consumer-core
+
+      - name: Consumer providers suite (x402 / MPP / SIWX against real captured challenges)
+        run: pnpm test:consumer-providers
+
+      # Contains the end-to-end lifecycle suite, one describe per acceptance criterion, plus every
+      # pre-existing ASP handler test that had never run on a CI machine.
+      - name: ASP suite (handlers + governed consumer lifecycle)
+        run: pnpm test:asp
+
+      # The Consumer Pack reuses the policy engine and the escalation authority boundary rather than
+      # forking them. A change that breaks either must fail here too, not only in its own workflow.
+      - name: Policy-engine suite (the engine the Consumer Pack reuses)
+        run: pnpm test:policy
+
+      - name: Escalation suite (the approval pipeline the Consumer Pack reuses)
+        run: pnpm test:escalation
