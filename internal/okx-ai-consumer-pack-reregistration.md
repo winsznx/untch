@@ -16,7 +16,7 @@ not from source. Where something is not true yet it says so, in the row, without
 
 ## 0a. The two sanctioned boundaries — reproduce verbatim in any listing copy
 
-> Current live executions use Untch's operator-funded provider treasury.
+> Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.
 >
 > Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.
 

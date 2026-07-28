@@ -51,7 +51,7 @@ in the claims matrix addendum.
 >
 > **Where the boundary is, stated by us rather than found by you:**
 >
-> Current live executions use Untch's operator-funded provider treasury.
+> Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.
 >
 > Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt
 > anchoring is pending writer activation through the contract's three-day timelock.
@@ -94,7 +94,7 @@ Public receipt, no account required:
 https://untch.xyz/receipt/ci_82bb2216c02366bc1b839a00
 
 CURRENT MATURITY — published, not hidden
-Current live executions use Untch's operator-funded provider treasury.
+Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.
 Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt
 anchoring is pending writer activation through the contract's three-day timelock.
 One verified consumer capability (domain availability checking). Domain registration, shopping,
@@ -161,7 +161,7 @@ Chapters
 
 **Current maturity — stated openly**
 
-> Current live executions use Untch's operator-funded provider treasury.
+> Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.
 >
 > Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt
 > anchoring is pending writer activation through the contract's three-day timelock.
@@ -189,7 +189,7 @@ Chapters
 
 **When the external-funder proof completes** — replace every occurrence of:
 
-> Current live executions use Untch's operator-funded provider treasury.
+> Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.
 
 with:
 

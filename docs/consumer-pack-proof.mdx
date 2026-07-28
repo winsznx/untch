@@ -12,7 +12,7 @@ that is not the merchant, and produces one receipt spanning both payments.
 This page states what has actually happened in production and where the boundary sits. Every claim
 below is checkable without trusting us.
 
-> **Current Consumer Pack executions are operator-funded. The externally funded intent flow is
+> **Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury. The externally funded intent flow is
 > implemented and undergoing final production proof.**
 >
 > **Existing confirmed receipts are anchored on X Layer testnet. X Layer mainnet writer activation is
@@ -195,7 +195,26 @@ to StableDomains' own `payTo`.
 | Intent | Settlement transaction | Block | Driven by |
 | --- | --- | --- | --- |
 | `ci_50a37ce77505690e8b45df13` | [`0xe7ce102f…21e86`](https://basescan.org/tx/0xe7ce102f7a704e9c3113fc7fcc8626db8a9cdc330e614d023c231e88fce21e86) | 49196541 | live smoke driver |
-| `ci_82bb2216c02366bc1b839a00` | [`0x6815d60e…3e489`](https://basescan.org/tx/0x6815d60e1be688451d36007a4113f858e0a10433dccef01dc3b3d0f8d283e489) | 49201380 | **the deployed production worker** |
+| `ci_82bb2216c02366bc1b839a00` | [`0x6815d60e…3e489`](https://basescan.org/tx/0x6815d60e1be688451d36007a4113f858e0a10433dccef01dc3b3d0f8d283e489) | 49201380 | the deployed production worker |
+| `ci_af83d9425ce63f7e2d10b3bb` | [`0x2b09c4a7…71ab9`](https://basescan.org/tx/0x2b09c4a7629da8b1fb856c69d8b59b0507672a67c6f17a7090b41ff735271ab9) | 49223397 | **the worker, on an EXTERNALLY FUNDED intent** |
+
+### The externally funded intent
+
+`ci_af83d9425ce63f7e2d10b3bb` is the one that proves the funding wallet and the settlement treasury
+are different parties.
+
+| Leg | Chain | Amount | From | To | Transaction |
+| --- | --- | --- | --- | --- | --- |
+| User funding | X Layer (196) | 0.050250 USDT0 | `0xC8f0…23d4` **external wallet** | `0xD9eD…a5ba` Untch funding treasury | [`0x5ab5820c…21d69a`](https://www.oklink.com/x-layer/tx/0x5ab5820c3f38890f8f187ccf491c7a97ff8983e60de76da1588bf4d7f321d69a) |
+| Provider settlement | Base (8453) | 0.050000 USDC | `0x0e79…9095` Untch settlement treasury | `0xABcb…1892` StableDomains | [`0x2b09c4a7…71ab9`](https://basescan.org/tx/0x2b09c4a7629da8b1fb856c69d8b59b0507672a67c6f17a7090b41ff735271ab9) |
+
+**The funder is not any Untch treasury.** The settlement transaction was submitted by a relayer, as
+EIP-3009 permits — decoding the `Transfer` log confirms the value moved from the Untch treasury to
+StableDomains, not from the relayer.
+
+The 0.000250 USDT0 difference is the disclosed cross-rail spread, booked to `SPREAD_REVENUE`. The
+remaining 0.050000 sits in `CROSS_RAIL_CLEARING` on X Layer — value the funding rail owes the
+settlement rail — and retires when an operator sweeps it.
 
 - **Untch Base settlement float:** `0x0e79371813e88F31c2B60C80bad391a952039095`
 - **StableDomains payTo:** `0xABcb091D90419E1c8AD4818f1B33FC4645501892`
@@ -209,9 +228,10 @@ Delivery for both was verified against public RDAP.
 Stated plainly, because a reviewer will find them anyway.
 
 1. **One verified capability.** Everything else refuses.
-2. **Executions are operator-funded.** Untch has been both funder and settler; the leg actually
-   proven is the **outbound merchant settlement**. The externally funded flow is implemented and
-   undergoing final production proof.
+2. **Providers are settled from Untch's pre-funded operational treasury.** The user-funding leg has
+   been proven with a separate external wallet (see the evidence table above), but the merchant is
+   still paid from Untch's own float rather than directly from user funds — the two legs are on
+   different chains and are reconciled through `CROSS_RAIL_CLEARING`.
 3. **Receipt anchoring is on X Layer testnet.** The mainnet `UntchReceipts` writer is not yet
    authorised, and the contract's writer-set timelock is an immutable three days. New receipts stay
    durable and report `ANCHOR_FAILED` honestly. **The ledger is authoritative regardless — anchoring

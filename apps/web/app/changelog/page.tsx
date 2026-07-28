@@ -33,6 +33,19 @@ interface Entry {
 const ENTRIES: readonly Entry[] = [
   {
     date: "2026-07-28",
+    title: "Externally funded Consumer Intent in production",
+    what:
+      "A wallet that is not any Untch treasury funded a Consumer Intent with real USDT0 on X Layer; Untch then paid StableDomains in USDC on Base from its own settlement float, verified the result through public RDAP, and reconciled both rails to zero under one intent.",
+    why:
+      "Until now Untch was both funder and settler, so the only novel leg exercised was the outbound merchant payment. This proves the two parties are genuinely separate while policy, payment, delivery verification and accounting stay bound to a single intent. Providers are still settled from Untch's pre-funded operational treasury.",
+    status: "BETA",
+    evidence: {
+      label: "external funding transaction on X Layer",
+      href: "https://www.oklink.com/x-layer/tx/0x5ab5820c3f38890f8f187ccf491c7a97ff8983e60de76da1588bf4d7f321d69a",
+    },
+  },
+  {
+    date: "2026-07-28",
     title: "Mandatory ownership authentication",
     what:
       "Reading a tenant's consumer intents now requires a SIWE signature over a server-issued, single-use, expiring nonce, verified against the policy's on-chain owner. The legacy path — passing a policy id as a query parameter — is refused outright.",
@@ -92,7 +105,7 @@ const ENTRIES: readonly Entry[] = [
     what:
       "An agent proposes a real-world action; Untch decides whether it is authorised, funds it for the exact approved amount, pays the merchant on the merchant's rail, verifies delivery and produces one receipt spanning both payments.",
     why:
-      "The purchase value is separate from the call fee, an ambiguous outcome goes to a human rather than a retry, and what the merchant says is never presented as what Untch proved. Current live executions use Untch's operator-funded provider treasury.",
+      "The purchase value is separate from the call fee, an ambiguous outcome goes to a human rather than a retry, and what the merchant says is never presented as what Untch proved. Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.",
     status: "BETA",
     evidence: { label: "live capability matrix", href: "https://asp.untch.xyz/consumer/catalog" },
   },
@@ -215,7 +228,7 @@ export default function Changelog() {
               Production maturity
             </span>
             <p className="max-w-3xl text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
-              {"Current live executions use Untch's operator-funded provider treasury. The externally funded intent flow is implemented and undergoing final production proof."}
+              {"Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury. The externally funded intent flow is implemented and undergoing final production proof."}
             </p>
             <p className="max-w-3xl text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
               {"Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock."}
