@@ -35,6 +35,21 @@ function textOf(children: React.ReactNode): string {
 }
 
 const components: Components = {
+  /**
+   * Every table gets its own horizontal scroll container.
+   *
+   * Several docs tables carry four columns of 42-character addresses. Without a wrapper the widest
+   * one sets the width of the article, the article widens the body, and the whole PAGE scrolls
+   * sideways on a phone — which reads as a broken layout rather than as a wide table. Wrapped, the
+   * table scrolls inside itself and nothing else moves.
+   */
+  table({ children, ...props }) {
+    return (
+      <div className="table-wrap">
+        <table {...props}>{children}</table>
+      </div>
+    );
+  },
   a({ href, children }) {
     if (!href) return <span>{children}</span>;
     const external = href.startsWith("http") || href.startsWith("mailto:");

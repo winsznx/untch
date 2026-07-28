@@ -4,6 +4,7 @@ import Link from "next/link";
 import { loadDocsConfig } from "@/lib/nav";
 import { buildSearchIndex } from "@/lib/content";
 import { SearchBox } from "@/components/search";
+import { MobileNav } from "@/components/mobile-nav";
 import { ThemeToggle, THEME_INIT_SCRIPT } from "@/components/theme-toggle";
 import "./globals.css";
 
@@ -28,6 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <div className="shell">
           <header className="topbar">
+            {/* Hamburger first, as every docs site a reader has already used puts it. */}
+            <MobileNav items={searchIndex} groups={cfg.navigation.groups} />
             <Link href="/" className="brand">
               <Image src="/logo.svg" alt="" width={28} height={28} priority />
               Untch docs

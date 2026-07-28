@@ -5,7 +5,6 @@ import { allSlugs, loadDocsConfig, segmentsToSlug, slugToHref } from "@/lib/nav"
 import { Markdown } from "@/components/markdown";
 import { Sidebar } from "@/components/sidebar";
 import { Pager } from "@/components/pager";
-import { MobileNav } from "@/components/mobile-nav";
 
 type Props = { params: Promise<{ slug: string[] }> };
 
@@ -48,7 +47,6 @@ export default async function DocPage({ params }: Props) {
     <div className="frame">
       <Sidebar activeSlug={slug} />
       <main className="main">
-        <MobileNav items={items} activeSlug={slug} groups={cfg.navigation.groups} />
         {page.description ? <p className="desc">{page.description}</p> : null}
         <Markdown source={page.body} />
         <Pager slug={slug} />

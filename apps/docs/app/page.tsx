@@ -4,7 +4,6 @@ import { loadDocsConfig, allSlugs, slugToHref } from "@/lib/nav";
 import { Markdown } from "@/components/markdown";
 import { Sidebar } from "@/components/sidebar";
 import { Pager } from "@/components/pager";
-import { MobileNav } from "@/components/mobile-nav";
 import { notFound } from "next/navigation";
 
 export const metadata: Metadata = {
@@ -31,7 +30,6 @@ export default function HomePage() {
     <div className="frame">
       <Sidebar activeSlug="index" />
       <main className="main">
-        <MobileNav items={items} activeSlug="index" groups={cfg.navigation.groups} />
         {page.description ? <p className="desc">{page.description}</p> : null}
         <Markdown source={page.body} />
         <Pager slug="index" />
