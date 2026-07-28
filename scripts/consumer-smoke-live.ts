@@ -76,9 +76,12 @@ import type { PolicyProvider, StoredPolicy } from "../packages/policy-store/src/
 import { ConsumerOrchestrator, type ConsumerReceiptSink } from "../services/asp/src/consumer/orchestrator";
 import { makeConsumerReceiptSink } from "../services/asp/src/consumer/bridges";
 import { initReceiptWiring } from "../services/asp/src/receipts";
-import { createPublicClient, decodeEventLog, erc20Abi, getAddress, http as viemHttp } from "viem";
+import { createPublicClient, createWalletClient, decodeEventLog, erc20Abi, getAddress, http as viemHttp } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 const BASE: CaipChainId = "eip155:8453";
+const XLAYER_RPC = process.env.XLAYER_RPC_URL?.trim() || "https://rpc.xlayer.tech";
+const USDT0_ADDRESS = "0x779Ded0c9e1022225f8E0630b35a9b54bE713736";
 const USDC = asset("base.usdc");
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
@@ -168,7 +171,25 @@ async function main(): Promise<void> {
   });
   if (!rail.available()) stop(2, "the Base rail reports unavailable");
   const treasuryAddress = rail.address();
-  info("treasury", treasuryAddress);
+  info("settlement treasury", treasuryAddress);
+
+  /**
+   * The external funder, if one is configured.
+   *
+   * The key is read straight into a viem account and never printed, logged or echoed — only the
+   * derived public address appears anywhere. The address is asserted DISTINCT from the settlement
+   * treasury here rather than at spend time, because a run where they coincide proves nothing and
+   * should stop before it costs anything.
+   */
+  const funderKey = process.env.CONSUMER_TEST_FUNDER_PRIVATE_KEY?.trim();
+  const funderAccount = funderKey ? privateKeyToAccount(funderKey as `0x${string}`) : null;
+  if (funderAccount) {
+    if (funderAccount.address.toLowerCase() === treasuryAddress.toLowerCase()) {
+      stop(2, "the test funder IS the settlement treasury — that would prove nothing");
+    }
+    info("external funder", funderAccount.address);
+    ok("funder is a DIFFERENT wallet from the settlement treasury");
+  }
 
   let balanceBefore: Money;
   try {
@@ -309,7 +330,14 @@ async function main(): Promise<void> {
   // ── policy ────────────────────────────────────────────────────────────────
   const policy = {
     id: process.env.CONSUMER_SMOKE_POLICY_ID?.trim() || "9001",
-    owner: "0x0000000000000000000000000000000000000001",
+    /**
+     * The policy is owned by the EXTERNAL FUNDER when one is configured.
+     *
+     * "The funding wallet owns or is authorised for the relevant policy" is part of what this proof
+     * has to show, and a policy owned by a placeholder address would not show it. This provider is
+     * the driver's own, so the ownership is real within the authority that evaluates it.
+     */
+    owner: funderAccount ? funderAccount.address : "0x0000000000000000000000000000000000000001",
     agentId: "1",
     version: 1,
     status: "ACTIVE",
@@ -412,21 +440,74 @@ async function main(): Promise<void> {
   ok("APPROVED by the real §7.1 engine");
 
   // ── 8. RESERVE (operator-funded) ──────────────────────────────────────────
+  /**
+   * THE EXTERNAL-FUNDER LEG.
+   *
+   * With CONSUMER_TEST_FUNDER_PRIVATE_KEY set, the user-funding leg is a REAL ERC-20 transfer from a
+   * wallet that is not any Untch treasury. That is the whole point of the proof: until now Untch was
+   * both funder and settler, so the only novel leg exercised was the outbound merchant settlement.
+   *
+   * Without the variable the run stays operator-funded and says so, rather than silently pretending.
+   */
   step(8, "Treasury reservation");
   const { funding } = await orchestrator.requestFunding(intentId);
-  const fundingTx = `operator-funded:${intentId}`;
+  info("funding request", displayMoney(funding.amount));
+
+  let fundingTx: string;
+  let payer: string;
+  let externallyFunded = false;
+
+  if (funderAccount) {
+    // The funding destination is the FUNDING treasury, which is a different address from the
+    // SETTLEMENT treasury that pays the merchant. Both are read from the registry, never hardcoded.
+    const fundingAccount = await store.getTreasuryAccount("xlayer-usdt0-funding");
+    if (!fundingAccount) stop(3, "no xlayer-usdt0-funding treasury account registered");
+    const dest = fundingAccount.address as `0x${string}`;
+    if (dest.toLowerCase() === funderAccount.address.toLowerCase()) {
+      stop(3, "funder and funding treasury are the same address — that would prove nothing");
+    }
+
+    info("external funder", funderAccount.address);
+    info("funding destination", dest);
+    console.log("     \x1b[31m>>> sending REAL USDT0 from the external wallet <<<\x1b[0m");
+
+    const xlayerWallet = createWalletClient({
+      account: funderAccount,
+      chain: { id: 196, name: "X Layer", nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 }, rpcUrls: { default: { http: [XLAYER_RPC] } } },
+      transport: viemHttp(XLAYER_RPC),
+    });
+    const xlayerPublic = createPublicClient({ transport: viemHttp(XLAYER_RPC) });
+
+    const hash = await xlayerWallet.writeContract({
+      address: USDT0_ADDRESS as `0x${string}`,
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: [dest, funding.amount.amount],
+    });
+    const rcpt = await xlayerPublic.waitForTransactionReceipt({ hash });
+    if (rcpt.status !== "success") stop(3, `external funding tx reverted: ${hash}`);
+
+    fundingTx = hash;
+    payer = funderAccount.address;
+    externallyFunded = true;
+    ok(`EXTERNAL funding settled: ${hash} (block ${rcpt.blockNumber})`);
+  } else {
+    fundingTx = `operator-funded:${intentId}`;
+    payer = treasuryAddress;
+    warn("the user-funding leg is OPERATOR-FUNDED for this run — Untch is both funder and settler.");
+    warn("Set CONSUMER_TEST_FUNDER_PRIVATE_KEY to exercise the external leg.");
+  }
+
   await orchestrator.confirmFunding(intentId, {
     intentId,
     chain: funding.amount.asset.chain,
     txHash: fundingTx,
     amount: funding.amount,
-    payer: treasuryAddress,
+    payer,
     settledAt: new Date().toISOString(),
-    confirmations: 0,
-    finalized: false,
+    confirmations: externallyFunded ? 1 : 0,
+    finalized: externallyFunded,
   });
-  warn("the user-funding leg is OPERATOR-FUNDED for this run — Untch is both funder and settler.");
-  warn("The novel leg under test is the OUTBOUND Base settlement below.");
   ok(`reserved ${displayMoney(funding.amount)}`);
   await orchestrator.queueExecution(intentId);
 

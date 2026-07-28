@@ -1,0 +1,356 @@
+{
+  "capturedAt": "2026-07-28T11:00:26.234Z",
+  "headline": "The user-funding wallet and the provider-settlement treasury are DIFFERENT addresses. Both legs are real, on different chains, bound to one intent.",
+  "addresses": {
+    "externalFunder": "0xC8f00BD8c0497c03dFA9aCF71b061512065923d4",
+    "xLayerFundingTreasury": "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
+    "baseSettlementTreasury": "0x0e79371813e88F31c2B60C80bad391a952039095",
+    "providerPayTo": "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+    "funderIsNotSettlementTreasury": true
+  },
+  "legs": {
+    "userFunding": {
+      "chain": "eip155:196",
+      "asset": "USDT0",
+      "amount": "50250",
+      "display": "0.050250",
+      "tx": "0x5ab5820c3f38890f8f187ccf491c7a97ff8983e60de76da1588bf4d7f321d69a",
+      "block": 66467099,
+      "status": "success",
+      "from": "0xC8f00BD8c0497c03dFA9aCF71b061512065923d4",
+      "explorer": "https://www.oklink.com/x-layer/tx/0x5ab5820c3f38890f8f187ccf491c7a97ff8983e60de76da1588bf4d7f321d69a"
+    },
+    "providerSettlement": {
+      "chain": "eip155:8453",
+      "asset": "USDC",
+      "amount": "50000",
+      "display": "0.050000",
+      "tx": "0x2b09c4a7629da8b1fb856c69d8b59b0507672a67c6f17a7090b41ff735271ab9",
+      "block": 49223397,
+      "status": "success",
+      "valueFrom": "0x0e79371813e88F31c2B60C80bad391a952039095",
+      "valueTo": "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+      "relayer": "0xe72f0af4cf41356d433723547f1412ca27fbb1b8",
+      "note": "EIP-3009: any relayer may submit the authorisation; the VALUE moves from the Untch treasury, confirmed by decoding the Transfer log.",
+      "explorer": "https://basescan.org/tx/0x2b09c4a7629da8b1fb856c69d8b59b0507672a67c6f17a7090b41ff735271ab9"
+    }
+  },
+  "executedBy": "The DEPLOYED production worker performed the settlement. The local driver created and queued the intent and lost the race with a StaleIntentStateError, which is the compare-and-set behaving correctly.",
+  "intent": {
+    "intent_id": "ci_af83d9425ce63f7e2d10b3bb",
+    "tenant_id": "policy:9001",
+    "requesting_agent_id": "untch-live-smoke",
+    "principal_id": "untch-operator",
+    "action": "domains.check",
+    "category": "domains",
+    "provider_id": "stabledomains",
+    "request": {
+      "domain": "untchactivation4jhruj.xyz"
+    },
+    "policy_id": "9001",
+    "policy_version": 1,
+    "policy_hash": "0x01e75f62432f2dbe19915910e23f57be06d8172d5185d83e4b83675460198145",
+    "policy_decision": {
+      "rules": [
+        {
+          "rule": "policy.active",
+          "result": "PASS",
+          "observed": "ACTIVE"
+        },
+        {
+          "rule": "duplicate.",
+          "result": "PASS"
+        },
+        {
+          "rule": "cooldown.sameService",
+          "limit": 0,
+          "result": "PASS"
+        },
+        {
+          "note": "NO_CHALLENGE",
+          "rule": "replay.contextBinding",
+          "result": "PASS"
+        },
+        {
+          "rule": "recipient.allowDeny",
+          "result": "PASS",
+          "observed": "0xabcb091d90419e1c8ad4818f1b33fc4645501892"
+        },
+        {
+          "rule": "agent.workerAllowDeny",
+          "result": "PASS",
+          "observed": "0"
+        },
+        {
+          "rule": "category.allow",
+          "result": "PASS",
+          "observed": "consumer.domains.check"
+        },
+        {
+          "note": "NO_VENDOR_FLOOR",
+          "rule": "vendor.lcbFloor",
+          "result": "PASS"
+        },
+        {
+          "rule": "intent.maxAmountBound",
+          "limit": "0.05",
+          "token": "USDC",
+          "result": "PASS",
+          "observed": "0.05"
+        },
+        {
+          "rule": "perCall.cap",
+          "limit": "0.10",
+          "token": "USDC",
+          "result": "PASS",
+          "observed": "0.05"
+        },
+        {
+          "rule": "budget.daily",
+          "limit": "1.00",
+          "token": "USDC",
+          "result": "PASS",
+          "observed": "0.05"
+        },
+        {
+          "rule": "rate.limit",
+          "limit": 10,
+          "result": "PASS",
+          "observed": 1
+        },
+        {
+          "rule": "proof.tierRequired",
+          "limit": 0,
+          "result": "PASS",
+          "observed": 0
+        },
+        {
+          "rule": "escalate.aboveThreshold",
+          "limit": "1000.00",
+          "token": "USDC",
+          "result": "PASS",
+          "observed": "0.05"
+        }
+      ],
+      "reasons": [
+        "all RULE_EVAL rules passed"
+      ],
+      "decision": "APPROVED",
+      "policyId": "9001",
+      "intentHash": "0x0926918d9f3c7c2b7ca3a680f609f8256c215b45cc6af47949895037fb7cbca0",
+      "evaluatedAt": "2026-07-28T10:55:28Z",
+      "policyVersion": 1
+    },
+    "quote_id": "cq_ec8c3b5525c0ed1aa0",
+    "quote_hash": "0x955d4c680a7701bf8b08ed960385c04cf9ab375a06b3dfd4084c865b5bc12565",
+    "quote_expires_at": "2026-07-28T11:05:27.067Z",
+    "funding_amount": "50250",
+    "funding_token": "USDT0",
+    "funding_contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+    "funding_chain": "eip155:196",
+    "funding_decimals": 6,
+    "settlement_amount": "50000",
+    "settlement_token": "USDC",
+    "settlement_contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "settlement_chain": "eip155:8453",
+    "settlement_decimals": 6,
+    "untch_fee_amount": "0",
+    "spread_amount": "250",
+    "max_authorised": "50250",
+    "approval_required": false,
+    "approval_outcome": "APPROVED",
+    "state": "COMPLETED",
+    "failure_code": null,
+    "failure_detail": null,
+    "correlation_id": "smoke-ms4jhruj",
+    "idempotency_key": "live-smoke-ci_af83d9425ce63f7e2d10b3bb",
+    "spend_intent_hash": "0x0926918d9f3c7c2b7ca3a680f609f8256c215b45cc6af47949895037fb7cbca0",
+    "receipt_id": "0x723ef0b842199d4aca1f87e4630b7c086922063cfd5541a141501414c59d9ccf",
+    "event_seq": 13,
+    "created_at": "2026-07-28T10:55:23.668Z",
+    "updated_at": "2026-07-28T10:55:41.041Z",
+    "expires_at": "2026-07-28T11:10:29.942Z"
+  },
+  "quote": {
+    "quote_id": "cq_ec8c3b5525c0ed1aa0",
+    "intent_id": "ci_af83d9425ce63f7e2d10b3bb",
+    "provider_id": "stabledomains",
+    "provider_ref": "untchactivation4jhruj.xyz",
+    "provider_cost": "50000",
+    "settlement_token": "USDC",
+    "settlement_contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "settlement_chain": "eip155:8453",
+    "settlement_decimals": 6,
+    "settlement_recipient": "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
+    "untch_fee": "0",
+    "spread": "250",
+    "total_user_amount": "50250",
+    "max_authorised": "50250",
+    "funding_token": "USDT0",
+    "funding_contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+    "funding_chain": "eip155:196",
+    "funding_decimals": 6,
+    "summary": "Check availability and price for untchactivation4jhruj.xyz",
+    "terms": {
+      "action": "domains.check",
+      "domain": "untchactivation4jhruj.xyz",
+      "deliverable": "availability + current registration price",
+      "verification": "public RDAP cross-check"
+    },
+    "quote_hash": "0x955d4c680a7701bf8b08ed960385c04cf9ab375a06b3dfd4084c865b5bc12565",
+    "created_at": "2026-07-28T10:55:27.068Z",
+    "expires_at": "2026-07-28T11:05:27.067Z"
+  },
+  "funding": {
+    "intent_id": "ci_af83d9425ce63f7e2d10b3bb",
+    "chain": "eip155:196",
+    "tx_hash": "0x5ab5820c3f38890f8f187ccf491c7a97ff8983e60de76da1588bf4d7f321d69a",
+    "amount": "50250",
+    "token": "USDT0",
+    "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+    "decimals": 6,
+    "payer": "0xC8f00BD8c0497c03dFA9aCF71b061512065923d4",
+    "confirmations": 1,
+    "finalized": true,
+    "settled_at": "2026-07-28T10:55:34.646Z"
+  },
+  "execution": {
+    "execution_id": "ex_70cc97f5d736a9bf42b6",
+    "intent_id": "ci_af83d9425ce63f7e2d10b3bb",
+    "provider_id": "stabledomains",
+    "attempt_no": 1,
+    "idempotency_key": "untch-ci_af83d9425ce63f7e2d10b3bb-exec",
+    "state": "PAID",
+    "provider_reference": "untchactivation4jhruj.xyz",
+    "settlement_tx_hash": "0x2b09c4a7629da8b1fb856c69d8b59b0507672a67c6f17a7090b41ff735271ab9",
+    "settlement_chain": "eip155:8453",
+    "settled_amount": "50000",
+    "settled_token": "USDC",
+    "settled_decimals": 6,
+    "error": null,
+    "started_at": "2026-07-28T10:55:37.992Z",
+    "finished_at": "2026-07-28T10:55:40.882Z"
+  },
+  "delivery": {
+    "intent_id": "ci_af83d9425ce63f7e2d10b3bb",
+    "provider_id": "stabledomains",
+    "provider_attested": {
+      "fields": {
+        "tld": "xyz",
+        "domain": "untchactivation4jhruj.xyz",
+        "premium": false,
+        "available": true,
+        "currentPrice": "$20",
+        "readyToRegister": false
+      },
+      "status": "available",
+      "reference": "untchactivation4jhruj.xyz",
+      "attestedAt": "2026-07-28T10:55:40.882Z"
+    },
+    "untch_verified": {
+      "detail": "public RDAP agrees: untchactivation4jhruj.xyz is available",
+      "method": "HTTP_PROBE",
+      "verified": true,
+      "verifiedAt": "2026-07-28T10:55:41.002Z"
+    },
+    "verified": true,
+    "method": "HTTP_PROBE",
+    "evidence_hash": "0xa7f36a961accea518c8ebd21c032465061d051620f4d28724b561090c7137c34",
+    "created_at": "2026-07-28T10:55:41.004Z",
+    "updated_at": "2026-07-28T10:55:41.004Z"
+  },
+  "ledger": [
+    {
+      "kind": "FUNDING",
+      "chain": "eip155:196",
+      "token": "USDT0",
+      "account_id": "TREASURY:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:xlayer-usdt0-funding",
+      "amount": "50250",
+      "memo": "user funding received"
+    },
+    {
+      "kind": "FUNDING",
+      "chain": "eip155:196",
+      "token": "USDT0",
+      "account_id": "USER_OBLIGATION:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:ci_af83d9425ce63f7e2d10b3bb",
+      "amount": "-50250",
+      "memo": "obligation to intent opened"
+    },
+    {
+      "kind": "SETTLEMENT",
+      "chain": "eip155:8453",
+      "token": "USDC",
+      "account_id": "PROVIDER_SETTLEMENT:eip155:8453|0x833589fcd6edb6e08f4c7c32d4f71b54bda02913:stabledomains",
+      "amount": "50000",
+      "memo": "provider paid"
+    },
+    {
+      "kind": "SETTLEMENT",
+      "chain": "eip155:8453",
+      "token": "USDC",
+      "account_id": "TREASURY:eip155:8453|0x833589fcd6edb6e08f4c7c32d4f71b54bda02913:base-usdc-settlement",
+      "amount": "-50000",
+      "memo": "settlement float drawn"
+    },
+    {
+      "kind": "RECOGNITION",
+      "chain": "eip155:196",
+      "token": "USDT0",
+      "account_id": "USER_OBLIGATION:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:ci_af83d9425ce63f7e2d10b3bb",
+      "amount": "50250",
+      "memo": "obligation discharged"
+    },
+    {
+      "kind": "RECOGNITION",
+      "chain": "eip155:196",
+      "token": "USDT0",
+      "account_id": "SPREAD_REVENUE:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:global",
+      "amount": "-250",
+      "memo": "disclosed cross-rail spread"
+    },
+    {
+      "kind": "RECOGNITION",
+      "chain": "eip155:196",
+      "token": "USDT0",
+      "account_id": "CROSS_RAIL_CLEARING:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:global",
+      "amount": "-50000",
+      "memo": "owed to USDC@eip155:8453 — provider paid on that rail"
+    }
+  ],
+  "bookBalancePerRail": [
+    {
+      "chain": "eip155:1",
+      "token": "PROBE",
+      "net": "42"
+    },
+    {
+      "chain": "eip155:8453",
+      "token": "USDC",
+      "net": "0"
+    },
+    {
+      "chain": "eip155:196",
+      "token": "USDT0",
+      "net": "0"
+    }
+  ],
+  "receipt": {
+    "receipt_id": "0x723ef0b842199d4aca1f87e4630b7c086922063cfd5541a141501414c59d9ccf",
+    "status": "DEGRADED_UNANCHORED",
+    "kind": "DECISION",
+    "tx_hash": null
+  },
+  "anchorState": {
+    "state": "ANCHOR_FAILED",
+    "status": "DEGRADED_UNANCHORED",
+    "cause": "isWriter(0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5) is FALSE on the mainnet UntchReceipts. Not a gas problem -- the writer holds 0.0116 OKB.",
+    "remedy": "propose(1, writer) from admin, wait 259200s, execute. See internal/mainnet-writer-activation-runbook.md",
+    "notMainnetConfirmed": true
+  },
+  "publicReceipt": {
+    "api": "https://asp.untch.xyz/consumer/receipt/ci_af83d9425ce63f7e2d10b3bb",
+    "page": "https://untch.xyz/receipt/ci_af83d9425ce63f7e2d10b3bb",
+    "httpStatus": 200,
+    "leaksFunderAddress": false
+  }
+}

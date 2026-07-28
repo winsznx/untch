@@ -15,7 +15,7 @@
 >
 > Untch completed real production-governed provider settlements in Base USDC, independently verified the delivered domain result through public RDAP data, and generated durable Consumer Pack receipts.
 >
-> Current live executions use Untch's operator-funded provider treasury. Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.
+> Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury. Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.
 >
 > These boundaries are published rather than hidden. Section 29 lists every limitation.
 
@@ -273,7 +273,7 @@ Two real settled provider executions. Both paid **0.050000 USDC on Base** from t
 float to StableDomains' own `payTo`, under an EIP-3009 authorisation scoped to one amount and one
 recipient.
 
-Current live executions use Untch's operator-funded provider treasury. The externally funded intent flow is implemented and undergoing final
+Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury. The externally funded intent flow is implemented and undergoing final
 production proof.
 
 | Intent | Settlement transaction | Block | Driven by |
@@ -612,7 +612,7 @@ curl -X POST https://asp.untch.xyz/consumer/domains/check \
 Stated plainly, because a reviewer will find them anyway.
 
 1. **One verified consumer capability.** `stabledomains × domains.check`. Everything else refuses.
-2. **Current live executions use Untch's operator-funded provider treasury.** Untch has been both funder and settler; the leg actually proven is the
+2. **Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.** Untch has been both funder and settler; the leg actually proven is the
    outbound merchant settlement. The externally funded intent flow is implemented and undergoing
    final production proof.
 3. **Custodial between funding and completion.** Not trustless.

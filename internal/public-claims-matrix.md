@@ -120,7 +120,7 @@ every draft. They must be updated **only** when the underlying fact changes.
 
 **Until the external-funder test completes:**
 
-> Current live executions use Untch's operator-funded provider treasury.
+> Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.
 
 ## Where each appears
 
