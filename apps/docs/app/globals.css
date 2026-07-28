@@ -54,6 +54,16 @@ html[data-theme="light"] {
   color-scheme: light;
 }
 
+/*
+ * A backstop, not the fix. The causes are addressed individually (flex min-width, table wrappers),
+ * but one long unbroken token in future content should degrade to a clipped line rather than
+ * shifting the whole layout.
+ */
+html,
+body {
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
@@ -90,13 +100,14 @@ a:hover {
   justify-content: space-between;
   gap: 1rem;
   height: 56px;
-  padding: 0 1.25rem;
+  padding: 0 0.85rem;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(10px);
 }
 
 .brand {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
@@ -261,31 +272,19 @@ html[data-theme="light"] .sidebar a.active {
   }
 }
 
-.mobile-nav {
-  display: block;
-  margin-bottom: 1.25rem;
-}
-
-@media (min-width: 900px) {
-  .mobile-nav {
-    display: none;
-  }
-}
-
-.mobile-nav select {
-  width: 100%;
-  padding: 0.6rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-}
-
 /* Search */
 .search-wrap {
   position: relative;
   flex: 1;
+  /*
+   * `min-width: 0` is the whole fix for the horizontal scroll on phones.
+   *
+   * A flex item's default `min-width` is `auto`, meaning "never shrink below my content's intrinsic
+   * width". The input therefore held the topbar wider than a 393px viewport, the topbar pushed the
+   * body wider, and the entire page scrolled sideways — which is why the header appeared cut off on
+   * the left. `max-width` cannot help: it caps the upper bound, not the floor.
+   */
+  min-width: 0;
   max-width: 280px;
 }
 
@@ -395,6 +394,14 @@ html[data-theme="light"] .sidebar a.active {
   color: var(--data);
 }
 
+.prose :not(pre) > code {
+  overflow-wrap: anywhere;
+}
+
+.prose a {
+  overflow-wrap: anywhere;
+}
+
 .prose pre {
   margin: 0 0 1.25rem;
   padding: 1rem 1.1rem;
@@ -414,8 +421,22 @@ html[data-theme="light"] .sidebar a.active {
 .prose table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0 0 1.25rem;
+  margin: 0;
   font-size: 0.9rem;
+}
+
+/*
+ * Tables are the other real source of sideways page scroll: several docs tables have four columns of
+ * addresses. The table scrolls inside its own box so the ARTICLE never does.
+ */
+.prose .table-wrap {
+  overflow-x: auto;
+  margin: 0 0 1.25rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.prose .table-wrap table {
+  min-width: 34rem;
 }
 
 .prose th,
@@ -475,18 +496,38 @@ html[data-theme="light"] .sidebar a.active {
 
 .menu-btn {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
   border-radius: 8px;
-  padding: 0.4rem 0.65rem;
-  font: inherit;
-  font-size: 0.85rem;
+  padding: 0;
   cursor: pointer;
+}
+
+.menu-btn:hover {
+  background: var(--border-soft);
 }
 
 @media (min-width: 900px) {
   .menu-btn {
+    display: none;
+  }
+}
+
+.drawer-scrim {
+  position: fixed;
+  inset: 56px 0 0 0;
+  z-index: 29;
+  background: rgb(0 0 0 / 45%);
+}
+
+@media (min-width: 900px) {
+  .drawer-scrim {
     display: none;
   }
 }
@@ -496,9 +537,25 @@ html[data-theme="light"] .sidebar a.active {
   position: fixed;
   inset: 56px 0 0 0;
   z-index: 30;
+  width: min(20rem, 86vw);
+  border-right: 1px solid var(--border);
   background: var(--canvas);
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1rem;
+}
+
+.drawer a {
+  display: block;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.drawer a.active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--data) 16%, transparent);
 }
 
 .drawer.open {
