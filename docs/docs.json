@@ -40,7 +40,11 @@
     "groups": [
       {
         "group": "Start here",
-        "pages": ["index", "quickstart", "what-untch-is"]
+        "pages": [
+          "index",
+          "quickstart",
+          "what-untch-is"
+        ]
       },
       {
         "group": "Concepts",
@@ -50,7 +54,8 @@
           "concepts/preflight",
           "concepts/modes",
           "concepts/receipts",
-          "concepts/bureau"
+          "concepts/bureau",
+          "consumer-pack-proof"
         ]
       },
       {
@@ -84,7 +89,10 @@
       },
       {
         "group": "Security",
-        "pages": ["security/invariants", "security/threat-model"]
+        "pages": [
+          "security/invariants",
+          "security/threat-model"
+        ]
       }
     ]
   },

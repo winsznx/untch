@@ -1,0 +1,235 @@
+---
+title: Consumer Pack — production proof
+description: What the Consumer Pack does, what has actually settled in production, and exactly where the live boundary sits today.
+---
+
+# Consumer Pack — production proof
+
+An agent proposes a real-world action. Untch decides whether it is authorised, funds it for the exact
+approved amount, pays the merchant **on the merchant's own rail**, verifies delivery against a source
+that is not the merchant, and produces one receipt spanning both payments.
+
+This page states what has actually happened in production and where the boundary sits. Every claim
+below is checkable without trusting us.
+
+> **Current Consumer Pack executions are operator-funded. The externally funded intent flow is
+> implemented and undergoing final production proof.**
+>
+> **Existing confirmed receipts are anchored on X Layer testnet. X Layer mainnet writer activation is
+> pending the contract's immutable three-day timelock.**
+
+---
+
+## What the Consumer Pack is
+
+Three properties that are unusual, and true today:
+
+1. **The purchase value is separate from the call fee.** The marketplace price is Untch's
+   orchestration fee. Whatever a domain or a product costs is funded on its own leg, per intent, for
+   exactly the amount a policy authorised.
+2. **An ambiguous outcome goes to a human, never to a retry.** If a request leaves Untch and the
+   response is lost, the merchant may have acted. The money is parked in a suspense account and a
+   human is asked. Resending would be a possible second purchase.
+3. **What the merchant says and what Untch proved are reported separately.** A receipt never presents
+   a merchant's assertion as an independent verification.
+
+---
+
+## Consumer Sessions
+
+Reading a tenant's intents requires **proof of policy ownership**, not knowledge of a policy id.
+
+```
+POST /consumer/auth/nonce      → server-issued, single-use, expiring nonce
+  ↓  sign a SIWE message naming this domain, that nonce, an X Layer chainId,
+     and `untch:policy:<policyId>` in Resources
+POST /consumer/auth/verify     → 30-minute bearer, bound to that one policy
+```
+
+Three properties do the work. The nonce is **server-issued**, so a caller cannot pre-sign. It is
+**single-use**, enforced by a conditional `UPDATE` rather than read-then-write, so two concurrent
+replays cannot both win. And it **expires**.
+
+The nonce is consumed *before* the signature is verified. That costs an honest caller one round trip
+on failure and costs an attacker the whole attempt — the other order turns signature verification
+into a free oracle that can be hammered against one nonce indefinitely.
+
+**Owning a wallet is not owning a policy.** A cryptographically valid signature from the wrong
+address returns `403 NOT_POLICY_OWNER`, deliberately distinct from `401`: one says *sign again*, the
+other says *wrong wallet*.
+
+`CONSUMER_AUTH_REQUIRED=1` is live in production. Passing `?policyId=` alone returns `401`.
+
+---
+
+## Deterministic governance
+
+Every intent runs through the same §7.1 engine as a preflight: fourteen rules over a bounded
+`SpendIntent`, evaluated in a fixed order.
+
+**No LLM call appears anywhere on the money decision path.** The engine is a pure function of
+`(intent, policy, ledgerWindow)` — there is no network client in the package at all.
+
+An approval binds to a **hash**, not a description. Change the amount, recipient, item or deadline
+and the hash changes, so the approval stops applying and execution refuses.
+
+---
+
+## Provider execution
+
+Untch pays merchants using **x402 v2** with **EIP-3009 `transferWithAuthorization`**: exact amount,
+exact recipient, `validAfter`/`validBefore`, single-use 32-byte nonce.
+
+**No ERC-20 `approve` is ever issued.** There is no standing allowance for anyone to drain.
+
+The x402 v2 challenge arrives in the `payment-required` **response header** as base64 JSON; the body
+is `{}`. A v1 client that only reads the body sees an empty 402 and wrongly concludes the service is
+broken.
+
+---
+
+## Treasury routing
+
+An adapter never receives a key. It receives a **`PaymentCapability`**: one intent, one asset, one
+ceiling, one recipient allowlist — redeemed once under a row lock **before** signing.
+
+There is **no bridge and no swap on the request path**. Each rail holds a pre-funded operational
+float, and replenishing one is a documented manual operator step recorded as a `TREASURY_TRANSFER`
+group pair.
+
+Published development keys (the Anvil and Hardhat defaults) are rejected by config validation in
+every environment, so one cannot be promoted out of a test fixture into a settlement signer.
+
+---
+
+## Delivery verification
+
+For `domains.check`, the result is checked against **public RDAP** — the registry itself.
+
+The receipt reports two separate fields and never merges them:
+
+| Field | Meaning |
+| --- | --- |
+| `providerAttested` | what the merchant said |
+| `untchVerified` | what Untch independently confirmed, and by which method |
+
+---
+
+## Cross-rail accounting
+
+The ledger is double-entry and append-only **by Postgres RULE** — `UPDATE` and `DELETE` are rejected,
+so a correction must be a reversing entry that stays visible.
+
+One deliberate constraint makes it tractable: **an entry group is single-asset and sums to exactly
+zero.** A cross-rail movement is therefore never one group — it is two, joined by a
+`CROSS_RAIL_CLEARING` account on each side.
+
+That constraint is what makes "balanced" checkable in SQL. Summing USDT0 on X Layer and USDC on Base
+into one figure would require a price, and a ledger whose correctness depends on a price feed is a
+ledger that can be made to balance by moving the price.
+
+After both production executions, the whole book sums to **exactly zero on both rails**.
+
+---
+
+## Public receipts
+
+Every completed action has a receipt anyone can open, with no account:
+
+```bash
+curl -s https://asp.untch.xyz/consumer/receipt/ci_82bb2216c02366bc1b839a00
+```
+
+The public view is built by **naming** the fields that may be published, never by removing fields
+from the private one — so a field added later cannot silently become public. The request payload, the
+correlation id and which operator channel resolved an approval are all withheld.
+
+The anchor is five distinguishable states, not a nullable id:
+
+| State | Meaning |
+| --- | --- |
+| `NOT_RECORDED` | completed, but no receipt was written — carries the reason |
+| `PENDING` | durable and queued for the next batch; nothing is wrong |
+| `ANCHORED` | on chain, with `txHash` and `blockNumber` |
+| `ANCHOR_FAILED` | the writer gave up — **the payment and delivery facts are unaffected** |
+| `NOT_FOUND` | the intent names a receipt that does not exist — an inconsistency, not a wait |
+
+---
+
+## The one verified capability
+
+**`stabledomains × domains.check`** is the only capability that can move money.
+
+`effectiveMaturity` takes the **minimum** of provider maturity and capability maturity, so promoting
+a provider promotes nothing else. That is why `domains.register` still cannot execute even though
+`stabledomains` is `verified`.
+
+---
+
+## Current maturity matrix
+
+Read live from [`/consumer/catalog`](https://asp.untch.xyz/consumer/catalog).
+
+| Provider | Capability | Maturity | Can move money? |
+| --- | --- | --- | --- |
+| `stabledomains` | `domains.check` | **verified** | **Yes — settled twice** |
+| `stabledomains` | `domains.quote` | sandbox | No |
+| `stabledomains` | `domains.register` / `renew` | sandbox | No |
+| `stabledomains` | `domains.dns` | experimental | No |
+| `stabletravel` | `travel.search` / `compare` | sandbox | No |
+| `stableemail` | `notify.*` | sandbox | No |
+| `purch` | `shop.*` | experimental | No |
+| `stablemerch` | `gifts.*` | experimental | No |
+
+**Not live:** domain *registration*, shopping, gift ordering, travel *booking*, notification sending,
+Solana settlement, Tempo settlement. Each is implemented, gated, and refuses with a named reason.
+`execution.providersExecutableToday` on the live catalog is `["stabledomains"]` and nothing else.
+
+---
+
+## Live transaction evidence
+
+Two real settled provider payments, **0.050000 USDC on Base** each, from the Untch settlement float
+to StableDomains' own `payTo`.
+
+| Intent | Settlement transaction | Block | Driven by |
+| --- | --- | --- | --- |
+| `ci_50a37ce77505690e8b45df13` | [`0xe7ce102f…21e86`](https://basescan.org/tx/0xe7ce102f7a704e9c3113fc7fcc8626db8a9cdc330e614d023c231e88fce21e86) | 49196541 | live smoke driver |
+| `ci_82bb2216c02366bc1b839a00` | [`0x6815d60e…3e489`](https://basescan.org/tx/0x6815d60e1be688451d36007a4113f858e0a10433dccef01dc3b3d0f8d283e489) | 49201380 | **the deployed production worker** |
+
+- **Untch Base settlement float:** `0x0e79371813e88F31c2B60C80bad391a952039095`
+- **StableDomains payTo:** `0xABcb091D90419E1c8AD4818f1B33FC4645501892`
+
+Delivery for both was verified against public RDAP.
+
+---
+
+## Current limitations
+
+Stated plainly, because a reviewer will find them anyway.
+
+1. **One verified capability.** Everything else refuses.
+2. **Executions are operator-funded.** Untch has been both funder and settler; the leg actually
+   proven is the **outbound merchant settlement**. The externally funded flow is implemented and
+   undergoing final production proof.
+3. **Receipt anchoring is on X Layer testnet.** The mainnet `UntchReceipts` writer is not yet
+   authorised, and the contract's writer-set timelock is an immutable three days. New receipts stay
+   durable and report `ANCHOR_FAILED` honestly. **The ledger is authoritative regardless — anchoring
+   is publication, not truth.**
+4. **Custodial between funding and completion.** Untch holds value as an operator during that window.
+   It is not trustless.
+5. **Delivery verification is not universal.** RDAP works for domains; other categories fall back to
+   provider attestation, labelled as such.
+
+---
+
+## Roadmap
+
+None of the following is live.
+
+- Promote `domains.register` after a verified registration settlement
+- Solana settlement once the x402 payload serialisation is authoritatively confirmed
+- Tempo / MPP settlement
+- Gift ordering once the SIWX identity leg is accepted by the provider's verifier
+- Travel **booking** — needs a provider that actually sells inventory
+- Move Consumer Pack settlement onto vault-backed floats
