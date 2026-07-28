@@ -11,6 +11,32 @@ enum, the `opId` derivation and the delay are all verified live (§0).
 
 ---
 
+## 0a. PROPOSAL SUBMITTED — 2026-07-28T11:46:46Z
+
+| | |
+|---|---|
+| **Transaction** | [`0xe5b7a9d3a6060cba305e5171b2296c7de4a7e0abd0554e13c55f3b2af5e055d5`](https://www.oklink.com/x-layer/tx/0xe5b7a9d3a6060cba305e5171b2296c7de4a7e0abd0554e13c55f3b2af5e055d5) |
+| Block | 66470170 |
+| Proposed at | `1785239206` — 2026-07-28T11:46:46Z |
+| Operation id | `0xb4d6ce980c9c18a1d08e23abafa972cd4d82b78a0fc2e27935f7ced80ed4ddfa` |
+| Kind | `1` — `OpKind.ADD_WRITER` |
+| Target | `0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5` |
+| Value sent | `0` |
+| **Earliest execution (ETA)** | **`1785498406` — 2026-07-31T11:46:46Z** |
+
+Simulated before sending: signer `== admin()`, correct contract, `kind == ADD_WRITER`, correct
+writer, zero value, and `opEta == 0` so no duplicate could be created. `simulateContract` returned the
+same `opId` the pure `opId()` view returns.
+
+> The submitting call errored on `waitForTransactionReceipt` with `block is out of range` — an RPC
+> lag, not a failed transaction. **The proposal landed.** Confirmed by reading `opEta` directly and
+> then recovering the tx from the `OpProposed` event. Worth recording: a receipt-fetch failure is not
+> evidence a transaction failed, and re-sending on that assumption would have hit `OpAlreadyPending`.
+
+**Skip §2–§4 below — they are done.** Resume at §5 to re-read state, then §6 on or after the ETA.
+
+---
+
 ## 0. Verified live state, 2026-07-28
 
 ```
@@ -18,7 +44,7 @@ admin()                    → 0xD9eD4D474B0D01031d10d637546450F39ed6a5ba
 timelockDelay()            → 259200            (3 days, IMMUTABLE)
 isWriter(0x03e5…1ab5)      → false             ← the reason anchoring fails
 opId(ADD_WRITER, 0x03e5…)  → 0xb4d6ce980c9c18a1d08e23abafa972cd4d82b78a0fc2e27935f7ced80ed4ddfa
-opEta(that id)             → 0                 (0 = nothing pending)
+opEta(that id)             → 1785498406        (was 0; now PROPOSED — see §0a)
 ```
 
 The `opId` was cross-checked: the value the contract returns is identical to
