@@ -224,3 +224,74 @@ Everything else in this phase proceeds without you.
 6. §6 README, §7 metadata, §8 changelog, §9 proof pages — none of these block on you.
 7. §3 and §5 when B1 and B2 clear.
 8. §10 release last, from `main`, never from a feature branch.
+
+---
+
+# ADDENDUM — closing state, 2026-07-28
+
+## The three headline findings
+
+| # | Finding | Resolution |
+|---|---|---|
+| **F1** | Consumer Pack existed on one laptop | **CLOSED.** Branch pushed, PR #10 opened, CI run for the first time ever, squash-merged as `ab961f0`. `main` now carries 30 `consumer-core` files, 10 ASP consumer files and 3 migrations. |
+| **F2** | Repository was PRIVATE | **CLOSED** with your approval. Now PUBLIC, after a full secret scan of every commit. |
+| **F3** | Two open PRs were already merged | **CLOSED.** #2 and #3 closed with a comment proving their heads are ancestors of `main`. Content re-reviewed before closing; no P0/P1 found. |
+
+## What the merge exposed
+
+`consumer-pack.yml` had never executed. Its first run failed — along with every other workflow — on
+`ERR_PNPM_OUTDATED_LOCKFILE`. The committed `pnpm-lock.yaml` declared `@babel/parser` as a root
+devDependency that only the user's UNCOMMITTED `package.json` contains. An earlier commit had picked
+up the lockfile that change produced while correctly leaving `package.json` alone, so the committed
+pair had been inconsistent since it landed and nothing had ever noticed, because the branch had never
+been pushed.
+
+Regenerated against the committed `package.json`; the user's change restored byte for byte. All seven
+workflows green.
+
+## The receipt anchor — root cause, found only because gas was fixed
+
+The `DEGRADED_UNANCHORED` receipt was blamed on gas exhaustion. Gas was indeed exhausted, and once it
+was funded the re-drive submitted and hit a **different** failure: `0x5d94d23c`, which decodes to
+`NotWriter(address)`.
+
+`0x03e5abfD6AfF41e9766bC1c34F136962404a1ab5` is **not an authorised writer** on the mainnet
+`UntchReceipts` at `0xb5b853684624aea2ecbcd0e888cbff46ff0a5f95`. Verified directly:
+`isWriter(...) = false`, `admin = 0xD9eD4D474B0D01031d10d637546450F39ed6a5ba`.
+
+**Consequences worth stating plainly:**
+
+1. **All 20 previously "CONFIRMED" receipts are X Layer TESTNET anchors** against
+   `0x0c64997277b7d94d2999dea22a123cac56334863`. Confirmed by looking up a confirmed batch's tx: not
+   found on mainnet, found on testnet. Every public claim of "anchored on X Layer" has been qualified.
+2. **Authorising the writer takes 3 days.** `timelockDelay() = 259200`, immutable. Propose from the
+   admin key, wait, execute. This is the control working as designed.
+3. Gas exhaustion was masking an authorisation problem. Fixing one revealed the other — which is the
+   argument for the re-drive tooling existing at all.
+
+## Delivered this phase
+
+- `redriveDegraded` + `flushPendingOnce` + `scripts/receipt-redrive.ts`, 6 tests. Also closes a
+  pre-existing gap: a process killed between claiming and submitting a batch left PENDING rows that
+  nothing recovered.
+- `CONSUMER_AUTH_REQUIRED=1` live. **14/14** against production with real signatures.
+- Production README (32 sections, default-theme Mermaid), Apache-2.0 LICENSE, public changelog at
+  `/changelog`, `internal/public-claims-matrix.md`.
+- Repository description, homepage, 14 topics, PUBLIC.
+- Release **v0.1.0** from `main`.
+
+## Two claims corrected rather than defended
+
+- **Receipts** moved LIVE → BETA (testnet anchors, mainnet blocked on a 3-day timelock).
+- **UntchVault** was described as testnet-only. Stale — verified by reading bytecode on X Layer
+  mainnet: VaultFactory is 7261 bytes at `0x6cc3bc686a7bc554dbd5636cb3eeee9171036805`. Corrected to
+  BETA rather than promoted to LIVE, because the accurate statement is narrower than either: the
+  contract is on mainnet, and the Consumer Pack still settles from operator floats.
+
+## Still open
+
+| # | Item | Needs |
+|---|---|---|
+| 1 | Mainnet receipt anchoring | admin `0xD9eD…a5ba` proposes the writer, waits **3 days**, executes |
+| 2 | External-funder proof | fund `0xC8f00BD8c0497c03dFA9aCF71b061512065923d4` with ~1 USDT0 + a little OKB on X Layer |
+| 3 | Docs site / X article / YouTube | apply the two qualifiers from `internal/public-claims-matrix.md` §E |
