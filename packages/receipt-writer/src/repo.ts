@@ -44,6 +44,28 @@ export interface ReceiptsRepo {
   /** Batch + its receipts → DEGRADED_UNANCHORED (retries exhausted). Rows are kept, never deleted. */
   markDegraded(batchId: number): Promise<void>;
 
+  /**
+   * Operator re-drive: return a DEGRADED_UNANCHORED batch to PENDING so the anchorer picks it up.
+   *
+   * DEGRADED_UNANCHORED is terminal for the AUTOMATIC anchorer, and that is correct — a batch that has
+   * burned its retry budget must stop consuming the loop, and the durable ledger stays authoritative
+   * either way. But "the automation gave up" is not "this can never be anchored". The retries are
+   * exhausted precisely when something outside the process is wrong — an RPC outage, a contract pause,
+   * or, in the case this was written for, a signer with no gas. Once that is fixed the receipt is
+   * still perfectly valid and still deserves its anchor.
+   *
+   * This re-drives the SAME batch with the SAME receiptId. It never mints a replacement receipt: a
+   * new id would break every reference already handed out and would quietly assert that the original
+   * decision did not happen.
+   *
+   * Deliberately NOT called from any loop. An operator runs it after fixing the cause, because
+   * automatic re-drive would just re-burn the budget against a condition nothing has changed.
+   *
+   * Returns false when the batch does not exist or is not DEGRADED_UNANCHORED — re-driving a
+   * CONFIRMED batch would double-anchor it.
+   */
+  redriveDegraded(batchId: number): Promise<boolean>;
+
   batchesByStatus(status: BatchStatus): Promise<BatchRow[]>;
   receiptsForBatch(batchId: number): Promise<ReceiptOnchain[]>;
 

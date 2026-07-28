@@ -48,6 +48,29 @@ export async function flushOnce(deps: AnchorerDeps): Promise<FlushOutcome> {
   return submitClaimed(deps, claimed.batchId, claimed.receipts);
 }
 
+/**
+ * Submit any batch sitting in PENDING that no submit attempt is currently driving.
+ *
+ * PENDING is normally transient: `claimQueuedBatch` creates the batch and `submitClaimed` runs on it
+ * immediately, in the same call. The one way a batch can REST in PENDING is an operator re-drive of a
+ * previously degraded batch (`redriveDegraded`), and without this function that batch would be
+ * orphaned — `flushOnce` only claims QUEUED receipts and `reconcileOnce` only sweeps SUBMITTED ones,
+ * so nothing would ever pick it up again.
+ *
+ * It also covers a real crash case that existed before re-drive did: a process killed between
+ * claiming a batch and submitting it left PENDING rows behind, and the next tick would not retry them.
+ */
+export async function flushPendingOnce(deps: AnchorerDeps): Promise<readonly FlushOutcome[]> {
+  const pending = await deps.repo.batchesByStatus("PENDING");
+  const out: FlushOutcome[] = [];
+  for (const batch of pending) {
+    const receipts = await deps.repo.receiptsForBatch(batch.id);
+    if (receipts.length === 0) continue;
+    out.push(await submitClaimed(deps, batch.id, receipts));
+  }
+  return out;
+}
+
 async function submitClaimed(
   deps: AnchorerDeps,
   batchId: number,
