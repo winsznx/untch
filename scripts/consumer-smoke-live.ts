@@ -98,6 +98,39 @@ const info = (k: string, v: string): void => console.log(`     ${k.padEnd(24)} $
 const step = (n: number, s: string): void => console.log(`\n\x1b[1m${String(n).padStart(2)}. ${s}\x1b[0m`);
 const warn = (s: string): void => console.log(`  \x1b[33m!\x1b[0m ${s}`);
 
+/**
+ * The states in which an intent's outcome is actually settled.
+ *
+ * Everything else is still in motion. Reading once immediately after queueing caught an intent
+ * mid-flight at PROVIDER_PAYMENT_PENDING and reported a successful run as a failure, because the
+ * worker had sent the request and not yet seen the response.
+ */
+const SETTLED_STATES: ReadonlySet<string> = new Set([
+  "PROVIDER_ACKNOWLEDGED", "DELIVERY_PENDING", "DELIVERY_VERIFIED", "COMPLETED",
+  "FAILED_BEFORE_PAYMENT", "FAILED_AFTER_PAYMENT", "MANUAL_REVIEW", "REFUND_PENDING",
+  "REFUNDED", "BLOCKED", "CANCELLED", "EXPIRED",
+]);
+
+/** Poll an intent to a settled state. READ-ONLY: it never transitions anything. */
+async function waitForSettled(
+  store: ConsumerStore,
+  intentId: string,
+  timeoutMs: number,
+): Promise<ConsumerIntent | null> {
+  const deadline = Date.now() + timeoutMs;
+  let seen = await store.getIntent(intentId);
+  let last = seen?.state;
+  while (seen && !SETTLED_STATES.has(seen.state) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2000));
+    seen = await store.getIntent(intentId);
+    if (seen && seen.state !== last) {
+      last = seen.state;
+      console.log(`     ${"worker".padEnd(24)} ${seen.state}`);
+    }
+  }
+  return seen;
+}
+
 function stop(code: number, why: string): never {
   console.error(`\n\x1b[31mSMOKE: STOP — ${why}\x1b[0m`);
   console.error("No payment was attempted.");
@@ -505,6 +538,8 @@ async function main(): Promise<void> {
    * rather than implying otherwise.
    */
   const operatorFunded = has("operator-funded");
+  const prepareOnly = has("prepare-only");
+  const deployedWorkerOnly = has("deployed-worker-only");
   const funderKey = operatorFunded ? undefined : process.env.CONSUMER_TEST_FUNDER_PRIVATE_KEY?.trim();
   const funderAccount = funderKey ? privateKeyToAccount(funderKey as `0x${string}`) : null;
   if (operatorFunded) {
@@ -765,7 +800,17 @@ async function main(): Promise<void> {
 
   // ── 5. INTENT ─────────────────────────────────────────────────────────────
   step(5, "Creating a real Consumer Intent");
-  const intentId = newIntentId();
+  /**
+   * The intent ID can be PINNED from the command line.
+   *
+   * The Solana one-shot proof gate authorises exactly one intent ID, so that ID has to be known
+   * before production is armed. Pinning it here is what lets the gate be configured first and the
+   * intent be created second, without a prepare step that leaves a half-finished intent lying around
+   * or a second intent appearing after production can spend.
+   *
+   * Generated when absent, which is every ordinary run.
+   */
+  const intentId = arg("intent-id") ?? newIntentId();
   const tenantId = `policy:${policy.id}`;
   await orchestrator.createIntent({
     tenantId,
@@ -869,6 +914,32 @@ async function main(): Promise<void> {
     finalized: externallyFunded,
   });
   ok(`reserved ${displayMoney(funding.amount)}`);
+
+  /**
+   * `--prepare-only` stops HERE, one line before the intent becomes executable.
+   *
+   * This exists so a bounded production proof can name its intent in advance. The Solana one-shot
+   * gate authorises exactly one intent ID, which means the ID has to exist before production is
+   * armed, and the intent must not be reachable by a worker in the meantime.
+   *
+   * Stopping before `queueExecution` rather than after is the whole point. A queued intent is one a
+   * deployed worker will claim within two seconds, and with Solana disarmed it would claim it, fail,
+   * and burn an attempt for no reason. Everything up to and including the reservation is durable, so
+   * the prepared intent is complete and simply waiting.
+   */
+  if (prepareOnly) {
+    console.log(`\n\x1b[1m\x1b[32mPREPARED — not queued, not paid.\x1b[0m`);
+    console.log(`  intent      ${intentId}`);
+    console.log(`  provider    ${providerId}`);
+    console.log(`  capability  ${plan.capability}`);
+    console.log(`  authorised  ${displayMoney(funding.amount)}`);
+    console.log(`  policy      ${policy.id}, decision ${decision?.decision ?? "(none)"}`);
+    console.log(`  reservation held, execution NOT queued, no provider payment started.`);
+    console.log(`\nArm the one-shot gate with this exact intent, then run:`);
+    console.log(`  pnpm consumer:smoke:live --provider ${planKey} --execute-intent ${intentId}`);
+    return;
+  }
+
   await orchestrator.queueExecution(intentId);
 
   // ── 9-11. THE REAL PAYMENT ────────────────────────────────────────────────
@@ -890,7 +961,32 @@ async function main(): Promise<void> {
    * already carried through payment is how one authorisation becomes two settlements.
    */
   let executed: ConsumerIntent;
-  try {
+  if (deployedWorkerOnly) {
+    /**
+     * `--deployed-worker-only` deliberately does NOT execute the intent in this process.
+     *
+     * A maturity claim about production has to be earned by the thing that runs in production. This
+     * process has already done the honest part, creating and reserving through the same orchestrator
+     * the service uses, and now it stands back: the intent is queued, the deployed worker claims it
+     * within its two-second poll, and this side only reads.
+     *
+     * Reading is all it does. It never transitions anything, so it cannot influence the outcome it is
+     * reporting, and a timeout leaves the intent exactly where the worker put it.
+     */
+    warn("--deployed-worker-only: this process will NOT execute the intent.");
+    warn("waiting for the DEPLOYED Railway worker to claim it.");
+    const claimed = await waitForSettled(store, intentId, 180_000);
+    if (!claimed) stop(3, `intent ${intentId} vanished while waiting for the deployed worker`);
+    if (!SETTLED_STATES.has(claimed.state)) {
+      stop(
+        4,
+        `the deployed worker did not settle this intent within 180s (state ${claimed.state}). ` +
+          "Check the intent and the worker logs. Do NOT re-run: that is how one authorisation " +
+          "becomes two settlements.",
+      );
+    }
+    executed = claimed;
+  } else try {
     executed = await orchestrator.executeIntent(intentId);
   } catch (err) {
     if (!(err instanceof Error) || !/no longer in EXECUTION_QUEUED/.test(err.message)) throw err;
@@ -907,19 +1003,9 @@ async function main(): Promise<void> {
      * The poll is READ-ONLY by construction. It never transitions anything, so it cannot influence
      * what the winner does, and a timeout leaves the intent exactly where the worker put it.
      */
-    const SETTLED: ReadonlySet<string> = new Set([
-      "PROVIDER_ACKNOWLEDGED", "DELIVERY_PENDING", "DELIVERY_VERIFIED", "COMPLETED",
-      "FAILED_BEFORE_PAYMENT", "FAILED_AFTER_PAYMENT", "MANUAL_REVIEW", "REFUND_PENDING",
-      "REFUNDED", "BLOCKED", "CANCELLED", "EXPIRED",
-    ]);
-    const deadline = Date.now() + 120_000;
-    let claimed = await store.getIntent(intentId);
-    while (claimed && !SETTLED.has(claimed.state) && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 2000));
-      claimed = await store.getIntent(intentId);
-    }
+    const claimed = await waitForSettled(store, intentId, 120_000);
     if (!claimed) stop(3, `intent ${intentId} vanished after the race`);
-    if (!SETTLED.has(claimed.state)) {
+    if (!SETTLED_STATES.has(claimed.state)) {
       stop(4, `the deployed worker is still mid-flight at ${claimed.state} after 120s — check the intent, do not re-run`);
     }
     executed = claimed;
