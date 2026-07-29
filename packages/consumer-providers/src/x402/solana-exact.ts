@@ -113,26 +113,6 @@ export interface SolanaExactClientDeps {
   readonly clock?: () => number;
 }
 
-export interface SolanaPayloadInput {
-  readonly secretKey: string;
-  readonly rpcUrl: string;
-  readonly amount: string;
-  readonly asset: string;
-  readonly payTo: string;
-  readonly feePayer: string;
-  readonly resource: string;
-  readonly maxTimeoutSeconds: number;
-  /** The network string EXACTLY as the provider declared it. */
-  readonly declaredNetwork: string;
-}
-
-export interface SolanaPayload {
-  readonly scheme: string;
-  readonly network: string;
-  readonly x402Version: number;
-  readonly payload: { readonly transaction: string };
-}
-
 /** Read one string field out of an untrusted challenge without trusting its shape. */
 function field(o: Record<string, unknown>, key: string): string | null {
   const v = o[key];
@@ -573,67 +553,6 @@ export function isSolanaMainnet(network: string): boolean {
   if (!network.startsWith("solana:")) return false;
   const reference = network.slice("solana:".length);
   return SOLANA_MAINNET_GENESIS.startsWith(reference) && reference.length >= 32;
-}
-
-/**
- * The default payload builder: the OFFICIAL x402 SVM client, imported lazily.
- *
- * Lazily because it pulls in the Solana toolchain, and an instance with no Solana rail should not
- * pay that import cost at boot. The `network` handed to the reference is the plain string its RPC
- * helper understands; the network written into the returned PAYLOAD is put back to exactly what the
- * provider declared.
- */
-async function defaultPayloadBuilder(input: SolanaPayloadInput): Promise<SolanaPayload> {
-  const [{ createKeyPairSignerFromBytes }, { exact }] = await Promise.all([
-    import("@solana/kit"),
-    import("x402/schemes"),
-  ]);
-
-  const bytes = decodeBase58(input.secretKey.trim());
-  if (bytes === null || bytes.length !== 64) {
-    throw new ProviderError(
-      normalizedError("TREASURY_INSUFFICIENT", "the Solana secret key is not a base58 64-byte keypair"),
-    );
-  }
-  const signer = await createKeyPairSignerFromBytes(bytes);
-
-  let built: { payload: { transaction: string } };
-  try {
-    built = (await exact.svm.createAndSignPayment(
-      signer,
-      2,
-      {
-        scheme: "exact",
-        network: "solana",
-        maxAmountRequired: input.amount,
-        asset: input.asset,
-        payTo: input.payTo,
-        resource: input.resource,
-        description: "",
-        mimeType: "application/json",
-        maxTimeoutSeconds: input.maxTimeoutSeconds,
-        extra: { feePayer: input.feePayer },
-      } as never,
-      { svmConfig: { rpcUrl: input.rpcUrl } },
-    )) as { payload: { transaction: string } };
-  } catch (err) {
-    // Building failed BEFORE anything was submitted, so nothing was spent and nothing is ambiguous.
-    // Saying so explicitly matters: the caller's next question is always "did money move".
-    throw new ProviderError(
-      normalizedError(
-        "PAYMENT_FAILED",
-        `could not build the Solana payment: ${(err as Error).message}. Nothing was signed or sent.`,
-        { paymentSettled: false },
-      ),
-    );
-  }
-
-  return {
-    scheme: "exact",
-    network: input.declaredNetwork,
-    x402Version: 2,
-    payload: { transaction: built.payload.transaction },
-  };
 }
 
 async function solanaRpc(rpcUrl: string, method: string, params: unknown[]): Promise<unknown> {
