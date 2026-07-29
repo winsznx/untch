@@ -20,6 +20,7 @@
  */
 
 import type { AssetRef, CaipChainId } from "./assets";
+import { SolanaProofGate } from "./solana-proof-gate";
 import { assetKey, describeAsset } from "./assets";
 import { ProviderError, normalizedError } from "./errors";
 import { formatMoney, gtMoney, type Money } from "./money";
@@ -125,6 +126,8 @@ export function assertRebalancingDisabled(r: Rebalancer): void {
 }
 
 export interface TreasuryRouterDeps {
+  /** Set only while a bounded Solana production proof is armed. Absent in normal operation. */
+  readonly proofGate?: SolanaProofGate | null;
   readonly store: ConsumerStore;
   /** One client per settlement rail. A rail with no key simply has no entry. */
   readonly rails: ReadonlyMap<CaipChainId, RailClient>;
@@ -142,6 +145,13 @@ export class TreasuryRouter {
   private readonly pauses: PauseChecker;
   private readonly clock: () => number;
   private readonly capabilityTtlMs: number;
+  /**
+   * The Solana one-shot proof gate, or null when no Solana proof is armed.
+   *
+   * Null means Solana payments are refused by the RAIL's own arm switch long before this, so a null
+   * gate is not a permissive gate. It simply means there is no proof in flight.
+   */
+  private readonly proofGate: SolanaProofGate | null;
   private readonly onLowBalance: (treasuryRef: string, observed: Money, floor: Money) => void;
 
   constructor(deps: TreasuryRouterDeps) {
@@ -152,6 +162,7 @@ export class TreasuryRouter {
     this.clock = deps.clock ?? Date.now;
     this.capabilityTtlMs = deps.capabilityTtlMs ?? 5 * 60_000;
     this.onLowBalance = deps.onLowBalance ?? (() => {});
+    this.proofGate = deps.proofGate ?? null;
   }
 
   railFor(chain: CaipChainId): RailClient | null {
@@ -241,6 +252,7 @@ export class TreasuryRouter {
   private wrap(record: CapabilityRecord, rail: RailClient): PaymentCapability {
     const store = this.store;
     const clock = this.clock;
+    const proofGate = this.proofGate;
     return {
       capabilityId: record.capabilityId,
       intentId: record.intentId,
@@ -285,6 +297,37 @@ export class TreasuryRouter {
           );
         }
 
+        /**
+         * The Solana one-shot proof gate, checked BEFORE redemption and therefore before signing.
+         *
+         * It governs Solana only. Base reaches `rail.pay` exactly as it always has, because the gate
+         * exists to bound a Solana proof and a control that silently altered a proven rail would be a
+         * regression dressed as a safeguard.
+         *
+         * The capability record carries the provider and the intent but not the action, so the intent
+         * is read for its capability. That is one query on a path that is about to spend real money,
+         * which is the cheapest possible place to pay for certainty about WHAT is being paid for.
+         */
+        if (proofGate && SolanaProofGate.governs(record.asset.chain)) {
+          const intent = await store.getIntent(record.intentId);
+          if (!intent) {
+            throw new ProviderError(
+              normalizedError(
+                "PAYMENT_CHALLENGE_UNACCEPTABLE",
+                `intent ${record.intentId} could not be read, so the Solana proof gate cannot ` +
+                  "confirm what this payment is for. Refusing.",
+              ),
+            );
+          }
+          await proofGate.assertAuthorised({
+            intentId: record.intentId,
+            providerId: record.providerId,
+            capability: intent.action,
+            amount: req.amount,
+            chain: record.asset.chain,
+          });
+        }
+
         // Redeem BEFORE signing. If the process dies between redemption and settlement, the
         // capability is spent and the intent lands in reconciliation — which is the correct
         // outcome. Redeeming after signing would leave a window where a crash permits a re-sign.
@@ -303,7 +346,11 @@ export class TreasuryRouter {
           );
         }
 
-        return rail.pay(req);
+        const result = await rail.pay(req);
+        // Latch the in-process guard. Durable consumption is the settled execution record the
+        // orchestrator writes, so nothing here is load-bearing for single use across a restart.
+        if (proofGate && SolanaProofGate.governs(record.asset.chain)) proofGate.markUsed();
+        return result;
       },
     };
   }

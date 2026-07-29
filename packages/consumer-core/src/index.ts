@@ -14,6 +14,12 @@
  */
 
 export {
+  SolanaProofGate,
+  loadSolanaProofGate,
+  type SolanaProofGateConfig,
+  type ProofAuthorisationInput,
+} from "./solana-proof-gate";
+export {
   type AssetRef,
   type AssetEntry,
   type CaipChainId,
