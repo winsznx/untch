@@ -97,6 +97,55 @@ can fill the capability without an API change — they do not pretend to book.
 The audit trail records a **subject hash** and a recipient **count** — never the body, never the
 recipient list.
 
+`notify.*` is Untch mailing *you* about *your* intent. If you want to buy an email action as the
+product, that is Untch Mail below — a different family, a different policy category, and a different
+blast radius.
+
+---
+
+## Untch Mail
+
+Eight tools over StableEmail. Every paid route **quotes**; none of them settles inline.
+`POST /consumer/mail/execute` is the one door that spends, and it takes an intent that has already
+been quoted, policy-checked and funded.
+
+| Route | Fee | Provider price | Tool state |
+| --- | --- | --- | --- |
+| `POST /consumer/mail/send` | $0.05 | $0.02 | **LIVE** |
+| `POST /consumer/mail/inbox/buy` | $0.05 | $1.00 / 30 days | BETA |
+| `POST /consumer/mail/inbox/topup` | $0.05 | $1.00 / $2.50 / $8.00 | BETA |
+| `POST /consumer/mail/subdomain/buy` | $0.05 | $5.00 | BETA |
+| `POST /consumer/mail/subdomain/send` | $0.05 | $0.005 | PARTNER_ACCESS_REQUIRED |
+| `POST /consumer/mail/inbox/status` | $0.02 | free | PARTNER_ACCESS_REQUIRED |
+| `POST /consumer/mail/subdomain/status` | $0.02 | free | PARTNER_ACCESS_REQUIRED |
+| `POST /consumer/mail/inbox/cancel` | $0.05 | free (refunds pro-rata) | PARTNER_ACCESS_REQUIRED |
+| `POST /consumer/mail/execute` | $0.05 | — | — |
+
+The provider price is never read from that table at runtime. It is read from StableEmail's own 402,
+seconds before you are asked to approve it, so an approval binds to the merchant's figure.
+
+```json
+{ "policyId": "42", "to": ["buyer@example.com"], "subject": "Your order", "text": "…" }
+```
+
+`mail.inbox.topup` takes `"period": "month" | "quarter" | "year"`, which selects the provider's own
+endpoint rather than computing a discount.
+
+**What a Mail receipt knows.** A recipient count, a subject hash, a body hash, and — after
+execution — a message-id hash. Never the address, never the subject, never the body. The body hash
+binds the exact bytes, so a body cannot be swapped between approval and execution while the subject
+stays the same.
+
+**What Untch will not claim.** A send cannot be verified from the sender side: StableEmail's shared
+relay exposes no per-message status endpoint, so `mail.send` delivery evidence is
+`untchVerified: false, method: NONE`, and it says so on the receipt. An **inbox** or **subdomain**
+purchase *is* verifiable — it is polled back over the provider's own status endpoint and reports
+`PROVIDER_STATUS_POLL`.
+
+The four PARTNER_ACCESS_REQUIRED tools are not unfinished. They are SIWX-gated and owner-scoped:
+StableEmail admits only the wallet that owns the inbox or subdomain, and Untch owns neither yet.
+Buying one is what unblocks them.
+
 ---
 
 ## Untch Consumer Status (all free)
@@ -146,9 +195,26 @@ already funded, past its funding window, or its quote has expired.
 
 ## `GET /consumer/catalog` — free
 
-Every provider, its maturity, its capabilities and its **provenance** — a factual record of what was
-observed, when. Plus `execution.providersExecutableToday`, derived from durable state, which is empty
-today and says so.
+Every provider, its capabilities and its **provenance** — a factual record of what was observed,
+when. Plus `execution.providersExecutableToday`, derived from durable state.
+
+Each capability carries a `state`, which is the honest answer per **tool**, not per provider:
+
+| `state` | Means |
+| --- | --- |
+| `LIVE` | A real settled payment from an Untch treasury was observed **and** the delivery was verified. The only state that executes on production. |
+| `BETA` | Implemented and validated against the live contract. Nothing has settled yet. |
+| `SANDBOX` | Reachable, but a leg is unproven — and the work to prove it is ours. |
+| `PARTNER_ACCESS_REQUIRED` | Blocked by something outside Untch: a partner agreement, an identity we do not hold, a rail we cannot sign for, or an operation the provider does not offer. `accessBlocker` names which. |
+| `DISABLED` | Not integrated, or switched off. Cannot be selected at all. |
+
+The state is derived from the internal maturity ladder by a pure function, so the catalog, the
+dashboard and the OKX.AI registration draft cannot drift from each other or from the execution gate.
+It only ever downgrades: a stale blocker can never mute a capability that has settled and verified,
+and nothing in the gate reads the label — so it cannot be edited into permission.
+
+One provider routinely shows several states at once. StableEmail is `LIVE` for `mail.send`, `BETA`
+for `mail.inbox.buy`, and `PARTNER_ACCESS_REQUIRED` for `mail.inbox.status`. That is the point.
 
 ---
 
