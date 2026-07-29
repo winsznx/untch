@@ -169,9 +169,40 @@ anything outside its configured thresholds.
 
 ---
 
+## 7a. Milestone 1 — DONE: `mail.send` is LIVE
+
+Completed 2026-07-29. Intent `ci_8225f9800c3434582a235fcf`, executed by the **deployed** untch-asp
+worker (this run's local driver lost the `EXECUTION_QUEUED` race and reported the winner's outcome,
+as it now should).
+
+| Leg | Evidence |
+| --- | --- |
+| External funding | 0.020100 USDT0 on X Layer from `0xC8f0…23d4` — a wallet that is no Untch treasury — tx `0x212ca57d6a07aa6630edd9a16fe02c90dcd03b4f3656e6dea1c5d97e65015bcd` |
+| Policy | APPROVED by the real §7.1 engine, 14 rules evaluated |
+| Provider settlement | 0.020000 USDC on Base, treasury `0x0e79…9095` → StableEmail `0xDb5A…0671`, tx `0x9c4570ca2369a296eaaa3d705bfd933059755c8a8ade4946def61d22072f625f`, block 49273744, status success, re-read independently from the chain |
+| Provider result | real StableEmail message id `0100019fae5e2213-b53bb2ec-…-000000` |
+| Delivery | **CONFIRMED.** The message arrived in the operator-controlled inbox at 14:53:54Z, and the subject that arrived hashes to `0xef8bcf67…ecc2af` — the exact `subjectHash` the intent bound *before* payment |
+| Ledger | FUNDING + SETTLEMENT + RECOGNITION, balanced; user-obligation account nets to zero |
+| Receipt | `0x66edaae26d56df5e18b458be830b0e9464dfe8303abd5562647c8e1215a9774f` — non-null |
+| Lifecycle | 13 events, CREATED → … → COMPLETED |
+| Treasury | 2.850000 → 2.830000 USDC, exactly the quoted cost |
+
+Promotion is scoped to `stableemail × mail.send`. Every other Mail tool keeps its own maturity, and
+`min(provider, capability)` still governs — the provider row going to `verified` promoted nothing
+else. `CONSUMER_ALLOW_SANDBOX_EXECUTION` was set for the bootstrap execution and **reverted to 0**
+immediately afterwards; the deployed catalog now reports `sandboxExecutionAllowed: false`.
+
+Evidence: `internal/evidence/consumer-pack/ci_8225f9800c3434582a235fcf/evidence.json`.
+
+Two control bugs were found by doing this, both fixed, both described in PR #17: the live-smoke
+driver durably promoted a provider *before* the payment that was meant to be its evidence, and it
+crashed with a stack trace when the deployed worker legitimately beat it to the queue.
+
+---
+
 ## 8. Order of work and stop rule
 
-1. Mail — `mail.send` live on Base. **← current**
+1. Mail — `mail.send` live on Base. **← DONE**
 2. Mail — inbox + subdomain tools.
 3. Purch — Solana rail, then paid search/gift.
 4. Domains — full flow to the approval gate.

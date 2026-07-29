@@ -724,14 +724,29 @@ async function main(): Promise<void> {
     await reportAmbiguity(store, rail, intentId, treasuryAddress, balanceBefore, rpcUrl);
     process.exit(4);
   }
-  if (executed.state !== "PROVIDER_ACKNOWLEDGED") {
+  /**
+   * The states that mean the payment succeeded.
+   *
+   * PROVIDER_ACKNOWLEDGED is where this driver expects to be when it did the work itself. But a
+   * deployed worker that wins the race does not stop there — it runs `verifyAndComplete` on its own
+   * two-second tick, so by the time this process re-reads the intent it can already be
+   * DELIVERY_PENDING, DELIVERY_VERIFIED or COMPLETED. Treating those as failures reported a
+   * successful settlement as a failed run, which is the worst direction for this error to point.
+   */
+  const PAID_STATES: ReadonlySet<string> = new Set([
+    "PROVIDER_ACKNOWLEDGED",
+    "DELIVERY_PENDING",
+    "DELIVERY_VERIFIED",
+    "COMPLETED",
+  ]);
+  if (!PAID_STATES.has(executed.state)) {
     const execs = await store.listExecutions(intentId);
     console.error(`\n\x1b[31mSMOKE: FAILED — state ${executed.state}\x1b[0m`);
     console.error(`  ${executed.failureCode}: ${executed.failureDetail}`);
     for (const e of execs) console.error(`  attempt ${e.attemptNo}: ${e.state} ${e.error?.code ?? ""}`);
     process.exit(3);
   }
-  ok("provider paid and acknowledged");
+  ok(`provider paid and acknowledged (state ${executed.state})`);
 
   const executions = await store.listExecutions(intentId);
   const paid = executions.find((e) => e.state === "PAID" || e.state === "ACKNOWLEDGED");
@@ -741,7 +756,11 @@ async function main(): Promise<void> {
 
   // ── 12. DELIVERY VERIFICATION ─────────────────────────────────────────────
   step(10, "Delivery verification");
-  const completed = await orchestrator.verifyAndComplete(intentId);
+  // Same race, same rule: if a deployed worker already carried the intent to COMPLETED there is
+  // nothing left to verify, and calling again would only produce a stale-state throw on work that
+  // has already been done correctly.
+  const completed =
+    executed.state === "COMPLETED" ? executed : await orchestrator.verifyAndComplete(intentId);
   const evidence = await store.getDeliveryEvidence(intentId);
   info("state", completed.state);
   info("provider attested", evidence?.providerAttested.status ?? "—");
