@@ -578,15 +578,50 @@ async function solanaRpc(rpcUrl: string, method: string, params: unknown[]): Pro
  */
 async function readSplBalance(rpcUrl: string, owner: string, asset: AssetRef): Promise<bigint> {
   const mint = asset.address ?? SOLANA_USDC_MINT;
-  const result = (await solanaRpc(rpcUrl, "getTokenAccountsByOwner", [
-    owner,
-    { mint },
-    { encoding: "jsonParsed" },
-  ])) as { value?: { account: { data: { parsed: { info: { tokenAmount: { amount: string } } } } } }[] };
 
-  let total = 0n;
-  for (const a of result.value ?? []) total += BigInt(a.account.data.parsed.info.tokenAmount.amount);
-  return total;
+  try {
+    const result = (await solanaRpc(rpcUrl, "getTokenAccountsByOwner", [
+      owner,
+      { mint },
+      { encoding: "jsonParsed" },
+    ])) as { value?: { account: { data: { parsed: { info: { tokenAmount: { amount: string } } } } } }[] };
+
+    let total = 0n;
+    for (const a of result.value ?? []) total += BigInt(a.account.data.parsed.info.tokenAmount.amount);
+    return total;
+  } catch {
+    /**
+     * Fall back to reading the derived associated token account directly.
+     *
+     * `getTokenAccountsByOwner` scans by owner and is one of the first methods a public RPC sheds
+     * under load. `api.mainnet-beta.solana.com` answers it with a flat 503 while serving
+     * `getTokenAccountBalance` on a known account without complaint, and that asymmetry stopped a
+     * live run at the treasury check before it reached a single guard.
+     *
+     * Deriving the ATA and asking for one account is both cheaper and more precise. A treasury with
+     * no token account yet reads as ZERO rather than as an error, because an unfunded rail and a
+     * broken one should not look the same.
+     *
+     * This is a fallback, not the primary path. A production deployment should set
+     * CONSUMER_SOLANA_RPC_URL to a real provider rather than lean on a public endpoint's mood.
+     */
+    const [{ findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS }] = await Promise.all([
+      import("@solana-program/token"),
+    ]);
+    const [ata] = await findAssociatedTokenPda({
+      mint: mint as never,
+      owner: owner as never,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    });
+    try {
+      const balance = (await solanaRpc(rpcUrl, "getTokenAccountBalance", [ata])) as {
+        value?: { amount?: string };
+      };
+      return BigInt(balance.value?.amount ?? "0");
+    } catch {
+      return 0n;
+    }
+  }
 }
 
 async function readLamports(rpcUrl: string, owner: string): Promise<bigint> {
