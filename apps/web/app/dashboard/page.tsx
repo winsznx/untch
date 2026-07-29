@@ -29,7 +29,7 @@ export default async function Overview() {
         <SectionTitle
           kicker="Overview"
           title="Proof surface"
-          subtitle="Waste blocked, spend approved, deliveries verified — your agents' governed activity, proven on-chain."
+          subtitle="Waste blocked, spend approved, deliveries verified. Your agents' governed activity, proven on-chain."
           action={<MastheadLink href="/explorer">Public explorer →</MastheadLink>}
         />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -65,7 +65,7 @@ export default async function Overview() {
       <SectionTitle
         kicker="Overview"
         title="Proof surface"
-        subtitle="Waste blocked, spend approved, deliveries verified — your agents' governed activity, proven on-chain."
+        subtitle="Waste blocked, spend approved, deliveries verified. Your agents' governed activity, proven on-chain."
         action={<MastheadLink href="/explorer">Public explorer →</MastheadLink>}
       />
 

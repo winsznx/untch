@@ -49,6 +49,9 @@ export type ConsumerActionType =
   | "mail.send"
   | "mail.inbox.buy"
   | "mail.inbox.status"
+  // Reading an inbox Untch owns. This is what turns `mail.send` from a hand-off into a round trip:
+  // delivery to an Untch-owned inbox can be checked, delivery to the open internet cannot.
+  | "mail.inbox.messages"
   | "mail.inbox.topup"
   | "mail.inbox.cancel"
   | "mail.subdomain.buy"

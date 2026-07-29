@@ -1,6 +1,15 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { isWellKnownDevKey, loadRailKeys, loadSiwxKey } from "../src/index";
+import {
+  isWellKnownDevKey,
+  loadRailKeys,
+  loadSiwxKey,
+  checkSolanaSecretKey,
+  decodeBase58,
+  encodeBase58,
+  solanaMintAllowlist,
+  SOLANA_USDC_MINT,
+} from "../src/index";
 
 /**
  * Published development keys must never reach a treasury.
@@ -88,5 +97,72 @@ describe("published development keys are rejected", () => {
       () => loadRailKeys({ CONSUMER_TREASURY_BASE_PRIVATE_KEY: "0xnope" } as NodeJS.ProcessEnv),
       /not a valid 0x 32-byte private key/,
     );
+  });
+});
+
+describe("Solana treasury keys — shape, and the published ones", () => {
+  // A valid 64-byte keypair: a non-trivial seed followed by 32 more bytes. Its cryptographic
+  // correctness is irrelevant here; what is under test is the loader's refusal logic.
+  const seed = Buffer.from("2b7e151628aed2a6abf7158809cf4f3c762e7160f38b4da56a784d9045190cfe", "hex");
+  const pub = Buffer.from("11".repeat(32), "hex");
+  const goodKeypair = encodeBase58(new Uint8Array(Buffer.concat([seed, pub])));
+
+  test("a well-formed base58 keypair is accepted and yields its public address", () => {
+    const check = checkSolanaSecretKey(goodKeypair);
+    assert.equal(check.ok, true, check.reason);
+    assert.equal(check.address, encodeBase58(new Uint8Array(pub)));
+  });
+
+  test("a JSON keypair array is accepted — it is what a keypair file holds", () => {
+    const check = checkSolanaSecretKey(JSON.stringify([...seed, ...pub]));
+    assert.equal(check.ok, true, check.reason);
+  });
+
+  test("an EVM private key is refused rather than silently truncated", () => {
+    const check = checkSolanaSecretKey("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+    assert.equal(check.ok, false);
+    assert.match(check.reason, /base58/);
+  });
+
+  test("a key of the wrong length is refused with the length it had", () => {
+    const check = checkSolanaSecretKey(encodeBase58(new Uint8Array(seed)));
+    assert.equal(check.ok, false);
+    assert.match(check.reason, /64-byte keypair/);
+  });
+
+  test("a PUBLISHED development seed is refused however it is encoded", () => {
+    // #given the all-zero seed, which is what a broken generator produces
+    const zeroSeed = Buffer.alloc(32, 0);
+    const asBase58 = encodeBase58(new Uint8Array(Buffer.concat([zeroSeed, pub])));
+    const asJson = JSON.stringify([...zeroSeed, ...pub]);
+    // #then both encodings are refused, because the check is on the seed
+    assert.equal(checkSolanaSecretKey(asBase58).ok, false);
+    assert.match(checkSolanaSecretKey(asBase58).reason, /PUBLISHED development seed/);
+    assert.equal(checkSolanaSecretKey(asJson).ok, false);
+  });
+
+  test("loadRailKeys refuses to boot with an unusable Solana key", () => {
+    assert.throws(
+      () => loadRailKeys({ CONSUMER_TREASURY_SOLANA_SECRET_KEY: "not-a-key" } as NodeJS.ProcessEnv),
+      /CONSUMER_TREASURY_SOLANA_SECRET_KEY is unusable/,
+    );
+  });
+
+  test("an absent Solana key is a rail that is off, not an error", () => {
+    const keys = loadRailKeys({} as NodeJS.ProcessEnv);
+    assert.equal(keys.solana, null);
+  });
+
+  test("the mint allowlist always contains USDC and never trusts a symbol", () => {
+    const allow = solanaMintAllowlist({} as NodeJS.ProcessEnv);
+    assert.ok(allow.includes(SOLANA_USDC_MINT));
+    // A token's on-chain identity IS its mint. Anyone can mint something whose metadata says USDC,
+    // so the allowlist must never be keyed on a symbol.
+    assert.equal(allow.length, 1);
+  });
+
+  test("base58 round-trips, including leading zero bytes", () => {
+    const withLeadingZeros = new Uint8Array([0, 0, 7, 42, 255]);
+    assert.deepEqual(decodeBase58(encodeBase58(withLeadingZeros)), withLeadingZeros);
   });
 });

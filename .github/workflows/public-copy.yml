@@ -1,0 +1,72 @@
+# The public-copy gate.
+#
+# Its own workflow rather than a step in consumer-pack.yml, because it watches a completely
+# different set of paths. Copy changes land in apps/web, docs and README far more often than in
+# packages/consumer-core, and folding this into a workflow filtered on package paths would mean the
+# check silently did not run on the commits most likely to break it.
+#
+# What it enforces is internal/public-copy-standard.md. What it deliberately does NOT touch is
+# source code, code comments, protocol field names, transaction hashes, machine-readable error codes
+# and text quoted verbatim from a provider. The scope is a literal list in scripts/lint/public-copy.ts.
+name: public-copy
+
+on:
+  push:
+    paths:
+      - "apps/web/**"
+      - "apps/docs/**"
+      - "docs/**"
+      - "README.md"
+      - "internal/public-copy-standard.md"
+      - "internal/okx-ai-registration.md"
+      - "internal/social-copy-drafts.md"
+      - "scripts/lint/**"
+      - "scripts/lint-public-copy.ts"
+      - "scripts/untch-authored-copy.ts"
+      - "scripts/test/**"
+      - ".github/workflows/public-copy.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/docs/**"
+      - "docs/**"
+      - "README.md"
+      - "internal/public-copy-standard.md"
+      - "internal/okx-ai-registration.md"
+      - "internal/social-copy-drafts.md"
+      - "scripts/lint/**"
+      - "scripts/lint-public-copy.ts"
+      - "scripts/untch-authored-copy.ts"
+      - "scripts/test/**"
+      - ".github/workflows/public-copy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  public-copy:
+    name: user-facing copy standard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The linter's own tests run FIRST. A copy linter that has silently stopped catching anything
+      # passes every file it is pointed at, and a green run would then mean nothing at all.
+      - name: Linter tests (catches and permits, both directions)
+        run: pnpm test:lint-copy
+
+      - name: Public copy
+        run: pnpm lint:public-copy

@@ -24,7 +24,7 @@
 ## 1. What this is
 
 **Untch is a deterministic authority layer that decides whether an autonomous agent is allowed to
-spend, before any money moves — and proves the decision on-chain afterwards.**
+spend, before any money moves, and proves the decision on-chain afterwards.**
 
 ---
 
@@ -33,7 +33,7 @@ spend, before any money moves — and proves the decision on-chain afterwards.**
 You want to fund an agent. You do not want to discover, after the fact, that it bought the same thing
 eleven times, paid a vendor that never delivered, or drained a wallet because a prompt told it to.
 
-Today the only real control is the balance in the wallet. That is not a control. It is a blast
+Today the only real control is the balance in the wallet. That is a blast
 radius.
 
 ---
@@ -67,11 +67,11 @@ The model proposes. The policy engine decides. **The model never touches the mon
 | **Policy engine** | 14 deterministic rules over a bounded SpendIntent. No LLM on the money path. | 🟢 **LIVE** |
 | **Exact approvals** | An approval binds to a hash. Mutate the intent and it stops being approved. | 🟢 **LIVE** |
 | **Escalation** | Human-in-the-loop over Telegram, Discord, Slack, or the dashboard. | 🟢 **LIVE** |
-| **Delivery verification** | Independent proof that the thing was delivered — not the vendor's word. | 🟢 **LIVE** |
-| **Receipts** | Every decision receipted and publicly checkable; anchored on X Layer **testnet** today. | 🟡 **BETA** — mainnet anchoring pending a 3-day writer timelock |
+| **Delivery verification** | Independent proof that the thing was delivered, not the vendor's word. | 🟢 **LIVE** |
+| **Receipts** | Every decision receipted and publicly checkable. Anchored on X Layer **testnet** today. | 🟡 **BETA**, mainnet anchoring pending a 3-day writer timelock |
 | **Trust Bureau** | Receipt-backed vendor and buyer scores with a lower-confidence bound. | 🟢 **LIVE** |
-| **Consumer Pack** | Governed real-world purchasing across merchant rails. | 🟡 **BETA** — one verified capability |
-| **UntchVault** | On-chain fund-holding with oracle-signed spend, deployed via VaultFactory. | 🟡 **BETA** — mainnet, not yet on the production money path |
+| **Consumer Pack** | Governed real-world purchasing across merchant rails. | 🟡 **BETA**, three verified capabilities |
+| **UntchVault** | On-chain fund-holding with oracle-signed spend, deployed via VaultFactory. | 🟡 **BETA**, on mainnet but not yet on the production money path |
 
 ---
 
@@ -94,7 +94,7 @@ flowchart LR
     Writer --> XLayer["X Layer"]
 ```
 
-**The model is outside the box.** It can propose anything; it cannot widen what the box permits.
+**The model is outside the box.** It can propose anything. It cannot widen what the box permits.
 
 ---
 
@@ -136,7 +136,7 @@ sequenceDiagram
 ## 7. Deterministic policy engine 🟢 LIVE
 
 Fourteen rules, evaluated in a fixed order, over a bounded `SpendIntent`. **No LLM call appears
-anywhere on the money decision path** — the engine is a pure function of `(intent, policy, ledger
+anywhere on the money decision path.** The engine is a pure function of `(intent, policy, ledger
 window)`.
 
 | Rule family | Enforces |
@@ -163,7 +163,7 @@ quoteHash = sha256(canonical quote)
 approval  = signature over that hash
 ```
 
-Change the amount, the recipient, the TTL, or the item, and the hash changes — so the approval no
+Change the amount, the recipient, the TTL, or the item, and the hash changes, so the approval no
 longer applies and execution refuses. There is no path where a human approves $5 and $500 leaves.
 
 The same binding covers the on-chain side: `spendIntentHash` commits to owner, agent, token,
@@ -191,7 +191,7 @@ Three properties that are unusual and true:
 ### The ledger
 
 Double-entry, append-only by Postgres `RULE`, and deliberately constrained: **an entry group is
-single-asset and sums to exactly zero.** A cross-rail movement is therefore never one group — it is
+single-asset and sums to exactly zero.** A cross-rail movement is therefore never one group. It is
 two, joined by a `CROSS_RAIL_CLEARING` account on each side.
 
 That constraint is what makes "balanced" checkable in SQL. Summing USDT0 on X Layer and USDC on Base
@@ -210,12 +210,12 @@ POST /consumer/auth/nonce          → server-issued, single-use, expiring nonce
 POST /consumer/auth/verify         → 30-minute bearer, bound to the policy
 ```
 
-Three properties do the work: the nonce is **server-issued** so a caller cannot pre-sign; it is
+Three properties do the work. The nonce is **server-issued**, so a caller cannot pre-sign. It is
 **single-use**, enforced by a conditional `UPDATE` rather than read-then-write so two concurrent
-replays cannot both win; and it **expires**.
+replays cannot both win. And it **expires**.
 
 The nonce is consumed *before* the signature is verified. That costs an honest caller one round trip
-on failure and costs an attacker the whole attempt — the other order turns signature verification
+on failure and costs an attacker the whole attempt. The other order turns signature verification
 into a free oracle.
 
 Owning a wallet is not owning a policy: a valid signature from the wrong address is `403
@@ -226,7 +226,7 @@ NOT_POLICY_OWNER`, distinct from `401` for a failed proof.
 ## 11. Current live services
 
 All settle **USDT0 on X Layer** (`eip155:196`). The x402 **v2** challenge is carried in the
-`payment-required` response header (base64 JSON) — the body is `{}`. A v1 client that only reads the
+`payment-required` response header (base64 JSON), and the body is `{}`. A v1 client that only reads the
 body will see an empty 402 and wrongly conclude the service is broken.
 
 | Service | Method + path | Price | Status |
@@ -239,8 +239,8 @@ body will see an empty 402 and wrongly conclude the service is broken.
 | Dispute packet | `POST /generate_dispute_packet` | $0.50 | 🟢 LIVE |
 | Spend reconciliation | `POST /reconcile_agent_spend` | $0.25 | 🟢 LIVE |
 | Consumer status + public receipt | `GET /consumer/intent/{id}`, `GET /consumer/receipt/{id}` | free | 🟢 LIVE |
-| Domain check | `POST /consumer/domains/check` | $0.02 | 🟡 BETA — settled twice |
-| Travel search / compare | `POST /consumer/travel/search` | $0.03 / $0.02 | 🟠 EXPERIMENTAL — search only |
+| Domain check | `POST /consumer/domains/check` | $0.02 | 🟡 BETA, settled twice |
+| Travel search / compare | `POST /consumer/travel/search` | $0.03 / $0.02 | 🟠 EXPERIMENTAL, search only |
 
 ---
 
@@ -251,7 +251,7 @@ takes the **minimum** of provider and capability, so promoting a provider promot
 
 | Provider | Provider maturity | Capability | Capability maturity | Can move money? |
 |---|---|---|---|---|
-| `stabledomains` | `verified` | `domains.check` | **`verified`** | ✅ **yes — settled twice** |
+| `stabledomains` | `verified` | `domains.check` | **`verified`** | ✅ **yes, settled twice** |
 | `stabledomains` | `verified` | `domains.quote` | `sandbox` | ❌ |
 | `stabledomains` | `verified` | `domains.register` / `renew` | `sandbox` | ❌ |
 | `stabledomains` | `verified` | `domains.dns` | `experimental` | ❌ |
@@ -281,19 +281,19 @@ production proof.
 | `ci_50a37ce77505690e8b45df13` | [`0xe7ce102f7a704e9c3113fc7fcc8626db8a9cdc330e614d023c231e88fce21e86`](https://basescan.org/tx/0xe7ce102f7a704e9c3113fc7fcc8626db8a9cdc330e614d023c231e88fce21e86) | 49196541 | live smoke driver |
 | `ci_82bb2216c02366bc1b839a00` | [`0x6815d60e1be688451d36007a4113f858e0a10433dccef01dc3b3d0f8d283e489`](https://basescan.org/tx/0x6815d60e1be688451d36007a4113f858e0a10433dccef01dc3b3d0f8d283e489) | 49201380 | **the deployed production worker** |
 
-**Delivery was verified against public RDAP** — a source that is not the merchant. The merchant's own
+**Delivery was verified against public RDAP**, a source that is not the merchant. The merchant's own
 claim and Untch's independent check are reported as two separate fields and never merged.
 
 The whole double-entry book sums to **exactly zero on both rails** after both executions.
 
-### Receipt anchoring — stated precisely
+### Receipt anchoring, stated precisely
 
 The base contracts are deployed on X Layer **mainnet**. Receipt *anchoring* to date has happened on
 X Layer **testnet**: the 20 confirmed receipts are testnet transactions against the testnet
 `UntchReceipts` at `0x0c64997277b7d94d2999dea22a123cac56334863`.
 
 The receipt for `ci_82bb2216c02366bc1b839a00` is `ANCHOR_FAILED` and the public receipt says so. The
-worker now targets the mainnet contract, where the writer key is **not yet an authorised writer** —
+worker now targets the mainnet contract, where the writer key is **not yet an authorised writer**.
 and the contract gates writer-set changes behind a **3-day immutable timelock** (259200s), which is
 the control working as designed rather than a bug. Until an admin proposal completes that delay, new
 receipts stay durable and unanchored, and every surface reports `ANCHOR_FAILED` rather than implying
@@ -312,15 +312,15 @@ an anchor that does not exist.
 | UntchReceipts | [`0xb5b853684624aea2ecbcd0e888cbff46ff0a5f95`](https://www.oklink.com/x-layer/address/0xb5b853684624aea2ecbcd0e888cbff46ff0a5f95) |
 | VaultFactory | [`0x6cc3bc686a7bc554dbd5636cb3eeee9171036805`](https://www.oklink.com/x-layer/address/0x6cc3bc686a7bc554dbd5636cb3eeee9171036805) |
 
-All four are **live on X Layer mainnet** — verified by reading bytecode at each address.
+All four are **live on X Layer mainnet**, verified by reading bytecode at each address.
 `VaultFactory` deploys `UntchVault` instances (fund-holding, EIP-712 oracle-signed spend, gated on a
 cross-contract APPROVED-intent check against the real `SpendIntentRegistry`).
 
-**UntchVault is on mainnet but is not yet on the production money path** — the Consumer Pack settles
+**UntchVault is on mainnet but is not yet on the production money path.** The Consumer Pack settles
 from operator-held floats today, not from vaults. That is a sequencing decision, not a limitation of
 the contract.
 
-None of the four **base** contracts holds funds — no `payable`, no `receive`, no `fallback`
+None of the four **base** contracts holds funds. There is no `payable`, no `receive`, no `fallback`
 (invariant I4). A deployed `UntchVault` does hold ERC-20 by design, and only ERC-20: it has no
 payable, receive or fallback either, so it cannot take native OKB.
 
@@ -333,7 +333,7 @@ Settlement happens on the **merchant's** rail, not ours. StableDomains prices in
 
 - **Untch Base settlement float:** [`0x0e79371813e88F31c2B60C80bad391a952039095`](https://basescan.org/address/0x0e79371813e88F31c2B60C80bad391a952039095)
 - **StableDomains payTo:** `0xABcb091D90419E1c8AD4818f1B33FC4645501892`
-- **Mechanism:** EIP-3009 `transferWithAuthorization` — exact amount, exact recipient, `validAfter`/
+- **Mechanism:** EIP-3009 `transferWithAuthorization`, with an exact amount, an exact recipient, `validAfter`/
   `validBefore`, single-use 32-byte nonce. **No ERC-20 `approve` is ever issued**, so there is no
   standing allowance for anyone to drain.
 
@@ -353,22 +353,22 @@ curl -s https://asp.untch.xyz/consumer/receipt/ci_82bb2216c02366bc1b839a00 | jq
 Or as a page: **https://untch.xyz/receipt/ci_82bb2216c02366bc1b839a00**
 
 The public view is built by **naming** the fields that may be published, never by deleting fields
-from the private one — so a field added later cannot silently become public. The request payload, the
+from the private one, so a field added later cannot silently become public. The request payload, the
 correlation id and which operator channel resolved an approval are all withheld.
 
 The anchor is **five distinguishable states**, not a nullable id:
 
 | State | Meaning |
 |---|---|
-| `NOT_RECORDED` | completed, but no receipt was written — carries the reason |
-| `PENDING` | durable and queued for the next batch; nothing is wrong |
+| `NOT_RECORDED` | completed, but no receipt was written. Carries the reason |
+| `PENDING` | durable and queued for the next batch. Nothing is wrong |
 | `ANCHORED` | on chain, with `txHash` and `blockNumber` |
-| `ANCHOR_FAILED` | the writer gave up — **the payment and delivery facts are unaffected** |
-| `NOT_FOUND` | the intent names a receipt that does not exist — an inconsistency, not a wait |
+| `ANCHOR_FAILED` | the writer gave up. **The payment and delivery facts are unaffected** |
+| `NOT_FOUND` | the intent names a receipt that does not exist. An inconsistency, not a wait |
 
 ---
 
-## 17. OKX.AI — ASP #6086
+## 17. OKX.AI, ASP #6086
 
 Untch is listed on OKX.AI as **ASP #6086**, ERC-8004 agent **#6047**.
 
@@ -427,15 +427,15 @@ empty string, `false`, `yes`, `on`, or an unset variable all mean **off**.
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` / `REDIS_URL` | durability; without them the Consumer Pack answers 503 with a named reason |
+| `DATABASE_URL` / `REDIS_URL` | durability. Without them the Consumer Pack answers 503 with a named reason |
 | `AUTH_SECRET` / `CONSUMER_AUTH_SECRET` | signs dashboard and Consumer Session tokens |
 | `CONSUMER_AUTH_REQUIRED` | `1` ⇒ scoped reads require a proven session |
 | `CONSUMER_PACK_ENABLED` | master switch for every `/consumer/*` route |
-| `CONSUMER_EXECUTION_ENABLED` | the spend switch — **defaults OFF** |
+| `CONSUMER_EXECUTION_ENABLED` | the spend switch. **Defaults OFF** |
 | `CONSUMER_PROVIDER_<ID>_ENABLED` | per-provider |
 | `CONSUMER_BASE_ENABLED` *(or `CONSUMER_CHAIN_EIP155_8453_ENABLED`)* | per-rail |
 | `CONSUMER_BASE_USDC_ENABLED` *(or `CONSUMER_ASSET_EIP155_8453_USDC_ENABLED`)* | per-token |
-| `CONSUMER_TREASURY_*_PRIVATE_KEY` | settlement float signers — never in the repo |
+| `CONSUMER_TREASURY_*_PRIVATE_KEY` | settlement float signers, never in the repo |
 | `WRITER_PRIVATE_KEY` | the receipt anchoring signer |
 
 Both flag spellings are read. The CAIP-derived name is canonical and **wins where explicitly set**,
@@ -485,12 +485,12 @@ invariants, 100% branch coverage, Slither and Aderyn clean, gas snapshots commit
 
 | Boundary | How it is held |
 |---|---|
-| **The model never touches the money** | the engine is a pure function; no LLM call on the decision path |
-| **Adapters never hold a key** | they get a `PaymentCapability` — one intent, one asset, one ceiling, one recipient allowlist — redeemed once under a row lock *before* signing |
-| **No standing allowance** | EIP-3009 single-use authorisations; `approve` is never called |
-| **SSRF** | a provider base URL comes only from the registry table; nothing user-supplied becomes a fetch target |
-| **Tenant isolation** | every read goes through `getIntentForTenant`; scope requires a SIWE ownership proof |
-| **Replay** | server-issued, single-use, expiring nonces; consumed before verification |
+| **The model never touches the money** | the engine is a pure function. No LLM call on the decision path |
+| **Adapters never hold a key** | they get a `PaymentCapability` scoped to one intent, one asset, one ceiling and one recipient allowlist, redeemed once under a row lock *before* signing |
+| **No standing allowance** | EIP-3009 single-use authorisations. `approve` is never called |
+| **SSRF** | a provider base URL comes only from the registry table. Nothing user-supplied becomes a fetch target |
+| **Tenant isolation** | every read goes through `getIntentForTenant`. Scope requires a SIWE ownership proof |
+| **Replay** | server-issued, single-use, expiring nonces, consumed before verification |
 | **CSRF** | `SameSite=Lax` plus an explicit `Origin`/`Referer` check that also rejects sibling subdomains |
 | **Append-only audit** | Postgres RULEs reject `UPDATE`/`DELETE` on ledger entries |
 | **Contracts hold no funds** | no `payable`, `receive` or `fallback` on any base contract |
@@ -501,15 +501,15 @@ invariants, 100% branch coverage, Slither and Aderyn clean, gas snapshots commit
 
 | Threat | Control | Residual |
 |---|---|---|
-| Prompt injection widens a spend | the engine never reads model output; it reads a bounded struct | none on the decision path |
-| Compromised agent replays an approval | approval binds to `quoteHash`; mutation invalidates it | none |
+| Prompt injection widens a spend | the engine never reads model output. It reads a bounded struct | none on the decision path |
+| Compromised agent replays an approval | approval binds to `quoteHash`. Mutation invalidates it | none |
 | Attacker reads another tenant's intents | SIWE ownership proof against the on-chain policy owner | `CONSUMER_AUTH_REQUIRED` must be on |
 | Merchant claims delivery falsely | independent verification (RDAP / HTTP probe), reported separately | verification is not available for every capability |
-| Merchant charges twice | single-use EIP-3009 nonce; idempotency keys | none |
-| Lost response after payment | intent → `MANUAL_REVIEW`, money parked in suspense; **never auto-retried** | needs a human |
+| Merchant charges twice | single-use EIP-3009 nonce, plus idempotency keys | none |
+| Lost response after payment | intent → `MANUAL_REVIEW`, money parked in suspense, **never auto-retried** | needs a human |
 | Treasury key compromise | capability scoping limits blast radius per call | key compromise is still total for that float |
-| Operator key compromise | two-step ownership transfer; pause is immediate | owner compromise is total by design; documented |
-| Receipt anchoring fails | ledger stays authoritative; `ANCHOR_FAILED` is reported honestly | needs an operator re-drive |
+| Operator key compromise | two-step ownership transfer, and pause is immediate | owner compromise is total by design, and documented |
+| Receipt anchoring fails | ledger stays authoritative. `ANCHOR_FAILED` is reported honestly | needs an operator re-drive |
 
 **Untch is a custodial ledger between funding and completion.** It holds value as an operator during
 that window. It is not trustless and the documentation says so.
@@ -527,7 +527,7 @@ railway variables --service untch-asp --set "CONSUMER_EXECUTION_ENABLED=0"
 railway redeploy --service untch-asp --yes
 ```
 
-**Database pauses** (immediate, no deploy) — `consumer_pauses` rows scoped globally, per chain or per
+**Database pauses** (immediate, no deploy) are `consumer_pauses` rows scoped globally, per chain or per
 provider, checked on **every** capability issuance.
 
 Scope ladder: everything → all spending → one provider → one rail → one token.
@@ -548,14 +548,14 @@ flowchart LR
     Worker -->|logReceipts| XLayer["X Layer mainnet"]
 ```
 
-The ASP only ever **enqueues** receipts; it never holds the anchoring key and never touches the
+The ASP only ever **enqueues** receipts. It never holds the anchoring key and never touches the
 chain. The worker is the only component with `WRITER_PRIVATE_KEY`.
 
 ---
 
 ## 27. API examples
 
-**Rail health** — the cheapest proof the x402 rail works:
+**Rail health**, the cheapest proof the x402 rail works:
 
 ```bash
 curl -i https://asp.untch.xyz/ping_untch
@@ -563,7 +563,7 @@ curl -i https://asp.untch.xyz/ping_untch
 # payment-required: <base64 x402 v2 challenge>
 ```
 
-**Policy preflight** — the core product, $0.05:
+**Policy preflight**, the core product, $0.05:
 
 ```bash
 curl -X POST https://asp.untch.xyz/preflight_payment \
@@ -571,7 +571,7 @@ curl -X POST https://asp.untch.xyz/preflight_payment \
   -d '{"policyId":"...","intent":{...}}'
 ```
 
-**Public receipt** — free, no auth:
+**Public receipt**, free and unauthenticated:
 
 ```bash
 curl -s https://asp.untch.xyz/consumer/receipt/ci_82bb2216c02366bc1b839a00 | jq '.settlement, .delivery, .receipt'
@@ -597,7 +597,7 @@ curl -X POST https://asp.untch.xyz/consumer/auth/verify \
   -d '{"message":"...","signature":"0x..."}'
 ```
 
-**Check a domain under policy** (🟡 BETA — this one really settles):
+**Check a domain under policy** (🟡 BETA, and this one really settles):
 
 ```bash
 curl -X POST https://asp.untch.xyz/consumer/domains/check \
@@ -611,34 +611,36 @@ curl -X POST https://asp.untch.xyz/consumer/domains/check \
 
 Stated plainly, because a reviewer will find them anyway.
 
-1. **One verified consumer capability.** `stabledomains × domains.check`. Everything else refuses.
-2. **Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.** Untch has been both funder and settler; the leg actually proven is the
-   outbound merchant settlement. The externally funded intent flow is implemented and undergoing
-   final production proof.
+1. **Three verified consumer capabilities.** `stabledomains × domains.check`,
+   `stableemail × mail.send` and `stableemail × mail.inbox.buy`. Everything else refuses.
+2. **An externally funded Consumer Intent has completed in production.** The funding wallet
+   `0xC8f0…23d4` is not any Untch treasury. Policy, payment, delivery verification and accounting
+   stayed bound to one intent. Providers are settled from Untch's pre-funded operational float, so
+   Untch is still the settler even when it is not the funder.
 3. **Custodial between funding and completion.** Not trustless.
-4. **Delivery verification is not universal.** RDAP works for domains; other categories fall back to
+4. **Delivery verification is not universal.** RDAP works for domains. Other categories fall back to
    provider attestation, which is labelled as such and never presented as independent.
 5. **Solana and Tempo/MPP are not executable.** The payload serialisation could not be confirmed from
-   an authoritative source for Solana; MPP is parsed but not settleable.
+   an authoritative source for Solana. MPP is parsed but not settleable.
 6. **UntchVault is deployed on mainnet but not yet on the production money path.** The Consumer Pack
-   settles from operator floats; vault-backed settlement is sequenced after it.
+   settles from operator floats. Vault-backed settlement is sequenced after it.
 7. **Mainnet receipt anchoring is not yet enabled.** The writer key is not an authorised writer on the
    mainnet `UntchReceipts`, and the contract's writer-set timelock is an immutable **3 days**. All 20
    confirmed receipts to date are **X Layer testnet** anchors. New receipts stay durable and report
-   `ANCHOR_FAILED` honestly. The ledger is authoritative regardless — anchoring is publication, not
+   `ANCHOR_FAILED` honestly. The ledger is authoritative regardless, because anchoring is publication, not
    truth.
 
 ---
 
 ## 30. Roadmap
 
-🔵 **ROADMAP — none of the following is live.**
+🔵 **ROADMAP. None of the following is live.**
 
 - Promote `domains.register` after a verified registration settlement
 - Solana settlement once the x402 payload serialisation is authoritatively confirmed
 - Tempo / MPP settlement
 - Gift ordering once the SIWX identity leg is accepted by the provider's verifier
-- Travel **booking** — needs a provider that actually sells inventory
+- Travel **booking**, which needs a provider that actually sells inventory
 - Move Consumer Pack settlement onto vault-backed floats
 - Multi-tenant operator accounts beyond the policy-owner model
 

@@ -18,7 +18,7 @@ export default async function Disputes() {
         <SectionTitle
           kicker="Disputes"
           title="Dispute packet"
-          subtitle="An evidence packet for a held payment — decision, verification, escalation history, receipts, and a timeline — anchored on X Layer."
+          subtitle="An evidence packet for a held payment: decision, verification, escalation history, receipts and a timeline, anchored on X Layer."
         />
         <NoHistory authenticated={scope.authenticated} address={scope.address} what="disputes" />
       </div>
@@ -30,7 +30,7 @@ export default async function Disputes() {
       <SectionTitle
         kicker="Disputes"
         title="Dispute packet"
-        subtitle="An evidence packet for a held payment — decision, verification, escalation history, receipts, and a timeline — assembled live and anchored on X Layer (AuditAnchored)."
+        subtitle="An evidence packet for a held payment: decision, verification, escalation history, receipts and a timeline, assembled live and anchored on X Layer (AuditAnchored)."
       />
 
       <DashCard>

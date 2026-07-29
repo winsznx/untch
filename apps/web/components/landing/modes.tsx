@@ -29,7 +29,7 @@ const MODES: { letter: string; name: string; body: string; strength: string }[] 
   {
     letter: "D",
     name: "Broker Guard",
-    body: "Broker-side policy gate for APP flows: hold challenge state, verify credentials against the original request, forward only after a policy pass. Not a live product path yet — A–C are the ladder today.",
+    body: "Broker-side policy gate for APP flows: hold challenge state, verify credentials against the original request, forward only after a policy pass. Not a live product path yet. A to C are the ladder today.",
     strength: "Roadmap",
   },
 ];

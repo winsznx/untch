@@ -4,7 +4,7 @@ import { PROOF_TXS, CONTRACTS, txUrl, addressUrl, shortHex, type Net } from "../
 
 export const metadata: Metadata = {
   title: "Untch public receipts explorer",
-  description: "Every Untch decision, verification, score, and report — anchored on X Layer and verifiable on OKLink.",
+  description: "Every Untch decision, verification, score and report, anchored on X Layer and verifiable on OKLink.",
 };
 
 const DEMO = {

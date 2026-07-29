@@ -1,9 +1,9 @@
 ---
-title: Consumer Pack — production proof
+title: Consumer Pack production proof
 description: What the Consumer Pack does, what has actually settled in production, and exactly where the live boundary sits today.
 ---
 
-# Consumer Pack — production proof
+# Consumer Pack production proof
 
 An agent proposes a real-world action. Untch decides whether it is authorised, funds it for the exact
 approved amount, pays the merchant **on the merchant's own rail**, verifies delivery against a source
@@ -51,7 +51,7 @@ Three properties do the work. The nonce is **server-issued**, so a caller cannot
 replays cannot both win. And it **expires**.
 
 The nonce is consumed *before* the signature is verified. That costs an honest caller one round trip
-on failure and costs an attacker the whole attempt — the other order turns signature verification
+on failure and costs an attacker the whole attempt. The other order turns signature verification
 into a free oracle that can be hammered against one nonce indefinitely.
 
 **Owning a wallet is not owning a policy.** A cryptographically valid signature from the wrong
@@ -68,7 +68,7 @@ Every intent runs through the same §7.1 engine as a preflight: fourteen rules o
 `SpendIntent`, evaluated in a fixed order.
 
 **No LLM call appears anywhere on the money decision path.** The engine is a pure function of
-`(intent, policy, ledgerWindow)` — there is no network client in the package at all.
+`(intent, policy, ledgerWindow)`, and there is no network client in the package at all.
 
 An approval binds to a **hash**, not a description. Change the amount, recipient, item or deadline
 and the hash changes, so the approval stops applying and execution refuses.
@@ -82,7 +82,7 @@ exact recipient, `validAfter`/`validBefore`, single-use 32-byte nonce.
 
 **No ERC-20 `approve` is ever issued.** There is no standing allowance for anyone to drain.
 
-The x402 v2 challenge arrives in the `payment-required` **response header** as base64 JSON; the body
+The x402 v2 challenge arrives in the `payment-required` **response header** as base64 JSON, and the body
 is `{}`. A v1 client that only reads the body sees an empty 402 and wrongly concludes the service is
 broken.
 
@@ -91,7 +91,7 @@ broken.
 ## Treasury routing
 
 An adapter never receives a key. It receives a **`PaymentCapability`**: one intent, one asset, one
-ceiling, one recipient allowlist — redeemed once under a row lock **before** signing.
+ceiling and one recipient allowlist, redeemed once under a row lock **before** signing.
 
 There is **no bridge and no swap on the request path**. Each rail holds a pre-funded operational
 float, and replenishing one is a documented manual operator step recorded as a `TREASURY_TRANSFER`
@@ -104,7 +104,7 @@ every environment, so one cannot be promoted out of a test fixture into a settle
 
 ## Delivery verification
 
-For `domains.check`, the result is checked against **public RDAP** — the registry itself.
+For `domains.check`, the result is checked against **public RDAP**, the registry itself.
 
 The receipt reports two separate fields and never merges them:
 
@@ -117,11 +117,11 @@ The receipt reports two separate fields and never merges them:
 
 ## Cross-rail accounting
 
-The ledger is double-entry and append-only **by Postgres RULE** — `UPDATE` and `DELETE` are rejected,
+The ledger is double-entry and append-only **by Postgres RULE**. `UPDATE` and `DELETE` are rejected,
 so a correction must be a reversing entry that stays visible.
 
 One deliberate constraint makes it tractable: **an entry group is single-asset and sums to exactly
-zero.** A cross-rail movement is therefore never one group — it is two, joined by a
+zero.** A cross-rail movement is therefore never one group. It is two, joined by a
 `CROSS_RAIL_CLEARING` account on each side.
 
 That constraint is what makes "balanced" checkable in SQL. Summing USDT0 on X Layer and USDC on Base
@@ -141,18 +141,18 @@ curl -s https://asp.untch.xyz/consumer/receipt/ci_82bb2216c02366bc1b839a00
 ```
 
 The public view is built by **naming** the fields that may be published, never by removing fields
-from the private one — so a field added later cannot silently become public. The request payload, the
+from the private one, so a field added later cannot silently become public. The request payload, the
 correlation id and which operator channel resolved an approval are all withheld.
 
 The anchor is five distinguishable states, not a nullable id:
 
 | State | Meaning |
 | --- | --- |
-| `NOT_RECORDED` | completed, but no receipt was written — carries the reason |
-| `PENDING` | durable and queued for the next batch; nothing is wrong |
+| `NOT_RECORDED` | completed, but no receipt was written. Carries the reason |
+| `PENDING` | durable and queued for the next batch. Nothing is wrong |
 | `ANCHORED` | on chain, with `txHash` and `blockNumber` |
-| `ANCHOR_FAILED` | the writer gave up — **the payment and delivery facts are unaffected** |
-| `NOT_FOUND` | the intent names a receipt that does not exist — an inconsistency, not a wait |
+| `ANCHOR_FAILED` | the writer gave up. **The payment and delivery facts are unaffected** |
+| `NOT_FOUND` | the intent names a receipt that does not exist. An inconsistency, not a wait |
 
 ---
 
@@ -172,7 +172,7 @@ Read live from [`/consumer/catalog`](https://asp.untch.xyz/consumer/catalog).
 
 | Provider | Capability | Maturity | Can move money? |
 | --- | --- | --- | --- |
-| `stabledomains` | `domains.check` | **verified** | **Yes — settled twice** |
+| `stabledomains` | `domains.check` | **verified** | **Yes, settled twice** |
 | `stabledomains` | `domains.quote` | sandbox | No |
 | `stabledomains` | `domains.register` / `renew` | sandbox | No |
 | `stabledomains` | `domains.dns` | experimental | No |
@@ -209,12 +209,12 @@ are different parties.
 | Provider settlement | Base (8453) | 0.050000 USDC | `0x0e79…9095` Untch settlement treasury | `0xABcb…1892` StableDomains | [`0x2b09c4a7…71ab9`](https://basescan.org/tx/0x2b09c4a7629da8b1fb856c69d8b59b0507672a67c6f17a7090b41ff735271ab9) |
 
 **The funder is not any Untch treasury.** The settlement transaction was submitted by a relayer, as
-EIP-3009 permits — decoding the `Transfer` log confirms the value moved from the Untch treasury to
+EIP-3009 permits. Decoding the `Transfer` log confirms the value moved from the Untch treasury to
 StableDomains, not from the relayer.
 
 The 0.000250 USDT0 difference is the disclosed cross-rail spread, booked to `SPREAD_REVENUE`. The
-remaining 0.050000 sits in `CROSS_RAIL_CLEARING` on X Layer — value the funding rail owes the
-settlement rail — and retires when an operator sweeps it.
+remaining 0.050000 sits in `CROSS_RAIL_CLEARING` on X Layer, which is value the funding rail owes the
+settlement rail. It retires when an operator sweeps it.
 
 - **Untch Base settlement float:** `0x0e79371813e88F31c2B60C80bad391a952039095`
 - **StableDomains payTo:** `0xABcb091D90419E1c8AD4818f1B33FC4645501892`
@@ -230,15 +230,15 @@ Stated plainly, because a reviewer will find them anyway.
 1. **One verified capability.** Everything else refuses.
 2. **Providers are settled from Untch's pre-funded operational treasury.** The user-funding leg has
    been proven with a separate external wallet (see the evidence table above), but the merchant is
-   still paid from Untch's own float rather than directly from user funds — the two legs are on
+   still paid from Untch's own float rather than directly from user funds. The two legs are on
    different chains and are reconciled through `CROSS_RAIL_CLEARING`.
 3. **Receipt anchoring is on X Layer testnet.** The mainnet `UntchReceipts` writer is not yet
    authorised, and the contract's writer-set timelock is an immutable three days. New receipts stay
-   durable and report `ANCHOR_FAILED` honestly. **The ledger is authoritative regardless — anchoring
+   durable and report `ANCHOR_FAILED` honestly. **The ledger is authoritative regardless, because anchoring
    is publication, not truth.**
 4. **Custodial between funding and completion.** Untch holds value as an operator during that window.
    It is not trustless.
-5. **Delivery verification is not universal.** RDAP works for domains; other categories fall back to
+5. **Delivery verification is not universal.** RDAP works for domains. Other categories fall back to
    provider attestation, labelled as such.
 
 ---
@@ -251,5 +251,5 @@ None of the following is live.
 - Solana settlement once the x402 payload serialisation is authoritatively confirmed
 - Tempo / MPP settlement
 - Gift ordering once the SIWX identity leg is accepted by the provider's verifier
-- Travel **booking** — needs a provider that actually sells inventory
+- Travel **booking**, which needs a provider that actually sells inventory
 - Move Consumer Pack settlement onto vault-backed floats

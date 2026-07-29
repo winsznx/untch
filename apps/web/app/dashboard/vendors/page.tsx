@@ -28,13 +28,13 @@ export default async function Vendors() {
       <SectionTitle
         kicker="Trust Bureau"
         title="Vendor directory"
-        subtitle="Counterparty reliability, scored live by the Trust Bureau from your real receipts. Enforcement reads the lower-confidence bound, never the raw score; each feature is marked observed or cold-start prior."
+        subtitle="Counterparty reliability, scored live by the Trust Bureau from your real receipts. Enforcement reads the lower-confidence bound, never the raw score. Each feature is marked observed or cold-start prior."
       />
 
       {buyers.length > 0 ? (
         <DashCard>
           <div className="flex flex-col gap-3">
-            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Your agents — buyer reliability</span>
+            <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Your agents: buyer reliability</span>
             {buyers.map((b) => (
               <div key={b.agentId} className="flex items-center justify-between">
                 <span className="text-body-sm" style={{ color: "var(--color-inverse-canvas)", fontFamily: "ui-monospace, monospace" }}>{b.agentId.slice(0, 12)}…</span>

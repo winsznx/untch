@@ -818,16 +818,50 @@ describe("Untch Mail — one merchant, eight tools, no shared blast radius", () 
     assert.equal(sendEvidence.untchVerified.verified, false);
     assert.equal(sendEvidence.untchVerified.method, "NONE");
 
-    const { fetchImpl } = scriptedFetch([
-      { status: 402, headers: challengeHeader(FIXTURES.stableemailInboxStatusSiwx402) },
-      { status: 200, body: { inbox: "untchprobe@stableemail.dev", active: true, daysRemaining: 30 } },
+    // An inbox is verified by PAYING to read it. Being admitted by the provider as the payer IS the
+    // ownership proof, and it needs no SIWX identity — which is the whole point, because the
+    // identity key is deliberately not the treasury that owns the inbox.
+    const cap = fakeCapability({ max: parseMoney("0.01", USDC), recipients: ["0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671"] });
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 402, headers: challengeHeader(FIXTURES.stableemailInboxMessages402) },
+      { status: 200, body: { success: true, messages: [] } },
     ]);
     const inboxEvidence = await adapter.verifyDelivery(
       { ...base, providerReference: "inbox:untchprobe@stableemail.dev" },
-      ctx({ fetchImpl, siwx: new SiwxSigner({ privateKey: KEY, clock: () => Date.parse("2026-07-29T13:53:00.000Z") }) }),
+      ctx({ fetchImpl, discoveryPayment: cap }),
     );
+    assert.equal(requests[0]?.url, "https://stableemail.dev/api/inbox/messages");
     assert.equal(inboxEvidence.untchVerified.verified, true);
     assert.equal(inboxEvidence.untchVerified.method, "PROVIDER_STATUS_POLL");
+    assert.match(inboxEvidence.untchVerified.detail, /admitted the Untch treasury as this inbox's owner/);
+  });
+
+  test("an inbox read reduces senders and subjects to hashes before they become options", async () => {
+    const cap = fakeCapability({ max: parseMoney("0.01", USDC), recipients: ["0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671"] });
+    const { fetchImpl } = scriptedFetch([
+      { status: 402, headers: challengeHeader(FIXTURES.stableemailInboxMessages402) },
+      {
+        status: 200,
+        body: {
+          success: true,
+          messages: [
+            { id: "msg-1", fromEmail: "someone@personal.example", subject: "Re: Untch Mail delivery proof 462F", receivedAt: "2026-07-29T16:00:00.000Z", read: false },
+          ],
+        },
+      },
+    ]);
+    const result = await new StableEmailAdapter().discover(
+      { action: "mail.inbox.messages", params: { username: "untchprobe" }, limit: 20 },
+      ctx({ fetchImpl, discoveryPayment: cap }),
+    );
+
+    const serialized = JSON.stringify(result, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
+    assert.ok(!serialized.includes("someone@personal.example"), "the sender address leaked");
+    assert.ok(!serialized.includes("delivery proof 462F"), "the subject text leaked");
+    const attrs = result.options[0]?.attributes ?? {};
+    assert.match(String(attrs.fromHash), /^0x[0-9a-f]{64}$/);
+    assert.match(String(attrs.subjectHash), /^0x[0-9a-f]{64}$/);
+    assert.equal(attrs.receivedAt, "2026-07-29T16:00:00.000Z");
   });
 
   test("provider-side input rules are enforced BEFORE any money moves", async () => {

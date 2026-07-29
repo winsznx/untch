@@ -1,0 +1,22 @@
+{
+  "schema": "untch.mail.roundtrip.evidence.v1",
+  "generatedAt": "2026-07-29T16:14:54.264Z",
+  "ref": "462F",
+  "binding": {
+    "boundAt": "2026-07-29T15:45:00.931Z",
+    "expiresAt": "2026-07-29T18:45:00.932Z",
+    "path": "internal/evidence/mail-roundtrip/462F/binding.json"
+  },
+  "untchInbox": "untch-mail@stableemail.dev",
+  "inboundMatch": {
+    "messageIdHash": "0x72768b05b04f4cd8a81703d5182a07fe53dbaabd2276746ace9ba8fe154b81ab",
+    "subjectHash": "0x39ecb85f155328b85514e99e4e7e8f2306a77ed39db70dc3bd7cb28ee4898437",
+    "senderHashMatchesOutboundRecipient": true,
+    "receivedAt": "2026-07-29T16:13:57.623Z",
+    "receivedAfterBinding": true
+  },
+  "messagesInInbox": 1,
+  "readInterface": "POST /api/inbox/messages, $0.001 USDC on Base, authorised by payer-as-owner",
+  "redaction": "No recipient address, no sender address, no subject text and no message body appears in this file or in the binding. Every identity is a SHA-256 hash. The message body was never fetched.",
+  "verdict": "ROUND_TRIP_CONFIRMED"
+}

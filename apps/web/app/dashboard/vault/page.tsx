@@ -15,8 +15,8 @@ export default async function Vault() {
         title="Vault"
         subtitle={
           v.isDemo
-            ? "Reference UntchVault on X Layer testnet — deploy your own via the factory on the product chain."
-            : "Deploy, fund, withdraw, and pause a vault you own on the product chain — each a transaction signed by your owner wallet. Mainnet has no fixed demo vault."
+            ? "Reference UntchVault on X Layer testnet. Deploy your own via the factory on the product chain."
+            : "Deploy, fund, withdraw and pause a vault you own on the product chain. Each is a transaction signed by your owner wallet. Mainnet has no fixed demo vault."
         }
       />
 

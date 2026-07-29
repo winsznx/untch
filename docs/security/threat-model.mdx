@@ -10,7 +10,7 @@ description: What Untch defends against on the agent payment path.
 | Risk | Mitigation |
 | --- | --- |
 | Agent signs a swapped 402 challenge | Mode B CBC: exact match of recipient, token, amount, resource, endpoint, method, hashes |
-| Replay of an old authorization | Nonce and expiry binding; replay rule when challenge inject present |
+| Replay of an old authorization | Nonce and expiry binding, plus the replay rule when a challenge inject is present |
 | Overspend / runaway agent | Daily budget, per-call cap, rate limit, escalate-above |
 | Duplicate payment | Duplicate rule on task + endpoint + params within TTL |
 | Forged chat approval | Bound handle, single-use code, ownership check on dashboard, dual-channel when configured |

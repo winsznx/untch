@@ -153,9 +153,23 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
         maturity: "experimental",
         accessBlocker: "IDENTITY_REQUIRED",
         notes:
-          "GET /api/inbox/status, free but SIWX-gated, and the provider admits only the INBOX OWNER. " +
-          "Untch owns no inbox and no CONSUMER_SIWX_PRIVATE_KEY is configured, so this cannot " +
-          "succeed today. Unblocked by mail.inbox.buy, not by more code.",
+          "GET /api/inbox/status, free but SIWX-gated. StableEmail authorises it by owner SIGNATURE, " +
+          "and Untch's inbox is owned by the wallet that PAID for it — the Base settlement treasury. " +
+          "Satisfying this would mean handing the SIWX identity the treasury's key, collapsing a " +
+          "powerless identity key into a spending key so that a leaked signer could drain the float. " +
+          "Untch will not make that trade for a status field, so this stays blocked BY CHOICE. " +
+          "mail.inbox.messages reads the same inbox by PAYER instead, which the treasury already is.",
+      },
+      {
+        providerId: "stableemail",
+        capability: "mail.inbox.messages",
+        maturity: "sandbox",
+        notes:
+          "POST /api/inbox/messages, $0.001 (1000 atomic USDC), authorised by PAYER-as-owner rather " +
+          "than by signature — which is why it works where mail.inbox.status cannot. Runs on the " +
+          "small discovery capability. Returns hashes only: the provider cannot tell one Untch " +
+          "caller from another, so raw senders and subjects would let any caller read the " +
+          "operational mailbox by naming it.",
       },
       {
         providerId: "stableemail",

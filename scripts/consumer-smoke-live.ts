@@ -82,6 +82,7 @@ import { makeConsumerReceiptSink } from "../services/asp/src/consumer/bridges";
 import { initReceiptWiring } from "../services/asp/src/receipts";
 import { createPublicClient, createWalletClient, decodeEventLog, erc20Abi, getAddress, http as viemHttp } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { proofEmail } from "./untch-authored-copy";
 
 const BASE: CaipChainId = "eip155:8453";
 const XLAYER_RPC = process.env.XLAYER_RPC_URL?.trim() || "https://rpc.xlayer.tech";
@@ -185,33 +186,87 @@ const PLANS: Readonly<Record<string, SmokePlan>> = {
       if (!to) {
         stop(2, "--to is required: a live mail.send must land in an inbox the operator controls");
       }
-      const subject = arg("subject") ?? `Untch Mail live proof ${new Date().toISOString()}`;
-      const text =
-        arg("text") ??
-        [
-          "This message was sent by the Untch Consumer Pack.",
-          "",
-          "It was authorised by a deterministic policy, funded for its exact approved amount, and",
-          "paid for from the Untch Base treasury against StableEmail's own x402 challenge. No part",
-          "of this email — not this body, not the recipient — is stored in the public receipt.",
-          "",
-          "If you are reading this, the mail.send delivery leg is real.",
-        ].join("\n");
+      /**
+       * The proof email's copy.
+       *
+       * The first version was accurate and far too long, and it read as though a machine had written
+       * it. A proof email has one job: let a reader confirm, in five seconds, that the thing they
+       * are holding was authorised before it was paid for. Everything past that is decoration.
+       *
+       * Uniqueness lives in a SHORT REFERENCE CODE rather than a timestamp. A subject line that is
+       * mostly an ISO timestamp is unreadable to a person and tells them nothing; a four-character
+       * ref is greppable, quotable, and survives being read aloud. The ref is also what makes the
+       * round trip matchable: a reply carries it back in `Re: …`.
+       */
+      const ref = arg("ref") ?? randomBytes(2).toString("hex").toUpperCase();
+      const replyTo = arg("reply-to");
+      const composed = proofEmail({ ref, replyTo, receiptUrl: null });
+      const subject = arg("subject") ?? composed.subject;
+      const text = arg("text") ?? composed.text;
+
+      const body = {
+        to: [to],
+        subject,
+        text,
+        ...(replyTo === null ? {} : { replyTo }),
+      };
 
       return {
-        request: { to: [to], subject, text },
+        request: body,
         providerRef: "send",
-        probe: { method: "POST", path: "/api/send", body: { to: [to], subject, text } },
+        probe: { method: "POST", path: "/api/send", body },
         // The recipient address is PERSONAL DATA and does not go to the terminal, the evidence file
         // or the receipt. A count and a hash are what a reviewer actually needs.
         label: [
           ["recipients", "1"],
+          ["ref", ref],
           ["subject hash", `0x${sha256Hex(subject)}`],
+          ["reply-to", replyTo ?? "(none — no return path)"],
         ],
         humanVerification:
           `the message must actually ARRIVE at the recipient inbox. StableEmail's shared relay ` +
           "exposes no per-message status endpoint, so acceptance by the relay is all this script " +
           "can prove; a human confirming receipt is what completes the delivery leg.",
+      };
+    },
+  },
+
+  /**
+   * Buying the inbox Untch itself will own.
+   *
+   * `forwardTo` is deliberately OMITTED. Supplying it makes the inbox a forwarder to somebody's
+   * personal address; omitting it makes StableEmail enable `retainMessages`, which is what turns the
+   * mailbox into something Untch can READ BACK over the API. That read-back is the entire reason to
+   * buy it: `mail.send` delivery is provider-attested and unverifiable from the sender side, and an
+   * inbox Untch owns is what turns that hand-off into a round trip.
+   *
+   * Ownership follows the PAYING wallet, so the owner is the Base settlement treasury. That matters
+   * for what comes next: StableEmail's paid message endpoints admit the payer-as-owner, so they work
+   * with the treasury alone, while its SIWX-gated endpoints admit an owner SIGNATURE — and Untch's
+   * SIWX identity is a deliberately powerless key that is NOT the treasury. See the notes on
+   * mail.inbox.status.
+   */
+  "stableemail-inbox": {
+    providerId: "stableemail",
+    displayName: "StableEmail",
+    baseUrl: "https://stableemail.dev",
+    capability: "mail.inbox.buy",
+    action: "mail.inbox.buy",
+    payTo: "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+    documentationVersion: "live llms.txt + 402s re-fetched 2026-07-29",
+    newAdapter: () => new StableEmailAdapter(),
+    build() {
+      const username = arg("username");
+      if (!username) stop(2, "--username is required: an inbox purchase must name the inbox it buys");
+      return {
+        request: { username },
+        providerRef: `inbox:${username}`,
+        probe: { method: "POST", path: "/api/inbox/buy", body: { username } },
+        label: [
+          ["inbox", `${username}@stableemail.dev`],
+          ["forwardTo", "(omitted — programmatic mailbox, retainMessages on)"],
+        ],
+        humanVerification: null,
       };
     },
   },
@@ -282,11 +337,22 @@ async function main(): Promise<void> {
   console.log("\n\x1b[1mUntch Consumer Pack — LIVE provider execution\x1b[0m");
   console.log("\x1b[31mThis spends REAL money on a REAL merchant.\x1b[0m");
 
-  const providerId = arg("provider") ?? "stabledomains";
-  const plan = PLANS[providerId];
+  /**
+   * The plan KEY is not the provider id, and conflating them was a real bug.
+   *
+   * One provider can have several plans — StableEmail has one for `mail.send` and one for
+   * `mail.inbox.buy` — so the keys must be distinct while the registry id stays `stableemail`. The
+   * first version used the key for both, which meant a run looked up a provider row named
+   * `stableemail-inbox`, found nothing, and was about to CREATE one: a second, ghost registry entry
+   * for a merchant that already existed, with its own maturity and its own promotion history.
+   * `plan.providerId` is the only thing the registry ever sees from here on.
+   */
+  const planKey = arg("provider") ?? "stabledomains";
+  const plan = PLANS[planKey];
   if (!plan) {
-    stop(2, `no live smoke plan for '${providerId}' (have: ${Object.keys(PLANS).join(", ")})`);
+    stop(2, `no live smoke plan for '${planKey}' (have: ${Object.keys(PLANS).join(", ")})`);
   }
+  const providerId = plan.providerId;
   const firstRun = has("first-run");
 
   // ── 1. FLAGS ──────────────────────────────────────────────────────────────
@@ -334,8 +400,21 @@ async function main(): Promise<void> {
    * treasury here rather than at spend time, because a run where they coincide proves nothing and
    * should stop before it costs anything.
    */
-  const funderKey = process.env.CONSUMER_TEST_FUNDER_PRIVATE_KEY?.trim();
+  /**
+   * `--operator-funded` says the external leg is not what this run is testing.
+   *
+   * Some purchases are genuinely Untch's own: buying the inbox that Untch will operate has no third
+   * party to fund it, and dragging a test funder in would dress an operational purchase up as a
+   * customer one. The external-funder leg is already proven by the mail.send run and does not need
+   * re-proving here, so the flag makes the run say plainly that Untch is both funder and settler
+   * rather than implying otherwise.
+   */
+  const operatorFunded = has("operator-funded");
+  const funderKey = operatorFunded ? undefined : process.env.CONSUMER_TEST_FUNDER_PRIVATE_KEY?.trim();
   const funderAccount = funderKey ? privateKeyToAccount(funderKey as `0x${string}`) : null;
+  if (operatorFunded) {
+    warn("--operator-funded: Untch is deliberately both funder and settler for this run.");
+  }
   if (funderAccount) {
     if (funderAccount.address.toLowerCase() === treasuryAddress.toLowerCase()) {
       stop(2, "the test funder IS the settlement treasury — that would prove nothing");
@@ -521,7 +600,17 @@ async function main(): Promise<void> {
     expiry: Math.floor(Date.now() / 1000) + 86_400,
     onchainRef: { note: "live smoke policy — in-process, not an on-chain registration" },
     rules: {
-      budgets: { daily: 1, token: "USDC" },
+      /**
+       * The daily budget is the AUTHORISED CEILING, not a constant.
+       *
+       * It was hardcoded to 1, which quietly meant "no live run may ever cost more than a dollar" —
+       * and the cost the policy weighs is the TOTAL, provider price plus the disclosed cross-rail
+       * spread. So a $1.00 purchase totalling $1.005 was BLOCKED_BUDGET by a limit nobody had chosen
+       * for it, at a point that reads like the provider misbehaving rather than the policy doing its
+       * job. Deriving both the daily budget and the per-call cap from `cap` means the number an
+       * operator authorises on the command line is the number the engine enforces.
+       */
+      budgets: { daily: Number(formatMoney(cap)), token: "USDC" },
       perCallCap: Number(formatMoney(cap)),
       onPerCallCapExceeded: "BLOCK",
       escalateAbove: 1000,
@@ -710,9 +799,34 @@ async function main(): Promise<void> {
     executed = await orchestrator.executeIntent(intentId);
   } catch (err) {
     if (!(err instanceof Error) || !/no longer in EXECUTION_QUEUED/.test(err.message)) throw err;
-    warn("a DEPLOYED worker claimed this intent first — reporting its outcome, not retrying.");
-    const claimed = await store.getIntent(intentId);
+    warn("a DEPLOYED worker claimed this intent first — waiting for its outcome, not retrying.");
+
+    /**
+     * WAIT for the winner, do not snapshot it.
+     *
+     * Reading once immediately after losing the race caught the intent mid-flight at
+     * PROVIDER_PAYMENT_PENDING and reported a successful run as a failure — the worker had sent the
+     * request and had not yet seen the response. The states below are the ones where the outcome is
+     * actually settled; everything else is still in motion and worth waiting out.
+     *
+     * The poll is READ-ONLY by construction. It never transitions anything, so it cannot influence
+     * what the winner does, and a timeout leaves the intent exactly where the worker put it.
+     */
+    const SETTLED: ReadonlySet<string> = new Set([
+      "PROVIDER_ACKNOWLEDGED", "DELIVERY_PENDING", "DELIVERY_VERIFIED", "COMPLETED",
+      "FAILED_BEFORE_PAYMENT", "FAILED_AFTER_PAYMENT", "MANUAL_REVIEW", "REFUND_PENDING",
+      "REFUNDED", "BLOCKED", "CANCELLED", "EXPIRED",
+    ]);
+    const deadline = Date.now() + 120_000;
+    let claimed = await store.getIntent(intentId);
+    while (claimed && !SETTLED.has(claimed.state) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2000));
+      claimed = await store.getIntent(intentId);
+    }
     if (!claimed) stop(3, `intent ${intentId} vanished after the race`);
+    if (!SETTLED.has(claimed.state)) {
+      stop(4, `the deployed worker is still mid-flight at ${claimed.state} after 120s — check the intent, do not re-run`);
+    }
     executed = claimed;
   }
   info("state", executed.state);

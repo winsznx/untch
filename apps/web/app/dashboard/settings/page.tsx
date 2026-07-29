@@ -7,7 +7,7 @@ export default function Settings() {
       <SectionTitle
         kicker="Settings"
         title="Control channels"
-        subtitle="Bind the channels you approve escalations from. Each is a code roundtrip verified against your operator identity — a second approver is a new binding, not a redeploy."
+        subtitle="Bind the channels you approve escalations from. Each is a code roundtrip verified against your operator identity. A second approver is a new binding, not a redeploy."
       />
 
       <DashCard>

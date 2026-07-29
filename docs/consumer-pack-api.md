@@ -112,14 +112,15 @@ been quoted, policy-checked and funded.
 | Route | Fee | Provider price | Tool state |
 | --- | --- | --- | --- |
 | `POST /consumer/mail/send` | $0.05 | $0.02 | **LIVE** |
-| `POST /consumer/mail/inbox/buy` | $0.05 | $1.00 / 30 days | BETA |
+| `POST /consumer/mail/inbox/buy` | $0.05 | $1.00 / 30 days | **LIVE** |
+| `POST /consumer/mail/inbox/messages` | $0.02 | $0.001 | **LIVE** |
 | `POST /consumer/mail/inbox/topup` | $0.05 | $1.00 / $2.50 / $8.00 | BETA |
 | `POST /consumer/mail/subdomain/buy` | $0.05 | $5.00 | BETA |
-| `POST /consumer/mail/subdomain/send` | $0.05 | $0.005 | PARTNER_ACCESS_REQUIRED |
 | `POST /consumer/mail/inbox/status` | $0.02 | free | PARTNER_ACCESS_REQUIRED |
+| `POST /consumer/mail/inbox/cancel` | $0.05 | free | PARTNER_ACCESS_REQUIRED |
 | `POST /consumer/mail/subdomain/status` | $0.02 | free | PARTNER_ACCESS_REQUIRED |
-| `POST /consumer/mail/inbox/cancel` | $0.05 | free (refunds pro-rata) | PARTNER_ACCESS_REQUIRED |
-| `POST /consumer/mail/execute` | $0.05 | — | — |
+| `POST /consumer/mail/subdomain/send` | $0.05 | $0.005 | PARTNER_ACCESS_REQUIRED |
+| `POST /consumer/mail/execute` | $0.05 | | |
 
 The provider price is never read from that table at runtime. It is read from StableEmail's own 402,
 seconds before you are asked to approve it, so an approval binds to the merchant's figure.
@@ -136,15 +137,24 @@ execution — a message-id hash. Never the address, never the subject, never the
 binds the exact bytes, so a body cannot be swapped between approval and execution while the subject
 stays the same.
 
-**What Untch will not claim.** A send cannot be verified from the sender side: StableEmail's shared
-relay exposes no per-message status endpoint, so `mail.send` delivery evidence is
-`untchVerified: false, method: NONE`, and it says so on the receipt. An **inbox** or **subdomain**
-purchase *is* verifiable — it is polled back over the provider's own status endpoint and reports
-`PROVIDER_STATUS_POLL`.
+**What Untch will not claim.** A send to the open internet cannot be verified from the sender side.
+StableEmail's shared relay exposes no per-message status endpoint, so `mail.send` delivery evidence
+is `untchVerified: false, method: NONE`, and the receipt says so. An **inbox** purchase *is*
+verifiable: Untch pays to read the inbox back, and being admitted as the payer is itself the
+ownership proof.
 
-The four PARTNER_ACCESS_REQUIRED tools are not unfinished. They are SIWX-gated and owner-scoped:
-StableEmail admits only the wallet that owns the inbox or subdomain, and Untch owns neither yet.
-Buying one is what unblocks them.
+**Why four tools say PARTNER_ACCESS_REQUIRED.** Three are SIWX-gated and owner-scoped. StableEmail
+authorises them by owner *signature*, and the wallet that owns Untch's inbox is the Base settlement
+treasury. Satisfying that would mean giving the SIWX identity key the treasury's key, turning a
+powerless identity into a spending key so that a leaked signer could drain the float. Untch will not
+make that trade for a status field, so those tools stay blocked by choice. `mail.subdomain.send`
+needs a subdomain Untch does not own.
+
+`mail.inbox.messages` reads the same inbox by *payer*, which the treasury already is. That is the
+route Untch uses, and it is what makes `mail.send` delivery verifiable: an inbox Untch owns can be
+read back, where the open internet cannot. It returns hashes only, because StableEmail cannot tell
+one Untch caller from another and raw senders or subjects would let any caller read the operational
+mailbox by naming it.
 
 ---
 

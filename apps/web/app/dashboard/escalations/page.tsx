@@ -15,7 +15,7 @@ export default async function Escalations() {
         <SectionTitle
           kicker="Approvals"
           title="Escalation inbox"
-          subtitle="Held payments awaiting approval. Resolve them here — the dashboard is a real fourth control channel, authorized by your signed-in session."
+          subtitle="Held payments awaiting approval. Resolve them here. The dashboard is a real fourth control channel, authorized by your signed-in session."
         />
         <NoHistory authenticated={false} address={scope.address} what="escalations" />
       </div>
@@ -27,7 +27,7 @@ export default async function Escalations() {
       <SectionTitle
         kicker="Approvals"
         title="Escalation inbox"
-        subtitle="Held payments awaiting approval. Resolve them here — the dashboard is a real fourth control channel that runs the same §27 authority check as Telegram, Discord, and Slack, authorized by your session."
+        subtitle="Held payments awaiting approval. Resolve them here. The dashboard is a real fourth control channel that runs the same §27 authority check as Telegram, Discord and Slack, authorized by your session."
       />
 
       {escalations.length === 0 ? (
