@@ -32,7 +32,6 @@
     "deploy:keyed-suite": "tsx scripts/deploy-keyed-suite.ts",
     "deploy:mainnet-suite": "tsx scripts/deploy-mainnet-suite.ts",
     "register:erc8004": "tsx scripts/register-erc8004-agent.ts",
-    "demo:record": "pnpm --dir scripts/demo-video record",
     "consumer:smoke:live": "tsx scripts/consumer-smoke-live.ts",
     "consumer:migrate:verify": "tsx scripts/consumer-migrate-verify.ts",
     "consumer:demo": "tsx scripts/consumer-demo.ts",
@@ -53,7 +52,6 @@
     "viem": "^2.55.0"
   },
   "devDependencies": {
-    "@babel/parser": "7.24.1",
     "@types/node": "^24.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
