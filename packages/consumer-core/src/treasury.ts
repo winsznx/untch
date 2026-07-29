@@ -325,6 +325,10 @@ export class TreasuryRouter {
             capability: intent.action,
             amount: req.amount,
             chain: record.asset.chain,
+            // The capability id identifies the attempt holding the claim. It is issued once per
+            // authorised spend, so a second attempt carries a different one and a held claim always
+            // names the holder that actually won it.
+            executionId: record.capabilityId,
           });
         }
 

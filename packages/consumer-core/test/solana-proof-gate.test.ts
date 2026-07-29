@@ -16,6 +16,8 @@ import {
   StorePauseChecker,
   TreasuryRouter,
   asset,
+  canReleasePreSign,
+  describeProofGate,
   loadSolanaProofGate,
   money,
   parseMoney,
@@ -248,8 +250,17 @@ describe("Solana proof gate — the window closes", () => {
 });
 
 describe("Solana proof gate — single use survives a restart", () => {
-  test("a prior SETTLED Solana execution consumes the gate durably", async () => {
-    // The durable record, not an in-memory flag. This is the state a restart cannot erase.
+  test("execution rows are NOT what governs the gate any more", async () => {
+    /**
+     * This replaces two tests that asserted the OLD model, in which consumption was inferred from an
+     * execution reaching PAID or ACKNOWLEDGED. That inference was the bug: it cannot tell "never tried"
+     * from "signed, broadcast, crashed before we wrote anything", so it reported an unspent gate for a
+     * proof that may already have paid.
+     *
+     * The gate row is now the authority. A settled execution row on its own neither consumes a fresh
+     * gate nor is needed to consume a claimed one, and stating that directly stops the old inference
+     * from creeping back in as an optimisation.
+     */
     const h = await harness();
     await h.store.prepareExecution({
       executionId: "exec_prior",
@@ -264,45 +275,15 @@ describe("Solana proof gate — single use survives a restart", () => {
       settledAmount: money(10_000n, SOL_USDC),
     } as never);
 
-    await refused(h, money(10_000n, SOL_USDC), /already has a settled Solana execution/);
+    // The gate row is untouched, so this proceeds. Under the old model it would have refused here for
+    // the wrong reason, and would have PERMITTED the genuinely dangerous crash cases.
+    await h.pay(money(10_000n, SOL_USDC));
+    assert.equal(h.rail.calls, 1);
   });
 
-  test("a FRESH process reading the same store still refuses", async () => {
-    // Simulates the restart directly: a brand new gate object, same durable store.
-    const h = await harness();
-    await h.store.prepareExecution({
-      executionId: "exec_prior",
-      intentId: INTENT,
-      providerId: "purch",
-      attemptNo: 1,
-      idempotencyKey: "k1",
-      state: "ACKNOWLEDGED",
-      providerReference: "ref",
-      settlementTxHash: "SgxsTgw…",
-      settlementChain: SOLANA,
-      settledAmount: money(10_000n, SOL_USDC),
-    } as never);
-
-    const restarted = new SolanaProofGate({
-      config: loadSolanaProofGate(gateEnv(), (raw) => parseMoney(raw, SOL_USDC)),
-      store: h.store,
-      clock: () => NOW,
-    });
-    await assert.rejects(
-      () =>
-        restarted.assertAuthorised({
-          intentId: INTENT,
-          providerId: "purch",
-          capability: "shop.search",
-          amount: money(10_000n, SOL_USDC),
-          chain: SOLANA,
-        }),
-      /already has a settled Solana execution/,
-    );
-  });
-
-  test("a FAILED prior execution does NOT consume the gate", async () => {
-    // A failure is not a settlement. Treating it as one would strand a legitimate proof.
+  test("a FAILED prior execution row does not block a fresh gate", async () => {
+    // Kept because the inverse matters: a failed attempt on the INTENT must not strand a gate that was
+    // never claimed. Release of a CLAIMED gate is a separate and much stricter question, covered below.
     const h = await harness();
     await h.store.prepareExecution({
       executionId: "exec_failed",
@@ -323,7 +304,9 @@ describe("Solana proof gate — single use survives a restart", () => {
   test("a second redemption of the same capability is refused", async () => {
     const h = await harness();
     await h.pay(money(10_000n, SOL_USDC));
-    await assert.rejects(() => h.pay(money(10_000n, SOL_USDC)), /already consumed|already used/);
+    // The message now comes from the durable claim rather than the capability, because the gate is
+    // checked first and refuses before redemption is even attempted.
+    await assert.rejects(() => h.pay(money(10_000n, SOL_USDC)), /not ARMED|already consumed/);
     assert.equal(h.rail.calls, 1, "a second payment reached the signer");
   });
 });
@@ -365,5 +348,210 @@ describe("Solana proof gate — the redacted description", () => {
     assert.equal(d.includes("HsTvSTrXn1He"), false);
     assert.match(d, /"capability":"shop.search"/);
     assert.match(d, /"expired":false/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The crash window
+//
+// These are the cases the FIRST version of this gate got wrong. It inferred consumption from whether an
+// execution had reached PAID, which cannot distinguish "never tried" from "signed, broadcast, and
+// crashed before we wrote anything". Each test below sits at a different point in that window and
+// asserts the same thing: the gate stays consumed, and no signer is reached.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Build a gate over a shared store, as a distinct process would. */
+function gateOver(store: InMemoryConsumerStore, now = NOW): SolanaProofGate {
+  return new SolanaProofGate({
+    config: loadSolanaProofGate(gateEnv(), (raw) => parseMoney(raw, SOL_USDC)),
+    store,
+    clock: () => now,
+  });
+}
+
+const authInput = (executionId: string): Parameters<SolanaProofGate["assertAuthorised"]>[0] => ({
+  intentId: INTENT,
+  providerId: "purch",
+  capability: "shop.search",
+  amount: money(10_000n, SOL_USDC),
+  chain: SOLANA,
+  executionId,
+});
+
+describe("Solana proof gate — the durable claim", () => {
+  test("two workers race and exactly ONE wins the claim", async () => {
+    // #given one store and two gate instances, as two workers would be
+    const store = new InMemoryConsumerStore(() => NOW);
+    const a = gateOver(store);
+    const b = gateOver(store);
+
+    // #when both try to authorise the same proof
+    const results = await Promise.allSettled([
+      a.assertAuthorised(authInput("exec_a")),
+      b.assertAuthorised(authInput("exec_b")),
+    ]);
+
+    // #then exactly one succeeded, and the loser was told why
+    const won = results.filter((r) => r.status === "fulfilled");
+    const lost = results.filter((r) => r.status === "rejected");
+    assert.equal(won.length, 1, "more than one worker acquired the right to sign");
+    assert.equal(lost.length, 1);
+    assert.match(
+      String((lost[0] as PromiseRejectedResult).reason),
+      /another worker claimed this proof first|is CLAIMED, not ARMED/,
+    );
+  });
+
+  test("the winning claim names its holder and marks signer access", async () => {
+    const store = new InMemoryConsumerStore(() => NOW);
+    const gate = gateOver(store);
+    await gate.assertAuthorised(authInput("exec_winner"));
+
+    const hash = gate.claimedScopeHash();
+    assert.ok(hash, "the gate did not retain its scope hash");
+    const row = await store.getSolanaProofGate(hash);
+    assert.equal(row?.state, "CLAIMED");
+    assert.equal(row?.claimedByExecution, "exec_winner");
+    assert.ok(row?.claimedAt);
+    // Signer access is recorded straight after the claim, which is what makes release decidable.
+    assert.ok(row?.signerReachedAt, "signer access was not recorded");
+  });
+
+  test("a RESTART while CLAIMED refuses a fresh signing attempt", async () => {
+    // The exact scenario the old model failed. A crash after claiming leaves a CLAIMED row, and a
+    // brand new process reading the same database must refuse rather than see an unspent gate.
+    const store = new InMemoryConsumerStore(() => NOW);
+    await gateOver(store).assertAuthorised(authInput("exec_before_crash"));
+
+    const afterRestart = gateOver(store);
+    await assert.rejects(
+      () => afterRestart.assertAuthorised(authInput("exec_after_restart")),
+      /is CLAIMED, not ARMED/,
+    );
+  });
+
+  for (const [label, progress, state] of [
+    ["after credential construction", { credentialCreatedAt: new Date(NOW).toISOString() }, null],
+    ["after transaction signing", { txSignature: "SgxsTgw" }, null],
+    ["after broadcast, before signature persistence", { txSubmittedAt: new Date(NOW).toISOString() }, null],
+    ["after signature persistence, before PAID", { txSignature: "SgxsTgw" }, null],
+    ["after settlement, before acknowledgement", { settledAt: new Date(NOW).toISOString() }, "SETTLED"],
+    ["after acknowledgement", { acknowledgedAt: new Date(NOW).toISOString() }, "ACKNOWLEDGED"],
+    ["after an ambiguous provider timeout", { manualReviewReason: "provider timed out after settlement" }, "MANUAL_REVIEW"],
+  ] as const) {
+    test(`a crash ${label} leaves the gate unusable`, async () => {
+      const store = new InMemoryConsumerStore(() => NOW);
+      const first = gateOver(store);
+      await first.assertAuthorised(authInput("exec_first"));
+      await first.recordProgress(progress as never, state as never);
+
+      const afterRestart = gateOver(store);
+      await assert.rejects(
+        () => afterRestart.assertAuthorised(authInput("exec_retry")),
+        /not ARMED/,
+        `a crash ${label} left the gate reusable`,
+      );
+    });
+  }
+});
+
+describe("Solana proof gate — release requires proving nothing was signed", () => {
+  test("a gate that never reached the signer CAN be released", async () => {
+    const store = new InMemoryConsumerStore(() => NOW);
+    const scope = {
+      intentId: INTENT,
+      providerId: "purch",
+      capability: "shop.search",
+      chain: SOLANA,
+      asset: SOL_USDC,
+      maxAmount: money(20_000n, SOL_USDC),
+      expiresAt: EXPIRY,
+    };
+    const armed = await store.armSolanaProofGate(scope, new Date(NOW).toISOString());
+    const released = await store.releaseSolanaProofGatePreSign(
+      armed.scopeHash,
+      "the run stopped at the policy step",
+      new Date(NOW).toISOString(),
+    );
+    assert.equal(released?.state, "RELEASED_PRE_SIGN");
+  });
+
+  test("a gate that DID reach the signer cannot be released, however the attempt ended", async () => {
+    // A FAILED execution is exactly what an ambiguous broadcast also produces, so failure can never be
+    // the evidence for release. This is the rule that keeps a stranded proof from becoming a double
+    // payment.
+    const store = new InMemoryConsumerStore(() => NOW);
+    const gate = gateOver(store);
+    await gate.assertAuthorised(authInput("exec_signed"));
+    const hash = gate.claimedScopeHash() as string;
+
+    const refused = await store.releaseSolanaProofGatePreSign(
+      hash,
+      "the attempt reported FAILED",
+      new Date(NOW).toISOString(),
+    );
+    assert.equal(refused, null, "a gate that reached the signer was released");
+
+    const row = await store.getSolanaProofGate(hash);
+    assert.equal(row?.state, "CLAIMED");
+    assert.equal(canReleasePreSign(row as never).ok, false);
+    assert.match(canReleasePreSign(row as never).why, /the signer was reached at/);
+  });
+
+  test("each individual trace of signer access blocks release on its own", async () => {
+    for (const field of ["credentialCreatedAt", "txSignature", "txSubmittedAt", "settledAt"] as const) {
+      const store = new InMemoryConsumerStore(() => NOW);
+      const scope = {
+        intentId: `${INTENT}_${field}`,
+        providerId: "purch",
+        capability: "shop.search",
+        chain: SOLANA,
+        asset: SOL_USDC,
+        maxAmount: money(20_000n, SOL_USDC),
+        expiresAt: EXPIRY,
+      };
+      const armed = await store.armSolanaProofGate(scope, new Date(NOW).toISOString());
+      const value = field === "txSignature" ? "SgxsTgw" : new Date(NOW).toISOString();
+      await store.recordSolanaProofProgress(
+        armed.scopeHash,
+        { [field]: value } as never,
+        null,
+        new Date(NOW).toISOString(),
+      );
+      const refused = await store.releaseSolanaProofGatePreSign(
+        armed.scopeHash,
+        "attempting release",
+        new Date(NOW).toISOString(),
+      );
+      assert.equal(refused, null, `${field} did not block release`);
+    }
+  });
+});
+
+describe("Solana proof gate — the operator view", () => {
+  test("describeProofGate reports what a retry decision needs and no secrets", async () => {
+    const store = new InMemoryConsumerStore(() => NOW);
+    const gate = gateOver(store);
+    await gate.assertAuthorised(authInput("exec_described"));
+    await gate.recordProgress({ txSignature: "SgxsTgwVZnmK", settledAt: new Date(NOW).toISOString() }, "SETTLED");
+
+    const row = await store.getSolanaProofGate(gate.claimedScopeHash() as string);
+    const view = describeProofGate(row as never);
+    assert.equal(view.state, "SETTLED");
+    assert.equal(view.signerReached, true);
+    assert.equal(view.reusable, false);
+    assert.equal(view.txSignature, "SgxsTgwVZnmK");
+    // Nothing that would make the log itself a liability.
+    const json = JSON.stringify(view);
+    assert.equal(json.includes("SECRET"), false);
+    assert.equal(json.includes("alchemy"), false);
+  });
+
+  test("listSolanaProofGates returns rows for the diagnostic", async () => {
+    const store = new InMemoryConsumerStore(() => NOW);
+    await gateOver(store).assertAuthorised(authInput("exec_listed"));
+    const rows = await store.listSolanaProofGates(10);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.scope.capability, "shop.search");
   });
 });

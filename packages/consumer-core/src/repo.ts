@@ -17,6 +17,12 @@
  * Postgres — exactly as the repository already does for receipts, policies and escalations.
  */
 
+import type {
+  SolanaProofGateRecord,
+  SolanaProofGateState,
+  SolanaProofProgress,
+  SolanaProofScope,
+} from "./solana-proof-claim";
 import type { AssetRef, CaipChainId } from "./assets";
 import type { ConsumerEvent, ConsumerEventName, OutboxRecord } from "./events";
 import type { LedgerGroup } from "./ledger";
@@ -292,6 +298,54 @@ export interface ConsumerStore {
    * consumed, expired, or never existed. A second redemption is a refusal, never a second payment.
    */
   consumeCapability(capabilityId: string, spent: Money, atIso: string): Promise<CapabilityRecord | null>;
+
+  // ── the one-shot Solana proof gate ────────────────────────────────────────
+  //
+  // Separate from the capability tables on purpose. A capability answers "may this intent spend up to
+  // X with this provider". The proof gate answers a different and narrower question: "may production
+  // reach the Solana signer AT ALL, this once". Folding the second into the first would make an
+  // operational safety measure indistinguishable from ordinary authorisation.
+
+  /** Create the ARMED row for a scope, or return the existing row for that exact scope. */
+  armSolanaProofGate(scope: SolanaProofScope, atIso: string): Promise<SolanaProofGateRecord>;
+
+  /**
+   * Atomically move ARMED to CLAIMED, returning the claimed record or null if it could not be won.
+   *
+   * MUST be a compare-and-set. Two workers calling this concurrently must see exactly one non-null
+   * result, and a restart while a row is CLAIMED must keep returning null.
+   */
+  claimSolanaProofGate(
+    scopeHash: string,
+    executionId: string,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null>;
+
+  /** Append evidence as it becomes known. Never resets a field and never widens authority. */
+  recordSolanaProofProgress(
+    scopeHash: string,
+    progress: SolanaProofProgress,
+    state: SolanaProofGateState | null,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null>;
+
+  getSolanaProofGate(scopeHash: string): Promise<SolanaProofGateRecord | null>;
+
+  /** Every gate row, newest first. For the read-only operator diagnostic. */
+  listSolanaProofGates(limit: number): Promise<readonly SolanaProofGateRecord[]>;
+
+  /**
+   * Release a gate that provably never reached the signer.
+   *
+   * Returns null when the record's own evidence forbids it. The refusal is the point: a FAILED attempt
+   * is not proof that nothing was signed, and this is the one transition that could turn a spent gate
+   * back into a spendable one.
+   */
+  releaseSolanaProofGatePreSign(
+    scopeHash: string,
+    reason: string,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null>;
   getCapability(capabilityId: string): Promise<CapabilityRecord | null>;
 
   // ── idempotency ───────────────────────────────────────────────────────────

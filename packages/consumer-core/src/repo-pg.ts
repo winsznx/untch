@@ -19,6 +19,13 @@
 
 import type { Pool } from "./db";
 import type { AssetRef, CaipChainId } from "./assets";
+import {
+  solanaProofScopeHash,
+  type SolanaProofGateRecord,
+  type SolanaProofGateState,
+  type SolanaProofProgress,
+  type SolanaProofScope,
+} from "./solana-proof-claim";
 import { assetKey } from "./assets";
 import type { ConsumerEvent, ConsumerEventName, OutboxRecord } from "./events";
 import { assertGroupBalanced, type LedgerGroup, type LedgerGroupKind } from "./ledger";
@@ -1257,6 +1264,198 @@ export class PgConsumerStore implements ConsumerStore {
     } finally {
       client.release();
     }
+  }
+
+  // ── the one-shot Solana proof gate ────────────────────────────────────────
+
+  private proofGateFromRow(row: Row): SolanaProofGateRecord {
+    return {
+      scopeHash: row.scope_hash as string,
+      state: row.state as SolanaProofGateState,
+      scope: {
+        intentId: row.intent_id as string,
+        providerId: row.provider_id as string,
+        capability: row.capability as string,
+        chain: row.chain as CaipChainId,
+        asset: {
+          symbol: row.asset_symbol as string,
+          chain: row.chain as CaipChainId,
+          address: (row.asset_address as string | null) ?? null,
+          decimals: 6,
+        },
+        maxAmount: {
+          amount: BigInt(row.max_amount as string),
+          asset: {
+            symbol: row.asset_symbol as string,
+            chain: row.chain as CaipChainId,
+            address: (row.asset_address as string | null) ?? null,
+            decimals: 6,
+          },
+        },
+        expiresAt: iso(row.expires_at),
+      },
+      claimedByExecution: (row.claimed_by_execution as string | null) ?? null,
+      claimedAt: row.claimed_at ? iso(row.claimed_at) : null,
+      signerReachedAt: row.signer_reached_at ? iso(row.signer_reached_at) : null,
+      credentialCreatedAt: row.credential_created_at ? iso(row.credential_created_at) : null,
+      txSignature: (row.tx_signature as string | null) ?? null,
+      txSubmittedAt: row.tx_submitted_at ? iso(row.tx_submitted_at) : null,
+      settledAt: row.settled_at ? iso(row.settled_at) : null,
+      confirmedSlot: row.confirmed_slot === null || row.confirmed_slot === undefined ? null : Number(row.confirmed_slot),
+      txError: (row.tx_error as string | null) ?? null,
+      preTokenAmount: (row.pre_token_amount as string | null) ?? null,
+      postTokenAmount: (row.post_token_amount as string | null) ?? null,
+      tokenDelta: (row.token_delta as string | null) ?? null,
+      mint: (row.mint as string | null) ?? null,
+      authority: (row.authority as string | null) ?? null,
+      feePayer: (row.fee_payer as string | null) ?? null,
+      acknowledgedAt: row.acknowledged_at ? iso(row.acknowledged_at) : null,
+      providerResultHash: (row.provider_result_hash as string | null) ?? null,
+      manualReviewReason: (row.manual_review_reason as string | null) ?? null,
+      releasedAt: row.released_at ? iso(row.released_at) : null,
+      releasedReason: (row.released_reason as string | null) ?? null,
+      createdAt: iso(row.created_at),
+      updatedAt: iso(row.updated_at),
+    };
+  }
+
+  async armSolanaProofGate(scope: SolanaProofScope, atIso: string): Promise<SolanaProofGateRecord> {
+    const scopeHash = solanaProofScopeHash(scope);
+    // ON CONFLICT DO NOTHING makes arming idempotent by scope: two workers arming the same proof
+    // converge on one row rather than each creating a gate that looks unclaimed.
+    await this.pool.query(
+      `INSERT INTO consumer_solana_proof_gate
+         (scope_hash, state, intent_id, provider_id, capability, chain, asset_symbol,
+          asset_address, max_amount, expires_at, created_at, updated_at)
+       VALUES ($1, 'ARMED', $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+       ON CONFLICT (scope_hash) DO NOTHING`,
+      [
+        scopeHash,
+        scope.intentId,
+        scope.providerId,
+        scope.capability,
+        scope.chain,
+        scope.asset.symbol,
+        scope.asset.address,
+        scope.maxAmount.amount.toString(),
+        scope.expiresAt,
+        atIso,
+      ],
+    );
+    const got = await this.getSolanaProofGate(scopeHash);
+    if (!got) throw new Error(`could not read back the proof gate for scope ${scopeHash}`);
+    return got;
+  }
+
+  /**
+   * The compare-and-set that decides who may reach the signer.
+   *
+   * `WHERE state = 'ARMED'` in the UPDATE is the whole mechanism: Postgres serialises the two writes,
+   * the second sees a CLAIMED row and matches nothing, and `rowCount` tells us we lost. No advisory
+   * lock and no read-then-write, because a read-then-write is exactly the race this must not have.
+   */
+  async claimSolanaProofGate(
+    scopeHash: string,
+    executionId: string,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null> {
+    const res = await this.pool.query(
+      `UPDATE consumer_solana_proof_gate
+          SET state = 'CLAIMED', claimed_by_execution = $2, claimed_at = $3, updated_at = $3
+        WHERE scope_hash = $1 AND state = 'ARMED'
+        RETURNING *`,
+      [scopeHash, executionId, atIso],
+    );
+    const row = res.rows[0] as Row | undefined;
+    return row ? this.proofGateFromRow(row) : null;
+  }
+
+  async recordSolanaProofProgress(
+    scopeHash: string,
+    progress: SolanaProofProgress,
+    state: SolanaProofGateState | null,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null> {
+    const cols: Record<string, unknown> = {
+      signer_reached_at: progress.signerReachedAt,
+      credential_created_at: progress.credentialCreatedAt,
+      tx_signature: progress.txSignature,
+      tx_submitted_at: progress.txSubmittedAt,
+      settled_at: progress.settledAt,
+      confirmed_slot: progress.confirmedSlot,
+      tx_error: progress.txError,
+      pre_token_amount: progress.preTokenAmount,
+      post_token_amount: progress.postTokenAmount,
+      token_delta: progress.tokenDelta,
+      mint: progress.mint,
+      authority: progress.authority,
+      fee_payer: progress.feePayer,
+      acknowledged_at: progress.acknowledgedAt,
+      provider_result_hash: progress.providerResultHash,
+      manual_review_reason: progress.manualReviewReason,
+    };
+    const sets: string[] = ["updated_at = $2"];
+    const params: unknown[] = [scopeHash, atIso];
+    for (const [col, val] of Object.entries(cols)) {
+      if (val === undefined) continue;
+      params.push(val);
+      sets.push(`${col} = $${params.length}`);
+    }
+    if (state !== null) {
+      params.push(state);
+      sets.push(`state = $${params.length}`);
+    }
+    const res = await this.pool.query(
+      `UPDATE consumer_solana_proof_gate SET ${sets.join(", ")} WHERE scope_hash = $1 RETURNING *`,
+      params,
+    );
+    const row = res.rows[0] as Row | undefined;
+    return row ? this.proofGateFromRow(row) : null;
+  }
+
+  async getSolanaProofGate(scopeHash: string): Promise<SolanaProofGateRecord | null> {
+    const res = await this.pool.query(
+      "SELECT * FROM consumer_solana_proof_gate WHERE scope_hash = $1",
+      [scopeHash],
+    );
+    const row = res.rows[0] as Row | undefined;
+    return row ? this.proofGateFromRow(row) : null;
+  }
+
+  async listSolanaProofGates(limit: number): Promise<readonly SolanaProofGateRecord[]> {
+    const res = await this.pool.query(
+      "SELECT * FROM consumer_solana_proof_gate ORDER BY created_at DESC LIMIT $1",
+      [limit],
+    );
+    return (res.rows as Row[]).map((r) => this.proofGateFromRow(r));
+  }
+
+  /**
+   * Release, guarded in SQL as well as in code.
+   *
+   * The NULL checks in the WHERE clause are the same rule `canReleasePreSign` states, enforced where a
+   * buggy caller cannot talk its way past them. This is the one transition that can turn a spent gate
+   * back into a spendable one, so it is worth stating twice.
+   */
+  async releaseSolanaProofGatePreSign(
+    scopeHash: string,
+    reason: string,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null> {
+    const res = await this.pool.query(
+      `UPDATE consumer_solana_proof_gate
+          SET state = 'RELEASED_PRE_SIGN', released_at = $2, released_reason = $3, updated_at = $2
+        WHERE scope_hash = $1
+          AND signer_reached_at IS NULL
+          AND credential_created_at IS NULL
+          AND tx_signature IS NULL
+          AND tx_submitted_at IS NULL
+          AND settled_at IS NULL
+        RETURNING *`,
+      [scopeHash, atIso, reason],
+    );
+    const row = res.rows[0] as Row | undefined;
+    return row ? this.proofGateFromRow(row) : null;
   }
 
   async getCapability(capabilityId: string): Promise<CapabilityRecord | null> {
