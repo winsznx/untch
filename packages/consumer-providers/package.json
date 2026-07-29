@@ -10,10 +10,12 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@solana/kit": "^5.5.1",
     "@untch/consumer-core": "workspace:*",
     "@untch/shared": "workspace:*",
     "@untch/x402-guard": "workspace:*",
-    "viem": "^2.55.0"
+    "viem": "^2.55.0",
+    "x402": "1.2.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

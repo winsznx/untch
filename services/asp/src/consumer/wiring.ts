@@ -179,6 +179,15 @@ export async function initConsumerWiring(
       chain: SOLANA_MAINNET,
       secretKey: keys.solana?.secret ?? null,
       rpcUrl: rpc.solana,
+      /**
+       * A FOURTH switch, separate from the pack, the provider and the treasury account.
+       *
+       * Each of the other three answers a different question: is the Consumer Pack on, is this
+       * merchant allowed, is this float armed. None of them answers "may this rail sign a Solana
+       * transaction at all", and that question deserves its own answer because the artifact this
+       * rail produces is submitted by a third party rather than by Untch.
+       */
+      executionEnabled: flagOn(process.env.CONSUMER_SOLANA_EXECUTION_ENABLED),
     }),
   );
   rails.set(TEMPO_MAINNET, new MppTempoClient({ chain: TEMPO_MAINNET }));

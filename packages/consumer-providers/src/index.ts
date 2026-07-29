@@ -53,7 +53,19 @@ export {
 } from "./x402/challenge";
 
 export { X402EvmExactClient, buildAuthorizationTypedData, type EvmExactClientDeps } from "./x402/evm-exact";
-export { X402SolanaExactClient, type SolanaExactClientDeps } from "./x402/solana-exact";
+export {
+  X402SolanaExactClient,
+  SOLANA_MAINNET_CAIP2,
+  SOLANA_MAINNET_GENESIS,
+  SOLANA_MIN_LAMPORTS,
+  SOLANA_RECIPIENT_ALLOWLIST,
+  confirmSolanaSettlement,
+  isSolanaMainnet,
+  selectSolanaOption,
+  type SolanaExactClientDeps,
+  type SolanaPayload,
+  type SolanaPayloadInput,
+} from "./x402/solana-exact";
 
 export {
   type MppChallenge,

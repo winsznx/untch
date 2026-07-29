@@ -385,7 +385,7 @@
     "x402Version": 2,
     "error": "Payment required",
     "resource": {
-      "url": "http://api.purch.xyz/x402/search?q=wireless+headphones",
+      "url": "http://api.purch.xyz/x402/search?q=usb%20c%20cable",
       "description": "Product search with filters",
       "mimeType": "application/json"
     },
@@ -401,108 +401,7 @@
           "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
         }
       }
-    ],
-    "extensions": {
-      "bazaar": {
-        "info": {
-          "input": {
-            "type": "http",
-            "queryParams": {
-              "q": "wireless headphones"
-            },
-            "method": "GET"
-          },
-          "output": {
-            "type": "json",
-            "example": {
-              "products": [
-                {
-                  "asin": "B0CXYZ1234",
-                  "title": "Wireless Headphones",
-                  "price": 79.99,
-                  "currency": "USD",
-                  "source": "amazon"
-                }
-              ],
-              "totalResults": 150,
-              "page": 1,
-              "hasMore": true
-            }
-          }
-        },
-        "schema": {
-          "$schema": "https://json-schema.org/draft/2020-12/schema",
-          "type": "object",
-          "properties": {
-            "input": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "const": "http"
-                },
-                "method": {
-                  "type": "string",
-                  "enum": [
-                    "GET"
-                  ]
-                },
-                "queryParams": {
-                  "type": "object",
-                  "properties": {
-                    "q": {
-                      "type": "string",
-                      "description": "Search query"
-                    },
-                    "priceMin": {
-                      "type": "number",
-                      "description": "Minimum price filter"
-                    },
-                    "priceMax": {
-                      "type": "number",
-                      "description": "Maximum price filter"
-                    },
-                    "brand": {
-                      "type": "string",
-                      "description": "Filter by brand"
-                    },
-                    "page": {
-                      "type": "integer",
-                      "description": "Page number for pagination"
-                    }
-                  },
-                  "required": [
-                    "q"
-                  ]
-                }
-              },
-              "required": [
-                "type",
-                "method"
-              ],
-              "additionalProperties": false
-            },
-            "output": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string"
-                },
-                "example": {
-                  "type": "object"
-                }
-              },
-              "required": [
-                "type"
-              ]
-            }
-          },
-          "required": [
-            "input"
-          ]
-        }
-      }
-    }
+    ]
   },
   "purchVaultDownload402": {
     "x402Version": 2,
