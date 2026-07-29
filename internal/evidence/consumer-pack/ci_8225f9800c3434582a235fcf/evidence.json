@@ -1,0 +1,260 @@
+{
+  "schema": "untch.consumer-pack.live-evidence.v1",
+  "generatedAt": "2026-07-29T14:56:47.225Z",
+  "runner": "deployed untch-asp worker (this driver lost the EXECUTION_QUEUED race and reported the winner)",
+  "bootstrapRun": true,
+  "provider": {
+    "providerId": "stableemail",
+    "baseUrl": "https://stableemail.dev",
+    "capability": "mail.send",
+    "maturityAtRunStart": "sandbox",
+    "maturityAfterRun": "verified",
+    "documentationVersion": "live llms.txt + 402s re-fetched 2026-07-29",
+    "adapterVersion": "@untch/consumer-providers StableEmailAdapter @ feat/consumer-pack-completeness",
+    "publicState": "LIVE"
+  },
+  "challenge": {
+    "network": "eip155:8453",
+    "scheme": "exact",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "amountAtomic": "20000",
+    "recipient": "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+    "maxTimeoutSeconds": 300
+  },
+  "intent": {
+    "intentId": "ci_8225f9800c3434582a235fcf",
+    "action": "mail.send",
+    "state": "COMPLETED",
+    "tenantId": "policy:9001",
+    "correlationId": "smoke-ms67fy56"
+  },
+  "policy": {
+    "policyId": "9001",
+    "decision": "APPROVED",
+    "rulesEvaluated": 14
+  },
+  "funding": {
+    "chain": "eip155:196",
+    "txHash": "0x212ca57d6a07aa6630edd9a16fe02c90dcd03b4f3656e6dea1c5d97e65015bcd",
+    "amount": {
+      "amount": "20100",
+      "display": "0.020100",
+      "token": "USDT0",
+      "contract": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "chain": "eip155:196",
+      "decimals": 6
+    },
+    "payer": "0xC8f00BD8c0497c03dFA9aCF71b061512065923d4",
+    "external": true
+  },
+  "settlement": {
+    "chain": "eip155:8453",
+    "txHash": "0x9c4570ca2369a296eaaa3d705bfd933059755c8a8ade4946def61d22072f625f",
+    "amount": {
+      "amount": "20000",
+      "display": "0.020000",
+      "token": "USDC",
+      "contract": null,
+      "chain": "eip155:8453",
+      "decimals": 6
+    },
+    "recipient": "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+    "providerReference": "0100019fae5e2213-b53bb2ec-e968-41af-b93b-e6fd985c4163-000000",
+    "chainProof": {
+      "blockNumber": "49273744",
+      "status": "success",
+      "transfer": "0.02 USDC 0x0e79371813e88F31c2B60C80bad391a952039095 -> 0xDb5AA553FeEB2c3E3D03e8360b36fb0f7e480671",
+      "explorer": "https://basescan.org/tx/0x9c4570ca2369a296eaaa3d705bfd933059755c8a8ade4946def61d22072f625f",
+      "treasuryBefore": "2.850000",
+      "treasuryAfter": "2.830000"
+    }
+  },
+  "delivery": {
+    "providerAttested": {
+      "status": "accepted",
+      "reference": "0100019fae5e2213-b53bb2ec-e968-41af-b93b-e6fd985c4163-000000",
+      "attestedAt": "2026-07-29T14:53:54.291Z",
+      "fields": {
+        "action": "mail.send",
+        "hasHtml": false,
+        "hasText": true,
+        "bodyHash": "0xf7aabb8571327bead284d9924dda06e235d0e75e07662ca8aa06e2f1031c9bbc",
+        "subjectHash": "0xef8bcf67616e5a0db688986e5b098d14fbb4774a84d5f3c5b39258fe64ecc2af",
+        "messageIdHash": "0xa0cbee43d0e41f012c25586999de1d7543109b5d1bdead2933576217d8b78916",
+        "recipientCount": 1
+      }
+    },
+    "untchVerified": {
+      "verified": false,
+      "method": "NONE",
+      "detail": "email delivery cannot be independently verified from the sender side; the provider's acceptance of the message is the only available evidence. An Untch-owned inbox (mail.inbox.buy with retainMessages) is what upgrades this to a real round trip.",
+      "verifiedAt": null
+    },
+    "evidenceHash": "0xf570f4da5a43028255e81a4370405f328e754eaa9b257411ecec8c3bda2b228a",
+    "humanVerificationRequired": null,
+    "humanVerification": {
+      "required": true,
+      "outcome": "CONFIRMED",
+      "confirmedAt": "2026-07-29T14:56:00Z",
+      "confirmedBy": "operator, visually, in the recipient inbox",
+      "how": "The message arrived from StableEmail at 15:53 local (14:53Z), matching the provider's attestedAt of 2026-07-29T14:53:54.291Z. The subject that arrived hashes to 0xef8bcf67616e5a0db688986e5b098d14fbb4774a84d5f3c5b39258fe64ecc2af, which is the exact subjectHash the intent bound BEFORE the payment was made. That binding is what makes this a delivery proof rather than a screenshot: the thing delivered is provably the thing authorised.",
+      "recipientRecorded": false,
+      "note": "The recipient address is not recorded here or anywhere in the audit trail. What is recorded is that exactly one recipient was authorised and that the operator controls the inbox it reached."
+    }
+  },
+  "ledger": [
+    {
+      "kind": "FUNDING",
+      "asset": {
+        "token": "USDT0",
+        "chain": "eip155:196"
+      },
+      "entries": [
+        {
+          "account": "TREASURY:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:xlayer-usdt0-funding",
+          "amount": "20100",
+          "memo": "user funding received"
+        },
+        {
+          "account": "USER_OBLIGATION:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:ci_8225f9800c3434582a235fcf",
+          "amount": "-20100",
+          "memo": "obligation to intent opened"
+        }
+      ]
+    },
+    {
+      "kind": "SETTLEMENT",
+      "asset": {
+        "token": "USDC",
+        "chain": "eip155:8453"
+      },
+      "entries": [
+        {
+          "account": "PROVIDER_SETTLEMENT:eip155:8453|0x833589fcd6edb6e08f4c7c32d4f71b54bda02913:stableemail",
+          "amount": "20000",
+          "memo": "provider paid"
+        },
+        {
+          "account": "TREASURY:eip155:8453|0x833589fcd6edb6e08f4c7c32d4f71b54bda02913:base-usdc-settlement",
+          "amount": "-20000",
+          "memo": "settlement float drawn"
+        }
+      ]
+    },
+    {
+      "kind": "RECOGNITION",
+      "asset": {
+        "token": "USDT0",
+        "chain": "eip155:196"
+      },
+      "entries": [
+        {
+          "account": "USER_OBLIGATION:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:ci_8225f9800c3434582a235fcf",
+          "amount": "20100",
+          "memo": "obligation discharged"
+        },
+        {
+          "account": "SPREAD_REVENUE:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:global",
+          "amount": "-100",
+          "memo": "disclosed cross-rail spread"
+        },
+        {
+          "account": "CROSS_RAIL_CLEARING:eip155:196|0x779ded0c9e1022225f8e0630b35a9b54be713736:global",
+          "amount": "-20000",
+          "memo": "owed to USDC@eip155:8453 — provider paid on that rail"
+        }
+      ]
+    }
+  ],
+  "ledgerBalanced": true,
+  "finalState": "COMPLETED",
+  "receiptId": "0x66edaae26d56df5e18b458be830b0e9464dfe8303abd5562647c8e1215a9774f",
+  "events": [
+    {
+      "seq": 1,
+      "name": "consumer.intent.created",
+      "state": "CREATED",
+      "at": "2026-07-29T14:53:35.388Z"
+    },
+    {
+      "seq": 2,
+      "name": "consumer.quote.created",
+      "state": "QUOTED",
+      "at": "2026-07-29T14:53:38.873Z"
+    },
+    {
+      "seq": 3,
+      "name": "consumer.quote.created",
+      "state": "POLICY_CHECKING",
+      "at": "2026-07-29T14:53:40.009Z"
+    },
+    {
+      "seq": 4,
+      "name": "consumer.policy.approved",
+      "state": "APPROVED",
+      "at": "2026-07-29T14:53:40.737Z"
+    },
+    {
+      "seq": 5,
+      "name": "consumer.funding.requested",
+      "state": "AWAITING_FUNDING",
+      "at": "2026-07-29T14:53:41.876Z"
+    },
+    {
+      "seq": 6,
+      "name": "consumer.funding.confirmed",
+      "state": "FUNDED",
+      "at": "2026-07-29T14:53:49.273Z"
+    },
+    {
+      "seq": 7,
+      "name": "consumer.execution.started",
+      "state": "EXECUTION_QUEUED",
+      "at": "2026-07-29T14:53:50.260Z"
+    },
+    {
+      "seq": 8,
+      "name": "consumer.execution.started",
+      "state": "PROVIDER_PAYMENT_PENDING",
+      "at": "2026-07-29T14:53:52.037Z"
+    },
+    {
+      "seq": 9,
+      "name": "consumer.provider.paid",
+      "state": "PROVIDER_PAID",
+      "at": "2026-07-29T14:53:54.300Z"
+    },
+    {
+      "seq": 10,
+      "name": "consumer.provider.acknowledged",
+      "state": "PROVIDER_ACKNOWLEDGED",
+      "at": "2026-07-29T14:53:54.302Z"
+    },
+    {
+      "seq": 11,
+      "name": "consumer.provider.acknowledged",
+      "state": "DELIVERY_PENDING",
+      "at": "2026-07-29T14:53:54.306Z"
+    },
+    {
+      "seq": 12,
+      "name": "consumer.delivery.verified",
+      "state": "DELIVERY_VERIFIED",
+      "at": "2026-07-29T14:53:54.309Z"
+    },
+    {
+      "seq": 13,
+      "name": "consumer.completed",
+      "state": "COMPLETED",
+      "at": "2026-07-29T14:53:54.340Z"
+    }
+  ],
+  "redaction": "No recipient address, subject, body, private key, signature or payment header appears in this file. The message is represented by a subject hash, a body hash and a message-id hash. Addresses are public.",
+  "promotion": {
+    "promoted": true,
+    "at": "2026-07-29",
+    "scope": "stableemail x mail.send ONLY",
+    "basis": "a real settled payment re-read independently from Base, PLUS a confirmed delivery whose subject hash matches the pre-payment binding",
+    "unchanged": "every other stableemail capability keeps its own maturity; min(provider, capability) still governs, so promoting the provider row did not promote anything else"
+  }
+}

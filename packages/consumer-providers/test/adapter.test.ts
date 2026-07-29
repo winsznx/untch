@@ -527,8 +527,36 @@ describe("the registry seed and the adapters cannot drift apart", () => {
 
   test("every seed carries a dated, checkable provenance string", () => {
     for (const seed of PROVIDER_SEEDS) {
-      assert.match(seed.provider.provenance, /2026-07-27/, `${seed.provider.providerId} provenance`);
+      // A DATE, not one specific date. Pinning the literal 2026-07-27 here made the test fail the
+      // moment a provider was honestly re-probed — which is exactly the behaviour the provenance
+      // rule is meant to encourage, so the assertion was punishing the thing it exists to reward.
+      assert.match(
+        seed.provider.provenance,
+        /\b20\d{2}-\d{2}-\d{2}\b/,
+        `${seed.provider.providerId} provenance must name the date it was observed`,
+      );
       assert.ok(seed.provider.provenance.length > 120, "provenance must say what was actually observed");
+    }
+  });
+
+  test("an accessBlocker only ever appears on a capability below 'sandbox'", () => {
+    // A blocker says "something outside Untch is in the way". On a capability that has settled and
+    // verified, that claim is contradicted by the evidence — and `publicToolState` deliberately
+    // ignores it there, so a seed carrying both would be stating something the code discards.
+    for (const seed of PROVIDER_SEEDS) {
+      for (const cap of seed.capabilities) {
+        if (!cap.accessBlocker) continue;
+        assert.equal(
+          cap.maturity,
+          "experimental",
+          `${seed.provider.providerId}.${cap.capability} carries accessBlocker ` +
+            `${cap.accessBlocker} at maturity '${cap.maturity}'`,
+        );
+        assert.ok(
+          cap.notes.length > 40,
+          `${seed.provider.providerId}.${cap.capability} must say WHY it is blocked`,
+        );
+      }
     }
   });
 
@@ -540,5 +568,304 @@ describe("the registry seed and the adapters cannot drift apart", () => {
 
   test("a provider with no adapter is refused by name", () => {
     assert.throws(() => buildAdapterRegistry().get("nope"), /no adapter is implemented/);
+  });
+});
+
+describe("Untch Mail — one merchant, eight tools, no shared blast radius", () => {
+  const paidQuote = (action: Parameters<StableEmailAdapter["quote"]>[0]["action"], params: Record<string, unknown>, fixture: unknown) => {
+    const { fetchImpl, requests } = scriptedFetch([{ status: 402, headers: challengeHeader(fixture) }]);
+    return {
+      requests,
+      run: () =>
+        new StableEmailAdapter().quote(
+          { action, intentId: "ci_mail", providerRef: "", params },
+          ctx({ fetchImpl }),
+        ),
+    };
+  };
+
+  test("every price comes from the merchant's OWN live challenge, per tool", async () => {
+    const cases: readonly [Parameters<StableEmailAdapter["quote"]>[0]["action"], Record<string, unknown>, string, bigint][] = [
+      ["mail.send", { to: ["a@b.com"], subject: "s", text: "t" }, "stableemailSend402", 20_000n],
+      ["mail.inbox.buy", { username: "untchprobe", forwardTo: "probe@example.com" }, "stableemailInboxBuy402", 1_000_000n],
+      ["mail.inbox.topup", { username: "untchprobe" }, "stableemailInboxTopup402", 1_000_000n],
+      ["mail.subdomain.buy", { subdomain: "untchprobe" }, "stableemailSubdomainBuy402", 5_000_000n],
+      [
+        "mail.subdomain.send",
+        { from: "a@untchprobe.stableemail.dev", to: ["b@example.com"], subject: "s", text: "t" },
+        "stableemailSubdomainSend402",
+        5_000n,
+      ],
+    ];
+
+    for (const [action, params, fixture, expected] of cases) {
+      const { run } = paidQuote(action, params, FIXTURES[fixture]);
+      const q = await run();
+      assert.equal(q.cost.amount, expected, `${action} price`);
+      assert.equal(q.settlementChain, BASE, `${action} chain`);
+      assert.equal(
+        q.settlementRecipient.toLowerCase(),
+        "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+        `${action} payTo`,
+      );
+    }
+  });
+
+  test("a quote never carries the recipient list, the subject or the body — only hashes", async () => {
+    const { run } = paidQuote(
+      "mail.send",
+      { to: ["alice@example.com"], subject: "Your order 4471", text: "Ship to 12 Acacia Ave" },
+      FIXTURES.stableemailSend402,
+    );
+    const q = await run();
+    // A quote carries Money, which is bigint-valued, so the leak check needs a replacer rather than
+    // a bare stringify — otherwise the assertion throws before it can find anything.
+    const serialized = JSON.stringify(q, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
+    assert.ok(!serialized.includes("alice@example.com"), "a recipient address leaked into the quote");
+    assert.ok(!serialized.includes("Your order 4471"), "the subject leaked into the quote");
+    assert.ok(!serialized.includes("Acacia"), "the body leaked into the quote");
+    assert.equal(q.terms.recipientCount, 1);
+    assert.match(String(q.terms.subjectHash), /^0x[0-9a-f]{64}$/);
+    assert.match(String(q.terms.bodyHash), /^0x[0-9a-f]{64}$/);
+  });
+
+  test("the body hash binds the bytes, so a body swapped after approval produces a different quote", async () => {
+    const a = await paidQuote("mail.send", { to: ["a@b.com"], subject: "s", text: "one" }, FIXTURES.stableemailSend402).run();
+    const b = await paidQuote("mail.send", { to: ["a@b.com"], subject: "s", text: "two" }, FIXTURES.stableemailSend402).run();
+    assert.equal(a.terms.subjectHash, b.terms.subjectHash, "same subject, same subject hash");
+    assert.notEqual(a.terms.bodyHash, b.terms.bodyHash, "a changed body must change the bound hash");
+  });
+
+  test("a free SIWX operation is refused a quote rather than priced at zero", async () => {
+    const adapter = new StableEmailAdapter();
+    for (const [action, params] of [
+      ["mail.inbox.status", { username: "untchprobe" }],
+      ["mail.subdomain.status", { subdomain: "untchprobe" }],
+      ["mail.inbox.cancel", { username: "untchprobe" }],
+    ] as const) {
+      await assert.rejects(
+        () => adapter.quote({ action, intentId: "ci_x", providerRef: "", params }, ctx()),
+        (e: unknown) => {
+          assert.ok(isProviderError(e) && e.normalized.code === "CAPABILITY_UNAVAILABLE");
+          assert.match(e.normalized.message, /not quotable/);
+          return true;
+        },
+        `${action} must not be quotable`,
+      );
+    }
+  });
+
+  test("a SIWX-gated read with no identity key is PROVIDER_UNAUTHORIZED, never a fabricated status", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { status: 402, headers: challengeHeader(FIXTURES.stableemailInboxStatusSiwx402) },
+    ]);
+    await assert.rejects(
+      () =>
+        new StableEmailAdapter().discover(
+          { action: "mail.inbox.status", params: { username: "untchprobe" }, limit: 1 },
+          ctx({ fetchImpl, siwx: new SiwxSigner({ privateKey: null }) }),
+        ),
+      (e: unknown) => {
+        assert.ok(isProviderError(e) && e.normalized.code === "PROVIDER_UNAUTHORIZED");
+        return true;
+      },
+    );
+  });
+
+  test("an inbox status read signs SIWX and reduces the owner's forwarding address to a boolean", async () => {
+    const { fetchImpl, requests } = scriptedFetch([
+      { status: 402, headers: challengeHeader(FIXTURES.stableemailInboxStatusSiwx402) },
+      {
+        status: 200,
+        body: {
+          inbox: "untchprobe@stableemail.dev",
+          ownerWallet: "0x0e79371813e88F31c2B60C80bad391a952039095",
+          forwardTo: "someone@personal.example",
+          retainMessages: true,
+          expiresAt: "2026-08-28T00:00:00.000Z",
+          daysRemaining: 30,
+          active: true,
+        },
+      },
+    ]);
+    const result = await new StableEmailAdapter().discover(
+      { action: "mail.inbox.status", params: { username: "untchprobe" }, limit: 1 },
+      ctx({ fetchImpl, siwx: new SiwxSigner({ privateKey: KEY, clock: () => Date.parse("2026-07-29T13:53:00.000Z") }) }),
+    );
+
+    assert.equal(requests.length, 2, "one unauthenticated probe, then one signed retry");
+    assert.ok(requests[1]?.headers["sign-in-with-x"], "the retry must carry the SIWX credential");
+    assert.equal(result.options.length, 1);
+    const serialized = JSON.stringify(result);
+    assert.ok(!serialized.includes("someone@personal.example"), "the owner's forwarding address leaked");
+    assert.equal(result.options[0]?.attributes.forwarding, true);
+    assert.equal(result.options[0]?.attributes.daysRemaining, 30);
+  });
+
+  test("a send is refused a discovery surface — there is nothing to browse", async () => {
+    await assert.rejects(
+      () =>
+        new StableEmailAdapter().discover(
+          { action: "mail.send", params: { to: ["a@b.com"], subject: "s", text: "t" }, limit: 5 },
+          ctx(),
+        ),
+      (e: unknown) => {
+        assert.ok(isProviderError(e) && e.normalized.code === "CAPABILITY_UNAVAILABLE");
+        return true;
+      },
+    );
+  });
+
+  test("an execute records a message-id HASH and a recipient count, never the message", async () => {
+    const cap = fakeCapability({ recipients: ["0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671"] });
+    const { fetchImpl } = scriptedFetch([
+      { status: 402, headers: challengeHeader(FIXTURES.stableemailSend402) },
+      {
+        status: 200,
+        body: { success: true, messageId: "0199-abcd-relay-id", from: "relay@stableemail.dev" },
+        headers: {
+          "payment-response": Buffer.from(
+            JSON.stringify({ success: true, transaction: `0x${"e".repeat(64)}` }),
+            "utf8",
+          ).toString("base64"),
+        },
+      },
+    ]);
+
+    const exec = await new StableEmailAdapter().execute(
+      {
+        action: "mail.send",
+        intentId: "ci_mail",
+        providerRef: "send",
+        idempotencyKey: "idem-mail-0001",
+        params: { to: ["alice@example.com"], subject: "Your order 4471", text: "Ship to 12 Acacia Ave" },
+        quote: {
+          providerId: "stableemail",
+          providerRef: "send",
+          cost: money(20_000n, USDC),
+          settlementRecipient: "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+          settlementChain: BASE,
+          settlementAsset: USDC,
+          summary: "Send 1 email to 1 recipient",
+          terms: {},
+          expiresAt: new Date(NOW + 600_000).toISOString(),
+        },
+      },
+      cap,
+      ctx({ fetchImpl }),
+    );
+
+    assert.equal(exec.providerReference, "0199-abcd-relay-id");
+    assert.equal(exec.settlement.amount.amount, 20_000n);
+    const serialized = JSON.stringify(exec.payload);
+    assert.ok(!serialized.includes("alice@example.com"), "a recipient leaked into the execution payload");
+    assert.ok(!serialized.includes("Acacia"), "the body leaked into the execution payload");
+    assert.ok(!serialized.includes("0199-abcd-relay-id"), "the raw message id leaked into the payload");
+    assert.match(String(exec.payload.messageIdHash), /^0x[0-9a-f]{64}$/);
+    assert.equal(exec.payload.recipientCount, 1);
+  });
+
+  test("an inbox purchase produces a kind-prefixed reference, so delivery can be polled", async () => {
+    const cap = fakeCapability({ recipients: ["0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671"] });
+    const { fetchImpl } = scriptedFetch([
+      { status: 402, headers: challengeHeader(FIXTURES.stableemailInboxBuy402) },
+      {
+        status: 200,
+        body: { success: true, inbox: "untchprobe@stableemail.dev", retainMessages: true, daysRemaining: 30 },
+        headers: {
+          "payment-response": Buffer.from(JSON.stringify({ success: true, transaction: `0x${"f".repeat(64)}` }), "utf8").toString("base64"),
+        },
+      },
+    ]);
+
+    const exec = await new StableEmailAdapter().execute(
+      {
+        action: "mail.inbox.buy",
+        intentId: "ci_inbox",
+        providerRef: "inbox:untchprobe",
+        idempotencyKey: "idem-inbox-0001",
+        params: { username: "untchprobe", forwardTo: "probe@example.com" },
+        quote: {
+          providerId: "stableemail",
+          providerRef: "inbox:untchprobe",
+          cost: money(1_000_000n, USDC),
+          settlementRecipient: "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+          settlementChain: BASE,
+          settlementAsset: USDC,
+          summary: "Buy the inbox untchprobe@stableemail.dev for 30 days",
+          terms: {},
+          expiresAt: new Date(NOW + 600_000).toISOString(),
+        },
+      },
+      cap,
+      ctx({ fetchImpl }),
+    );
+
+    assert.equal(exec.providerReference, "inbox:untchprobe@stableemail.dev");
+    assert.ok(!JSON.stringify(exec.payload).includes("probe@example.com"), "the forwarding address leaked");
+  });
+
+  test("a send's delivery evidence is honestly unverified; an inbox's is a real status poll", async () => {
+    const adapter = new StableEmailAdapter();
+    const base = {
+      settlement: { txHash: null, chain: BASE, amount: money(20_000n, USDC), recipient: "0xdb5a" },
+      providerStatus: "accepted",
+      payload: {},
+      acknowledgedAt: new Date(NOW).toISOString(),
+    };
+
+    const sendEvidence = await adapter.verifyDelivery({ ...base, providerReference: "relay-msg-1" }, ctx());
+    assert.equal(sendEvidence.untchVerified.verified, false);
+    assert.equal(sendEvidence.untchVerified.method, "NONE");
+
+    const { fetchImpl } = scriptedFetch([
+      { status: 402, headers: challengeHeader(FIXTURES.stableemailInboxStatusSiwx402) },
+      { status: 200, body: { inbox: "untchprobe@stableemail.dev", active: true, daysRemaining: 30 } },
+    ]);
+    const inboxEvidence = await adapter.verifyDelivery(
+      { ...base, providerReference: "inbox:untchprobe@stableemail.dev" },
+      ctx({ fetchImpl, siwx: new SiwxSigner({ privateKey: KEY, clock: () => Date.parse("2026-07-29T13:53:00.000Z") }) }),
+    );
+    assert.equal(inboxEvidence.untchVerified.verified, true);
+    assert.equal(inboxEvidence.untchVerified.method, "PROVIDER_STATUS_POLL");
+  });
+
+  test("provider-side input rules are enforced BEFORE any money moves", async () => {
+    const adapter = new StableEmailAdapter();
+    const reject = async (action: Parameters<StableEmailAdapter["quote"]>[0]["action"], params: Record<string, unknown>, why: RegExp) =>
+      assert.rejects(
+        () => adapter.quote({ action, intentId: "ci_x", providerRef: "", params }, ctx()),
+        (e: unknown) => {
+          assert.ok(isProviderError(e) && e.normalized.code === "PROVIDER_BAD_REQUEST", `${action}: ${String(e)}`);
+          assert.match(e.normalized.message, why);
+          return true;
+        },
+      );
+
+    await reject("mail.inbox.buy", { username: "no" }, /3-30 characters/);
+    await reject("mail.inbox.buy", { username: "Bad_Name" }, /3-30 characters/);
+    await reject("mail.inbox.buy", { username: "untchprobe", forwardTo: "not-an-email" }, /not a valid email/);
+    await reject("mail.inbox.topup", { username: "untchprobe", period: "fortnight" }, /must be one of/);
+    await reject("mail.subdomain.send", { from: "a@elsewhere.test", to: ["b@c.com"], subject: "s", text: "t" }, /subdomain of stableemail\.dev/);
+    await reject("mail.send", { to: [], subject: "s", text: "t" }, /between 1 and 50/);
+    await reject("mail.send", { to: ["a@b.com"], subject: "   ", text: "t" }, /`subject` is required/);
+    await reject("mail.send", { to: ["a@b.com"], subject: "s" }, /one of `text` or `html`/);
+  });
+
+  test("the top-up period selects the provider's own endpoint, not a computed price", async () => {
+    for (const [period, path] of [
+      ["month", "/api/inbox/topup"],
+      ["quarter", "/api/inbox/topup/quarter"],
+      ["year", "/api/inbox/topup/year"],
+    ] as const) {
+      const { fetchImpl, requests } = scriptedFetch([
+        { status: 402, headers: challengeHeader(FIXTURES.stableemailInboxTopup402) },
+      ]);
+      await new StableEmailAdapter().quote(
+        { action: "mail.inbox.topup", intentId: "ci_t", providerRef: "", params: { username: "untchprobe", period } },
+        ctx({ fetchImpl }),
+      );
+      assert.equal(requests[0]?.url, `https://stableemail.dev${path}`);
+    }
   });
 });

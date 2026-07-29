@@ -13,6 +13,27 @@ dist
 *.log
 .DS_Store
 
+# Next.js build output.
+#
+# This is not tidiness. `apps/web/.next` reaches 2.6 GB after a local `pnpm --filter @untch/web
+# build`, and uploading it broke the deploy outright — one FAILED build followed by a TLS
+# `BadRecordMac` mid-upload. Railway rebuilds `.next` itself for the untch-web and untch-docs
+# services, so shipping a local copy is pure cost with a failure mode attached.
+**/.next
+**/out
+
+# Local-only video production: ~1.2 GB of renders, fixtures and narration across four trees. None of
+# it is part of any deployed service; all of it is gitignored for the same reason.
+apps/video
+apps/launch-film
+untch-hyperframes-film
+untch-product-film
+only-launch-video
+
+# local agent/skill tooling state
+.claude
+.agents
+
 # not needed to build or run the seller
 .git
 internal

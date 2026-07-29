@@ -38,6 +38,7 @@ import type {
   ProviderExecutionRecord,
 } from "./types";
 import type {
+  CapabilityAccessBlocker,
   CapabilityRecord,
   ConsumerStore,
   CreateIntentInput,
@@ -984,11 +985,13 @@ export class PgConsumerStore implements ConsumerStore {
 
   async upsertCapability(c: ProviderCapabilityRecord): Promise<void> {
     await this.pool.query(
-      `INSERT INTO consumer_provider_capabilities (provider_id, capability, maturity, notes)
-       VALUES ($1,$2,$3,$4)
+      `INSERT INTO consumer_provider_capabilities (provider_id, capability, maturity, notes, access_blocker)
+       VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (provider_id, capability) DO UPDATE SET
-         maturity = EXCLUDED.maturity, notes = EXCLUDED.notes`,
-      [c.providerId, c.capability, c.maturity, c.notes],
+         maturity = EXCLUDED.maturity,
+         notes = EXCLUDED.notes,
+         access_blocker = EXCLUDED.access_blocker`,
+      [c.providerId, c.capability, c.maturity, c.notes, c.accessBlocker ?? null],
     );
   }
 
@@ -1002,6 +1005,7 @@ export class PgConsumerStore implements ConsumerStore {
       capability: str(r.capability),
       maturity: str(r.maturity) as ProviderMaturity,
       notes: str(r.notes),
+      accessBlocker: strOrNull(r.access_blocker) as CapabilityAccessBlocker | null,
     }));
   }
 
