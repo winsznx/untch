@@ -191,6 +191,7 @@ export {
 } from "./types";
 
 export {
+  type CapabilityAccessBlocker,
   type CapabilityRecord,
   type ConsumerStore,
   type CreateIntentInput,
@@ -249,12 +250,15 @@ export {
 
 export {
   type MaturityGate,
+  type PublicToolState,
   type RegistryDeps,
   type ResolvedProvider,
   ProviderRegistry,
   compareMaturity,
   firstEngagedPause,
   maturityAtLeast,
+  publicToolState,
+  publicToolStateFor,
 } from "./registry";
 
 export {

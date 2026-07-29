@@ -1338,6 +1338,18 @@ const SELF_QUOTING_ACTIONS: ReadonlySet<string> = new Set([
   "shop.search",
   "travel.search",
   "travel.compare",
+  // Every Mail tool is its own capability at every phase. There is no "search the email catalogue"
+  // step to fan out from, and collapsing the family onto one discovery capability would make an
+  // inbox status read gate on whatever `mail.send` happens to be — which is the drift the
+  // per-tool maturity model exists to prevent.
+  "mail.send",
+  "mail.inbox.buy",
+  "mail.inbox.status",
+  "mail.inbox.topup",
+  "mail.inbox.cancel",
+  "mail.subdomain.buy",
+  "mail.subdomain.status",
+  "mail.subdomain.send",
 ]);
 
 /** Map an action to the capability name the registry gates on, per phase. */

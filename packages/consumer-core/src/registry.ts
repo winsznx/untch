@@ -26,6 +26,7 @@ import type { AssetRef, CaipChainId } from "./assets";
 import { ProviderError, normalizedError } from "./errors";
 import { checkExecutionFlags, loadConsumerFlags, type ConsumerFlags } from "./flags";
 import type {
+  CapabilityAccessBlocker,
   ConsumerStore,
   PauseFlag,
   ProviderCapabilityRecord,
@@ -46,6 +47,65 @@ export function compareMaturity(a: ProviderMaturity, b: ProviderMaturity): numbe
 
 export function maturityAtLeast(actual: ProviderMaturity, floor: ProviderMaturity): boolean {
   return ORDER[actual] >= ORDER[floor];
+}
+
+/**
+ * The PUBLIC name for a tool's state — what a catalogue, a dashboard, a doc page and the OKX.AI
+ * registration draft all show.
+ *
+ * It is a projection of the internal ladder, never a second source of truth, and never an input to
+ * the execution gate. `assertExecutable` reads `maturity`; nothing reads this. That direction is the
+ * whole point: a label cannot be edited into permission.
+ *
+ *   LIVE                     — a real settled payment from an Untch treasury was observed AND the
+ *                              delivery was verified. The only state that executes on production.
+ *   BETA                     — implemented and validated against the live contract; no settlement yet.
+ *   SANDBOX                  — reachable, but a leg is unproven and the work to prove it is ours.
+ *   PARTNER_ACCESS_REQUIRED  — blocked by something outside Untch: a partner agreement, an identity
+ *                              we do not hold, a rail we cannot sign for, or an operation the
+ *                              provider does not offer.
+ *   DISABLED                 — not integrated, or switched off. Cannot be selected at all.
+ */
+export type PublicToolState =
+  | "LIVE"
+  | "BETA"
+  | "SANDBOX"
+  | "PARTNER_ACCESS_REQUIRED"
+  | "DISABLED";
+
+/**
+ * Derive the public state for one tool.
+ *
+ * A blocker only downgrades. `verified` with a stale blocker string still reads LIVE, because a
+ * settled payment plus a verified delivery is evidence and a leftover annotation is not — and the
+ * inverse (a label that could suppress a proven capability) would be a control nobody could audit.
+ */
+export function publicToolState(
+  effectiveMaturity: ProviderMaturity,
+  accessBlocker: CapabilityAccessBlocker | null | undefined = null,
+): PublicToolState {
+  switch (effectiveMaturity) {
+    case "verified":
+      return "LIVE";
+    case "sandbox":
+      return "BETA";
+    case "experimental":
+      return accessBlocker ? "PARTNER_ACCESS_REQUIRED" : "SANDBOX";
+    case "disabled":
+      return "DISABLED";
+  }
+}
+
+/** The public state of a capability under its provider, with the min() rule already applied. */
+export function publicToolStateFor(
+  provider: ProviderRecord,
+  capability: ProviderCapabilityRecord,
+): PublicToolState {
+  if (!provider.enabled) return "DISABLED";
+  return publicToolState(
+    ProviderRegistry.effectiveMaturity(provider, capability),
+    capability.accessBlocker ?? null,
+  );
 }
 
 export interface MaturityGate {

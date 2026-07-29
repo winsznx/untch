@@ -1,6 +1,7 @@
 {
-  "note": "Real captures from live providers on 2026-07-27. Re-fetch with internal/consumer-pack-evidence/probe-*.mjs. These are the inputs the protocol tests assert against — not hand-written approximations.",
+  "note": "Real captures from live providers. The 2026-07-27 set was fetched with internal/consumer-pack-evidence/probe-*.mjs; the stableemail* Mail challenges were re-fetched live on 2026-07-29 when Untch Mail was built. These are the inputs the protocol tests assert against — not hand-written approximations.",
   "capturedAt": "2026-07-27T17:14:00Z",
+  "mailCapturedAt": "2026-07-29T13:55:00Z",
   "stabledomainsRegister402": {
     "x402Version": 2,
     "resource": {
@@ -832,5 +833,268 @@
   "mppWwwAuthenticate": {
     "stabledomainsDns": "Payment id=\"WhXuST4cvJuPoWup9yJQ1WAnBdnmdCzkTEDkOL6-kdQ\", realm=\"stabledomains.dev\", method=\"tempo\", intent=\"charge\", request=\"eyJhbW91bnQiOiIwIiwiY3VycmVuY3kiOiIweDIwYzAwMDAwMDAwMDAwMDAwMDAwMDAwMGI5NTM3ZDExYzYwZThiNTAiLCJtZXRob2REZXRhaWxzIjp7ImNoYWluSWQiOjQyMTd9LCJyZWNpcGllbnQiOiIweEFCY2IwOTFEOTA0MTlFMWM4QUQ0ODE4ZjFCMzNGQzQ2NDU1MDE4OTIifQ\", expires=\"2026-07-27T17:19:27.114Z\"",
     "stablemerchDrafts": "Payment id=\"VWNFyro5dCaGCHACBH44B40ggjw86mt2vTGn-DHA4JA\", realm=\"stablemerch.dev\", method=\"tempo\", intent=\"charge\", request=\"eyJhbW91bnQiOiIwIiwiY3VycmVuY3kiOiIweDIwYzAwMDAwMDAwMDAwMDAwMDAwMDAwMGI5NTM3ZDExYzYwZThiNTAiLCJtZXRob2REZXRhaWxzIjp7ImNoYWluSWQiOjQyMTd9LCJyZWNpcGllbnQiOiIweENBM0NmRmRjMjE2NDQzYTk1RmNkZTFkNTJhMzI2NDVhMzRDN0I1RjAifQ\", expires=\"2026-07-27T17:19:29.756Z\""
+  },
+  "stableemailInboxBuy402": {
+    "x402Version": 2,
+    "resource": {
+      "url": "https://stableemail.dev/api/inbox/buy",
+      "method": "POST",
+      "description": "Buy an inbox on stableemail.dev ($1, 30 days). forwardTo is optional — omit it to use as a programmatic mailbox via the messages API (retainMessages enabled automatically). Message content and attachments are retained for 90 days.",
+      "mimeType": "application/json",
+      "tags": [
+        "Inbox"
+      ],
+      "serviceName": "StableEmail"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "1000000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "1000000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "HvBMG7ezcwDssxXP7DPJJsveyDnvUm2wNySBR5WF2XEY",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+        }
+      }
+    ]
+  },
+  "stableemailInboxTopup402": {
+    "x402Version": 2,
+    "resource": {
+      "url": "https://stableemail.dev/api/inbox/topup",
+      "method": "POST",
+      "description": "Top up a forwarding inbox for 30 days ($1)",
+      "mimeType": "application/json",
+      "tags": [
+        "Inbox"
+      ],
+      "serviceName": "StableEmail"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "1000000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "1000000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "HvBMG7ezcwDssxXP7DPJJsveyDnvUm2wNySBR5WF2XEY",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+        }
+      }
+    ]
+  },
+  "stableemailSubdomainBuy402": {
+    "x402Version": 2,
+    "resource": {
+      "url": "https://stableemail.dev/api/subdomain/buy",
+      "method": "POST",
+      "description": "Purchase a custom email subdomain on stableemail.dev ($5)",
+      "mimeType": "application/json",
+      "tags": [
+        "Subdomain"
+      ],
+      "serviceName": "StableEmail"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "5000000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "5000000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "HvBMG7ezcwDssxXP7DPJJsveyDnvUm2wNySBR5WF2XEY",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+        }
+      }
+    ]
+  },
+  "stableemailSubdomainSend402": {
+    "x402Version": 2,
+    "resource": {
+      "url": "https://stableemail.dev/api/subdomain/send",
+      "method": "POST",
+      "description": "Send email from your custom subdomain on stableemail.dev ($0.005)",
+      "mimeType": "application/json",
+      "tags": [
+        "Subdomain"
+      ],
+      "serviceName": "StableEmail"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "5000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "5000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "HvBMG7ezcwDssxXP7DPJJsveyDnvUm2wNySBR5WF2XEY",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+        }
+      }
+    ]
+  },
+  "stableemailInboxStatusSiwx402": {
+    "x402Version": 2,
+    "error": "SIWX authentication required",
+    "resource": {
+      "url": "https://stableemail.dev/api/inbox/status?username=untchprobe",
+      "description": "Check inbox status (free)",
+      "mimeType": "application/json"
+    },
+    "accepts": [],
+    "extensions": {
+      "sign-in-with-x": {
+        "info": {
+          "domain": "stableemail.dev",
+          "uri": "https://stableemail.dev/api/inbox/status?username=untchprobe",
+          "version": "1",
+          "chainId": "eip155:8453",
+          "type": "eip191",
+          "nonce": "267abe636aef4dcbadd34a219dba2685",
+          "issuedAt": "2026-07-29T14:02:36.542Z",
+          "expirationTime": "2026-07-29T14:07:36.542Z",
+          "statement": "Sign in to verify your wallet identity"
+        },
+        "supportedChains": [
+          {
+            "chainId": "eip155:8453",
+            "type": "eip191"
+          },
+          {
+            "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+            "type": "ed25519"
+          }
+        ],
+        "schema": {
+          "sign-in-with-x": {
+            "info": {
+              "version": "1"
+            },
+            "supportedChains": [],
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "domain": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "string"
+                },
+                "statement": {
+                  "type": "string"
+                },
+                "uri": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "chainId": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "nonce": {
+                  "type": "string"
+                },
+                "issuedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "expirationTime": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "notBefore": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "requestId": {
+                  "type": "string"
+                },
+                "resources": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "signature": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "domain",
+                "address",
+                "uri",
+                "version",
+                "chainId",
+                "type",
+                "nonce",
+                "issuedAt",
+                "signature"
+              ]
+            },
+            "_options": {}
+          }
+        }
+      }
+    }
   }
 }

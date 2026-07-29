@@ -14,7 +14,7 @@ import type { ConsumerIntentState } from "./state";
 import type { NormalizedProviderError } from "./errors";
 
 /** The consumer categories the pack governs. Adding one is a deliberate, typed change. */
-export type ConsumerCategory = "shop" | "domains" | "travel" | "gifts" | "notify" | "data";
+export type ConsumerCategory = "shop" | "domains" | "travel" | "gifts" | "notify" | "mail" | "data";
 
 /**
  * The verbs a category can express. `ActionType` is what the policy engine sees as the intent's
@@ -41,7 +41,19 @@ export type ConsumerActionType =
   | "gifts.track"
   | "notify.confirmation"
   | "notify.receipt"
-  | "notify.exception";
+  | "notify.exception"
+  // Untch Mail. Separate from `notify.*` on purpose: `notify.*` is Untch sending its OWN
+  // operational mail about an intent, `mail.*` is a consumer buying an email action as the
+  // product. They share a provider and share nothing else — a policy that permits Untch to send
+  // a receipt notification must not thereby permit a caller to buy a $5 subdomain.
+  | "mail.send"
+  | "mail.inbox.buy"
+  | "mail.inbox.status"
+  | "mail.inbox.topup"
+  | "mail.inbox.cancel"
+  | "mail.subdomain.buy"
+  | "mail.subdomain.status"
+  | "mail.subdomain.send";
 
 /** Whether an action can move value, and therefore whether it needs the full funding lifecycle. */
 export const VALUE_MOVING_ACTIONS: ReadonlySet<ConsumerActionType> = new Set<ConsumerActionType>([
@@ -50,6 +62,12 @@ export const VALUE_MOVING_ACTIONS: ReadonlySet<ConsumerActionType> = new Set<Con
   "domains.renew",
   "travel.book",
   "gifts.order",
+  // The Mail purchases that are worth funding rather than absorbing. A $1 inbox and a $5 subdomain
+  // are real user-funded buys and get the funding TTL; `mail.send` and `mail.subdomain.send` are
+  // cents-scale and sit on the quote TTL alongside `notify.*`, which they share an endpoint with.
+  "mail.inbox.buy",
+  "mail.inbox.topup",
+  "mail.subdomain.buy",
 ]);
 
 /** The policy-engine `category` slug for an action. Kept in one function so it can never drift. */

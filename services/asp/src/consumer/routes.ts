@@ -17,7 +17,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 // middleware's route shape breaks the build here instead of at runtime on a 402.
 import type { RouteConfig } from "@okxweb3/x402-core/server";
 import type { Network } from "@okxweb3/x402-core/types";
-import { toSseFrame, type ConsumerActionType } from "@untch/consumer-core";
+import { publicToolStateFor, toSseFrame, type ConsumerActionType } from "@untch/consumer-core";
 import type { HandlerResult } from "../handlers";
 import { attachSseStream } from "./dispatcher";
 import {
@@ -80,6 +80,24 @@ export const GIFTS_STATUS_ROUTE = "/consumer/gifts/status/:intentId" as const;
 export const NOTIFY_CONFIRMATION_ROUTE = "/consumer/notify/confirmation" as const;
 export const NOTIFY_RECEIPT_ROUTE = "/consumer/notify/receipt" as const;
 export const NOTIFY_EXCEPTION_ROUTE = "/consumer/notify/exception" as const;
+
+/**
+ * Untch Mail — the consumer-facing email surface.
+ *
+ * Deliberately NOT folded into `/consumer/notify/*`. Those three routes are Untch mailing the user
+ * about their own intent; these are a caller buying an email action. Sharing a path would mean
+ * sharing a policy category, and a permission to send a receipt is not a permission to buy a $5
+ * subdomain.
+ */
+export const MAIL_SEND_ROUTE = "/consumer/mail/send" as const;
+export const MAIL_INBOX_BUY_ROUTE = "/consumer/mail/inbox/buy" as const;
+export const MAIL_INBOX_STATUS_ROUTE = "/consumer/mail/inbox/status" as const;
+export const MAIL_INBOX_TOPUP_ROUTE = "/consumer/mail/inbox/topup" as const;
+export const MAIL_INBOX_CANCEL_ROUTE = "/consumer/mail/inbox/cancel" as const;
+export const MAIL_SUBDOMAIN_BUY_ROUTE = "/consumer/mail/subdomain/buy" as const;
+export const MAIL_SUBDOMAIN_STATUS_ROUTE = "/consumer/mail/subdomain/status" as const;
+export const MAIL_SUBDOMAIN_SEND_ROUTE = "/consumer/mail/subdomain/send" as const;
+export const MAIL_EXECUTE_ROUTE = "/consumer/mail/execute" as const;
 
 export const INTENT_STATUS_ROUTE = "/consumer/intent/:intentId" as const;
 export const INTENT_PAYMENT_ROUTE = "/consumer/intent/:intentId/payment" as const;
@@ -152,6 +170,15 @@ export function consumerPricedRoutes(args: {
     fixed(NOTIFY_CONFIRMATION_ROUTE, CONSUMER_PRICES.notify, "Untch Consumer Notify — transactional confirmation"),
     fixed(NOTIFY_RECEIPT_ROUTE, CONSUMER_PRICES.notify, "Untch Consumer Notify — receipt"),
     fixed(NOTIFY_EXCEPTION_ROUTE, CONSUMER_PRICES.notify, "Untch Consumer Notify — exception / approval notice"),
+    fixed(MAIL_SEND_ROUTE, CONSUMER_PRICES.quote, "Untch Mail — bounded send quote + policy decision"),
+    fixed(MAIL_INBOX_BUY_ROUTE, CONSUMER_PRICES.quote, "Untch Mail — bounded inbox purchase quote + policy decision"),
+    fixed(MAIL_INBOX_TOPUP_ROUTE, CONSUMER_PRICES.quote, "Untch Mail — bounded inbox top-up quote + policy decision"),
+    fixed(MAIL_SUBDOMAIN_BUY_ROUTE, CONSUMER_PRICES.quote, "Untch Mail — bounded subdomain purchase quote + policy decision"),
+    fixed(MAIL_SUBDOMAIN_SEND_ROUTE, CONSUMER_PRICES.quote, "Untch Mail — bounded subdomain send quote + policy decision"),
+    fixed(MAIL_EXECUTE_ROUTE, CONSUMER_PRICES.execute, "Untch Mail — execute an approved, funded mail action"),
+    fixed(MAIL_INBOX_CANCEL_ROUTE, CONSUMER_PRICES.execute, "Untch Mail — cancel an owned inbox for a pro-rata refund"),
+    fixed(MAIL_INBOX_STATUS_ROUTE, CONSUMER_PRICES.search, "Untch Mail — read an owned inbox's status"),
+    fixed(MAIL_SUBDOMAIN_STATUS_ROUTE, CONSUMER_PRICES.search, "Untch Mail — read an owned subdomain's status"),
   ]);
 
   if (args.fundingPrice) {
@@ -216,6 +243,9 @@ export function registerConsumerRoutes(
       TRAVEL_SEARCH_ROUTE, TRAVEL_COMPARE_ROUTE, TRAVEL_QUOTE_ROUTE, TRAVEL_BOOK_ROUTE,
       GIFTS_QUOTE_ROUTE, GIFTS_ORDER_ROUTE,
       NOTIFY_CONFIRMATION_ROUTE, NOTIFY_RECEIPT_ROUTE, NOTIFY_EXCEPTION_ROUTE,
+      MAIL_SEND_ROUTE, MAIL_INBOX_BUY_ROUTE, MAIL_INBOX_STATUS_ROUTE, MAIL_INBOX_TOPUP_ROUTE,
+      MAIL_INBOX_CANCEL_ROUTE, MAIL_SUBDOMAIN_BUY_ROUTE, MAIL_SUBDOMAIN_STATUS_ROUTE,
+      MAIL_SUBDOMAIN_SEND_ROUTE, MAIL_EXECUTE_ROUTE,
       FUND_ROUTE,
     ]) {
       app.post(path, (_req, res) => send(res, unconfigured()));
@@ -283,6 +313,29 @@ export function registerConsumerRoutes(
   notify(NOTIFY_CONFIRMATION_ROUTE, "notify.confirmation");
   notify(NOTIFY_RECEIPT_ROUTE, "notify.receipt");
   notify(NOTIFY_EXCEPTION_ROUTE, "notify.exception");
+
+  // ── Untch Mail ─────────────────────────────────────────────────────────────
+  //
+  // Every paid Mail route QUOTES; none of them settles inline. `/consumer/mail/execute` is the one
+  // door that spends, and it takes an intent that has already been quoted, policy-checked and
+  // funded — the same shape shop, domains, travel and gifts use, for the same reason: a route that
+  // both prices and pays is a route where an approval can be skipped by accident.
+  quote(MAIL_SEND_ROUTE, "mail.send");
+  quote(MAIL_INBOX_BUY_ROUTE, "mail.inbox.buy");
+  quote(MAIL_INBOX_TOPUP_ROUTE, "mail.inbox.topup");
+  quote(MAIL_SUBDOMAIN_BUY_ROUTE, "mail.subdomain.buy");
+  quote(MAIL_SUBDOMAIN_SEND_ROUTE, "mail.subdomain.send");
+  post(MAIL_EXECUTE_ROUTE, (b) => handleConsumerExecute(b, deps));
+
+  // The free, SIWX-authenticated reads. They never reach the funding leg.
+  search(MAIL_INBOX_STATUS_ROUTE, "mail.inbox.status");
+  search(MAIL_SUBDOMAIN_STATUS_ROUTE, "mail.subdomain.status");
+  //
+  // `mail.inbox.cancel` changes state and returns a refund, but costs nothing and is SIWX-gated —
+  // so it is neither a search nor a purchase. It runs through the execute door, which refuses it
+  // until Untch owns an inbox, rather than being quoted at zero and pushed through a funding leg
+  // with nothing to fund.
+  post(MAIL_INBOX_CANCEL_ROUTE, (b) => handleConsumerExecute(b, deps));
 
   // ── the funding leg ────────────────────────────────────────────────────────
   // Reaching this handler means the x402 middleware already settled the payment at the price the
@@ -648,6 +701,16 @@ export async function buildConsumerCatalog(wiring: ConsumerWiring): Promise<Reco
       capabilities: (await wiring.store.listCapabilities(p.providerId)).map((c) => ({
         capability: c.capability,
         maturity: c.maturity,
+        /**
+         * The public five-state label, derived per TOOL and never assigned per provider.
+         *
+         * `state` is what a dashboard, a doc page and the OKX.AI registration draft all read, so
+         * they cannot drift from each other or from the gate. `accessBlocker` says why, when the
+         * reason is something outside Untch — which is the difference between "we haven't finished"
+         * and "the merchant won't admit us", and those should never render the same.
+         */
+        state: publicToolStateFor(p, c),
+        accessBlocker: c.accessBlocker ?? null,
         notes: c.notes,
       })),
     })),
@@ -670,6 +733,11 @@ export async function buildConsumerCatalog(wiring: ConsumerWiring): Promise<Reco
       publicReceipt: [PUBLIC_RECEIPT_ROUTE],
       auth: [AUTH_NONCE_ROUTE, AUTH_VERIFY_ROUTE],
       notify: [NOTIFY_CONFIRMATION_ROUTE, NOTIFY_RECEIPT_ROUTE, NOTIFY_EXCEPTION_ROUTE],
+      mail: [
+        MAIL_SEND_ROUTE, MAIL_INBOX_BUY_ROUTE, MAIL_INBOX_STATUS_ROUTE, MAIL_INBOX_TOPUP_ROUTE,
+        MAIL_INBOX_CANCEL_ROUTE, MAIL_SUBDOMAIN_BUY_ROUTE, MAIL_SUBDOMAIN_STATUS_ROUTE,
+        MAIL_SUBDOMAIN_SEND_ROUTE, MAIL_EXECUTE_ROUTE,
+      ],
     },
     /**
      * Which surfaces need a session, stated in the catalog so a calling agent discovers it here

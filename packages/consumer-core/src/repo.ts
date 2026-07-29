@@ -45,11 +45,34 @@ export interface ProviderRecord {
   readonly enabled: boolean;
 }
 
+/**
+ * Why a capability is stuck below `verified`, when the reason is not "Untch has not finished it".
+ *
+ * This exists so the public surface can tell two very different situations apart. "We have written
+ * the adapter but cannot settle on that rail yet" and "the merchant will not let us in without a
+ * partner agreement" both render as `experimental` internally, and collapsing them into one label
+ * would let an unfinished integration hide behind the merchant.
+ *
+ *   PARTNER_ACCESS     — the provider requires a commercial agreement, allowlist or credential we
+ *                        do not hold. No amount of work on our side unblocks it.
+ *   IDENTITY_REQUIRED  — the provider needs a wallet identity or verified profile (SIWX, OTP, an
+ *                        ICANN registrant record) that is not configured on this instance.
+ *   RAIL_UNAVAILABLE   — the provider settles only on a rail this build cannot sign for.
+ *   PROVIDER_UNSUPPORTED — the provider's live contract does not offer this operation at all.
+ */
+export type CapabilityAccessBlocker =
+  | "PARTNER_ACCESS"
+  | "IDENTITY_REQUIRED"
+  | "RAIL_UNAVAILABLE"
+  | "PROVIDER_UNSUPPORTED";
+
 export interface ProviderCapabilityRecord {
   readonly providerId: string;
   readonly capability: string;
   readonly maturity: ProviderMaturity;
   readonly notes: string;
+  /** Null ⇒ nothing external is blocking this; it is simply not finished or not yet settled. */
+  readonly accessBlocker?: CapabilityAccessBlocker | null;
 }
 
 export interface ProviderHealthRecord {

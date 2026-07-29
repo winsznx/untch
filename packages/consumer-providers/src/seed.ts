@@ -6,11 +6,15 @@
  * evidence is committed under internal/consumer-pack-evidence/ and can be re-fetched with
  * `probe-discovery.mjs` / `probe-paid-endpoints.mjs`.
  *
- * NOTHING here is `verified`, and that is not an oversight. Promotion to `verified` requires a real
- * settled payment from an Untch treasury wallet plus a verified delivery, which requires a funded
- * treasury key. No such key exists in this environment (see docs/consumer-pack-runbook.md →
- * "Promoting a provider"), so `verified` is unreachable and the seed says so rather than asserting a
- * status nobody has earned.
+ * NOTHING here is `verified`, and that is not an oversight. The seed INTRODUCES a provider; it never
+ * re-asserts its status (see the wiring's comment on why an unconditional upsert was a live control
+ * failure in both directions). Promotion to `verified` happens once, against a real settled payment
+ * plus a verified delivery, and lands on the DURABLE row — which is why a provider can read
+ * `verified` in production while this file still says `sandbox`. That divergence is the mechanism
+ * working, not drift.
+ *
+ * `accessBlocker` answers a different question from `maturity`. Maturity says "may this execute?";
+ * the blocker says "whose problem is it?" — and only appears when the answer is genuinely not ours.
  *
  * Read the maturity column as: "what is the weakest link in this integration?"
  */
@@ -98,15 +102,97 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
       protocol: "x402",
       chains: [BASE_MAINNET, SOLANA_MAINNET],
       provenance:
-        "2026-07-27: POST /api/send returned a 402 offering Base USDC (payTo 0xdb5a…0671) and Solana " +
-        "USDC at a fixed $0.02, matching its OpenAPI x-payment-info. Full OpenAPI (25 paths) and " +
-        ".well-known/x402 fetched. SANDBOX: no settlement from an Untch treasury wallet has occurred.",
+        "2026-07-29: every endpoint below re-probed live and its price read from the merchant's own " +
+        "402. Base USDC (0x8335…2913, payTo 0xdb5a…0671), Solana USDC (payTo HvBMG7ez…2XEY) and a " +
+        "Tempo MPP charge offer appear on every paid route. Prices observed, in atomic USDC: " +
+        "/api/send 20000, /api/inbox/buy 1000000, /api/inbox/topup 1000000 (quarter 2500000, year " +
+        "8000000), /api/subdomain/buy 5000000, /api/subdomain/send 5000. The status and cancel " +
+        "routes answer a 402 with an EMPTY accepts[] plus a sign-in-with-x extension " +
+        "(eip155:8453/eip191) — SIWX authentication, not payment.",
       enabled: true,
     },
     capabilities: [
       { providerId: "stableemail", capability: "notify.confirmation", maturity: "sandbox", notes: "POST /api/send, $0.02." },
       { providerId: "stableemail", capability: "notify.receipt", maturity: "sandbox", notes: "POST /api/send, $0.02." },
       { providerId: "stableemail", capability: "notify.exception", maturity: "sandbox", notes: "POST /api/send, $0.02." },
+
+      // ── Untch Mail ────────────────────────────────────────────────────────
+      //
+      // Per-tool, because the tools are not equally proven. `mail.send` is one unauthenticated paid
+      // call; `mail.subdomain.send` additionally requires the paying wallet to OWN the subdomain it
+      // sends from. Reporting one maturity for the family would overstate the second or understate
+      // the first.
+      {
+        providerId: "stableemail",
+        capability: "mail.send",
+        maturity: "sandbox",
+        notes:
+          "POST /api/send, $0.02 (20000 atomic USDC), Base + Solana + Tempo. No settlement from an " +
+          "Untch treasury wallet yet. Delivery is provider-attested only — the shared relay exposes " +
+          "no per-message status endpoint.",
+      },
+      {
+        providerId: "stableemail",
+        capability: "mail.inbox.buy",
+        maturity: "sandbox",
+        notes:
+          "POST /api/inbox/buy, $1.00 (1000000 atomic USDC) for 30 days. Delivery IS independently " +
+          "verifiable here: the purchased inbox is polled back over /api/inbox/status.",
+      },
+      {
+        providerId: "stableemail",
+        capability: "mail.inbox.topup",
+        maturity: "sandbox",
+        notes:
+          "POST /api/inbox/topup $1.00 / …/quarter $2.50 / …/year $8.00. Anyone may top up any " +
+          "inbox — no SIWX — so this is payable without owning the inbox.",
+      },
+      {
+        providerId: "stableemail",
+        capability: "mail.inbox.status",
+        maturity: "experimental",
+        accessBlocker: "IDENTITY_REQUIRED",
+        notes:
+          "GET /api/inbox/status, free but SIWX-gated, and the provider admits only the INBOX OWNER. " +
+          "Untch owns no inbox and no CONSUMER_SIWX_PRIVATE_KEY is configured, so this cannot " +
+          "succeed today. Unblocked by mail.inbox.buy, not by more code.",
+      },
+      {
+        providerId: "stableemail",
+        capability: "mail.inbox.cancel",
+        maturity: "experimental",
+        accessBlocker: "IDENTITY_REQUIRED",
+        notes:
+          "POST /api/inbox/cancel, free, SIWX-gated, owner-only. Sends a pro-rata USDC refund " +
+          "on-chain to the caller's wallet. Same prerequisite as mail.inbox.status.",
+      },
+      {
+        providerId: "stableemail",
+        capability: "mail.subdomain.buy",
+        maturity: "sandbox",
+        notes:
+          "POST /api/subdomain/buy, $5.00 (5000000 atomic USDC). DNS verification takes ~5 minutes, " +
+          "so the purchase completes IN_PROGRESS and only reaches FULFILLED once DNS and SES both " +
+          "verify.",
+      },
+      {
+        providerId: "stableemail",
+        capability: "mail.subdomain.status",
+        maturity: "experimental",
+        accessBlocker: "IDENTITY_REQUIRED",
+        notes:
+          "GET /api/subdomain/status, free, SIWX-gated, owner-or-signer only. Prerequisite is " +
+          "mail.subdomain.buy.",
+      },
+      {
+        providerId: "stableemail",
+        capability: "mail.subdomain.send",
+        maturity: "experimental",
+        accessBlocker: "IDENTITY_REQUIRED",
+        notes:
+          "POST /api/subdomain/send, $0.005 (5000 atomic USDC). The PAYING wallet must be the " +
+          "subdomain owner or an authorised signer, so paying is necessary and not sufficient.",
+      },
     ],
   },
 

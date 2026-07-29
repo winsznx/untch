@@ -11,6 +11,8 @@ import {
   isProviderError,
   money,
   parseMoney,
+  publicToolState,
+  publicToolStateFor,
   type AssetRef,
   type CaipChainId,
   type ConsumerStore,
@@ -425,5 +427,53 @@ describe("registry — maturity gates execution", () => {
   test("an unknown provider is refused", async () => {
     const r = await withProvider("verified");
     await assert.rejects(() => r.assertExecutable("nope", "domains.register"));
+  });
+});
+
+describe("public tool state — a label projects the gate, and can never widen it", () => {
+  const provider = (over: Partial<Parameters<typeof publicToolStateFor>[0]> = {}) => ({
+    providerId: "p1",
+    displayName: "P1",
+    maturity: "verified" as const,
+    baseUrl: "https://p1.test",
+    protocol: "x402" as const,
+    chains: ["eip155:8453" as CaipChainId],
+    provenance: "test",
+    enabled: true,
+    ...over,
+  });
+
+  test("each internal rung maps to exactly one public state", () => {
+    assert.equal(publicToolState("verified"), "LIVE");
+    assert.equal(publicToolState("sandbox"), "BETA");
+    assert.equal(publicToolState("experimental"), "SANDBOX");
+    assert.equal(publicToolState("disabled"), "DISABLED");
+  });
+
+  test("a blocker separates 'we haven't finished' from 'the merchant won't admit us'", () => {
+    assert.equal(publicToolState("experimental", null), "SANDBOX");
+    assert.equal(publicToolState("experimental", "PARTNER_ACCESS"), "PARTNER_ACCESS_REQUIRED");
+    assert.equal(publicToolState("experimental", "IDENTITY_REQUIRED"), "PARTNER_ACCESS_REQUIRED");
+    assert.equal(publicToolState("experimental", "RAIL_UNAVAILABLE"), "PARTNER_ACCESS_REQUIRED");
+    assert.equal(publicToolState("experimental", "PROVIDER_UNSUPPORTED"), "PARTNER_ACCESS_REQUIRED");
+  });
+
+  test("a blocker only ever downgrades — it can never suppress proven evidence", () => {
+    // A settled payment plus a verified delivery is evidence; a leftover annotation is not. If a
+    // blocker could mute a verified capability, a stale string would be able to hide a working
+    // integration, and nobody reading the label would know why.
+    assert.equal(publicToolState("verified", "PARTNER_ACCESS"), "LIVE");
+    assert.equal(publicToolState("sandbox", "PARTNER_ACCESS"), "BETA");
+  });
+
+  test("a capability is capped by its provider, so a label cannot promote past the gate", () => {
+    const cap = { providerId: "p1", capability: "mail.send", maturity: "verified" as const, notes: "" };
+    assert.equal(publicToolStateFor(provider({ maturity: "sandbox" }), cap), "BETA");
+    assert.equal(publicToolStateFor(provider({ maturity: "experimental" }), cap), "SANDBOX");
+  });
+
+  test("a disabled provider renders DISABLED whatever its capabilities claim", () => {
+    const cap = { providerId: "p1", capability: "mail.send", maturity: "verified" as const, notes: "" };
+    assert.equal(publicToolStateFor(provider({ enabled: false }), cap), "DISABLED");
   });
 });
