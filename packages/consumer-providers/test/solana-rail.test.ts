@@ -312,8 +312,11 @@ describe("Solana rail — the payload it hands back", () => {
     const rec = recordingBuilder();
     const result = await client({ payloadBuilder: rec.build }).pay(request());
     assert.equal(result.txHash, null);
-    assert.equal(result.headerName, "PAYMENT");
-    assert.deepEqual(result.aliasHeaderNames, ["X-PAYMENT"]);
+    // Settled by observation, not by reading a spec. PAYMENT and X-PAYMENT both drew a bare 402
+    // from Purch; its own documented v2 client used `payment-signature` and got a 200 first try.
+    assert.equal(result.headerName, "PAYMENT-SIGNATURE");
+    // No alias. Two payment headers on one request invites a verifier to read the wrong one.
+    assert.equal(result.aliasHeaderNames, undefined);
   });
 
   test("the secret never appears in the returned result", async () => {

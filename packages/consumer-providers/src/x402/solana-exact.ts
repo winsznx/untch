@@ -446,10 +446,22 @@ export class X402SolanaExactClient implements RailClient {
       declaredNetwork: network,
     });
 
+    /**
+     * The retry header is `PAYMENT-SIGNATURE`, and this was settled by observation rather than by
+     * reading a spec.
+     *
+     * Untch first sent `PAYMENT` and `X-PAYMENT`, in both network spellings, and Purch answered all
+     * four with a bare 402 and an empty body. Driving Purch through its own documented client
+     * (`@x402/fetch` + `@x402/svm`, the x402 v2 line) produced a 200 and real products on the first
+     * attempt, and the header that client chose was `payment-signature`. `X-PAYMENT` is the x402 v1
+     * convention and this endpoint serves v2.
+     *
+     * No alias is sent. Two payment headers on one request invites a verifier to read the one we did
+     * not intend, and the correct name is now known rather than guessed at.
+     */
     return {
       paymentHeader: Buffer.from(JSON.stringify(payload), "utf8").toString("base64"),
-      headerName: "PAYMENT",
-      aliasHeaderNames: ["X-PAYMENT"],
+      headerName: "PAYMENT-SIGNATURE",
       // The SPONSOR submits, so this wallet never learns the signature at signing time. Inventing
       // one would put a hash in the ledger that no explorer can resolve. The facilitator reports the
       // real one in PAYMENT-RESPONSE and the transport reads it from there.
