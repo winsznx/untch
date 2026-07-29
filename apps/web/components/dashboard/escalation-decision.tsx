@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { EscalationView } from "../../lib/dashboard/live";
 
 /**
- * The dashboard's escalation approve/deny — the fourth control channel's operator action. It POSTs to
+ * The dashboard's escalation approve/deny, the fourth control channel's operator action. It POSTs to
  * /api/escalations/decision, which runs the decision through the SAME §27 authority-boundary check in
  * @untch/escalation, against the SAME shared Postgres record the other channels resolve. Authority is the
  * SIWE session (the signed-in wallet is the sender handle): NO per-click wallet signature, exactly as a

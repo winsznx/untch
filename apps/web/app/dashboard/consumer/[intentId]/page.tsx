@@ -250,7 +250,7 @@ export default async function ConsumerIntentDetail({
             </span>
             <p className="text-body-sm" style={{ color: "var(--color-inverse-canvas)" }}>
               {intent.failureDetail ??
-                "The provider's outcome could not be determined. It has NOT been retried — resending a request that may already have purchased something would be a double purchase, not a retry."}
+                "The provider's outcome could not be determined. It has NOT been retried. Resending a request that may already have purchased something would be a double purchase, not a retry."}
             </p>
             <p className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
               The user&apos;s funding is parked in a SUSPENSE ledger account and is neither spent nor

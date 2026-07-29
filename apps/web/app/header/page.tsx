@@ -26,7 +26,7 @@ const DECISIONS: Decision[] = [
     n: "2",
     title: "Nav links",
     flag: "NEW DECISION — CONFIRM",
-    body: "Product, Receipts, Docs, Pricing. Grounded in what is true about Untch: the product, the public receipts explorer (S6), Mintlify docs, and real per-call plus audit-SKU pricing. Hrefs are structural; the destination pages are not built yet.",
+    body: "Product, Receipts, Docs, Pricing. Grounded in what is true about Untch: the product, the public receipts explorer (S6), Mintlify docs, and real per-call plus audit-SKU pricing. Hrefs are structural. The destination pages are not built yet.",
   },
   {
     n: "3",

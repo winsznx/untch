@@ -35,7 +35,7 @@ const ENTRIES: readonly Entry[] = [
     date: "2026-07-28",
     title: "Externally funded Consumer Intent in production",
     what:
-      "A wallet that is not any Untch treasury funded a Consumer Intent with real USDT0 on X Layer; Untch then paid StableDomains in USDC on Base from its own settlement float, verified the result through public RDAP, and reconciled both rails to zero under one intent.",
+      "A wallet that is not any Untch treasury funded a Consumer Intent with real USDT0 on X Layer. Untch then paid StableDomains in USDC on Base from its own settlement float, verified the result through public RDAP, and reconciled both rails to zero under one intent.",
     why:
       "Until now Untch was both funder and settler, so the only novel leg exercised was the outbound merchant payment. This proves the two parties are genuinely separate while policy, payment, delivery verification and accounting stay bound to a single intent. Providers are still settled from Untch's pre-funded operational treasury.",
     status: "BETA",
@@ -48,9 +48,9 @@ const ENTRIES: readonly Entry[] = [
     date: "2026-07-28",
     title: "Mandatory ownership authentication",
     what:
-      "Reading a tenant's consumer intents now requires a SIWE signature over a server-issued, single-use, expiring nonce, verified against the policy's on-chain owner. The legacy path — passing a policy id as a query parameter — is refused outright.",
+      "Reading a tenant's consumer intents now requires a SIWE signature over a server-issued, single-use, expiring nonce, verified against the policy's on-chain owner. The legacy path of passing a policy id as a query parameter is refused outright.",
     why:
-      "A policy id is public on-chain data. Deriving a tenant from it was namespacing, not authorisation: anyone who read one off the explorer could see that tenant's amounts, provider and decisions. Fourteen attacks were run against live production with real signatures; all fourteen were refused, including a cryptographically valid signature from a wallet that does not own the policy.",
+      "A policy id is public on-chain data. Deriving a tenant from it was namespacing, not authorisation: anyone who read one off the explorer could see that tenant's amounts, provider and decisions. Fourteen attacks were run against live production with real signatures, and all fourteen were refused, including a cryptographically valid signature from a wallet that does not own the policy.",
     status: "LIVE",
     evidence: { label: "catalog reports auth.required", href: "https://asp.untch.xyz/consumer/catalog" },
   },
@@ -60,7 +60,7 @@ const ENTRIES: readonly Entry[] = [
     what:
       "Every completed consumer action has a receipt anyone can open with no account, showing what was paid, to whom, on which chain, what was delivered and what Untch independently verified.",
     why:
-      "A receipt only the buyer can read is not a receipt. The public view is built by naming the fields that may be published rather than by removing fields from the private one, so a field added later cannot silently become public — the request payload, correlation id and approval channel are all withheld.",
+      "A receipt only the buyer can read is not a receipt. The public view is built by naming the fields that may be published rather than by removing fields from the private one, so a field added later cannot silently become public. The request payload, correlation id and approval channel are all withheld.",
     status: "LIVE",
     evidence: { label: "open a real receipt", href: "/receipt/ci_82bb2216c02366bc1b839a00" },
   },
@@ -68,7 +68,7 @@ const ENTRIES: readonly Entry[] = [
     date: "2026-07-27",
     title: "Production worker executed a governed purchase end to end",
     what:
-      "The deployed worker picked an approved intent off the queue, paid StableDomains 0.050000 USDC on Base, verified the result, booked the ledger and wrote a receipt — with no local driver involved.",
+      "The deployed worker picked an approved intent off the queue, paid StableDomains 0.050000 USDC on Base, verified the result, booked the ledger and wrote a receipt, with no local driver involved.",
     why:
       "The first settlement was driven by a script on a laptop. This one proves the deployed system does it by itself, which is the only version that matters.",
     status: "BETA",
@@ -81,7 +81,7 @@ const ENTRIES: readonly Entry[] = [
     date: "2026-07-27",
     title: "Independent delivery verification via RDAP",
     what:
-      "Domain results are checked against public RDAP — the registry itself — rather than against the merchant's own response.",
+      "Domain results are checked against public RDAP, the registry itself, rather than against the merchant's own response.",
     why:
       "A merchant confirming its own delivery is not verification. The receipt reports the merchant's claim and Untch's independent check as two separate fields and never merges them.",
     status: "LIVE",
@@ -90,7 +90,7 @@ const ENTRIES: readonly Entry[] = [
     date: "2026-07-27",
     title: "First real provider settlement",
     what:
-      "Untch paid a real merchant on the merchant's own rail — USDC on Base — from a capped, single-use EIP-3009 authorisation, for an action a deterministic policy had approved.",
+      "Untch paid a real merchant on the merchant's own rail, USDC on Base, from a capped, single-use EIP-3009 authorisation, for an action a deterministic policy had approved.",
     why:
       "Everything before this was a decision about money. This was money.",
     status: "BETA",
@@ -103,7 +103,7 @@ const ENTRIES: readonly Entry[] = [
     date: "2026-07-27",
     title: "Consumer Pack",
     what:
-      "An agent proposes a real-world action; Untch decides whether it is authorised, funds it for the exact approved amount, pays the merchant on the merchant's rail, verifies delivery and produces one receipt spanning both payments.",
+      "An agent proposes a real-world action. Untch decides whether it is authorised, funds it for the exact approved amount, pays the merchant on the merchant's rail, verifies delivery and produces one receipt spanning both payments.",
     why:
       "The purchase value is separate from the call fee, an ambiguous outcome goes to a human rather than a retry, and what the merchant says is never presented as what Untch proved. Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury.",
     status: "BETA",
@@ -121,7 +121,7 @@ const ENTRIES: readonly Entry[] = [
     date: "2026-07-16",
     title: "Mainnet contracts on X Layer",
     what: "PolicyRegistry, SpendIntentRegistry, UntchReceipts and VaultFactory deployed to X Layer mainnet with separated role keys.",
-    why: "None of them holds funds — no payable, receive or fallback — so the registry layer cannot become a honeypot.",
+    why: "None of them holds funds. There is no payable, receive or fallback, so the registry layer cannot become a honeypot.",
     status: "LIVE",
     evidence: {
       label: "UntchReceipts on OKLink",
@@ -139,7 +139,7 @@ const ENTRIES: readonly Entry[] = [
     date: "2026-07-11",
     title: "Escalation across four channels",
     what: "Human approval over Telegram, Discord, Slack and the operator dashboard, with dual-channel enforcement and a single authority boundary.",
-    why: "When policy says a human must decide, the human must be reachable where they already are — and no channel may become a way around the boundary.",
+    why: "When policy says a human must decide, the human must be reachable where they already are, and no channel may become a way around the boundary.",
     status: "LIVE",
   },
   {
@@ -147,14 +147,14 @@ const ENTRIES: readonly Entry[] = [
     title: "Receipts anchored on chain",
     what: "Durable Postgres receipts, batched and anchored to the UntchReceipts contract with retry, reorg re-verification and honest degradation.",
     why:
-      "The ledger is authoritative; anchoring is publication. When anchoring fails the receipt says so rather than implying an anchor that does not exist. Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.",
+      "The ledger is authoritative. Anchoring is publication. When anchoring fails the receipt says so rather than implying an anchor that does not exist. Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.",
     status: "BETA",
   },
   {
     date: "2026-07-09",
     title: "Deterministic policy engine",
     what:
-      "Fourteen rules over a bounded SpendIntent — budget, per-call cap, category, recipient, agent, duplicate, cooldown, rate limit, expiry — evaluated in a fixed order.",
+      "Fourteen rules over a bounded SpendIntent, evaluated in a fixed order: budget, per-call cap, category, recipient, agent, duplicate, cooldown, rate limit and expiry.",
     why:
       "No LLM call appears anywhere on the money decision path. The engine is a pure function of the intent, the policy and the ledger window, so the same inputs always produce the same decision and the decision can be re-derived by anyone.",
     status: "LIVE",

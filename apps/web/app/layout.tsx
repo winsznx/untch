@@ -19,7 +19,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL("https://untch.xyz"),
   title: {
-    default: "Untch — Spend governance for autonomous AI agents",
+    default: "Untch: spend governance for autonomous AI agents",
     template: "%s · Untch",
   },
   description:
@@ -38,12 +38,12 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "Untch",
     url: "https://untch.xyz",
-    title: "Untch — Spend governance for autonomous AI agents",
+    title: "Untch: spend governance for autonomous AI agents",
     description: "The model never touches the money. Policy, escalation, and receipts for agent spend.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Untch — Spend governance for autonomous AI agents",
+    title: "Untch: spend governance for autonomous AI agents",
     description: "The model never touches the money. Policy, escalation, and receipts for agent spend.",
   },
 };

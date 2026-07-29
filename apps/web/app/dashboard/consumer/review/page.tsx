@@ -99,7 +99,7 @@ export default async function ManualReview() {
             Resolving one
           </span>
           <ol className="flex list-decimal flex-col gap-2 pl-5 text-body-sm" style={{ color: "var(--color-inverse-canvas)" }}>
-            <li>Open the intent and read its execution attempts — the provider reference is recorded even when the response was lost.</li>
+            <li>Open the intent and read its execution attempts. The provider reference is recorded even when the response was lost.</li>
             <li>Check the merchant&apos;s own order surface for that reference.</li>
             <li>
               If the merchant DID fulfil: the outcome is a completion, and the suspense entry is released

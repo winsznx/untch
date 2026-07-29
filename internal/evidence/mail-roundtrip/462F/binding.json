@@ -1,0 +1,26 @@
+{
+  "schema": "untch.mail.roundtrip.binding.v1",
+  "ref": "462F",
+  "boundAt": "2026-07-29T15:45:00.931Z",
+  "expiresAt": "2026-07-29T18:45:00.932Z",
+  "untchInbox": "untch-mail@stableemail.dev",
+  "direction": "outbound-then-inbound",
+  "outbound": {
+    "recipientHash": "0x1b4d532dda15ffb701f498528988fe3189db55fa4c392f6d944b581ffc11167f",
+    "subject": "Untch Mail delivery proof 462F",
+    "subjectHash": "0xfa98a4d4409e395f1a4100f3b70736a2ae470cd4da0bbdd8aa64e0bfdebbe91f",
+    "replyTo": "untch-mail@stableemail.dev"
+  },
+  "inbound": {
+    "expectedSubjects": [
+      "Re: Untch Mail delivery proof 462F",
+      "Untch Mail delivery proof 462F"
+    ],
+    "expectedSubjectHashes": [
+      "0x39ecb85f155328b85514e99e4e7e8f2306a77ed39db70dc3bd7cb28ee4898437",
+      "0xfa98a4d4409e395f1a4100f3b70736a2ae470cd4da0bbdd8aa64e0bfdebbe91f"
+    ],
+    "senderHash": "0x1b4d532dda15ffb701f498528988fe3189db55fa4c392f6d944b581ffc11167f"
+  },
+  "note": "Bound BEFORE the send. `verify` may only compare against these values; it cannot widen them to fit whatever arrived."
+}

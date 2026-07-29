@@ -92,6 +92,7 @@ export const NOTIFY_EXCEPTION_ROUTE = "/consumer/notify/exception" as const;
 export const MAIL_SEND_ROUTE = "/consumer/mail/send" as const;
 export const MAIL_INBOX_BUY_ROUTE = "/consumer/mail/inbox/buy" as const;
 export const MAIL_INBOX_STATUS_ROUTE = "/consumer/mail/inbox/status" as const;
+export const MAIL_INBOX_MESSAGES_ROUTE = "/consumer/mail/inbox/messages" as const;
 export const MAIL_INBOX_TOPUP_ROUTE = "/consumer/mail/inbox/topup" as const;
 export const MAIL_INBOX_CANCEL_ROUTE = "/consumer/mail/inbox/cancel" as const;
 export const MAIL_SUBDOMAIN_BUY_ROUTE = "/consumer/mail/subdomain/buy" as const;
@@ -178,6 +179,7 @@ export function consumerPricedRoutes(args: {
     fixed(MAIL_EXECUTE_ROUTE, CONSUMER_PRICES.execute, "Untch Mail — execute an approved, funded mail action"),
     fixed(MAIL_INBOX_CANCEL_ROUTE, CONSUMER_PRICES.execute, "Untch Mail — cancel an owned inbox for a pro-rata refund"),
     fixed(MAIL_INBOX_STATUS_ROUTE, CONSUMER_PRICES.search, "Untch Mail — read an owned inbox's status"),
+    fixed(MAIL_INBOX_MESSAGES_ROUTE, CONSUMER_PRICES.search, "Untch Mail — list messages received by an Untch-owned inbox"),
     fixed(MAIL_SUBDOMAIN_STATUS_ROUTE, CONSUMER_PRICES.search, "Untch Mail — read an owned subdomain's status"),
   ]);
 
@@ -244,8 +246,8 @@ export function registerConsumerRoutes(
       GIFTS_QUOTE_ROUTE, GIFTS_ORDER_ROUTE,
       NOTIFY_CONFIRMATION_ROUTE, NOTIFY_RECEIPT_ROUTE, NOTIFY_EXCEPTION_ROUTE,
       MAIL_SEND_ROUTE, MAIL_INBOX_BUY_ROUTE, MAIL_INBOX_STATUS_ROUTE, MAIL_INBOX_TOPUP_ROUTE,
-      MAIL_INBOX_CANCEL_ROUTE, MAIL_SUBDOMAIN_BUY_ROUTE, MAIL_SUBDOMAIN_STATUS_ROUTE,
-      MAIL_SUBDOMAIN_SEND_ROUTE, MAIL_EXECUTE_ROUTE,
+      MAIL_INBOX_CANCEL_ROUTE, MAIL_INBOX_MESSAGES_ROUTE, MAIL_SUBDOMAIN_BUY_ROUTE,
+      MAIL_SUBDOMAIN_STATUS_ROUTE, MAIL_SUBDOMAIN_SEND_ROUTE, MAIL_EXECUTE_ROUTE,
       FUND_ROUTE,
     ]) {
       app.post(path, (_req, res) => send(res, unconfigured()));
@@ -329,6 +331,7 @@ export function registerConsumerRoutes(
 
   // The free, SIWX-authenticated reads. They never reach the funding leg.
   search(MAIL_INBOX_STATUS_ROUTE, "mail.inbox.status");
+  search(MAIL_INBOX_MESSAGES_ROUTE, "mail.inbox.messages");
   search(MAIL_SUBDOMAIN_STATUS_ROUTE, "mail.subdomain.status");
   //
   // `mail.inbox.cancel` changes state and returns a refund, but costs nothing and is SIWX-gated —
@@ -735,8 +738,8 @@ export async function buildConsumerCatalog(wiring: ConsumerWiring): Promise<Reco
       notify: [NOTIFY_CONFIRMATION_ROUTE, NOTIFY_RECEIPT_ROUTE, NOTIFY_EXCEPTION_ROUTE],
       mail: [
         MAIL_SEND_ROUTE, MAIL_INBOX_BUY_ROUTE, MAIL_INBOX_STATUS_ROUTE, MAIL_INBOX_TOPUP_ROUTE,
-        MAIL_INBOX_CANCEL_ROUTE, MAIL_SUBDOMAIN_BUY_ROUTE, MAIL_SUBDOMAIN_STATUS_ROUTE,
-        MAIL_SUBDOMAIN_SEND_ROUTE, MAIL_EXECUTE_ROUTE,
+        MAIL_INBOX_CANCEL_ROUTE, MAIL_INBOX_MESSAGES_ROUTE, MAIL_SUBDOMAIN_BUY_ROUTE,
+        MAIL_SUBDOMAIN_STATUS_ROUTE, MAIL_SUBDOMAIN_SEND_ROUTE, MAIL_EXECUTE_ROUTE,
       ],
     },
     /**

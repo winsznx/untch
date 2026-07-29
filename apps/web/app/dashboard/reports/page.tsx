@@ -18,7 +18,7 @@ export default async function Reports() {
         <SectionTitle
           kicker="Reports"
           title="Reconciliation"
-          subtitle="A deterministic view over your durable receipts, ledger, and escalations — hashed and anchored on X Layer."
+          subtitle="A deterministic view over your durable receipts, ledger and escalations, hashed and anchored on X Layer."
         />
         <NoHistory authenticated={scope.authenticated} address={scope.address} what="reports" />
       </div>

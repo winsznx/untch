@@ -38,7 +38,7 @@ export function AuthBar() {
           dot: "var(--color-positive)",
           label: "Signed in",
           title:
-            "Signed in. Escalation approvals are authorized by this session; each on-chain write signs its own transaction.",
+            "Signed in. Escalation approvals are authorized by this session. Each on-chain write signs its own transaction.",
         }
       : isConnected
         ? {

@@ -19,7 +19,7 @@ export default async function Policies() {
       <SectionTitle
         kicker="Policy builder"
         title="Spend policy"
-        subtitle="The ruleset your agent is checked against — create, update, and pause as real on-chain transactions. Read live from the same policy store the MCP preflight enforces against."
+        subtitle="The ruleset your agent is checked against. Create, update and pause as real on-chain transactions. Read live from the same policy store the MCP preflight enforces against."
         action={<MastheadLink href="#policy-builder" variant="primary">＋ New policy</MastheadLink>}
       />
 

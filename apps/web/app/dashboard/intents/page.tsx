@@ -17,7 +17,7 @@ export default async function IntentStream() {
       <SectionTitle
         kicker="Live"
         title="Intent stream"
-        subtitle="Every payment attempt your agents made, decided live by the policy engine and read from the shared receipts store. Only the anchored decision is stored — not the full preflight trace."
+        subtitle="Every payment attempt your agents made, decided live by the policy engine and read from the shared receipts store. Only the anchored decision is stored, not the full preflight trace."
       />
       {!scope.authenticated ? (
         <NoHistory authenticated={false} address={scope.address} what="intents" />

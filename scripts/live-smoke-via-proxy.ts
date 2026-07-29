@@ -74,6 +74,29 @@ async function main(): Promise<void> {
   // sets CONSUMER_LIVE_SMOKE_ENABLED=false on purpose. Turning it on is the operator's act of
   // invoking this file, and it applies to this process only — the deployment is untouched.
   process.env.CONSUMER_LIVE_SMOKE_ENABLED = "1";
+
+  /**
+   * `--max-usdc` is the only way to raise this run's ceiling, and it exists because a shell export
+   * cannot.
+   *
+   * `railway run` injects the DEPLOYED service's variables into the child, and the deployment sets
+   * CONSUMER_LIVE_SMOKE_MAX_USDC deliberately low. Those injected values win over anything exported
+   * before the command, so a run that needed a higher ceiling silently kept the low one and stopped
+   * at the challenge-validation gate — correctly, but for a reason that looked like the provider had
+   * changed its price. The ceiling now comes from an explicit argument, which is also the right
+   * shape for an approval: a human types the number they authorised.
+   */
+  const i = process.argv.indexOf("--max-usdc");
+  const maxUsdc = i >= 0 ? process.argv[i + 1]?.trim() : undefined;
+  if (maxUsdc) {
+    if (!/^\d+(\.\d{1,6})?$/.test(maxUsdc)) {
+      console.error(`\n\x1b[31m--max-usdc ${JSON.stringify(maxUsdc)} is not an exact USDC decimal.\x1b[0m`);
+      process.exit(2);
+    }
+    process.env.CONSUMER_LIVE_SMOKE_MAX_USDC = maxUsdc;
+    console.log(`  ${"spend ceiling".padEnd(13)} ${maxUsdc} USDC (from --max-usdc, overriding the deployment)`);
+  }
+
   if (!process.env.CONSUMER_LIVE_SMOKE_MAX_USDC?.trim()) {
     console.error("\n\x1b[31mCONSUMER_LIVE_SMOKE_MAX_USDC is not set — a live spend needs an explicit ceiling.\x1b[0m");
     process.exit(2);

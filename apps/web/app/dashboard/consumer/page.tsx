@@ -30,7 +30,7 @@ export default async function ConsumerPack() {
       <SectionTitle
         kicker="Consumer Pack"
         title="Governed consumer execution"
-        subtitle="Shopping, domains, travel, gifts and notifications — every one bounded by a policy, funded for an exact approved amount, and closed with a cross-rail receipt."
+        subtitle="Shopping, domains, travel, gifts and notifications. Every one is bounded by a policy, funded for an exact approved amount, and closed with a cross-rail receipt."
         action={<MastheadLink href="/dashboard/consumer/providers">Provider registry →</MastheadLink>}
       />
 

@@ -25,7 +25,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const expectedNonce = readNonce(req.cookies.get(NONCE_COOKIE)?.value);
   if (!expectedNonce) {
-    return NextResponse.json({ ok: false, reason: "no valid nonce; request a new one" }, { status: 400 });
+    return NextResponse.json({ ok: false, reason: "no valid nonce. Request a new one" }, { status: 400 });
   }
 
   const expectedDomain = req.headers.get("host") ?? new URL(req.url).host;

@@ -1096,5 +1096,43 @@
         }
       }
     }
+  },
+  "stableemailInboxMessages402": {
+    "x402Version": 2,
+    "resource": {
+      "url": "https://stableemail.dev/api/inbox/messages",
+      "method": "POST",
+      "description": "List messages in your inbox ($0.001)",
+      "mimeType": "application/json",
+      "tags": [
+        "Inbox"
+      ],
+      "serviceName": "StableEmail"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "1000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "name": "USD Coin",
+          "version": "2"
+        }
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "1000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "HvBMG7ezcwDssxXP7DPJJsveyDnvUm2wNySBR5WF2XEY",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "2wKupLR9q6wXYppw8Gr2NvWxKBUqm4PPJKkQfoxHDBg4"
+        }
+      }
+    ]
   }
 }

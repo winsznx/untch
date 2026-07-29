@@ -14,11 +14,11 @@ Paid routes return **HTTP 402** with a Payment-Required challenge until settled 
 | Method | Path | Price | Purpose |
 | --- | --- | --- | --- |
 | GET | `/ping_untch` | $0.01 | Health and rail proof |
-| POST | `/create_spend_intent` | bundled | Validate, hash, bind intent; optional on-chain register |
+| POST | `/create_spend_intent` | bundled | Validate, hash and bind the intent, with optional on-chain register |
 | POST | `/preflight_payment` | $0.05 | Policy evaluation |
 | POST | `/verify_delivery` | $0.10 | T0 delivery proof |
 | POST | `/detect_duplicate` | $0.02 | Duplicate check against ledger window |
-| POST | `/redact_payment_metadata` | $0.02 | Strip PII patterns; return hash |
+| POST | `/redact_payment_metadata` | $0.02 | Strip PII patterns and return a hash |
 | POST | `/get_ledger` | free | Ephemeral ledger window slice |
 | POST | `/log_receipt` | free | Receipt status façade |
 | POST | `/score_vendor` | $0.20 | Vendor score |
@@ -59,7 +59,7 @@ Demo café for governed spend demos. Fulfillment is a voucher code, not a real c
 | POST | `/builder/rank_options` | free | Rank name options |
 | POST | `/builder/seo_tips` | free | Launch checklist |
 
-`brand_pack` is the one-call hire path. Domain checks use live RDAP (not a purchase or reservation). LLM is optional for naming only (Untch-style short brands; AI-slop stems banned); policy/preflight stay LLM-free.
+`brand_pack` is the one-call hire path. Domain checks use live RDAP (not a purchase or reservation). LLM is optional for naming only, producing Untch-style short brands with AI-slop stems banned. Policy and preflight stay LLM-free.
 
 ## Identity (ERC-8004)
 

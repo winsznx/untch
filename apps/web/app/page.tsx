@@ -11,7 +11,7 @@ import { CtaBand } from "../components/cta-band";
 import { SiteFooter } from "../components/site-footer";
 
 export const metadata: Metadata = {
-  title: "Untch — the model never touches the money",
+  title: "Untch: the model never touches the money",
   description: "Accounts payable for autonomous agents. Untch checks every payment before it moves and anchors every decision on X Layer.",
 };
 

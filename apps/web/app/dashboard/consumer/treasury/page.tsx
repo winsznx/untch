@@ -42,7 +42,7 @@ export default async function ConsumerTreasury() {
       <SectionTitle
         kicker="Consumer Pack"
         title="Treasury operations"
-        subtitle="Pre-funded operational floats, one per settlement rail. There is no bridge and no swap on the request path — replenishment is a documented manual step."
+        subtitle="Pre-funded operational floats, one per settlement rail. There is no bridge and no swap on the request path. Replenishment is a documented manual step."
         action={<MastheadLink href="/dashboard/consumer">← Consumer Pack</MastheadLink>}
       />
 

@@ -23,7 +23,7 @@ There is no confirmed OKX x402 facilitator on testnet for this rail. Production 
 1. Agent `GET`/`POST` a priced route without payment.
 2. Server responds **402** with `Payment-Required` metadata.
 3. Buyer signs an EIP-3009 authorization for the exact amount.
-4. Facilitator settles; agent retries with proof of payment.
+4. The facilitator settles, and the agent retries with proof of payment.
 5. Server returns the tool result.
 
 Untch never holds the buyer private key. The seller authenticates to the facilitator with its OKX API credentials.

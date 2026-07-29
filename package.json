@@ -32,8 +32,8 @@
     "deploy:keyed-suite": "tsx scripts/deploy-keyed-suite.ts",
     "deploy:mainnet-suite": "tsx scripts/deploy-mainnet-suite.ts",
     "register:erc8004": "tsx scripts/register-erc8004-agent.ts",
-    "consumer:migrate:verify": "tsx scripts/consumer-migrate-verify.ts",
     "consumer:smoke:live": "tsx scripts/consumer-smoke-live.ts",
+    "consumer:migrate:verify": "tsx scripts/consumer-migrate-verify.ts",
     "consumer:demo": "tsx scripts/consumer-demo.ts",
     "consumer:smoke": "tsx scripts/consumer-smoke.ts",
     "test:consumer-core": "node --import tsx --test packages/consumer-core/test/*.test.ts",
@@ -41,7 +41,11 @@
     "migrate:consumer": "pnpm --filter @untch/consumer-core migrate",
     "test:gov-watch": "node --import tsx --test packages/gov-watch/test/*.test.ts",
     "gov-watch": "pnpm --filter @untch/gov-watch watch",
-    "prove:gov-watch": "pnpm --filter @untch/gov-watch prove:testnet"
+    "prove:gov-watch": "pnpm --filter @untch/gov-watch prove:testnet",
+    "lint:public-copy": "tsx scripts/lint-public-copy.ts",
+    "test:lint-copy": "node --import tsx --test scripts/test/*.test.ts",
+    "gen:solana-treasury": "tsx scripts/gen-solana-treasury.ts",
+    "purch:funding": "tsx scripts/purch-funding-estimate.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",

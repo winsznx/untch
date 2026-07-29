@@ -24,7 +24,7 @@ export default async function Ledger() {
         <SectionTitle
           kicker="Ledger"
           title="Ledger explorer"
-          subtitle="Append-only money record — SPEND moved, BLOCK_SAVED was prevented. Anchored rows link to their on-chain receipt."
+          subtitle="Append-only money record. SPEND moved, BLOCK_SAVED was prevented. Anchored rows link to their on-chain receipt."
         />
         <NoHistory authenticated={scope.authenticated} address={scope.address} what="ledger entries" />
       </div>
@@ -35,7 +35,7 @@ export default async function Ledger() {
       <SectionTitle
         kicker="Ledger"
         title="Ledger explorer"
-        subtitle="Append-only money record — SPEND moved, BLOCK_SAVED was prevented. Anchored rows link to their on-chain receipt; export downloads the exact rows shown."
+        subtitle="Append-only money record. SPEND moved, BLOCK_SAVED was prevented. Anchored rows link to their on-chain receipt, and export downloads the exact rows shown."
       />
 
       <LedgerExport

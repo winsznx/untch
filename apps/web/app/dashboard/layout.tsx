@@ -8,7 +8,7 @@ import { Providers } from "../../components/wallet/providers";
 
 export const metadata: Metadata = {
   title: "Untch dashboard",
-  description: "Operator dashboard — the proof surface for agent spend governance.",
+  description: "Operator dashboard. The proof surface for agent spend governance.",
 };
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
