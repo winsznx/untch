@@ -31,6 +31,8 @@ import {
   runMigrations,
   PgConsumerStore,
   ProviderRegistry,
+  SolanaProofGate,
+  loadSolanaProofGate,
   StorePauseChecker,
   TreasuryRouter,
   asset,
@@ -193,10 +195,31 @@ export async function initConsumerWiring(
   rails.set(TEMPO_MAINNET, new MppTempoClient({ chain: TEMPO_MAINNET }));
 
   const pauses = new StorePauseChecker(store);
+
+  /**
+   * The Solana one-shot proof gate.
+   *
+   * Constructed ONLY when `CONSUMER_SOLANA_PROOF_MODE=1`, and null otherwise. Null is not permissive:
+   * with no proof armed the rail's own `executionEnabled` switch already refuses every Solana payment,
+   * so the gate is a NARROWING of authority layered on top rather than the thing that grants it.
+   *
+   * It exists because the alternative was worse. Arming `CONSUMER_SOLANA_EXECUTION_ENABLED` alone
+   * would let this continuously-polling worker spend from the Solana treasury on any queued intent for
+   * as long as the flag was set. The blast radius of a proof should be the proof, so the gate names one
+   * intent, one provider, one capability, one ceiling and one expiry, and refuses everything else.
+   */
+  const solanaProofGate = flagOn(process.env.CONSUMER_SOLANA_PROOF_MODE)
+    ? new SolanaProofGate({
+        config: loadSolanaProofGate(process.env, (raw) => parseMoney(raw, asset("solana.usdc"))),
+        store,
+      })
+    : null;
+
   const treasury = new TreasuryRouter({
     store,
     rails,
     pauses,
+    proofGate: solanaProofGate,
     onLowBalance: (treasuryRef, observed, floor) => {
       log(
         `[consumer] LOW TREASURY BALANCE ${treasuryRef}: ${observed.amount} (floor ${floor.amount}) — ` +
@@ -222,6 +245,19 @@ export async function initConsumerWiring(
     );
   } else {
     log(`[consumer] settlement rails available: ${availableRails.join(", ")}`);
+    /**
+     * Announce an armed proof loudly, and redacted.
+     *
+     * A bounded window in which production can spend from a treasury should never be something an
+     * operator has to infer from an absence of log lines. `describe()` carries the gate's scope and
+     * deliberately no address and no secret.
+     */
+    if (solanaProofGate) {
+      log(
+        `[consumer] SOLANA ONE-SHOT PROOF GATE ARMED: ${JSON.stringify(solanaProofGate.describe())}`,
+      );
+      log("[consumer] every other Solana intent stays refused while this gate is open.");
+    }
   }
 
   // ── treasury accounts ─────────────────────────────────────────────────────

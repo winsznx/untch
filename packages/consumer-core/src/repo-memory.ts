@@ -12,6 +12,14 @@
  */
 
 import type { AssetRef, CaipChainId } from "./assets";
+import {
+  canReleasePreSign,
+  solanaProofScopeHash,
+  type SolanaProofGateRecord,
+  type SolanaProofGateState,
+  type SolanaProofProgress,
+  type SolanaProofScope,
+} from "./solana-proof-claim";
 import { assetKey } from "./assets";
 import type { ConsumerEvent, OutboxRecord } from "./events";
 import { assertGroupBalanced, type LedgerGroup } from "./ledger";
@@ -557,6 +565,118 @@ export class InMemoryConsumerStore implements ConsumerStore {
     const consumed: CapabilityRecord = { ...prior, consumedAt: atIso, spentAmount: spent };
     this.paymentCapabilities.set(capabilityId, consumed);
     return consumed;
+  }
+
+  // ── the one-shot Solana proof gate ────────────────────────────────────────
+
+  private proofGates = new Map<string, SolanaProofGateRecord>();
+
+  async armSolanaProofGate(scope: SolanaProofScope, atIso: string): Promise<SolanaProofGateRecord> {
+    const scopeHash = solanaProofScopeHash(scope);
+    const existing = this.proofGates.get(scopeHash);
+    // Idempotent by scope. Two workers arming the same proof converge on one row rather than each
+    // creating a gate that looks unclaimed.
+    if (existing) return existing;
+    const record: SolanaProofGateRecord = {
+      scopeHash,
+      state: "ARMED",
+      scope,
+      claimedByExecution: null,
+      claimedAt: null,
+      signerReachedAt: null,
+      credentialCreatedAt: null,
+      txSignature: null,
+      txSubmittedAt: null,
+      settledAt: null,
+      confirmedSlot: null,
+      txError: null,
+      preTokenAmount: null,
+      postTokenAmount: null,
+      tokenDelta: null,
+      mint: null,
+      authority: null,
+      feePayer: null,
+      acknowledgedAt: null,
+      providerResultHash: null,
+      manualReviewReason: null,
+      releasedAt: null,
+      releasedReason: null,
+      createdAt: atIso,
+      updatedAt: atIso,
+    };
+    this.proofGates.set(scopeHash, record);
+    return record;
+  }
+
+  /**
+   * The compare-and-set. Single-threaded here, but the CONDITION is what matters and it is the same
+   * condition Postgres enforces under a row lock: only an ARMED row may be claimed.
+   */
+  async claimSolanaProofGate(
+    scopeHash: string,
+    executionId: string,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null> {
+    const prior = this.proofGates.get(scopeHash);
+    if (!prior) return null;
+    if (prior.state !== "ARMED") return null;
+    const claimed: SolanaProofGateRecord = {
+      ...prior,
+      state: "CLAIMED",
+      claimedByExecution: executionId,
+      claimedAt: atIso,
+      updatedAt: atIso,
+    };
+    this.proofGates.set(scopeHash, claimed);
+    return claimed;
+  }
+
+  async recordSolanaProofProgress(
+    scopeHash: string,
+    progress: SolanaProofProgress,
+    state: SolanaProofGateState | null,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null> {
+    const prior = this.proofGates.get(scopeHash);
+    if (!prior) return null;
+    const next: SolanaProofGateRecord = {
+      ...prior,
+      ...progress,
+      state: state ?? prior.state,
+      updatedAt: atIso,
+    };
+    this.proofGates.set(scopeHash, next);
+    return next;
+  }
+
+  async getSolanaProofGate(scopeHash: string): Promise<SolanaProofGateRecord | null> {
+    return this.proofGates.get(scopeHash) ?? null;
+  }
+
+  async listSolanaProofGates(limit: number): Promise<readonly SolanaProofGateRecord[]> {
+    return [...this.proofGates.values()]
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      .slice(0, limit);
+  }
+
+  async releaseSolanaProofGatePreSign(
+    scopeHash: string,
+    reason: string,
+    atIso: string,
+  ): Promise<SolanaProofGateRecord | null> {
+    const prior = this.proofGates.get(scopeHash);
+    if (!prior) return null;
+    // The record's own evidence decides, not the caller's opinion of how the attempt ended.
+    if (!canReleasePreSign(prior).ok) return null;
+    const released: SolanaProofGateRecord = {
+      ...prior,
+      state: "RELEASED_PRE_SIGN",
+      releasedAt: atIso,
+      releasedReason: reason,
+      updatedAt: atIso,
+    };
+    this.proofGates.set(scopeHash, released);
+    return released;
   }
 
   async getCapability(capabilityId: string): Promise<CapabilityRecord | null> {
