@@ -57,8 +57,10 @@ import {
   parseMoney,
   projectBalances,
   sha256Hex,
+  SOLANA_MAINNET,
   stableStringify,
   userObligationAccount,
+  type AssetRef,
   type CaipChainId,
   type ConsumerFlags,
   type ConsumerIntent,
@@ -67,9 +69,11 @@ import {
   type RailClient,
 } from "../packages/consumer-core/src/index";
 import {
+  PurchAdapter,
   StableDomainsAdapter,
   StableEmailAdapter,
   X402EvmExactClient,
+  X402SolanaExactClient,
   redactAddress,
   type AdapterContext,
   type ConsumerProviderAdapter,
@@ -87,7 +91,6 @@ import { proofEmail } from "./untch-authored-copy";
 const BASE: CaipChainId = "eip155:8453";
 const XLAYER_RPC = process.env.XLAYER_RPC_URL?.trim() || "https://rpc.xlayer.tech";
 const USDT0_ADDRESS = "0x779Ded0c9e1022225f8E0630b35a9b54bE713736";
-const USDC = asset("base.usdc");
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
 const ok = (s: string): void => console.log(`  \x1b[32m✓\x1b[0m ${s}`);
@@ -131,7 +134,15 @@ interface SmokePlan {
   /** The registry capability this run proves. Promotion is scoped to exactly this one. */
   readonly capability: string;
   readonly action: ConsumerActionType;
-  /** The verified Base payTo, read from that provider's own live 402. */
+  /**
+   * Which rail settles this provider, and therefore which treasury pays.
+   *
+   * Declared per PLAN rather than inferred, because a provider offering several rails is a choice
+   * this script must make explicitly. Purch settles on Solana and the others on Base, and a run that
+   * guessed would be a run whose evidence names the wrong treasury.
+   */
+  readonly settlement: "base" | "solana";
+  /** The verified payTo on the settlement rail, read from that provider's own live 402. */
   readonly payTo: string;
   readonly documentationVersion: string;
   newAdapter(): ConsumerProviderAdapter;
@@ -155,6 +166,7 @@ const PLANS: Readonly<Record<string, SmokePlan>> = {
     providerId: "stabledomains",
     displayName: "StableDomains",
     baseUrl: "https://stabledomains.dev",
+    settlement: "base",
     capability: "domains.check",
     action: "domains.check",
     payTo: "0xABcb091D90419E1c8AD4818f1B33FC4645501892",
@@ -176,6 +188,7 @@ const PLANS: Readonly<Record<string, SmokePlan>> = {
     providerId: "stableemail",
     displayName: "StableEmail",
     baseUrl: "https://stableemail.dev",
+    settlement: "base",
     capability: "mail.send",
     action: "mail.send",
     payTo: "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
@@ -250,6 +263,7 @@ const PLANS: Readonly<Record<string, SmokePlan>> = {
     providerId: "stableemail",
     displayName: "StableEmail",
     baseUrl: "https://stableemail.dev",
+    settlement: "base",
     capability: "mail.inbox.buy",
     action: "mail.inbox.buy",
     payTo: "0xdb5aa553feeb2c3e3d03e8360b36fb0f7e480671",
@@ -266,6 +280,49 @@ const PLANS: Readonly<Record<string, SmokePlan>> = {
           ["inbox", `${username}@stableemail.dev`],
           ["forwardTo", "(omitted — programmatic mailbox, retainMessages on)"],
         ],
+        humanVerification: null,
+      };
+    },
+  },
+
+  /**
+   * Purch, the first provider on this script that settles on SOLANA rather than Base.
+   *
+   * The rail-level payment was already proven separately, and proving a payment is not the same as
+   * proving the lifecycle around it. That earlier run drove the adapter and the rail directly, so it
+   * produced no Consumer Intent, no policy trace, no reservation, no ledger group and no receipt.
+   * Adding Purch here rather than finishing the standalone script is deliberate: a second proof-only
+   * implementation would be a second thing to keep true, and the whole point of this run is that the
+   * code path is the production one.
+   */
+  purch: {
+    providerId: "purch",
+    displayName: "Purch",
+    baseUrl: "https://api.purch.xyz",
+    settlement: "solana",
+    capability: "shop.search",
+    action: "shop.search",
+    // Read from Purch's own live 402 on 2026-07-29. A Solana address, not an EVM one.
+    payTo: "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2",
+    documentationVersion: "live /x402/search 402 captured 2026-07-29 (x402 v2, exact.svm)",
+    newAdapter: () => new PurchAdapter(),
+    build() {
+      /**
+       * A deliberately dull query.
+       *
+       * A search term is the one part of this request that reaches a third party as free text, so it
+       * carries no personal data, no recipient and nothing that identifies the operator. It also has
+       * to return results reliably: a query with no matches would fail this run for a reason that has
+       * nothing to do with the payment path.
+       */
+      const query = arg("query") ?? "usb c cable";
+      return {
+        request: { query, limit: 5 },
+        providerRef: `search:${query}`,
+        probe: { method: "GET", path: `/x402/search?q=${encodeURIComponent(query)}`, body: null },
+        label: [["query", query]],
+        // Search results are returned in-band and verified by the adapter's own schema check, so
+        // there is nothing a human has to go and look at afterwards.
         humanVerification: null,
       };
     },
@@ -355,6 +412,16 @@ async function main(): Promise<void> {
   const providerId = plan.providerId;
   const firstRun = has("first-run");
 
+  /**
+   * Which rail settles, decided from the plan before ANYTHING is priced.
+   *
+   * This sits above the spend cap on purpose. The cap is denominated in the settlement asset, and a
+   * cap parsed against the wrong asset is a cap that does not mean what it says.
+   */
+  const onSolana = plan.settlement === "solana";
+  const USDC = onSolana ? asset("solana.usdc") : asset("base.usdc");
+  const SETTLEMENT_CHAIN: CaipChainId = onSolana ? SOLANA_MAINNET : BASE;
+
   // ── 1. FLAGS ──────────────────────────────────────────────────────────────
   step(1, "Feature flags");
   if (!flagOn(process.env.CONSUMER_LIVE_SMOKE_ENABLED)) {
@@ -379,16 +446,44 @@ async function main(): Promise<void> {
 
   // ── 2. TREASURY ───────────────────────────────────────────────────────────
   step(2, "Treasury");
-  const key = process.env.CONSUMER_TREASURY_BASE_PRIVATE_KEY?.trim();
-  if (!key) stop(2, "CONSUMER_TREASURY_BASE_PRIVATE_KEY is not set — there is no wallet to pay from");
-  const rpcUrl = process.env.CONSUMER_BASE_RPC_URL?.trim() || "https://mainnet.base.org";
-  const rail = new X402EvmExactClient({
-    chain: BASE,
-    evmChainId: 8453,
-    privateKey: key as `0x${string}`,
-    rpcUrl,
-  });
-  if (!rail.available()) stop(2, "the Base rail reports unavailable");
+  /**
+   * The rail is built from the PLAN, not from whichever treasury happens to be configured.
+   *
+   * Solana execution additionally needs its own arm switch. A Solana key existing is not permission,
+   * and the switch is deliberately separate from the Base treasury's so that arming one rail never
+   * arms the other.
+   */
+  let rail: RailClient;
+  let rpcUrl: string;
+  if (onSolana) {
+    const solKey = process.env.CONSUMER_TREASURY_SOLANA_SECRET_KEY?.trim();
+    if (!solKey) stop(2, "CONSUMER_TREASURY_SOLANA_SECRET_KEY is not set: no Solana wallet to pay from");
+    rpcUrl = process.env.CONSUMER_SOLANA_RPC_URL?.trim() || "https://api.mainnet-beta.solana.com";
+    if (rpcUrl.includes("api.mainnet-beta.solana.com")) {
+      warn("the PUBLIC Solana endpoint is configured. It sheds getTokenAccountsByOwner under load and");
+      warn("serves stale balances. Usable for one capped attended proof, not for unattended execution.");
+    }
+    rail = new X402SolanaExactClient({
+      chain: SOLANA_MAINNET,
+      secretKey: solKey,
+      rpcUrl,
+      executionEnabled: process.env.CONSUMER_SOLANA_EXECUTION_ENABLED === "1",
+    });
+    if (!rail.available()) {
+      stop(2, "the Solana rail reports unavailable: set CONSUMER_SOLANA_EXECUTION_ENABLED=1 to arm it");
+    }
+  } else {
+    const key = process.env.CONSUMER_TREASURY_BASE_PRIVATE_KEY?.trim();
+    if (!key) stop(2, "CONSUMER_TREASURY_BASE_PRIVATE_KEY is not set: no wallet to pay from");
+    rpcUrl = process.env.CONSUMER_BASE_RPC_URL?.trim() || "https://mainnet.base.org";
+    rail = new X402EvmExactClient({
+      chain: BASE,
+      evmChainId: 8453,
+      privateKey: key as `0x${string}`,
+      rpcUrl,
+    });
+    if (!rail.available()) stop(2, "the Base rail reports unavailable");
+  }
   const treasuryAddress = rail.address();
   info("settlement treasury", treasuryAddress);
 
@@ -526,7 +621,7 @@ async function main(): Promise<void> {
 
   const treasury = new TreasuryRouter({
     store,
-    rails: new Map<CaipChainId, RailClient>([[BASE, rail]]),
+    rails: new Map<CaipChainId, RailClient>([[SETTLEMENT_CHAIN, rail]]),
     pauses: new StorePauseChecker(store),
   });
   const registry = new ProviderRegistry({
@@ -835,7 +930,7 @@ async function main(): Promise<void> {
     console.error(`\n\x1b[33mSMOKE: AMBIGUOUS — ${executed.failureCode}: ${executed.failureDetail}\x1b[0m`);
     console.error("The request left Untch and its outcome is unknown. It has NOT been retried.");
     console.error("Querying the provider and the chain before concluding…");
-    await reportAmbiguity(store, rail, intentId, treasuryAddress, balanceBefore, rpcUrl);
+    await reportAmbiguity(store, rail, intentId, treasuryAddress, balanceBefore, rpcUrl, USDC);
     process.exit(4);
   }
   /**
@@ -1073,7 +1168,10 @@ async function readChainProof(
           a.from.toLowerCase() === getAddress(from).toLowerCase() &&
           a.to.toLowerCase() === getAddress(to).toLowerCase()
         ) {
-          transfer = `${formatMoney(money(a.value, USDC))} USDC ${redactAddress(a.from)} → ${redactAddress(a.to)}`;
+          // Base's USDC, named explicitly: this function decodes an ERC-20 log from a Base receipt
+          // and is unreachable for a Solana run, so borrowing the caller's per-plan asset would only
+          // blur which chain the figure came from.
+          transfer = `${formatMoney(money(a.value, asset("base.usdc")))} USDC ${redactAddress(a.from)} → ${redactAddress(a.to)}`;
         }
       } catch {
         // not a Transfer we can decode; keep looking
@@ -1094,11 +1192,14 @@ async function readChainProof(
 /** On ambiguity: query the provider, query the chain, and conclude nothing on our own. */
 async function reportAmbiguity(
   store: ConsumerStore,
-  rail: X402EvmExactClient,
+  rail: RailClient,
   intentId: string,
   treasuryAddress: string,
   balanceBefore: Money,
   _rpcUrl: string,
+  // Passed in rather than read from module scope: the settlement asset is now per-plan, and an
+  // ambiguity report that names the wrong asset is worse than no report.
+  USDC: AssetRef,
 ): Promise<void> {
   const execs = await store.listExecutions(intentId);
   for (const e of execs) {

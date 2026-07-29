@@ -1,0 +1,183 @@
+{
+  "note": "RAW, unnormalised capture of one unpaid GET. Preserved before any parsing so a later disagreement about what Purch actually sent can be settled from bytes rather than memory.",
+  "capturedAt": "2026-07-29T19:02:31.598153+00:00",
+  "request": {
+    "method": "GET",
+    "url": "https://api.purch.xyz/x402/search?q=usb%20c%20cable"
+  },
+  "response": {
+    "httpStatus": 402,
+    "contentType": "application/json",
+    "bodyBytesBase64": "e30=",
+    "bodyLength": 2,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "content-type": "application/json",
+      "cross-origin-resource-policy": "same-origin",
+      "cross-origin-opener-policy": "same-origin",
+      "referrer-policy": "no-referrer",
+      "strict-transport-security": "max-age=15552000; includeSubDomains",
+      "x-content-type-options": "nosniff",
+      "x-dns-prefetch-control": "off",
+      "x-frame-options": "SAMEORIGIN",
+      "x-xss-protection": "0",
+      "x-ratelimit-limit": "60",
+      "x-ratelimit-remaining": "59",
+      "x-ratelimit-reset": "60",
+      "payment-required": "eyJ4NDAyVmVyc2lvbiI6MiwiZXJyb3IiOiJQYXltZW50IHJlcXVpcmVkIiwicmVzb3VyY2UiOnsidXJsIjoiaHR0cDovL2FwaS5wdXJjaC54eXoveDQwMi9zZWFyY2g/cT11c2IlMjBjJTIwY2FibGUiLCJkZXNjcmlwdGlvbiI6IlByb2R1Y3Qgc2VhcmNoIHdpdGggZmlsdGVycyIsIm1pbWVUeXBlIjoiYXBwbGljYXRpb24vanNvbiJ9LCJhY2NlcHRzIjpbeyJzY2hlbWUiOiJleGFjdCIsIm5ldHdvcmsiOiJzb2xhbmE6NWV5a3Q0VXNGdjhQOE5KZFRSRXBZMXZ6cUtxWkt2ZHAiLCJhbW91bnQiOiIxMDAwMCIsImFzc2V0IjoiRVBqRldkZDVBdWZxU1NxZU0ycU4xeHp5YmFwQzhHNHdFR0drWnd5VER0MXYiLCJwYXlUbyI6IjhMaVhySEM2MWlyWThxd2o2cWV2b2lSWHhZZnJUZ1NhSFZibThyYXY2SFQyIiwibWF4VGltZW91dFNlY29uZHMiOjMwMCwiZXh0cmEiOnsiZmVlUGF5ZXIiOiJCRU5yTG9VYm5keG9OTVVTNUpYQXBHTXROeWtMakZYWGl4TXRwRHdEUjlTUCJ9fV0sImV4dGVuc2lvbnMiOnsiYmF6YWFyIjp7ImluZm8iOnsiaW5wdXQiOnsidHlwZSI6Imh0dHAiLCJxdWVyeVBhcmFtcyI6eyJxIjoid2lyZWxlc3MgaGVhZHBob25lcyJ9LCJtZXRob2QiOiJHRVQifSwib3V0cHV0Ijp7InR5cGUiOiJqc29uIiwiZXhhbXBsZSI6eyJwcm9kdWN0cyI6W3siYXNpbiI6IkIwQ1hZWjEyMzQiLCJ0aXRsZSI6IldpcmVsZXNzIEhlYWRwaG9uZXMiLCJwcmljZSI6NzkuOTksImN1cnJlbmN5IjoiVVNEIiwic291cmNlIjoiYW1hem9uIn1dLCJ0b3RhbFJlc3VsdHMiOjE1MCwicGFnZSI6MSwiaGFzTW9yZSI6dHJ1ZX19fSwic2NoZW1hIjp7IiRzY2hlbWEiOiJodHRwczovL2pzb24tc2NoZW1hLm9yZy9kcmFmdC8yMDIwLTEyL3NjaGVtYSIsInR5cGUiOiJvYmplY3QiLCJwcm9wZXJ0aWVzIjp7ImlucHV0Ijp7InR5cGUiOiJvYmplY3QiLCJwcm9wZXJ0aWVzIjp7InR5cGUiOnsidHlwZSI6InN0cmluZyIsImNvbnN0IjoiaHR0cCJ9LCJtZXRob2QiOnsidHlwZSI6InN0cmluZyIsImVudW0iOlsiR0VUIl19LCJxdWVyeVBhcmFtcyI6eyJ0eXBlIjoib2JqZWN0IiwicHJvcGVydGllcyI6eyJxIjp7InR5cGUiOiJzdHJpbmciLCJkZXNjcmlwdGlvbiI6IlNlYXJjaCBxdWVyeSJ9LCJwcmljZU1pbiI6eyJ0eXBlIjoibnVtYmVyIiwiZGVzY3JpcHRpb24iOiJNaW5pbXVtIHByaWNlIGZpbHRlciJ9LCJwcmljZU1heCI6eyJ0eXBlIjoibnVtYmVyIiwiZGVzY3JpcHRpb24iOiJNYXhpbXVtIHByaWNlIGZpbHRlciJ9LCJicmFuZCI6eyJ0eXBlIjoic3RyaW5nIiwiZGVzY3JpcHRpb24iOiJGaWx0ZXIgYnkgYnJhbmQifSwicGFnZSI6eyJ0eXBlIjoiaW50ZWdlciIsImRlc2NyaXB0aW9uIjoiUGFnZSBudW1iZXIgZm9yIHBhZ2luYXRpb24ifX0sInJlcXVpcmVkIjpbInEiXX19LCJyZXF1aXJlZCI6WyJ0eXBlIiwibWV0aG9kIl0sImFkZGl0aW9uYWxQcm9wZXJ0aWVzIjpmYWxzZX0sIm91dHB1dCI6eyJ0eXBlIjoib2JqZWN0IiwicHJvcGVydGllcyI6eyJ0eXBlIjp7InR5cGUiOiJzdHJpbmcifSwiZXhhbXBsZSI6eyJ0eXBlIjoib2JqZWN0In19LCJyZXF1aXJlZCI6WyJ0eXBlIl19fSwicmVxdWlyZWQiOlsiaW5wdXQiXX19fX0=",
+      "origin-agent-cluster": "?1",
+      "x-download-options": "noopen",
+      "x-permitted-cross-domain-policies": "none",
+      "x-cloud-trace-context": "b61f97541851836981f13ece0acea0c4;o=1",
+      "date": "Wed, 29 Jul 2026 19:01:58 GMT",
+      "server": "Google Frontend",
+      "content-length": "2"
+    },
+    "challengeCarriedIn": "payment-required",
+    "challengeHeaderCandidatesPresent": [
+      "payment-required"
+    ]
+  },
+  "challengeDecoded": {
+    "x402Version": 2,
+    "error": "Payment required",
+    "resource": {
+      "url": "http://api.purch.xyz/x402/search?q=usb%20c%20cable",
+      "description": "Product search with filters",
+      "mimeType": "application/json"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "amount": "10000",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "payTo": "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP"
+        }
+      }
+    ],
+    "extensions": {
+      "bazaar": {
+        "info": {
+          "input": {
+            "type": "http",
+            "queryParams": {
+              "q": "wireless headphones"
+            },
+            "method": "GET"
+          },
+          "output": {
+            "type": "json",
+            "example": {
+              "products": [
+                {
+                  "asin": "B0CXYZ1234",
+                  "title": "Wireless Headphones",
+                  "price": 79.99,
+                  "currency": "USD",
+                  "source": "amazon"
+                }
+              ],
+              "totalResults": 150,
+              "page": 1,
+              "hasMore": true
+            }
+          }
+        },
+        "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "http"
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "GET"
+                  ]
+                },
+                "queryParams": {
+                  "type": "object",
+                  "properties": {
+                    "q": {
+                      "type": "string",
+                      "description": "Search query"
+                    },
+                    "priceMin": {
+                      "type": "number",
+                      "description": "Minimum price filter"
+                    },
+                    "priceMax": {
+                      "type": "number",
+                      "description": "Maximum price filter"
+                    },
+                    "brand": {
+                      "type": "string",
+                      "description": "Filter by brand"
+                    },
+                    "page": {
+                      "type": "integer",
+                      "description": "Page number for pagination"
+                    }
+                  },
+                  "required": [
+                    "q"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "method"
+              ],
+              "additionalProperties": false
+            },
+            "output": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "example": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "required": [
+            "input"
+          ]
+        }
+      }
+    }
+  },
+  "extracted": {
+    "x402Version": 2,
+    "scheme": "exact",
+    "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "amount": "10000",
+    "payTo": "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2",
+    "sponsorFeePayer": "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP",
+    "maxTimeoutSeconds": 300,
+    "resourceUrl": "http://api.purch.xyz/x402/search?q=usb%20c%20cable",
+    "resourceUrlScheme": "http",
+    "mimeType": "application/json",
+    "description": "Product search with filters"
+  },
+  "observations": [
+    "The challenge arrives in the lowercase `payment-required` response header, not in the body and not in `x-payment-required`. The body is the two bytes `{}`.",
+    "x402Version is 2. The retry header must therefore be chosen from the v2 contract rather than from the v1 `X-PAYMENT` convention.",
+    "resource.url is declared over HTTP, not HTTPS, while the endpoint is served over HTTPS. If the facilitator binds the payload to the resource string, a client that normalises this to https produces a payload the verifier will not match."
+  ]
+}

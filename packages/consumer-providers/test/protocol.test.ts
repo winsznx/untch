@@ -420,11 +420,13 @@ describe("x402 — the EVM exact signer", () => {
 });
 
 describe("rails that are honestly not executable", () => {
-  test("the Solana rail reports unavailable even WITH a key, and refuses to pay", async () => {
+  test("the Solana rail reports unavailable with a key but no arm switch, and refuses to pay", async () => {
+    // The rail is executable now, so the refusal reason changed. What did NOT change is the rule the
+    // original test was written to protect: a key existing is not permission. `available()` gates
+    // capability minting, and reporting true on the strength of a key alone would let an intent
+    // reach PROVIDER_PAYMENT_PENDING before anyone decided it should, which is the one transition
+    // that costs a manual review.
     const c = new X402SolanaExactClient({ chain: SOLANA, secretKey: "a-real-looking-key", rpcUrl: null });
-    // available() gates capability minting. Reporting true on the strength of a key alone would let
-    // an intent reach PROVIDER_PAYMENT_PENDING before failing — the one transition that costs a
-    // manual review.
     assert.equal(c.available(), false);
     await assert.rejects(
       () =>
@@ -436,7 +438,8 @@ describe("rails that are honestly not executable", () => {
           method: "GET",
         }),
       (e: unknown) => {
-        assert.ok(isProviderError(e) && e.normalized.code === "PROTOCOL_NOT_EXECUTABLE");
+        assert.ok(isProviderError(e) && e.normalized.code === "PROVIDER_NOT_EXECUTABLE");
+        assert.match(e.normalized.message, /not armed on this instance/);
         return true;
       },
     );

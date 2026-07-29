@@ -1,0 +1,61 @@
+{
+  "schema": "untch.purch.official-client-probe.v1",
+  "generatedAt": "2026-07-29T19:10:37.177Z",
+  "purpose": "Drive Purch through the client its own documentation names, so a rejection can be attributed to Untch's envelope or to Purch's verifier rather than left ambiguous.",
+  "officialClient": {
+    "@x402/core": "2.20.0",
+    "@x402/fetch": "2.20.0",
+    "@x402/svm": "2.20.0"
+  },
+  "untchClientForComparison": {
+    "x402": "1.2.0",
+    "note": "the v1-era line, used by X402SolanaExactClient"
+  },
+  "challenge": {
+    "x402Version": 2,
+    "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "amount": "10000",
+    "payTo": "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2",
+    "carriedIn": "payment-required response header"
+  },
+  "attempts": [
+    {
+      "headerName": "payment-signature",
+      "payloadHash": "0xe53ef34f42aa62987d1bdc41b03668fb23acf19ada65bf8e536fb63f87e657a6",
+      "payloadBytes": 3012,
+      "declaredNetwork": null,
+      "declaredScheme": null,
+      "x402Version": 2
+    }
+  ],
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "content-length": "14441",
+      "content-type": "application/json",
+      "cross-origin-opener-policy": "same-origin",
+      "cross-origin-resource-policy": "same-origin",
+      "date": "Wed, 29 Jul 2026 19:10:37 GMT",
+      "origin-agent-cluster": "?1",
+      "payment-response": "eyJuZXR3b3JrIjoic29sYW5hOjVleWt0NFVzRnY4UDhOSmRUUkVwWTF2enFLcVpLdmRwIiwicGF5ZXIiOiJIc1R2U1RyWG4xSGVEelVKVGJINEVUWEVLVFRmMmlmRVhhUUdHRUVRMlhVeSIsInN1Y2Nlc3MiOnRydWUsInRyYW5zYWN0aW9uIjoiNVBtckQ3djZRSno2ODhrcTV4UUhia1JqZmRRdFZzRGVwVkM1WHoxODNmVms4MmlCV284endGQXFBY3ViRDFXU0ViYW83S1Z1ZDN2Q0hwWnJVVHU4eHNlRiJ9",
+      "referrer-policy": "no-referrer",
+      "server": "Google Frontend",
+      "strict-transport-security": "max-age=15552000; includeSubDomains",
+      "x-cloud-trace-context": "d28c856db83c88f2121ffa928afe0496",
+      "x-content-type-options": "nosniff",
+      "x-dns-prefetch-control": "off",
+      "x-download-options": "noopen",
+      "x-frame-options": "SAMEORIGIN",
+      "x-permitted-cross-domain-policies": "none",
+      "x-ratelimit-limit": "60",
+      "x-ratelimit-remaining": "57",
+      "x-ratelimit-reset": "58",
+      "x-xss-protection": "0"
+    },
+    "bodyPreview": "{\"products\":[{\"id\":\"gid://shopify/p/7DYrsqbf2YU6Y2UlbFHEny\",\"title\":\"USB-C 100W Cable | 1.5m\",\"price\":8.95,\"currency\":\"USD\",\"rating\":5,\"reviewCount\":32,\"imageUrl\":\"https://cdn.shopify.com/s/files/1/0295/5988/1807/files/1_b5c2892a-145b-43f4-9ed9-a482f52e3bda.webp\",\"productUrl\":\"https://www.gravastar.com/products/usb-c-charging-cable?variant=45464832606453&_gsid=MAzFR9xscHMj\",\"source\":\"shopify\",\"vendor\":\"GravaStar\",\"description\":\"A durable 1.5m USB C cable supporting 100W power delivery and 480Mbps data transfer for fast charging and high-speed performance.\"},{\"id\":\"gid://shopify/p/7lrO6pFu8mWePo5i1lPJ7V\",\"title\":\"USB-C to USB-C Cable - 10 Inches\",\"price\":8.99,\"currency\":\"USD\",\"rating\":4.900000095367432,\"reviewCount\":82,\"imageUrl\":\"https://cdn.shopify.com/s/files/1/1520/4366/products/usb-c-to-usb-c-cable-10-inches-cables-satechi-970207.jpg\",\"productUrl\":\"https://satechi.com/products/usb-c-to-usb-c-cable?variant=33330314969176&_gsid=MAzFR9xscHMj\",\"source\":\"shopify\",\"vendor\":\"Satechi\",\"description\":\"A durable, compact USB C to USB C cable designed for fast, reliable charging on the go.\"},{\"id\":\"gid://shopify/p/2wTQUvNjls8n1Wuyjmp8AM\",\"title\":\"Tough On USB C to USB C Charger Cable 100W Right Angle Type C Fast Charging Cable\",\"price\":10.99,\"currency\":\"USD\",\"rating\":4.900000095367432,\"reviewCount\":18,\"imageUrl\":\"https://cdn.shopify.com/s/files/1/0102/2443/5266/files/1_1.png\",\"productUrl\":\"https://www.ptcshop.com.au/products/tough-on-usb-c-to-usb-c-charger-cable-100w-right-angle-type-c-fast-charging-cable-2m?variant=45463899472095&_gsid=MAzFR9xscHMj\",\"source\":\"shopify\",\"vendor\":\"PTC Shop Australia \",\"description\":\"A durable 100W USB C to USB C charger cable with right angle design for fast, reliable charging of multiple devices.\"},{\"id\":\"gid://shopify/p/2vK5aJQxE8AiRGbgQmmnic\",\"title\":\"Anker <b>543</b> USB C to USB C Cable (240W, 10 ft)\",\"price\":19.99,\"currency\":\"USD\",\"rating\":4.900000095367432,\"reviewCount\":111,\"imageUrl\":\"https://cdn.shopify.com/s/files/1/0244/1573/1789/f"
+  },
+  "settled": true,
+  "redaction": "No secret key and no signed payload appears here. Each payload is represented by a SHA-256 hash and a byte count."
+}

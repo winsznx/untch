@@ -1,0 +1,28 @@
+{
+  "schema": "untch.purch.live-evidence.v1",
+  "generatedAt": "2026-07-29T19:41:25.007Z",
+  "treasury": "HsTvSTrXn1HeDzUJTbH4ETXEKTTf2ifEXaQGGEEQ2XUy",
+  "challenge": {
+    "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "scheme": "exact",
+    "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "amountAtomic": "10000",
+    "recipient": "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2"
+  },
+  "networkStringDecision": {
+    "officialReferenceWrites": "solana",
+    "providerDeclared": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "untchSubmitted": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "providerAccepted": true
+  },
+  "query": "usb c cable",
+  "resultCount": 5,
+  "resultHash": "0xdc031f2c4df7e83a76f6fa57df4c4760f39d0cc5d70868b333576b12bd062c15",
+  "balances": {
+    "usdcBefore": "4759987",
+    "usdcAfter": "4759987",
+    "deltaAtomic": "0",
+    "lamportsBefore": "24133914"
+  },
+  "redaction": "No private key, no payment payload and no signature appears in this file."
+}
