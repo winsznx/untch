@@ -63,9 +63,14 @@ export {
   isSolanaMainnet,
   selectSolanaOption,
   type SolanaExactClientDeps,
-  type SolanaPayload,
-  type SolanaPayloadInput,
 } from "./x402/solana-exact";
+export {
+  buildV2SvmCredential,
+  decodeSvmTransfer,
+  type DecodedTransfer,
+  type V2Credential,
+  type V2CredentialInput,
+} from "./x402/v2-svm-client";
 
 export {
   type MppChallenge,

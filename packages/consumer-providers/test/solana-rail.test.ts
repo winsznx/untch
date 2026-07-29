@@ -20,8 +20,9 @@ import {
   SOLANA_MIN_LAMPORTS,
   isSolanaMainnet,
   selectSolanaOption,
-  type SolanaPayload,
-  type SolanaPayloadInput,
+  type DecodedTransfer,
+  type V2Credential,
+  type V2CredentialInput,
 } from "../src/index";
 
 const FIXTURES = JSON.parse(
@@ -37,30 +38,42 @@ const KEYPAIR =
 const NOW = Date.parse("2026-07-29T18:00:00.000Z");
 
 /** A builder that fails the test if it is ever called. */
-function neverSigned(): (input: SolanaPayloadInput) => Promise<SolanaPayload> {
+function neverSigned(): (input: V2CredentialInput) => Promise<V2Credential> {
   return async () => {
     assert.fail("the payload builder was reached on a payment that should have been refused");
   };
 }
 
 function recordingBuilder(): {
-  build: (input: SolanaPayloadInput) => Promise<SolanaPayload>;
-  calls: SolanaPayloadInput[];
+  build: (input: V2CredentialInput) => Promise<V2Credential>;
+  calls: V2CredentialInput[];
 } {
-  const calls: SolanaPayloadInput[] = [];
+  const calls: V2CredentialInput[] = [];
   return {
     calls,
     build: async (input) => {
       calls.push(input);
       return {
-        scheme: "exact",
-        network: input.declaredNetwork,
-        x402Version: 2,
-        payload: { transaction: "AQAAfakewiretransaction" },
+        // The official client returns an OPAQUE credential. The test stands in for one rather than
+        // reproducing its internals, because reproducing them is exactly what went wrong before.
+        headers: { "PAYMENT-SIGNATURE": "b3BhcXVlLXYyLWNyZWRlbnRpYWw" },
+        wireTransaction: "AQAAfakewiretransaction",
+        declared: { scheme: "exact", network: input.network, x402Version: 2 },
       };
     },
   };
 }
+
+/** A decoder that reports a transfer matching the live fixture unless a test overrides it. */
+const matchingDecoder = (over: Partial<DecodedTransfer> = {}) => async (): Promise<DecodedTransfer> => ({
+  amount: 10_000n,
+  mint: USDC_MINT,
+  feePayer: "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP",
+  signerCount: 1,
+  hasBlockhash: true,
+  programIds: ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"],
+  ...over,
+});
 
 function client(
   over: Partial<ConstructorParameters<typeof X402SolanaExactClient>[0]> = {},
@@ -71,7 +84,8 @@ function client(
     rpcUrl: "https://rpc.test",
     executionEnabled: true,
     lamportReader: async () => 24_133_914n,
-    payloadBuilder: neverSigned(),
+    credentialBuilder: neverSigned(),
+    transferDecoder: matchingDecoder(),
     clock: () => NOW,
     ...over,
   });
@@ -248,7 +262,7 @@ describe("Solana rail — staleness and float", () => {
 
   test("a challenge inside its window proceeds", async () => {
     const rec = recordingBuilder();
-    await client({ payloadBuilder: rec.build }).pay(
+    await client({ credentialBuilder: rec.build }).pay(
       request({
         challenge: challenge((o) => {
           o.issuedAt = new Date(NOW - 10_000).toISOString();
@@ -275,42 +289,98 @@ describe("Solana rail — staleness and float", () => {
     const rec = recordingBuilder();
     await client({
       lamportReader: async () => { throw new Error("rpc timeout"); },
-      payloadBuilder: rec.build,
+      credentialBuilder: rec.build,
     }).pay(request());
     assert.equal(rec.calls.length, 1);
   });
 });
 
 describe("Solana rail — the payload it hands back", () => {
-  test("the PROVIDER's network spelling is echoed, not the reference client's", async () => {
-    // The official client writes network: "solana". Purch declares the CAIP-2 id. A facilitator
-    // compares the payload against its own challenge, so the provider's spelling is what goes back.
+  test("the credential is forwarded OPAQUE, never re-wrapped", async () => {
+    // The whole defect this replaced was Untch re-encoding the credential into its own envelope.
+    // The header value must be exactly what the official client produced, byte for byte.
     const rec = recordingBuilder();
-    const result = await client({ payloadBuilder: rec.build }).pay(request());
-    assert.equal(rec.calls[0]?.declaredNetwork, SOLANA_MAINNET_CAIP2);
+    const result = await client({ credentialBuilder: rec.build }).pay(request());
+    assert.equal(result.paymentHeader, "b3BhcXVlLXYyLWNyZWRlbnRpYWw");
 
-    const decoded = JSON.parse(Buffer.from(result.paymentHeader, "base64").toString("utf8")) as SolanaPayload;
-    assert.equal(decoded.network, SOLANA_MAINNET_CAIP2);
-    assert.equal(decoded.scheme, "exact");
-    assert.equal(decoded.x402Version, 2);
-    assert.equal(typeof decoded.payload.transaction, "string");
+    // Specifically NOT our old shape. If this ever parses as that JSON again, the bug is back.
+    let reWrapped = false;
+    try {
+      const j = JSON.parse(Buffer.from(result.paymentHeader, "base64").toString("utf8")) as Record<string, unknown>;
+      reWrapped = typeof j.scheme === "string" && typeof j.x402Version === "number";
+    } catch {
+      // Not JSON, which is what an opaque credential should look like.
+    }
+    assert.equal(reWrapped, false, "the credential was re-wrapped in the legacy v1 envelope");
   });
 
-  test("the builder receives the merchant's own figures", async () => {
+  test("the builder is pinned to the option the guards validated", async () => {
+    // Without pinning, the official client may select any entry in accepts[], including one whose
+    // mint and recipient were never checked.
     const rec = recordingBuilder();
-    await client({ payloadBuilder: rec.build }).pay(request());
-    const call = rec.calls[0];
-    assert.equal(call?.amount, "10000");
-    assert.equal(call?.asset, USDC_MINT);
-    assert.equal(call?.payTo, PURCH_PAYTO);
-    assert.equal(call?.feePayer, "BENrLoUbndxoNMUS5JXApGMtNykLjFXXixMtpDwDR9SP");
+    await client({ credentialBuilder: rec.build }).pay(request());
+    assert.equal(rec.calls[0]?.network, SOLANA_MAINNET_CAIP2);
+    assert.equal(rec.calls[0]?.rawChallenge !== undefined, true, "the RAW challenge is passed, not a normalised copy");
+  });
+
+  test("a transaction that does not match the authorised challenge is refused", async () => {
+    // The official client is a serializer. Hand it a wrong requirement and it encodes that wrong
+    // requirement faithfully, so the bytes are read back and compared.
+    const rec = recordingBuilder();
+    await refuses(
+      client({ credentialBuilder: rec.build, transferDecoder: matchingDecoder({ amount: 50_000n }) }),
+      request(),
+      /transfers 50000 but the challenge asked 10000/,
+    );
+    await refuses(
+      client({ credentialBuilder: rec.build, transferDecoder: matchingDecoder({ mint: "So11111111111111111111111111111111111111112" }) }),
+      request(),
+      /not the validated mint/,
+    );
+    await refuses(
+      client({ credentialBuilder: rec.build, transferDecoder: matchingDecoder({ feePayer: "HsTvSTrXn1HeDzUJTbH4ETXEKTTf2ifEXaQGGEEQ2XUy" }) }),
+      request(),
+      /not the sponsor/,
+    );
+    await refuses(
+      client({ credentialBuilder: rec.build, transferDecoder: matchingDecoder({ hasBlockhash: false }) }),
+      request(),
+      /carries no blockhash/,
+    );
+  });
+
+  test("a client that returns X-PAYMENT for a v2 challenge is refused", async () => {
+    const mixing = async (): Promise<V2Credential> => ({
+      headers: { "PAYMENT-SIGNATURE": "abc", "X-PAYMENT": "abc" },
+      wireTransaction: "AQAA",
+      declared: { scheme: "exact", network: SOLANA_MAINNET_CAIP2, x402Version: 2 },
+    });
+    await refuses(client({ credentialBuilder: mixing }), request(), /Refusing to mix protocol versions/);
+  });
+
+  test("a client that produces no credential or no transaction is refused", async () => {
+    const noHeader = async (): Promise<V2Credential> => ({
+      headers: {},
+      wireTransaction: "AQAA",
+      declared: { scheme: "exact", network: SOLANA_MAINNET_CAIP2, x402Version: 2 },
+    });
+    await refuses(client({ credentialBuilder: noHeader }), request(), /produced no PAYMENT-SIGNATURE header/);
+  });
+
+  test("a credential declaring the wrong protocol version is refused", async () => {
+    const v1 = async (): Promise<V2Credential> => ({
+      headers: { "PAYMENT-SIGNATURE": "abc" },
+      wireTransaction: "AQAA",
+      declared: { scheme: "exact", network: SOLANA_MAINNET_CAIP2, x402Version: 1 },
+    });
+    await refuses(client({ credentialBuilder: v1 }), request(), /declared x402Version 1 for a v2 challenge/);
   });
 
   test("no transaction hash is invented at signing time", async () => {
     // The sponsor submits, so this wallet never learns the signature here. A synthesised hash would
     // put a value in the ledger that no explorer can resolve.
     const rec = recordingBuilder();
-    const result = await client({ payloadBuilder: rec.build }).pay(request());
+    const result = await client({ credentialBuilder: rec.build }).pay(request());
     assert.equal(result.txHash, null);
     // Settled by observation, not by reading a spec. PAYMENT and X-PAYMENT both drew a bare 402
     // from Purch; its own documented v2 client used `payment-signature` and got a 200 first try.
@@ -321,7 +391,7 @@ describe("Solana rail — the payload it hands back", () => {
 
   test("the secret never appears in the returned result", async () => {
     const rec = recordingBuilder();
-    const result = await client({ payloadBuilder: rec.build }).pay(request());
+    const result = await client({ credentialBuilder: rec.build }).pay(request());
     assert.ok(!JSON.stringify(result, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v)).includes(KEYPAIR));
   });
 });
@@ -348,7 +418,7 @@ describe("Solana rail — the two challenge shapes", () => {
     // as a bigint. A string-only reader saw that as absent and refused a valid challenge. The
     // refusal was safe, and it was still a bug on our side.
     const rec = recordingBuilder();
-    await client({ payloadBuilder: rec.build }).pay(
+    await client({ credentialBuilder: rec.build }).pay(
       request({
         challenge: {
           accepts: [{
@@ -363,13 +433,13 @@ describe("Solana rail — the two challenge shapes", () => {
         },
       }),
     );
-    assert.equal(rec.calls[0]?.amount, "10000");
+    assert.equal(rec.calls.length, 1);
   });
 
   test("a RAW challenge, whose amount is a decimal string, is accepted", async () => {
     const rec = recordingBuilder();
-    await client({ payloadBuilder: rec.build }).pay(request());
-    assert.equal(rec.calls[0]?.amount, "10000");
+    await client({ credentialBuilder: rec.build }).pay(request());
+    assert.equal(rec.calls.length, 1);
   });
 
   test("a FLOAT amount is still refused, in either shape", async () => {

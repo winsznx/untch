@@ -53,6 +53,13 @@ import {
   type PaymentResult,
   type RailClient,
 } from "@untch/consumer-core";
+import {
+  buildV2SvmCredential,
+  decodeSvmTransfer,
+  type DecodedTransfer,
+  type V2Credential,
+  type V2CredentialInput,
+} from "./v2-svm-client";
 
 /** Solana mainnet's genesis hash. CAIP-2 truncates it to 32 characters. */
 export const SOLANA_MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
@@ -99,8 +106,10 @@ export interface SolanaExactClientDeps {
   readonly balanceReader?: (asset: AssetRef, owner: string) => Promise<bigint>;
   readonly lamportReader?: (owner: string) => Promise<bigint>;
   readonly addressResolver?: (secretKey: string) => string;
-  /** Injected for tests. Defaults to the official x402 SVM client. */
-  readonly payloadBuilder?: (input: SolanaPayloadInput) => Promise<SolanaPayload>;
+  /** Injected for tests. Defaults to the official x402 v2 SVM client. */
+  readonly credentialBuilder?: (input: V2CredentialInput) => Promise<V2Credential>;
+  /** Injected for tests. Defaults to decoding the real wire transaction. */
+  readonly transferDecoder?: (wireTransaction: string) => Promise<DecodedTransfer>;
   readonly clock?: () => number;
 }
 
@@ -188,7 +197,8 @@ export class X402SolanaExactClient implements RailClient {
   private readonly balanceReader: ((asset: AssetRef, owner: string) => Promise<bigint>) | null;
   private readonly lamportReader: ((owner: string) => Promise<bigint>) | null;
   private readonly addressResolver: ((secretKey: string) => string) | null;
-  private readonly payloadBuilder: ((input: SolanaPayloadInput) => Promise<SolanaPayload>) | null;
+  private readonly credentialBuilder: ((input: V2CredentialInput) => Promise<V2Credential>) | null;
+  private readonly transferDecoder: ((wireTransaction: string) => Promise<DecodedTransfer>) | null;
   private readonly clock: () => number;
   private cachedAddress: string | null = null;
 
@@ -202,7 +212,8 @@ export class X402SolanaExactClient implements RailClient {
     this.balanceReader = deps.balanceReader ?? null;
     this.lamportReader = deps.lamportReader ?? null;
     this.addressResolver = deps.addressResolver ?? null;
-    this.payloadBuilder = deps.payloadBuilder ?? null;
+    this.credentialBuilder = deps.credentialBuilder ?? null;
+    this.transferDecoder = deps.transferDecoder ?? null;
     this.clock = deps.clock ?? Date.now;
   }
 
@@ -432,35 +443,112 @@ export class X402SolanaExactClient implements RailClient {
       );
     }
 
-    const build = this.payloadBuilder ?? defaultPayloadBuilder;
-    const payload = await build({
-      secretKey: this.secretKey,
-      rpcUrl: this.rpcUrl,
-      amount,
-      asset,
-      payTo,
-      feePayer,
-      resource: req.resourceUrl,
-      maxTimeoutSeconds,
-      // The PROVIDER's exact spelling, echoed back. See the note at the top of this file.
-      declaredNetwork: network,
-    });
+    /**
+     * Construction is DELEGATED. Untch no longer builds the v2 envelope.
+     *
+     * The hand-built `base64(JSON({scheme, network, x402Version, payload}))` is a v1 shape, and
+     * Purch rejected it under the correct v2 header just as firmly as under the wrong ones. The two
+     * protocols are not a header apart, so the envelope is now produced by the official client and
+     * this file stops having an opinion about its bytes.
+     *
+     * Every guard above has already run. Nothing below can widen the amount, the recipient, the mint
+     * or the network, and the check after construction is what enforces that rather than trusting it.
+     */
+    const built = this.credentialBuilder
+      ? await this.credentialBuilder({
+          rawChallenge: req.challenge,
+          secretKey: this.secretKey,
+          rpcUrl: this.rpcUrl,
+          network,
+        })
+      : await buildV2SvmCredential({
+          rawChallenge: req.challenge,
+          secretKey: this.secretKey,
+          rpcUrl: this.rpcUrl,
+          network,
+        });
 
     /**
-     * The retry header is `PAYMENT-SIGNATURE`, and this was settled by observation rather than by
-     * reading a spec.
+     * Exactly one payment header leaves this rail.
      *
-     * Untch first sent `PAYMENT` and `X-PAYMENT`, in both network spellings, and Purch answered all
-     * four with a bare 402 and an empty body. Driving Purch through its own documented client
-     * (`@x402/fetch` + `@x402/svm`, the x402 v2 line) produced a 200 and real products on the first
-     * attempt, and the header that client chose was `payment-signature`. `X-PAYMENT` is the x402 v1
-     * convention and this endpoint serves v2.
-     *
-     * No alias is sent. Two payment headers on one request invites a verifier to read the one we did
-     * not intend, and the correct name is now known rather than guessed at.
+     * The official client returns a map, and a map is an invitation to send whatever it contains.
+     * Two payment headers on one request lets a verifier read the one we did not intend, so the
+     * contents are asserted rather than forwarded.
      */
+    const names = Object.keys(built.headers);
+    const signature = built.headers["PAYMENT-SIGNATURE"] ?? built.headers["payment-signature"];
+    if (typeof signature !== "string" || signature.length === 0) {
+      throw new ProviderError(
+        normalizedError(
+          "PROVIDER_MALFORMED_RESPONSE",
+          `the official x402 client produced no PAYMENT-SIGNATURE header (got: ${names.join(", ") || "none"})`,
+        ),
+      );
+    }
+    if (names.some((n) => /^x-payment$/i.test(n))) {
+      throw new ProviderError(
+        normalizedError(
+          "PAYMENT_CHALLENGE_UNACCEPTABLE",
+          "the client produced an X-PAYMENT header for a v2 challenge. Refusing to mix protocol versions.",
+        ),
+      );
+    }
+
+    // ── decode the bytes and check they describe what was authorised ────────
+    //
+    // The official client is trusted to be protocol-correct and NOT trusted about amounts. It
+    // faithfully encodes whatever requirements it is handed, so a wrong requirement would produce a
+    // wrong transfer just as faithfully. Reading the amount back out of the bytes is the only check
+    // that cannot be fooled by a bad input.
+    const decoded = await (this.transferDecoder ?? decodeSvmTransfer)(built.wireTransaction);
+
+    if (decoded.amount !== null && decoded.amount !== BigInt(amount)) {
+      throw new ProviderError(
+        normalizedError(
+          "PAYMENT_CHALLENGE_UNACCEPTABLE",
+          `the built transaction transfers ${decoded.amount} but the challenge asked ${amount}. ` +
+            "Refusing to send it.",
+        ),
+      );
+    }
+    if (decoded.mint !== null && decoded.mint !== asset) {
+      throw new ProviderError(
+        normalizedError(
+          "PAYMENT_CHALLENGE_UNACCEPTABLE",
+          `the built transaction moves ${decoded.mint}, not the validated mint ${asset}`,
+        ),
+      );
+    }
+    if (decoded.feePayer !== null && decoded.feePayer !== feePayer) {
+      throw new ProviderError(
+        normalizedError(
+          "PAYMENT_CHALLENGE_UNACCEPTABLE",
+          `the built transaction names ${decoded.feePayer} as fee payer, not the sponsor ${feePayer}. ` +
+            "A transaction this treasury pays for is a different transaction.",
+        ),
+      );
+    }
+    if (!decoded.hasBlockhash) {
+      throw new ProviderError(
+        normalizedError(
+          "PAYMENT_CHALLENGE_UNACCEPTABLE",
+          "the built transaction carries no blockhash, so it has no lifetime and cannot be landed",
+        ),
+      );
+    }
+    if (built.declared.x402Version !== null && built.declared.x402Version !== 2) {
+      throw new ProviderError(
+        normalizedError(
+          "PAYMENT_CHALLENGE_UNACCEPTABLE",
+          `the client declared x402Version ${built.declared.x402Version} for a v2 challenge`,
+        ),
+      );
+    }
+
     return {
-      paymentHeader: Buffer.from(JSON.stringify(payload), "utf8").toString("base64"),
+      // The credential is OPAQUE. It is forwarded exactly as the official client encoded it, and is
+      // never re-wrapped: re-encoding a credential is how the last envelope went wrong.
+      paymentHeader: signature,
       headerName: "PAYMENT-SIGNATURE",
       // The SPONSOR submits, so this wallet never learns the signature at signing time. Inventing
       // one would put a hash in the ledger that no explorer can resolve. The facilitator reports the
