@@ -42,6 +42,12 @@ on:
       - "packages/canon/**"
       - "packages/shared/**"
       - "services/asp/**"
+      # The operator commands and their tests. Added because `scripts/proof-controller/**` matched NO
+      # workflow: consumer-pack watched packages and services, and public-copy watched `scripts/test/**`
+      # and `scripts/lint/**` but not the controller itself. A change to the one process that drives a
+      # production payment would have triggered nothing, which is the same hole this workflow's header
+      # was written to record.
+      - "scripts/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -59,6 +65,12 @@ on:
       - "packages/canon/**"
       - "packages/shared/**"
       - "services/asp/**"
+      # The operator commands and their tests. Added because `scripts/proof-controller/**` matched NO
+      # workflow: consumer-pack watched packages and services, and public-copy watched `scripts/test/**`
+      # and `scripts/lint/**` but not the controller itself. A change to the one process that drives a
+      # production payment would have triggered nothing, which is the same hole this workflow's header
+      # was written to record.
+      - "scripts/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -188,7 +200,13 @@ jobs:
       # HTML 500 instead of a refusal), which is exactly the class of bug an in-memory store cannot
       # produce. Without the variable that suite skips, and a skipped integration test on the one
       # machine that gates merges is a test that does not exist.
-      - name: ASP suite (handlers + governed consumer lifecycle + operator routes on real Postgres)
+      # Also contains the TWO-PROCESS suite, which spawns the controller as a real child process with a
+      # scrubbed environment and drives it against this Postgres, a real worker and a real payment
+      # capability. It creates its OWN database (`untch_test_proof_controller`) rather than sharing this
+      # one: it and the operator-route suite both register a provider called `purch` and need it to declare
+      # different settlement chains, so sharing made each fail on the other's fixture while both passed
+      # alone — flakiness in appearance, a shared-fixture collision in fact.
+      - name: ASP suite (handlers + governed consumer lifecycle + operator routes + two-process controller)
         run: |
           export TEST_DATABASE_URL="postgresql://${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE}"
           pnpm test:asp
@@ -197,6 +215,13 @@ jobs:
           PGHOST: localhost
           PGPORT: "5432"
           PGDATABASE: untch_test
+
+      # The remote proof controller: its refusals, and the import-graph test that proves it CANNOT open a
+      # database, hold a signer, construct an adapter or reach a rail client. That last one is the whole
+      # architecture, and it is a property of the import graph rather than of any behaviour — so it is the
+      # one test here that cannot be satisfied by a mock, and the one that must never be allowed to skip.
+      - name: Remote proof controller suite (refusals + import boundary)
+        run: pnpm test:controller
 
       # The Consumer Pack reuses the policy engine and the escalation authority boundary rather than
       # forking them. A change that breaks either must fail here too, not only in its own workflow.

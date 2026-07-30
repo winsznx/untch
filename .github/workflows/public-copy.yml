@@ -23,7 +23,11 @@ on:
       - "scripts/lint/**"
       - "scripts/lint-public-copy.ts"
       - "scripts/untch-authored-copy.ts"
-      - "scripts/test/**"
+      # Narrowed with the copy tests in mind. `pnpm test:lint-copy` now names the two copy suites
+      # explicitly rather than globbing `scripts/test/*.test.ts`, because that glob had started picking up
+      # the proof-controller tests — which belong in consumer-pack.yml, next to the code they cover.
+      - "scripts/test/lint-public-copy.test.ts"
+      - "scripts/test/lockfile-sync.test.ts"
       - ".github/workflows/public-copy.yml"
   pull_request:
     paths:
@@ -37,7 +41,11 @@ on:
       - "scripts/lint/**"
       - "scripts/lint-public-copy.ts"
       - "scripts/untch-authored-copy.ts"
-      - "scripts/test/**"
+      # Narrowed with the copy tests in mind. `pnpm test:lint-copy` now names the two copy suites
+      # explicitly rather than globbing `scripts/test/*.test.ts`, because that glob had started picking up
+      # the proof-controller tests — which belong in consumer-pack.yml, next to the code they cover.
+      - "scripts/test/lint-public-copy.test.ts"
+      - "scripts/test/lockfile-sync.test.ts"
       - ".github/workflows/public-copy.yml"
 
 permissions:

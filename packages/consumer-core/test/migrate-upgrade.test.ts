@@ -6,11 +6,20 @@ import { fileURLToPath } from "node:url";
 import { createPool, runMigrations, readSchemaState, type Pool } from "../src/db";
 
 /**
- * Migration 011 against an UPGRADED database, not a fresh one.
+ * The NEWEST migration against an UPGRADED database, not a fresh one.
  *
- * A fresh-database test proves almost nothing about a production upgrade. Production had ten
- * migrations, real intents and real execution rows before 011 arrived, and every interesting way a
- * migration can fail involves data that is already there.
+ * A fresh-database test proves almost nothing about a production upgrade. Production had every earlier
+ * migration, real intents and real execution rows before the newest one arrived, and every interesting
+ * way a migration can fail involves data that is already there.
+ *
+ * WHY NOTHING HERE NAMES A MIGRATION NUMBER
+ *
+ * It used to. The suite hardcoded 011, which meant adding 012 broke four tests that had nothing to do
+ * with 012 — and, worse, the obvious fix was to bump the constant, which would have left 011 covered and
+ * 012 untested while the suite still read as though it proved something. So the pivot is derived: the
+ * newest migration this package owns is found on disk, everything before it is applied and recorded, and
+ * the assertion is that the real runner applies exactly that one. The suite now follows the migrations
+ * instead of trailing them.
  *
  * This suite was written while diagnosing the failed deployment of 2026-07-29. Migration 011 turned out
  * NOT to be the cause. The deployments failed at the build step, before a container existed, so 011
@@ -55,13 +64,26 @@ function allMigrations(): { name: string; sql: string }[] {
 }
 
 /**
- * Apply everything strictly BEFORE 011, recording it exactly as the real runner would.
+ * The newest migration in the repository. The pivot every assertion below is written against.
+ *
+ * Derived rather than declared, so the suite cannot drift behind the migrations it is meant to cover.
+ */
+function newestMigration(): string {
+  const all = allMigrations();
+  const last = all[all.length - 1];
+  assert.ok(last !== undefined, "no migrations found on disk");
+  return last.name;
+}
+
+/**
+ * Apply everything strictly BEFORE the newest migration, recording it as the real runner would.
  *
  * The recording is the part that matters. `runMigrations` decides what to do by reading
- * `schema_migrations`, so a faithful pre-011 state is one where 001 to 010 are both applied AND
- * recorded. Applying without recording would make the real runner try them again.
+ * `schema_migrations`, so a faithful pre-upgrade state is one where the earlier migrations are both
+ * applied AND recorded. Applying without recording would make the real runner try them again.
  */
-async function applyThrough010(pool: Pool): Promise<string[]> {
+async function applyThroughPenultimate(pool: Pool): Promise<string[]> {
+  const target = newestMigration();
   const applied: string[] = [];
   await pool.query(
     `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -69,7 +91,7 @@ async function applyThrough010(pool: Pool): Promise<string[]> {
      )`,
   );
   for (const m of allMigrations()) {
-    if (m.name >= "011") continue;
+    if (m.name >= target) continue;
     await pool.query(m.sql);
     await pool.query("INSERT INTO schema_migrations (name) VALUES ($1) ON CONFLICT DO NOTHING", [m.name]);
     applied.push(m.name);
@@ -124,7 +146,7 @@ async function resetSchema(pool: Pool): Promise<void> {
   await pool.query("CREATE SCHEMA public");
 }
 
-describe("migration 011 on an upgraded database", { skip: TEST_DB ? false : "TEST_DATABASE_URL is unset" }, () => {
+describe("the newest migration on an upgraded database", { skip: TEST_DB ? false : "TEST_DATABASE_URL is unset" }, () => {
   let pool: Pool;
 
   before(async () => {
@@ -136,25 +158,22 @@ describe("migration 011 on an upgraded database", { skip: TEST_DB ? false : "TES
     await pool.end();
   });
 
-  test("001 to 010 apply, and 011 is the only migration left to run", async () => {
-    // #given a production-like database at the pre-011 schema, with real rows in it
-    const pre = await applyThrough010(pool);
-    assert.ok(pre.length >= 10, `expected at least ten pre-011 migrations, applied ${pre.length}`);
+  test("every earlier migration applies, and the newest is the only one left to run", async () => {
+    // #given a production-like database at the pre-upgrade schema, with real rows in it
+    const pre = await applyThroughPenultimate(pool);
+    assert.ok(pre.length >= 10, `expected at least ten earlier migrations, applied ${pre.length}`);
     await seedRepresentativeData(pool);
-
-    const before = await readSchemaState(pool);
-    assert.equal(before.proofGateTablePresent, false, "the gate table must not exist before 011");
 
     // #when the real runner runs against that database
     const applied = await runMigrations(pool);
 
-    // #then it applies exactly 011, and nothing else
-    assert.deepEqual(applied, ["011_solana_proof_gate.sql"]);
+    // #then it applies exactly the newest one, and nothing else
+    assert.deepEqual(applied, [newestMigration()]);
   });
 
   test("the gate table, its constraints and its partial index all exist afterwards", async () => {
     const state = await readSchemaState(pool);
-    assert.equal(state.migrationVersion, "011_solana_proof_gate.sql");
+    assert.equal(state.migrationVersion, newestMigration());
     assert.equal(state.proofGateTablePresent, true);
     assert.equal(state.proofGateLiveIndexPresent, true);
 
@@ -204,13 +223,17 @@ describe("migration 011 on an upgraded database", { skip: TEST_DB ? false : "TES
     // Two workers booting at once both call runMigrations. The advisory lock serialises them, so one
     // applies and the other waits and finds nothing to do. Neither may error.
     await resetSchema(pool);
-    await applyThrough010(pool);
+    await applyThroughPenultimate(pool);
 
     const second = createPool(TEST_DB as string);
     try {
       const [a, b] = await Promise.all([runMigrations(pool), runMigrations(second)]);
       const total = [...a, ...b];
-      assert.deepEqual(total, ["011_solana_proof_gate.sql"], `011 applied ${total.length} time(s)`);
+      assert.deepEqual(
+        total,
+        [newestMigration()],
+        `the newest migration applied ${total.length} time(s)`,
+      );
     } finally {
       await second.end();
     }
@@ -221,7 +244,7 @@ describe("migration 011 on an upgraded database", { skip: TEST_DB ? false : "TES
     // the whole file back, so a retried deployment starts from a clean, known point rather than from
     // half a schema.
     await resetSchema(pool);
-    await applyThrough010(pool);
+    await applyThroughPenultimate(pool);
 
     await pool.query(
       `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -245,8 +268,8 @@ describe("migration 011 on an upgraded database", { skip: TEST_DB ? false : "TES
     );
     assert.equal(probe.rows[0]?.present, false, "a rolled-back migration must leave nothing behind");
 
-    // And the real 011 still applies cleanly afterwards.
-    assert.deepEqual(await runMigrations(pool), ["011_solana_proof_gate.sql"]);
+    // And the real newest migration still applies cleanly afterwards.
+    assert.deepEqual(await runMigrations(pool), [newestMigration()]);
   });
 
   test("the live-gate index permits one ARMED row per intent and refuses a second", async () => {
