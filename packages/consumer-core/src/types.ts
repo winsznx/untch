@@ -9,6 +9,7 @@
  */
 
 import type { AssetRef, CaipChainId } from "./assets";
+import type { CapabilityExecutionShape } from "./repo";
 import type { Money, MoneyJson } from "./money";
 import type { ConsumerIntentState } from "./state";
 import type { NormalizedProviderError } from "./errors";
@@ -449,6 +450,15 @@ export interface QuoteInput {
   readonly intentId: string;
   readonly providerRef: string;
   readonly params: Readonly<Record<string, unknown>>;
+  /**
+   * How this capability is bought, read from the registry by the orchestrator.
+   *
+   * Passed IN rather than derived by the adapter from `action`, so the orchestrator stays
+   * provider-neutral and the adapter stays protocol-aware without either guessing. Absent ⇒ the adapter
+   * applies `DEFAULT_CAPABILITY_EXECUTION_SHAPE`, which is what every caller meant before the field
+   * existed.
+   */
+  readonly executionShape?: CapabilityExecutionShape;
 }
 
 export interface ProviderQuote {
@@ -470,6 +480,8 @@ export interface ExecuteInput {
   readonly params: Readonly<Record<string, unknown>>;
   readonly idempotencyKey: string;
   readonly quote: ProviderQuote;
+  /** The same registry fact the quote was produced under. See `QuoteInput.executionShape`. */
+  readonly executionShape?: CapabilityExecutionShape;
 }
 
 /** The final cross-rail receipt view. Every acceptance-criteria field appears here or nowhere. */

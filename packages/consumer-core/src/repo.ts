@@ -72,6 +72,46 @@ export type CapabilityAccessBlocker =
   | "RAIL_UNAVAILABLE"
   | "PROVIDER_UNSUPPORTED";
 
+/**
+ * How a capability is BOUGHT, which is a different question from what it does.
+ *
+ * The distinction exists because the lifecycle assumed one answer and there are two.
+ *
+ *   FULFILMENT  buying a thing. The provider needs to know where to send it and who to tell, so its
+ *               price challenge lives on an endpoint that requires a shipping address and contact
+ *               details. `shop.purchase` is this shape.
+ *   PAID_READ   buying an answer. There is nothing to ship. The price challenge lives on the read
+ *               endpoint itself and the request carries only the query. `shop.search` is this shape.
+ *
+ * WHY THIS IS DATA RATHER THAN A CONDITIONAL
+ *
+ * The orchestrator called `adapter.quote()` for every capability, and `PurchAdapter.quote` was written
+ * for FULFILMENT alone: it demanded `shippingAddress` and `email` and probed `/x402/buy`. So a
+ * `shop.search` intent could be created, reach the quote stage, and die there on a missing shipping
+ * address — which is exactly what happened to the first production proof attempt.
+ *
+ * The fix could have been a check on the capability string inside the orchestrator. That would have put
+ * provider-shaped knowledge in the provider-neutral layer, and it would have had to be repeated for
+ * every future paid read. So the shape is a REGISTRY FACT the orchestrator reads and hands to the
+ * adapter, which is the only layer that knows what a shape means over the wire.
+ */
+export const CAPABILITY_EXECUTION_SHAPES = ["PAID_READ", "FULFILMENT"] as const;
+export type CapabilityExecutionShape = (typeof CAPABILITY_EXECUTION_SHAPES)[number];
+
+export function isCapabilityExecutionShape(v: unknown): v is CapabilityExecutionShape {
+  return typeof v === "string" && (CAPABILITY_EXECUTION_SHAPES as readonly string[]).includes(v);
+}
+
+/**
+ * The shape to assume when a capability row does not declare one.
+ *
+ * FULFILMENT, because that is what every existing row meant before the field existed. A row written by
+ * an older build must keep behaving exactly as it did rather than silently acquiring a cheaper path:
+ * defaulting to PAID_READ would route a purchase at a read endpoint and drop the shipping address a
+ * merchant needs.
+ */
+export const DEFAULT_CAPABILITY_EXECUTION_SHAPE: CapabilityExecutionShape = "FULFILMENT";
+
 export interface ProviderCapabilityRecord {
   readonly providerId: string;
   readonly capability: string;
@@ -79,6 +119,8 @@ export interface ProviderCapabilityRecord {
   readonly notes: string;
   /** Null ⇒ nothing external is blocking this; it is simply not finished or not yet settled. */
   readonly accessBlocker?: CapabilityAccessBlocker | null;
+  /** Absent ⇒ `DEFAULT_CAPABILITY_EXECUTION_SHAPE`, which preserves pre-migration behaviour exactly. */
+  readonly executionShape?: CapabilityExecutionShape | null;
 }
 
 export interface ProviderHealthRecord {

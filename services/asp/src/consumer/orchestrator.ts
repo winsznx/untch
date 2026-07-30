@@ -43,6 +43,9 @@ import {
   policyCategoryFor,
   ProviderError,
   ProviderRegistry,
+  resolveExecutionShape,
+  type CapabilityExecutionShape,
+  type ProviderQuote,
   recognitionGroup,
   refundGroup,
   settlementGroup,
@@ -185,6 +188,79 @@ export class ConsumerOrchestrator {
     };
   }
 
+  /**
+   * Price a capability against the live provider WITHOUT creating anything.
+   *
+   * This exists because the only way to discover that `shop.search` could not be quoted was to create a
+   * production intent and watch it die. That is an expensive way to learn a request shape: the intent id
+   * is consumed, the intent needs terminalising, and the discovery happens inside an arming window.
+   *
+   * It runs the REAL adapter quote path against the REAL provider, using the production registry and the
+   * production capability metadata — so a pass here means the same code will price the same request when
+   * an intent does exist. It writes nothing: no intent, no reservation, no execution, no gate row.
+   *
+   * WHY IT CAN QUOTE WHILE THE RAIL IS DISARMED
+   *
+   * `signableChains` normally comes from the rails that hold a key, because a payment option on a rail we
+   * cannot sign is not a candidate. A preview asks a different question — "what would this cost on the
+   * rail we intend to settle on" — and the whole point is to answer it while no signer exists. So the
+   * candidate set is the provider's REGISTERED chains, which is a registry fact rather than a key fact.
+   * Nothing here can pay: no payment capability is minted and none is passed to the adapter.
+   */
+  async previewQuote(args: {
+    readonly providerId: string;
+    readonly capability: ConsumerActionType;
+    readonly providerRef: string;
+    readonly params: Readonly<Record<string, unknown>>;
+  }): Promise<{
+    readonly quote: ProviderQuote;
+    readonly executionShape: CapabilityExecutionShape;
+    readonly providerId: string;
+  }> {
+    const provider = await this.d.store.getProvider(args.providerId);
+    if (!provider) {
+      throw new ProviderError(
+        normalizedError("CAPABILITY_UNAVAILABLE", `no provider '${args.providerId}' in the registry`),
+      );
+    }
+    const capabilityName = capabilityFor(args.capability, "quote");
+    const row = (await this.d.store.listCapabilities(args.providerId))
+      .find((c) => c.capability === capabilityName) ?? null;
+    if (!row) {
+      throw new ProviderError(
+        normalizedError(
+          "CAPABILITY_UNAVAILABLE",
+          `provider '${args.providerId}' does not declare '${capabilityName}'`,
+        ),
+      );
+    }
+    const executionShape = resolveExecutionShape(row);
+    const adapter = this.d.adapters.get(args.providerId);
+
+    const quote = await adapter.quote(
+      {
+        action: args.capability,
+        // Never persisted, and never a canonical intent id, so it cannot collide with a real one or be
+        // mistaken for one in a log.
+        intentId: `preview-${randomBytes(8).toString("hex")}`,
+        providerRef: args.providerRef,
+        params: args.params,
+        executionShape,
+      },
+      {
+        correlationId: `preview-${randomBytes(6).toString("hex")}`,
+        timeoutMs: this.d.config.providerTimeoutMs,
+        signableChains: new Set(provider.chains),
+        siwx: this.d.siwx,
+        // No payment capability. The adapter cannot pay for anything it is handed here.
+        discoveryPayment: null,
+        clock: this.clock,
+      } as AdapterContext,
+    );
+
+    return { quote, executionShape, providerId: args.providerId };
+  }
+
   // ── 1. CREATE ───────────────────────────────────────────────────────────────
 
   /**
@@ -308,11 +384,23 @@ export class ConsumerOrchestrator {
     }
 
     const adapter = this.d.adapters.get(chosen.provider.providerId);
+    /**
+     * The execution SHAPE, read from the registry and handed to the adapter.
+     *
+     * This is the whole of the provider-neutrality rule. The orchestrator does not know that a search is
+     * bought differently from a purchase; it knows that a capability row carries a shape, and that the
+     * adapter is the layer entitled to act on one. A conditional on `intent.action` here would have put
+     * Purch's endpoint layout into the lifecycle and would have needed repeating for every paid read.
+     */
+    const executionShape = resolveExecutionShape(
+      (await this.d.store.listCapabilities(chosen.provider.providerId))
+        .find((c) => c.capability === capability) ?? null,
+    );
     const discoveryCap = await this.mintDiscoveryCapability(intent, chosen.provider.providerId);
     let providerQuote;
     try {
       providerQuote = await adapter.quote(
-        { action: intent.action, intentId, providerRef, params: intent.request },
+        { action: intent.action, intentId, providerRef, params: intent.request, executionShape },
         this.ctx(intent.correlationId, this.d.config.providerTimeoutMs, discoveryCap),
       );
     } finally {
@@ -721,12 +809,13 @@ export class ConsumerOrchestrator {
     // Ordered cheapest-and-most-absolute first. The FLAG gate leads because it is the one an
     // operator flips in an incident: if execution is switched off, nothing else about this intent
     // matters and no provider should even be consulted.
+    const capabilityName = capabilityFor(intent.action, "execute");
     let resolved;
     try {
       this.d.registry.assertFlagsAllow(providerId, quote.settlementChain, quote.settlementAsset);
       this.assertQuoteFresh(quote);
       await this.assertApprovalStillBinds(intent, quote);
-      resolved = await this.d.registry.assertExecutable(providerId, capabilityFor(intent.action, "execute"));
+      resolved = await this.d.registry.assertExecutable(providerId, capabilityName);
       await this.d.registry.assertCircuitClosed(providerId, this.d.config.breakerCooldownMs);
     } catch (err) {
       return this.failBeforePayment(intent, ...codeAndDetail(err));
@@ -788,6 +877,9 @@ export class ConsumerOrchestrator {
     await this.d.store.prepareExecution(record);
 
     const adapter = this.d.adapters.get(providerId);
+    const executionShapeForExecute = resolveExecutionShape(
+      (await this.d.store.listCapabilities(providerId)).find((c) => c.capability === capabilityName) ?? null,
+    );
     try {
       const execution = await adapter.execute(
         {
@@ -796,6 +888,10 @@ export class ConsumerOrchestrator {
           providerRef: quote.providerRef,
           params: intent.request,
           idempotencyKey,
+          // The SAME registry fact the quote was produced under, so the adapter takes the same path at
+          // execution that it took when it priced. A shape that differed between the two would mean
+          // paying a challenge from one endpoint against a quote authorised from another.
+          executionShape: executionShapeForExecute,
           quote: {
             providerId: quote.providerId,
             providerRef: quote.providerRef,

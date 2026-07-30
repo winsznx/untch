@@ -97,6 +97,7 @@ import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from ".
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
 import { registerConsumerSettlementRoutes } from "./consumer/operator-settlement-routes";
+import { registerConsumerQuotePreviewRoute } from "./consumer/operator-quote-routes";
 import { loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
 import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
 import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
@@ -569,6 +570,16 @@ export function createSellerApp(
    * whole documented promise is that preflight writes nothing.
    */
   registerConsumerSettlementRoutes(app, { wiring: consumerWiring, lifecycle });
+
+  /**
+   * The keyless live quote probe.
+   *
+   * Same credential, same posture. It sits beside the intent routes because it answers the question they
+   * cannot answer without creating something: would this exact request price correctly against the live
+   * provider. Learning that from a real intent costs an intent id and a terminal state, which is what the
+   * first bounded production proof paid.
+   */
+  registerConsumerQuotePreviewRoute(app, { wiring: consumerWiring });
 
   // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

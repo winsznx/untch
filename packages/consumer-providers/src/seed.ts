@@ -284,6 +284,16 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
          * delivered service, so both halves of the verified definition are met.
          */
         maturity: "verified",
+        /**
+         * A PAID READ, and saying so is what makes the full lifecycle reachable.
+         *
+         * The 2026-07-29 settlement that earned `verified` went through `discover()`, which pays the
+         * search endpoint directly. Nothing had ever driven this capability through
+         * quote-policy-reserve-execute, and when the first production proof did, it failed: the adapter's
+         * only quote path demanded a shipping address and an email because it was written for
+         * `/x402/buy`. A search has neither. This field is what routes it to the search endpoint instead.
+         */
+        executionShape: "PAID_READ",
         notes:
           "GET /x402/search, $0.01, Solana only. Settled and delivered. Public state stays BETA " +
           "rather than LIVE because execution needs an operator arming sequence: the treasury signer " +
@@ -293,12 +303,14 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
         providerId: "purch",
         capability: "shop.quote",
         maturity: "experimental",
+        executionShape: "FULFILMENT",
         notes: "Unpaid 402 probe of /x402/buy (pricingMode 'quote' — total includes tax and shipping).",
       },
       {
         providerId: "purch",
         capability: "shop.purchase",
         maturity: "experimental",
+        executionShape: "FULFILMENT",
         notes: "POST /x402/buy, dynamic total, Solana only. No settlement or delivery evidence yet, so it stays " +
           "experimental and cannot execute even though the provider is verified.",
       },
@@ -306,6 +318,17 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
         providerId: "purch",
         capability: "shop.track",
         maturity: "experimental",
+        /**
+         * Declared FULFILMENT even though tracking is, by nature, a paid read.
+         *
+         * `GET /x402/track` has nothing to ship and would fit PAID_READ perfectly — but the adapter's
+         * paid-read quote path only knows how to price a SEARCH, and declaring a shape the adapter cannot
+         * serve would be a claim with no implementation behind it. The maturity floor refuses this
+         * capability long before a quote is attempted, so the declared shape is unreachable either way;
+         * the honest value is the one that matches what the code can actually do. It becomes PAID_READ in
+         * the same change that implements its quote.
+         */
+        executionShape: "FULFILMENT",
         notes: "GET /x402/track, $0.52 per call, Solana only. The endpoint exists in the live 402 surface. No " +
           "settlement or delivery evidence yet, so it stays experimental and cannot execute.",
       },

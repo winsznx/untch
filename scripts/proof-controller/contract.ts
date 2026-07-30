@@ -459,6 +459,43 @@ export function assertReadyToArm(
   }
 }
 
+/**
+ * The readiness class a run was told to expect, and the refusal when production disagrees.
+ *
+ * `--preflight-only` used to assert READY_TO_ARM unconditionally, which made it useless for the second
+ * half of an arming sequence: once production was legitimately ARMED_AND_EXECUTABLE the command exited
+ * non-zero, and the honest posture read as a failure.
+ *
+ * The fix is NOT to accept any class. That would turn the one command an operator uses to check "is
+ * production where I think it is" into a command that always says yes. The expectation is stated instead,
+ * so a mismatch in either direction is a refusal: expecting READY_TO_ARM against an already-armed
+ * deployment is just as much a surprise as the reverse, and an operator who is surprised should stop.
+ */
+export function assertExpectedReadiness(plan: PlanResponse, expected: string): void {
+  if (!(READINESS_EXPECTATIONS as readonly string[]).includes(expected)) {
+    throw new ControllerRefusal(
+      "READINESS_EXPECTATION_UNKNOWN",
+      `--expect-readiness must be one of ${READINESS_EXPECTATIONS.join(", ")}, got ${JSON.stringify(expected)}`,
+    );
+  }
+  if (plan.readinessClass !== expected) {
+    throw new ControllerRefusal(
+      "READINESS_MISMATCH",
+      `production is ${plan.readinessClass ?? "(absent)"}, and this run expected ${expected}`,
+      [
+        expected === "READY_TO_ARM" && plan.readinessClass === "ARMED_AND_EXECUTABLE"
+          ? "production is already armed. If that is intended, expect ARMED_AND_EXECUTABLE."
+          : "",
+        ...(plan.refusals ?? []).map((r) => `refusal ${r.code}: ${r.message}`),
+      ].filter((line) => line !== ""),
+    );
+  }
+  // ARMED_AND_EXECUTABLE additionally requires the two facts that make it safe to create against.
+  if (expected === "ARMED_AND_EXECUTABLE") assertArmedAndExecutable(plan);
+}
+
+export const READINESS_EXPECTATIONS = ["READY_TO_ARM", "ARMED_AND_EXECUTABLE"] as const;
+
 export function assertArmedAndExecutable(plan: PlanResponse): void {
   if (plan.accepted === true && plan.readinessClass === "ARMED_AND_EXECUTABLE") return;
   throw new ControllerRefusal(

@@ -41,6 +41,7 @@ import {
 } from "@untch/consumer-core";
 import type { PolicyProvider } from "@untch/policy-store";
 import { ACCEPTED_TOKEN_PROGRAMS } from "@untch/consumer-providers";
+import { classifyFailure, type ClassifiedFailure } from "./operator-error-classification";
 import { authenticateOperator } from "../internal-auth";
 import type { DeploymentLifecycle } from "../deployment-info";
 import type { ConsumerWiring } from "./wiring";
@@ -214,6 +215,81 @@ function signerAddressLookup(wiring: ConsumerWiring): (chain: CaipChainId) => st
       return null;
     }
   };
+}
+
+/**
+ * Drive an intent whose QUOTE failed into a terminal pre-execution state, with the reason recorded.
+ *
+ * The first production proof left its intent in CREATED indefinitely, because the exception escaped
+ * before anything could transition it. An intent stuck in a non-terminal state is worse than a failed
+ * one: it looks live, it holds its id against any corrected request, and nothing sweeps it.
+ *
+ * `FAILED_BEFORE_PAYMENT` already exists and `CREATED` already transitions to it, so no new state is
+ * needed — and the name is exactly the claim being made. Nothing here can be reached after a payment: the
+ * quote stage runs before policy, before any reservation and before any signer is constructed.
+ *
+ * The transition is best-effort by design. If it fails, the caller still gets the classified failure —
+ * losing the error because the bookkeeping failed would be the worse outcome, and the sweep that expires
+ * stale intents remains the backstop.
+ */
+async function terminaliseAfterQuoteFailure(
+  wiring: ConsumerWiring,
+  intentId: string,
+  classified: ClassifiedFailure,
+  context: {
+    readonly provider: string;
+    readonly capability: string;
+    readonly servingCommit: string | null;
+    readonly servingDeploymentId: string | null;
+  },
+): Promise<string> {
+  try {
+    const current = await wiring.store.getIntent(intentId);
+    if (!current) return "UNKNOWN";
+    if (current.state !== "CREATED" && current.state !== "DISCOVERING") return current.state;
+
+    const { intent } = await wiring.store.transition(
+      intentId,
+      current.state,
+      "FAILED_BEFORE_PAYMENT",
+      {
+        failureCode: "PROVIDER_QUOTE_FAILED",
+        /**
+         * The provider's own code and its sanitized message, and nothing else.
+         *
+         * No stack, no provider body, no challenge. A dispute needs to know WHICH provider failed and in
+         * what class; it never needs the bytes.
+         */
+        failureDetail:
+          `${classified.code} at the QUOTE stage for ${context.provider}/${context.capability}. ` +
+          `${classified.message} Failure occurred before policy, before reservation, before execution ` +
+          `and before any signer was reachable, so no settlement is possible. ` +
+          `Serving commit ${context.servingCommit ?? "(unattested)"}, deployment ` +
+          `${context.servingDeploymentId ?? "(unknown)"}.`,
+      },
+      {
+        name: "consumer.failed",
+        data: {
+          stage: "QUOTE",
+          providerId: context.provider,
+          capability: context.capability,
+          code: classified.code,
+          disposition: classified.disposition,
+          reserved: false,
+          executed: false,
+          settled: false,
+          signerReached: false,
+          servingCommit: context.servingCommit,
+          servingDeploymentId: context.servingDeploymentId,
+          at: new Date().toISOString(),
+        },
+      },
+    );
+    return intent.state;
+  } catch {
+    // Reported as unchanged rather than guessed at. The classified failure still reaches the caller.
+    return "CREATED";
+  }
 }
 
 export function registerConsumerOperatorRoutes(app: Express, deps: OperatorRoutesDeps): void {
@@ -476,12 +552,51 @@ export function registerConsumerOperatorRoutes(app: Express, deps: OperatorRoute
         return;
       }
 
-      // ── the normal quote ──
-      //
-      // This DOES reach the provider, over the provider's own unpaid 402 price challenge, exactly as
-      // the paid public quote route does. That is what makes the price real rather than asserted. It
-      // moves no money and reaches no signer.
-      const { quote } = await wiring.orchestrator.quote(created.intent.intentId, input.providerRef);
+      /**
+       * The normal quote.
+       *
+       * This DOES reach the provider, over the provider's own unpaid 402 price challenge, exactly as the
+       * paid public quote route does. That is what makes the price real rather than asserted. It moves no
+       * money and reaches no signer.
+       *
+       * A failure here is caught rather than thrown, for a reason the first production proof made
+       * concrete: an uncaught `ProviderError` reached express's default handler and became an HTML 500,
+       * while the intent it had just created sat in CREATED forever. Both halves are fixed here — the
+       * intent is driven to a terminal pre-execution state, and the caller gets a parseable answer that
+       * says whether a new intent id is needed.
+       */
+      let quote;
+      try {
+        ({ quote } = await wiring.orchestrator.quote(created.intent.intentId, input.providerRef));
+      } catch (err) {
+        const classified = classifyFailure(err);
+        const terminalised = await terminaliseAfterQuoteFailure(wiring, created.intent.intentId, classified, {
+          provider: input.provider,
+          capability: input.capability,
+          servingCommit: deployment.commit,
+          servingDeploymentId: deployment.deploymentId,
+        });
+        res.status(classified.status).json({
+          code: classified.code,
+          message: classified.message,
+          intentId: created.intent.intentId,
+          state: terminalised,
+          stage: "QUOTE",
+          disposition: classified.disposition,
+          retryable: classified.retryable,
+          newIntentRequired: classified.newIntentRequired,
+          correlationId: created.intent.correlationId,
+          reserved: false,
+          executed: false,
+          settled: false,
+          docsUrl: null,
+          note:
+            "The failure happened at the QUOTE stage, before policy, before any reservation and before " +
+            "any signer was reachable. No money moved. This intent id is now terminal and cannot be " +
+            "reused; a corrected request needs a new one.",
+        });
+        return;
+      }
 
       // ── the normal deterministic policy ──
       const { intent: decided, decision } = await wiring.orchestrator.runPolicy(created.intent.intentId);
@@ -552,7 +667,23 @@ export function registerConsumerOperatorRoutes(app: Express, deps: OperatorRoute
         );
         return;
       }
-      next(err);
+      /**
+       * Everything else is classified too, so nothing reaches express's default HTML handler.
+       *
+       * `next(err)` used to be the catch-all, and the default handler answered a real provider defect
+       * with an unparseable HTML 500 during a live production proof. A controller cannot act on that: it
+       * cannot tell a provider refusal from a crash, and it cannot tell whether an intent now exists.
+       */
+      const classified = classifyFailure(err);
+      res.status(classified.status).json({
+        code: classified.code,
+        message: classified.message,
+        intentId: input.intentId,
+        disposition: classified.disposition,
+        retryable: classified.retryable,
+        newIntentRequired: classified.newIntentRequired,
+        docsUrl: null,
+      });
     });
   });
 

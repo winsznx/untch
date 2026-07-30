@@ -472,8 +472,14 @@ env -u DATABASE_URL -u CONSUMER_TREASURY_SOLANA_SECRET_KEY -u CONSUMER_TREASURY_
   INTERNAL_OPS_TOKEN=... \
   UNTCH_EXPECTED_SERVING_COMMIT=<full 40-char SHA> \
   pnpm consumer:smoke:live --deployed-worker-only --provider purch --operator-funded \
-    --policy-id <id> --intent-id ci_<24 hex> --preflight-only
+    --policy-id <id> --intent-id ci_<24 hex> \
+    --preflight-only --expect-readiness READY_TO_ARM
 ```
+
+`--expect-readiness` is stated, not assumed. Use `READY_TO_ARM` before arming and
+`ARMED_AND_EXECUTABLE` after. A mismatch in either direction exits non-zero before anything is
+created: expecting `READY_TO_ARM` against an already-armed deployment is as much a surprise as the
+reverse, and a surprised operator should stop.
 
 Drop `--preflight-only` to create. The controller reads **only** `UNTCH_ASP_URL`,
 `INTERNAL_OPS_TOKEN` and `UNTCH_EXPECTED_SERVING_COMMIT`, and **refuses to start** if any known

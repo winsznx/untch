@@ -47,6 +47,7 @@ import type {
   ProviderStatus,
   QuoteInput,
 } from "@untch/consumer-providers";
+import { ProviderError, normalizedError } from "@untch/consumer-core";
 import type { Ledger, LedgerWindowState, SpendIntentInput } from "@untch/policy-engine";
 import type { PolicyProvider, StoredPolicy } from "@untch/policy-store";
 import { ConsumerOrchestrator } from "../src/consumer/orchestrator";
@@ -147,6 +148,15 @@ let pool: Pool | null = null;
  */
 const touched = { adapterQuote: 0, adapterExecute: 0, railPay: 0, railAddress: 0 };
 
+/**
+ * Set to make the next quote throw, so the failure path can be driven end to end.
+ *
+ * A real provider defect is what produced the HTML 500 in production; reproducing the CLASS of failure
+ * rather than the exact message is what makes this a regression test for the handling rather than for
+ * Purch's schema.
+ */
+let quoteFailure: Error | null = null;
+
 class TestAdapter implements ConsumerProviderAdapter {
   readonly providerId = "purch";
 
@@ -161,6 +171,21 @@ class TestAdapter implements ConsumerProviderAdapter {
   }
   async quote(input: QuoteInput, _c: AdapterContext): Promise<ProviderQuote> {
     touched.adapterQuote += 1;
+    /**
+     * The shape must ARRIVE, and it must be the paid-read one.
+     *
+     * Throwing rather than defaulting is deliberate: if the orchestrator ever stopped passing it, the
+     * adapter would silently fall back to FULFILMENT and this suite would keep passing while production
+     * had regressed to exactly the failure it was written for.
+     */
+    if (input.executionShape !== "PAID_READ") {
+      throw new Error(`the orchestrator passed executionShape=${String(input.executionShape)}, not PAID_READ`);
+    }
+    // A paid read carries no purchase fields, and demanding them is the defect under test.
+    if ("shippingAddress" in input.params || "email" in input.params) {
+      throw new Error("a paid read must not be given purchase fields");
+    }
+    if (quoteFailure !== null) throw quoteFailure;
     return {
       providerId: this.providerId,
       providerRef: input.providerRef,
@@ -179,6 +204,9 @@ class TestAdapter implements ConsumerProviderAdapter {
     _c: AdapterContext,
   ): Promise<ProviderExecution> {
     touched.adapterExecute += 1;
+    if (input.executionShape !== "PAID_READ") {
+      throw new Error(`execute received executionShape=${String(input.executionShape)}, not PAID_READ`);
+    }
     /**
      * The payment happens HERE, through the capability the treasury router minted.
      *
@@ -373,6 +401,9 @@ async function startServer(
     providerId: "purch",
     capability: "shop.search",
     maturity: "verified",
+    // The registry fact the orchestrator reads and hands to the adapter. Without it the adapter would
+    // take the FULFILMENT path and demand a shipping address, which is the defect this covers.
+    executionShape: "PAID_READ",
     notes: "two-process integration test",
   });
   await store.upsertTreasuryAccount({
@@ -824,6 +855,55 @@ describe("two-process proof: a keyless controller over HTTP against a real ASP, 
     assert.equal(executions[0]?.settlementChain, SOLANA);
 
     assert.equal(intent.state === "COMPLETED" || intent.state === "DELIVERY_PENDING", true, `state ${intent.state}`);
+  });
+
+  /**
+   * The failure the first bounded production proof actually hit, driven end to end.
+   *
+   * Production answered a provider defect with express's default HTML 500 and left the intent in CREATED
+   * forever — so the id was consumed, nothing swept it, and the controller could not tell a refusal from
+   * a crash. Both halves are asserted here, from the database rather than from the controller's output.
+   */
+  test("a provider quote failure returns structured JSON and terminalises the intent", async () => {
+    const id = intentId();
+    const server = await startServer(id);
+    resetOperatorAuthThrottle();
+    resetOperatorAuthAudit();
+    const executesBefore = touched.adapterExecute;
+    quoteFailure = new ProviderError(
+      normalizedError("PROVIDER_MALFORMED_RESPONSE", "shipping address — shippingAddress: expected an object"),
+    );
+
+    try {
+      const run = await runController(PROOF_ARGS(id), controllerEnv(server.url));
+      assert.notEqual(run.code, 0, "a quote failure must not report success");
+      // Never HTML. The controller surfaces the body it got, so an HTML page would appear here.
+      assert.ok(!/<!DOCTYPE/i.test(run.stdout + run.stderr), "the response must never be an HTML error page");
+      assert.match(run.stdout + run.stderr, /PROVIDER_MALFORMED_RESPONSE/);
+    } finally {
+      quoteFailure = null;
+      server.stopWorker();
+    }
+
+    // ── the durable outcome ──
+    const intent = await server.store.getIntent(id);
+    assert.ok(intent, "the intent must still exist — it is evidence, not litter");
+    assert.equal(intent.state, "FAILED_BEFORE_PAYMENT", "a quote failure must not linger in CREATED");
+    assert.equal(intent.failureCode, "PROVIDER_QUOTE_FAILED");
+    assert.match(String(intent.failureDetail), /PROVIDER_MALFORMED_RESPONSE/);
+    assert.match(String(intent.failureDetail), /before policy, before reservation/);
+
+    // Nothing downstream of the quote may exist.
+    assert.equal(await server.store.getFunding(id), null, "no reservation");
+    assert.equal((await server.store.listExecutions(id)).length, 0, "no execution row");
+    assert.equal(touched.adapterExecute, executesBefore, "the provider was never executed");
+    assert.equal(intent.receiptId, null, "no receipt claiming settlement");
+    const gates = (await server.store.listSolanaProofGates(50)).filter((g) => g.scope.intentId === id);
+    assert.deepEqual(gates, [], "no proof-gate row");
+
+    // A durable failure event, so the audit trail records the stage rather than only the state.
+    const events = await server.store.eventsSince(id, 0, 50);
+    assert.ok(events.some((e) => e.name === "consumer.failed"), events.map((e) => e.name).join(", "));
   });
 
   test("a duplicate is safe, and a conflicting duplicate is refused, without a second execution", async () => {
