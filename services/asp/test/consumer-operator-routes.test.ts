@@ -514,7 +514,15 @@ function armedEnvFor(intentId: string): NodeJS.ProcessEnv {
     CONSUMER_SOLANA_PROOF_PROVIDER: "purch",
     CONSUMER_SOLANA_PROOF_CAPABILITY: "shop.search",
     CONSUMER_SOLANA_PROOF_MAX_USDC: "0.020000",
-    CONSUMER_SOLANA_PROOF_EXPIRES_AT: new Date(NOW + 3_600_000).toISOString(),
+    /**
+     * Relative to REAL time, not to the harness's frozen `NOW`.
+     *
+     * The plan compares the gate expiry against wall-clock `Date.now()`, because that is what a
+     * deployed instance does. Pinning this to `NOW + 1h` made the whole suite a time bomb: it passed
+     * while the wall clock was inside that hour and failed with `the armed proof gate has expired`
+     * afterwards, which reads like a code regression and is a fixture that went stale.
+     */
+    CONSUMER_SOLANA_PROOF_EXPIRES_AT: new Date(Date.now() + 3_600_000).toISOString(),
   };
 }
 
@@ -892,7 +900,7 @@ describe("operator preflight", () => {
         CONSUMER_SOLANA_PROOF_PROVIDER: "purch",
         CONSUMER_SOLANA_PROOF_CAPABILITY: "shop.search",
         CONSUMER_SOLANA_PROOF_MAX_USDC: "0.020000",
-        CONSUMER_SOLANA_PROOF_EXPIRES_AT: new Date(NOW + 3_600_000).toISOString(),
+        CONSUMER_SOLANA_PROOF_EXPIRES_AT: new Date(Date.now() + 3_600_000).toISOString(),
       },
     });
     const r = await post(h.url, OPERATOR_PREFLIGHT_ROUTE, validBody());
