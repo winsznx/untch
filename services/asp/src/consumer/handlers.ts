@@ -722,17 +722,19 @@ export async function handlePublicConsumerReceipt(
       policyHash: intent.policyHash,
       decision: decision?.decision ?? null,
     },
-    delivery:
-      evidence === null
-        ? null
-        : {
-            // Never merged. What the merchant asserted and what Untch proved are different claims,
-            // and a public page that conflated them would overstate what is actually known.
-            providerAttested: evidence.providerAttested.status,
-            untchVerified: evidence.untchVerified.verified,
-            method: evidence.untchVerified.method,
-            verifiedAt: evidence.untchVerified.verifiedAt,
-          },
+    /**
+     * ONLY what the merchant asserted at execution time.
+     *
+     * `untchVerified` deliberately does NOT live here, and the reason is the whole point of splitting
+     * the two views. It is the one field a later verification changes, so including it put the mutable
+     * claim inside the digest that is supposed to prove immutability — which is exactly the defect the
+     * first production redrive exposed: every settlement field was byte-identical and the settlement
+     * digest moved anyway.
+     *
+     * What Untch established is never merged with what the merchant said in any case. A page that
+     * conflated them would overstate what is actually known.
+     */
+    providerAttested: evidence === null ? null : evidence.providerAttested.status,
     quoteHash: intent.quoteHash,
     spendIntentHash: intent.spendIntentHash,
     createdAt: intent.createdAt,
@@ -747,6 +749,22 @@ export async function handlePublicConsumerReceipt(
    */
   const publicView = {
     ...settlementView,
+    /**
+     * Untch's own claim, outside the settlement digest because it is the thing that moves.
+     *
+     * Kept at the top level under its old name so existing readers of `delivery.untchVerified` are not
+     * broken by the split, and carrying its own timestamp so it is never mistaken for a settlement-time
+     * fact.
+     */
+    delivery:
+      evidence === null
+        ? null
+        : {
+            providerAttested: evidence.providerAttested.status,
+            untchVerified: evidence.untchVerified.verified,
+            method: evidence.untchVerified.method,
+            verifiedAt: evidence.untchVerified.verifiedAt,
+          },
     revision: {
       number: verification === null ? 1 : 2,
       /**
