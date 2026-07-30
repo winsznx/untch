@@ -448,3 +448,101 @@ describe("Solana rail — the two challenge shapes", () => {
     await refuses(client(), request({ challenge: challenge((o) => { o.amount = "19.99"; }) }), /not an atomic integer/);
   });
 });
+
+/**
+ * The treasury balance fallback, which runs on the guard path that decides whether a payment proceeds.
+ *
+ * `getTokenAccountsByOwner` is an index scan and is one of the first methods an RPC sheds under load.
+ * The fallback derives the associated token account and reads that single account instead. Two things
+ * about it were previously untested, and both matter at the moment it runs:
+ *
+ *   1. the derivation has to be RIGHT. A wrong address reads as zero, which the rail treats as an
+ *      unfunded treasury, so a derivation bug looks exactly like an empty wallet.
+ *   2. the module it needs has to be LOADED. It used to be pulled in by a dynamic `import()` inside
+ *      this fallback, meaning resolution happened during a degraded RPC condition rather than at boot.
+ *      It is now a static import, so a packaging problem fails startup instead of failing a payment.
+ *
+ * The address pair below is real mainnet data: the retired Untch Solana treasury and the USDC token
+ * account it actually used. Deriving one from the other is therefore checked against ground truth
+ * rather than against another copy of the same computation.
+ */
+
+/**
+ * The treasury balance fallback, which runs on the guard that decides whether a payment proceeds.
+ *
+ * `getTokenAccountsByOwner` is an index scan and one of the first methods an RPC sheds under load. The
+ * fallback derives the associated token account and reads that single account instead. Two properties
+ * of it were untested, and both matter precisely when it runs:
+ *
+ *   1. the derivation has to be RIGHT. A wrong address reads as zero, and the rail treats zero as an
+ *      unfunded treasury, so a derivation bug is indistinguishable from an empty wallet.
+ *   2. the module it needs has to be LOADED. This used to be a dynamic `import()` inside the fallback,
+ *      so resolution happened during a degraded RPC condition rather than at boot. It is now a static
+ *      import, which turns any packaging problem into a failed startup instead of a failed payment.
+ *
+ * The address pair is real mainnet data: the retired Untch Solana treasury and the USDC token account
+ * it actually used. The derivation is therefore checked against ground truth rather than against
+ * another copy of the same computation.
+ */
+describe("the treasury balance fallback", () => {
+  const RETIRED_TREASURY = "HsTvSTrXn1HeDzUJTbH4ETXEKTTf2ifEXaQGGEEQ2XUy";
+  const ITS_REAL_USDC_ACCOUNT = "4C5JJbFTZFRYPM3264mVWu1UqNkC7kos8tWvWfiHrhXo";
+
+  function withStubbedRpc(
+    handler: (method: string, params: readonly unknown[]) => Record<string, unknown>,
+  ): () => void {
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+      const req = JSON.parse(String(init?.body ?? "{}")) as { method?: string; params?: unknown[] };
+      const body = handler(String(req.method), req.params ?? []);
+      if (body.__http503 === true) return { ok: false, status: 503, json: async () => ({}) } as never;
+      return { ok: true, status: 200, json: async () => ({ jsonrpc: "2.0", id: 1, ...body }) } as never;
+    }) as never;
+    return () => {
+      globalThis.fetch = real;
+    };
+  }
+
+  test("derives the treasury's real USDC account when the index scan sheds", async () => {
+    // #given an RPC that refuses getTokenAccountsByOwner, and a treasury whose token account is known
+    let asked: string | null = null;
+    const restore = withStubbedRpc((method, params) => {
+      if (method === "getTokenAccountsByOwner") return { __http503: true };
+      if (method === "getTokenAccountBalance") {
+        asked = String(params[0]);
+        return { result: { value: { amount: "4749987", decimals: 6 } } };
+      }
+      throw new Error(`unexpected RPC method ${method}`);
+    });
+
+    try {
+      // #when the balance guard reads the treasury
+      const balance = await client({
+        addressResolver: () => RETIRED_TREASURY,
+      }).balanceOf(USDC_SOL);
+
+      // #then it asked the chain for the account it really uses, and reported that balance
+      assert.equal(asked, ITS_REAL_USDC_ACCOUNT, "the derived ATA must match real mainnet data");
+      assert.equal(balance.amount, 4_749_987n);
+    } finally {
+      restore();
+    }
+  });
+
+  test("a treasury with no token account reads as zero, not as an error", async () => {
+    // An unfunded rail and a broken one must not look the same. The first is a real state to report.
+    const restore = withStubbedRpc((method) => {
+      if (method === "getTokenAccountsByOwner") return { __http503: true };
+      return { error: { message: "could not find account" } };
+    });
+
+    try {
+      const balance = await client({
+        addressResolver: () => RETIRED_TREASURY,
+      }).balanceOf(USDC_SOL);
+      assert.equal(balance.amount, 0n);
+    } finally {
+      restore();
+    }
+  });
+});

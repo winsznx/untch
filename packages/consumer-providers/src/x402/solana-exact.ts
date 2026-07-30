@@ -60,6 +60,20 @@ import {
   type V2Credential,
   type V2CredentialInput,
 } from "./v2-svm-client";
+/**
+ * Imported STATICALLY, on purpose.
+ *
+ * This was a dynamic `import()` inside the treasury balance fallback. The package is a declared,
+ * locked dependency, so it resolved fine, but the shape was wrong for where it sits: the fallback runs
+ * during the balance guard that decides whether a payment may proceed, and it runs precisely when the
+ * RPC is already misbehaving. Deferring module resolution to that moment means any future packaging
+ * change surfaces as a failed payment rather than as a failed boot.
+ *
+ * A static import moves that failure to module load. The service then cannot reach READY, its health
+ * check fails, and the deployment does not take traffic, which is the correct outcome for a build whose
+ * dependencies cannot resolve.
+ */
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 
 /** Solana mainnet's genesis hash. CAIP-2 truncates it to 32 characters. */
 export const SOLANA_MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
@@ -612,9 +626,6 @@ async function readSplBalance(rpcUrl: string, owner: string, asset: AssetRef): P
      * This is a fallback, not the primary path. A production deployment should set
      * CONSUMER_SOLANA_RPC_URL to a real provider rather than lean on a public endpoint's mood.
      */
-    const [{ findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS }] = await Promise.all([
-      import("@solana-program/token"),
-    ]);
     const [ata] = await findAssociatedTokenPda({
       mint: mint as never,
       owner: owner as never,
