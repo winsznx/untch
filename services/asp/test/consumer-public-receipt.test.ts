@@ -497,6 +497,101 @@ describe("public receipt — a later verification is appended, never merged", ()
     assert.deepEqual(body.verification.refusals, ["RESULT_NOT_BOUND"]);
   });
 
+  /**
+   * NEITHER anchor implies the other, and this is the pair of tests the whole split exists for.
+   *
+   * The settlement receipt and the verification addendum are two claims. Anchoring the settlement batch
+   * can never carry the addendum — a batch's receipt set is fixed when the batch is created, and that
+   * batch predates the verification. A document reporting one combined ANCHORED would assert the
+   * verification was on chain when only the settlement was.
+   */
+  test("a settlement anchor does NOT make the verification anchored", async () => {
+    // #given a settlement receipt confirmed on chain, and a verification whose receipt is still queued
+    const deps = await seed({
+      receiptId: `0x${"d".repeat(64)}`,
+      evidence: EVIDENCE_VERIFIED,
+      verification: { ...LATER_VERIFICATION, supersedingReceiptId: `0x${"5".repeat(64)}` },
+    });
+    const body = (await handlePublicConsumerReceipt(
+      INTENT_ID,
+      deps,
+      // Settlement CONFIRMED; the verification receipt is not.
+      (async (id: string) =>
+        id === `0x${"d".repeat(64)}`
+          ? { status: "CONFIRMED", txHash: `0x${"e".repeat(64)}`, blockNumber: 9, batchId: 1 }
+          : { status: "QUEUED", txHash: null, blockNumber: null, batchId: null }) as never,
+    )).body as {
+      settlementAnchor: { state: string; covers: string };
+      verificationAnchor: { state: string; covers: string };
+      fullyAnchored: boolean;
+    };
+
+    assert.equal(body.settlementAnchor.state, "ANCHORED");
+    assert.equal(body.verificationAnchor.state, "PENDING", "the addendum is NOT anchored by the settlement");
+    assert.equal(body.fullyAnchored, false, "the combined document must not read as anchored");
+    assert.equal(body.settlementAnchor.covers, "SETTLEMENT_DECISION_RECEIPT");
+    assert.equal(body.verificationAnchor.covers, "DELIVERY_VERIFICATION_ADDENDUM");
+  });
+
+  test("a verification anchor does NOT make the settlement anchored", async () => {
+    // #given the reverse: the settlement anchor failed, the verification receipt confirmed
+    const deps = await seed({
+      receiptId: `0x${"d".repeat(64)}`,
+      evidence: EVIDENCE_VERIFIED,
+      verification: { ...LATER_VERIFICATION, supersedingReceiptId: `0x${"5".repeat(64)}` },
+    });
+    const body = (await handlePublicConsumerReceipt(
+      INTENT_ID,
+      deps,
+      (async (id: string) =>
+        id === `0x${"d".repeat(64)}`
+          ? { status: "DEGRADED_UNANCHORED", txHash: null, blockNumber: null, batchId: null }
+          : { status: "CONFIRMED", txHash: `0x${"f".repeat(64)}`, blockNumber: 11, batchId: 2 }) as never,
+    )).body as {
+      settlementAnchor: { state: string };
+      verificationAnchor: { state: string; txHash: string | null };
+      fullyAnchored: boolean;
+    };
+
+    assert.equal(body.settlementAnchor.state, "ANCHOR_FAILED");
+    assert.equal(body.verificationAnchor.state, "ANCHORED");
+    assert.equal(body.verificationAnchor.txHash, `0x${"f".repeat(64)}`);
+    assert.equal(body.fullyAnchored, false, "an anchored addendum does not anchor the settlement");
+  });
+
+  test("fullyAnchored is true only when BOTH confirm", async () => {
+    const deps = await seed({
+      receiptId: `0x${"d".repeat(64)}`,
+      evidence: EVIDENCE_VERIFIED,
+      verification: { ...LATER_VERIFICATION, supersedingReceiptId: `0x${"5".repeat(64)}` },
+    });
+    const body = (await handlePublicConsumerReceipt(
+      INTENT_ID,
+      deps,
+      (async () => ({ status: "CONFIRMED", txHash: `0x${"e".repeat(64)}`, blockNumber: 9, batchId: 1 })) as never,
+    )).body as { fullyAnchored: boolean; settlementAnchor: { state: string }; verificationAnchor: { state: string } };
+    assert.equal(body.settlementAnchor.state, "ANCHORED");
+    assert.equal(body.verificationAnchor.state, "ANCHORED");
+    assert.equal(body.fullyAnchored, true);
+  });
+
+  test("with no verification at all, the verification anchor says so rather than showing a failure", async () => {
+    const body = (await handlePublicConsumerReceipt(INTENT_ID, await seed({ receiptId: `0x${"d".repeat(64)}` }), null))
+      .body as { verificationAnchor: { state: string }; fullyAnchored: boolean };
+    // An absence, not a fault: nobody has re-verified this intent.
+    assert.equal(body.verificationAnchor.state, "NO_VERIFICATION");
+    assert.equal(body.fullyAnchored, false);
+  });
+
+  test("a verification with no receipt yet reports NOT_RECORDED, not anchored", async () => {
+    const body = (await handlePublicConsumerReceipt(
+      INTENT_ID,
+      await seed({ receiptId: `0x${"d".repeat(64)}`, evidence: EVIDENCE_VERIFIED, verification: LATER_VERIFICATION }),
+      null,
+    )).body as { verificationAnchor: { state: string } };
+    assert.equal(body.verificationAnchor.state, "NOT_RECORDED");
+  });
+
   test("the addendum publishes no request payload of its own", async () => {
     // The verification record carries hashes, never the query that was searched for.
     const body = (await handlePublicConsumerReceipt(INTENT_ID, await seed({ verification: LATER_VERIFICATION }), null)).body;

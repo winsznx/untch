@@ -2,6 +2,11 @@ import { randomBytes } from "node:crypto";
 import type { Decision, DecisionOutcome, SpendIntentInput } from "@untch/policy-engine";
 import { keccak256, toHex, type Hex } from "viem";
 import type { LedgerEntryInput, ReceiptDraft, ReceiptOnchain } from "./types";
+import {
+  deliveryVerificationMetadataHash,
+  deliveryVerificationReceiptId,
+  type DeliveryVerificationContext,
+} from "./delivery-verification-receipt";
 
 /**
  * The uint8 `decision` value on a VERIFY-kind receipt. A delivery verification does NOT re-decide the
@@ -225,4 +230,58 @@ export function draftFromVerify(input: SpendIntentInput, ctx: VerifyReceiptConte
   };
 
   return { onchain, kind: "VERIFY", provenance: ctx.provenance };
+}
+
+/** §10.3 `verifyResult`: 1 = PASS, 2 = FAIL. A refused verification is still a fact worth anchoring. */
+const VERIFY_RESULT_PASS = 1;
+const VERIFY_RESULT_FAIL = 2;
+
+/**
+ * Build the durable draft for one delivery-verification addendum (§7.3 → §10.3).
+ *
+ * Takes the SAME `SpendIntentInput` the settlement receipt was built from, so `intentHash`, `policyId`,
+ * `policyHash`, `agentId`, `vendorId`, `amount` and `token` come out identical through the same helpers.
+ * That shared identity IS the on-chain link between the two receipts: an indexer joins them on
+ * `intentHash` with nothing off-chain, and `kind` plus `decision = DECISION_NA` says which is which.
+ *
+ * Re-deriving those fields independently would produce a receipt describing a different transaction,
+ * which could not be joined to the settlement it is about.
+ *
+ * Returns NO ledger entry, and that is load-bearing rather than incidental: this receipt records what a
+ * check found about a payment that already happened. A ledger movement here would book the same money
+ * twice and make two anchors look like two spends.
+ *
+ * `proofTier` is 0 (T0), honestly. The verification re-reads evidence Untch already held and reaches no
+ * independent oracle, so a higher tier would assert corroboration nobody performed.
+ */
+export function draftFromDeliveryVerification(
+  input: SpendIntentInput,
+  ctx: DeliveryVerificationContext,
+): ReceiptDraft {
+  const onchain: ReceiptOnchain = {
+    receiptId: deliveryVerificationReceiptId(ctx),
+    policyId: BigInt(ctx.policyId ?? "0"),
+    policyHash: input.policyHash,
+    agentId: agentIdBytes32(input.buyerAgentId),
+    vendorId: vendorIdOf(input.endpoint),
+    amount: amountBaseUnits(input.amount),
+    token: input.token,
+    category: keccak256(toHex(input.category)),
+    payType: payTypeOf(input),
+    intentHash: ctx.intentHash,
+    taskHash: input.taskHash,
+    // Not a spend decision. The sentinel says so rather than leaving a zero to be read as ALLOW.
+    decision: DECISION_NA,
+    verifyResult: ctx.verified ? VERIFY_RESULT_PASS : VERIFY_RESULT_FAIL,
+    proofTier: 0,
+    metadataHash: deliveryVerificationMetadataHash(ctx),
+  };
+
+  /**
+   * `store-committed`, because every input came from Untch's own persisted evidence.
+   *
+   * Nothing here was supplied by a caller at request time, which is exactly the distinction this field
+   * exists to record for the §12 Bureau's `delivery_consistency` weighting.
+   */
+  return { onchain, kind: "VERIFY", provenance: "store-committed" };
 }

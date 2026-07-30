@@ -16,6 +16,7 @@ import {
   type ConsumerIntent,
   type ConsumerQuote,
   type Money,
+  type DeliveryVerificationRecord,
 } from "@untch/consumer-core";
 import type { Decision, SpendIntentInput } from "@untch/policy-engine";
 import type { StoredPolicy } from "@untch/policy-store";
@@ -114,7 +115,71 @@ function projectionInputFor(decision: Decision, amount: Money, summary: string):
  */
 export function makeConsumerReceiptSink(receiptWiring: ReceiptWiring | null): ConsumerReceiptSink | null {
   if (!receiptWiring) return null;
-  return { record: (args) => recordConsumerReceipt(receiptWiring.enqueuer, args) };
+  return {
+    record: (args) => recordConsumerReceipt(receiptWiring.enqueuer, args),
+    recordVerification: (args) => recordVerificationReceipt(receiptWiring.enqueuer, args),
+  };
+}
+
+/**
+ * The VERIFY receipt for a delivery-verification addendum.
+ *
+ * Reuses the SAME §8.1 projection the settlement receipt was built from, so both carry an identical
+ * `intentHash`, `policyId`, `policyHash`, `agentId`, `vendorId`, `amount` and `token`. That shared
+ * identity IS the on-chain link between them: an indexer joins the pair on `intentHash` with nothing
+ * off-chain, and `kind` plus `decision = DECISION_NA` says which is which.
+ *
+ * Re-deriving those fields from anything else would produce a receipt describing a different
+ * transaction, which could not be joined to the settlement it is about.
+ */
+async function recordVerificationReceipt(
+  enqueuer: ReceiptEnqueuer,
+  args: { intent: ConsumerIntent; quote: ConsumerQuote; verification: DeliveryVerificationRecord },
+): Promise<ReceiptRecordOutcome> {
+  const { intent, quote, verification } = args;
+  const stored = {
+    id: intent.policyId,
+    version: intent.policyVersion ?? 1,
+    policyHash: (intent.policyHash ?? `0x${"0".repeat(64)}`) as Hex,
+    owner: "0x0000000000000000000000000000000000000000",
+  } as unknown as StoredPolicy;
+
+  const projected = projectConsumerIntent({
+    intent,
+    quote,
+    stored,
+    deadlineSec: BigInt(Math.floor(Date.parse(quote.expiresAt) / 1000)),
+  });
+
+  try {
+    const result = await enqueuer.enqueueDeliveryVerification(projected.input, {
+      intentId: intent.intentId,
+      policyId: intent.policyId,
+      intentHash: projected.intentHash,
+      originalReceiptId: verification.originalReceiptId,
+      verificationId: verification.verificationId,
+      verifierVersion: verification.verifierVersion,
+      evidenceDigest: verification.evidenceDigest,
+      resultHash: verification.resultHash,
+      requestHash: verification.requestHash,
+      method: verification.method,
+      verified: verification.verified,
+      verifiedAt: verification.verifiedAt,
+      settlementTx: verification.settlementTx,
+      settlementChain: verification.settlementChain,
+      settledAmount: verification.settledAmount,
+    });
+    return { status: "recorded", receiptId: result.receiptId };
+  } catch (err) {
+    /**
+     * A receipt that cannot be written must not fail the verification.
+     *
+     * The verification record is already durable and already public; the anchor is a later, separate
+     * claim. The REASON is returned rather than swallowed, for the same reason it is on the settlement
+     * path: a misconfigured writer and a rejected write are different problems and must not look alike.
+     */
+    return { status: "failed", reason: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 async function recordConsumerReceipt(

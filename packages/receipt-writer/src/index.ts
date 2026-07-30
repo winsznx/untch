@@ -50,3 +50,10 @@ export { ReceiptEnqueuer } from "./enqueue";
 export { getReceiptStatus, isReceiptId } from "./status";
 export { createRedis, createTickQueue, createTickWorker, TICK_QUEUE, type TickJob } from "./queue";
 export { startWorker, type RunningWorker } from "./worker";
+export {
+  DELIVERY_VERIFICATION_RECEIPT_SCHEME,
+  deliveryVerificationReceiptId,
+  deliveryVerificationMetadataHash,
+  type DeliveryVerificationContext,
+} from "./delivery-verification-receipt";
+export { draftFromDeliveryVerification } from "./mapping";

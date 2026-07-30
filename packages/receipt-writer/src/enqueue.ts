@@ -1,6 +1,12 @@
 import type { Decision, SpendIntentInput } from "@untch/policy-engine";
 import type { Queue } from "bullmq";
-import { draftFromDecision, draftFromVerify, type VerifyReceiptContext } from "./mapping";
+import {
+  draftFromDecision,
+  draftFromDeliveryVerification,
+  draftFromVerify,
+  type VerifyReceiptContext,
+} from "./mapping";
+import type { DeliveryVerificationContext } from "./delivery-verification-receipt";
 import type { ReceiptDraft } from "./types";
 import type { ReceiptsRepo } from "./repo";
 import type { TickJob } from "./queue";
@@ -32,6 +38,24 @@ export class ReceiptEnqueuer {
    *  a decision receipt: durable write first, best-effort tick, immediate {receiptId, QUEUED}. */
   async enqueueVerify(input: SpendIntentInput, ctx: VerifyReceiptContext): Promise<EnqueueResult> {
     return this.persist(draftFromVerify(input, ctx));
+  }
+
+  /**
+   * §7.3 — enqueue the VERIFY receipt for one delivery-verification addendum.
+   *
+   * Idempotent by construction rather than by a guard here: the receipt id is derived from the
+   * verification's own immutable identity, so a repeat computes the same id and the insert's
+   * `ON CONFLICT DO NOTHING` makes it a no-op. Two callers racing therefore agree on one receipt
+   * instead of minting two ids for one claim.
+   *
+   * Returns the id either way. A caller cannot tell a first request from a repeat and does not need
+   * to: both mean "this verification has a receipt", which is the only thing it acts on.
+   */
+  async enqueueDeliveryVerification(
+    input: SpendIntentInput,
+    ctx: DeliveryVerificationContext,
+  ): Promise<EnqueueResult> {
+    return this.persist(draftFromDeliveryVerification(input, ctx));
   }
 
   private async persist(draft: ReceiptDraft): Promise<EnqueueResult> {

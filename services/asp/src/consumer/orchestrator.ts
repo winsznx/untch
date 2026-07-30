@@ -119,6 +119,23 @@ export interface ConsumerReceiptSink {
     readonly quote: ConsumerQuote;
     readonly decision: Decision;
   }): Promise<ReceiptRecordOutcome>;
+
+  /**
+   * Mint the VERIFY receipt that carries a delivery-verification addendum.
+   *
+   * A SEPARATE claim from the settlement receipt, and therefore a separate receipt. A batch's receipt
+   * set is fixed when the batch is created, so re-anchoring the settlement batch cannot pick up a
+   * verification that did not exist then. Reporting one anchor as covering both would assert the
+   * verification was on chain when only the settlement was.
+   *
+   * Idempotent: the receipt id is derived from the verification's own immutable identity, so a repeat
+   * returns the same id rather than minting a second receipt for one claim.
+   */
+  recordVerification(args: {
+    readonly intent: ConsumerIntent;
+    readonly quote: ConsumerQuote;
+    readonly verification: DeliveryVerificationRecord;
+  }): Promise<ReceiptRecordOutcome>;
 }
 
 export interface OrchestratorDeps {
@@ -443,6 +460,91 @@ export class ConsumerOrchestrator {
     }
 
     return { record: stored, alreadyRecorded, intent };
+  }
+
+  /**
+   * Mint the VERIFY receipt for an intent's latest delivery verification, and link it write-once.
+   *
+   * SEPARATE from the settlement receipt on purpose. Re-driving the settlement batch anchors exactly
+   * the receipt set that batch was created with, and that set predates the verification. Only a second
+   * receipt can carry the second claim.
+   *
+   * Idempotent end to end. The receipt id is derived from the verification's immutable identity, so a
+   * repeat computes the same id, the insert is a no-op, and the write-once link accepts the same value
+   * again. A DIFFERENT id for a verification that already has one is refused rather than allowed to
+   * repoint an anchored claim.
+   */
+  async createVerificationReceipt(intentId: string): Promise<{
+    readonly receiptId: string | null;
+    readonly alreadyMinted: boolean;
+    readonly verification: DeliveryVerificationRecord;
+    readonly reason: string | null;
+  }> {
+    const intent = await this.mustGet(intentId);
+    const verification = await this.d.store.latestDeliveryVerification(intentId);
+    if (verification === null) {
+      throw new ProviderError(
+        normalizedError(
+          "PROVIDER_BAD_REQUEST",
+          `intent ${intentId} has no delivery verification to anchor. Run the delivery-verification ` +
+            "redrive first; a receipt for a verification that does not exist would assert a check " +
+            "nobody performed.",
+        ),
+      );
+    }
+
+    /**
+     * Already linked: return it without touching the sink.
+     *
+     * Re-enqueuing would be harmless at the database, but reaching the receipt writer to re-learn an
+     * answer already on record is work that can fail for reasons unrelated to the question asked.
+     */
+    if (verification.supersedingReceiptId !== null) {
+      return {
+        receiptId: verification.supersedingReceiptId,
+        alreadyMinted: true,
+        verification,
+        reason: null,
+      };
+    }
+
+    const sink = this.d.receipts;
+    if (sink === null) {
+      return {
+        receiptId: null,
+        alreadyMinted: false,
+        verification,
+        // Honest "not wired", never a fabricated id.
+        reason: "no receipt sink is configured on this instance",
+      };
+    }
+
+    const quote = await this.mustQuote(intent);
+    const outcome = await sink.recordVerification({ intent, quote, verification });
+    if (outcome.status !== "recorded") {
+      /**
+       * The three outcomes stay distinguishable.
+       *
+       * "unconfigured" and "failed" are different operational problems, and collapsing them into one
+       * null id is exactly what made the first anchor failure take a manual replay to diagnose.
+       */
+      return {
+        receiptId: null,
+        alreadyMinted: false,
+        verification,
+        reason: outcome.status === "failed" ? outcome.reason : "the receipt writer is not configured",
+      };
+    }
+
+    const linked = await this.d.store.attachSupersedingReceipt(
+      {
+        intentId,
+        verifierVersion: verification.verifierVersion,
+        evidenceDigest: verification.evidenceDigest,
+      },
+      outcome.receiptId,
+    );
+    return { receiptId: outcome.receiptId, alreadyMinted: false, verification: linked, reason: null };
   }
 
   // ── 1. CREATE ───────────────────────────────────────────────────────────────

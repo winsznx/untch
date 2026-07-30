@@ -693,6 +693,18 @@ export async function handlePublicConsumerReceipt(
   }
 
   /**
+   * The VERIFY receipt's anchor status, looked up separately.
+   *
+   * Its own row and its own batch, so its progress is genuinely independent: the settlement can be
+   * anchored while this is still queued, and either can fail without the other.
+   */
+  let verificationStatusView: ReceiptStatusLike | null = null;
+  if (verification?.supersedingReceiptId != null && receiptStatus) {
+    const looked = await receiptStatus(verification.supersedingReceiptId);
+    verificationStatusView = looked === "invalid" ? null : looked;
+  }
+
+  /**
    * What the receipt asserted at settlement, separated from what was established later.
    *
    * Split so the ORIGINAL claim stays bit-verifiable after an addendum lands. If a later verification
@@ -820,6 +832,41 @@ export async function handlePublicConsumerReceipt(
     status: 200,
     body: {
       ...publicView,
+      /**
+       * TWO anchors, reported separately, because they carry two different claims.
+       *
+       * `settlementAnchor` covers the DECISION receipt written when the money moved. Re-driving its
+       * batch anchors exactly the receipt set that batch was created with, and that set predates the
+       * verification entirely — so it can never carry the addendum however many times it is re-driven.
+       *
+       * `verificationAnchor` covers the VERIFY receipt for the delivery-verification addendum.
+       *
+       * `receipt` is retained as an alias of `settlementAnchor` so existing readers keep working, and
+       * is NOT a combined status: a single label over two claims is precisely the overstatement this
+       * split exists to prevent.
+       */
+      settlementAnchor: {
+        covers: "SETTLEMENT_DECISION_RECEIPT",
+        ...anchorFrom(intent.receiptId, statusView),
+      },
+      verificationAnchor:
+        verification === null
+          ? { covers: "DELIVERY_VERIFICATION_ADDENDUM", state: "NO_VERIFICATION" as const }
+          : {
+              covers: "DELIVERY_VERIFICATION_ADDENDUM",
+              verificationId: verification.verificationId,
+              ...anchorFrom(verification.supersedingReceiptId, verificationStatusView),
+            },
+      /**
+       * True only when BOTH claims are on chain.
+       *
+       * Derived rather than stored, so it cannot drift from the two states above, and deliberately not
+       * a state of its own: a reader who wants detail must look at the two anchors.
+       */
+      fullyAnchored:
+        anchorFrom(intent.receiptId, statusView).state === "ANCHORED" &&
+        verification !== null &&
+        anchorFrom(verification.supersedingReceiptId, verificationStatusView).state === "ANCHORED",
       receipt: anchorFrom(intent.receiptId, statusView),
       integrity: {
         digest: `0x${sha256Hex(stableStringify(publicView))}`,

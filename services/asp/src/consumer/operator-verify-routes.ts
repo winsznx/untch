@@ -30,8 +30,10 @@ import { authenticateOperator } from "../internal-auth";
 import type { ConsumerWiring } from "./wiring";
 import { classifyFailure } from "./operator-error-classification";
 import { operatorEnvironmentOf } from "./operator-routes";
+import { SupersedingReceiptConflictError } from "@untch/consumer-core";
 
 export const OPERATOR_VERIFY_DELIVERY_ROUTE = "/internal/consumer/intents/:intentId/verify-delivery" as const;
+export const OPERATOR_VERIFY_RECEIPT_ROUTE = "/internal/consumer/intents/:intentId/verification-receipt" as const;
 
 export interface VerifyRoutesDeps {
   readonly wiring: ConsumerWiring | null;
@@ -147,6 +149,75 @@ export function registerConsumerVerifyRoutes(app: Express, deps: VerifyRoutesDep
         retryable: classified.retryable,
         recordWritten: false,
         receiptAltered: false,
+        paid: false,
+        docsUrl: null,
+      });
+    });
+  });
+
+  /**
+   * Mint the VERIFY receipt that carries the delivery-verification addendum.
+   *
+   * Separate from anchoring the settlement receipt, and separate from the verification itself. It moves
+   * no money, reaches no provider and loads no signer inside the ASP: it writes one durable receipt row
+   * whose anchoring the existing worker performs later, on its own schedule.
+   */
+  app.post(OPERATOR_VERIFY_RECEIPT_ROUTE, (req: Request, res: Response) => {
+    const auth = authenticateOperator(req, { route: OPERATOR_VERIFY_RECEIPT_ROUTE, env });
+    if (!auth.ok) {
+      res.status(auth.status).json({ code: auth.code, message: auth.message, retryable: false, docsUrl: null });
+      return;
+    }
+    const wiring = deps.wiring;
+    if (!wiring) {
+      res.status(503).json({
+        code: "CONSUMER_PACK_NOT_CONFIGURED",
+        message: "no production store is wired on this instance",
+        retryable: false,
+        docsUrl: null,
+      });
+      return;
+    }
+    const intentId = req.params.intentId ?? "";
+
+    (async (): Promise<void> => {
+      const out = await wiring.orchestrator.createVerificationReceipt(intentId);
+      const base = wiring.publicBaseUrl.replace(/\/+$/, "");
+      res.status(out.receiptId === null ? 503 : 200).json({
+        intentId,
+        verificationId: out.verification.verificationId,
+        verificationReceiptId: out.receiptId,
+        alreadyMinted: out.alreadyMinted,
+        reason: out.reason,
+        /** What this receipt covers, stated so it can never be read as covering the settlement too. */
+        covers: "DELIVERY_VERIFICATION_ADDENDUM",
+        relationship: "SUBSEQUENT_TO_SETTLEMENT",
+        originalReceiptId: out.verification.originalReceiptId,
+        verifierVersion: out.verification.verifierVersion,
+        evidenceDigest: out.verification.evidenceDigest,
+        resultHash: out.verification.resultHash,
+        verifiedAt: out.verification.verifiedAt,
+        publicReceiptUrl: `${base}/consumer/receipt/${intentId}`,
+        ledgerMovement: false,
+        paid: false,
+        providerCalled: false,
+        signerLoaded: false,
+        note:
+          "This receipt records the delivery-verification addendum only. Anchoring the settlement " +
+          "receipt does not anchor this claim, and anchoring this does not anchor the settlement. The " +
+          "public receipt reports the two states separately until both confirm.",
+      });
+    })().catch((err: unknown) => {
+      const classified = classifyFailure(err);
+      const conflict = err instanceof SupersedingReceiptConflictError;
+      res.status(conflict ? 409 : classified.status).json({
+        code: conflict ? "VERIFICATION_RECEIPT_CONFLICT" : classified.code,
+        message: conflict ? err.message : classified.message,
+        intentId,
+        stage: "VERIFICATION_RECEIPT",
+        retryable: false,
+        receiptAltered: false,
+        ledgerMovement: false,
         paid: false,
         docsUrl: null,
       });
