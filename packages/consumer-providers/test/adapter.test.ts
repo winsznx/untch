@@ -512,17 +512,61 @@ describe("the registry seed and the adapters cannot drift apart", () => {
     assertSeedMatchesAdapters(buildAdapterRegistry());
   });
 
-  test("NOTHING is seeded as 'verified' — no settlement has ever been proven", () => {
+  /**
+   * This assertion used to read "NOTHING is seeded as verified", which was true until a settlement
+   * existed. Deleting it once one did would have thrown away the control along with the obsolete fact,
+   * so it now checks the thing the original was standing in for: a verified claim must be BACKED.
+   *
+   * `verified` is the only value that clears the production execution floor, so it is the one word in
+   * the seed that can move money. Requiring dated settlement evidence in the provenance means promoting
+   * a capability takes a sentence describing what was observed, which is a much better gate than a
+   * blanket prohibition that has to be removed the first time the project succeeds.
+   */
+  test("anything seeded 'verified' cites dated settlement and delivery evidence", () => {
     for (const seed of PROVIDER_SEEDS) {
-      assert.notEqual(
-        seed.provider.maturity,
-        "verified",
-        `${seed.provider.providerId} claims 'verified' without a proven settlement`,
+      const verifiedCaps = seed.capabilities.filter((c) => c.maturity === "verified");
+      const providerVerified = seed.provider.maturity === "verified";
+
+      if (!providerVerified && verifiedCaps.length === 0) continue;
+
+      // A verified capability under a non-verified provider can never execute, because the registry
+      // takes the lower of the two. Seeding that pair states something the code will discard.
+      if (verifiedCaps.length > 0) {
+        assert.ok(
+          providerVerified,
+          `${seed.provider.providerId} has verified capabilities but is not itself verified`,
+        );
+      }
+
+      // Provider-level verified means AT LEAST ONE capability is verified. It must not be a bare claim
+      // with nothing under it, because the provider row is what a reader sees first.
+      assert.ok(
+        verifiedCaps.length > 0,
+        `${seed.provider.providerId} claims 'verified' with no verified capability beneath it`,
       );
-      for (const cap of seed.capabilities) {
-        assert.notEqual(cap.maturity, "verified", `${seed.provider.providerId}.${cap.capability}`);
+
+      assert.match(
+        seed.provider.provenance,
+        /\b20\d{2}-\d{2}-\d{2}\b.*settled/s,
+        `${seed.provider.providerId} claims 'verified' without dated settlement evidence in its provenance`,
+      );
+
+      for (const cap of verifiedCaps) {
+        assert.ok(
+          cap.notes.length > 40,
+          `${seed.provider.providerId}.${cap.capability} is verified but its notes do not say what was observed`,
+        );
       }
     }
+  });
+
+  test("only purch shop.search is verified, so no other capability crossed the floor with it", () => {
+    // The narrow promotion, pinned. A future edit that promotes a sibling has to change this line, which
+    // makes widening the blast radius a deliberate act rather than a side effect.
+    const verified = PROVIDER_SEEDS.flatMap((s) =>
+      s.capabilities.filter((c) => c.maturity === "verified").map((c) => `${s.provider.providerId}.${c.capability}`),
+    ).sort();
+    assert.deepEqual(verified, ["purch.shop.search"]);
   });
 
   test("every seed carries a dated, checkable provenance string", () => {

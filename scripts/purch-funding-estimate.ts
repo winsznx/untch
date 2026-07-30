@@ -156,11 +156,13 @@ async function main(): Promise<void> {
   }
 
   console.log("\n\x1b[1mWhat this does NOT unlock\x1b[0m");
-  console.log("  Funding the wallet does not make Purch executable. X402SolanaExactClient.pay() still");
-  console.log("  returns PROTOCOL_NOT_EXECUTABLE, because the exact payload serialisation the");
-  console.log("  facilitator expects has not been confirmed against a real exchange. Money in the");
-  console.log("  wallet and a working parser are two different prerequisites, and this script only");
-  console.log("  sizes the first.");
+  console.log("  Funding the wallet does not make Purch continuously available. The rail settles: a");
+  console.log("  real payment cleared on 2026-07-29 and Purch returned real products, so shop.search");
+  console.log("  is verified and executes. What funding does not provide is standing authority.");
+  console.log("  Execution needs CONSUMER_SOLANA_EXECUTION_ENABLED, the provider and chain flags, and");
+  console.log("  a treasury signer, and that signer is removed again after each bounded run. Only");
+  console.log("  shop.search is verified. shop.quote, shop.purchase and shop.track remain");
+  console.log("  experimental and cannot execute.");
 
   const gifts = "https://x402gifts.purch.xyz";
   console.log("\n\x1b[1mA finding worth recording\x1b[0m");

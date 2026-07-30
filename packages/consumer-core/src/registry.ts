@@ -83,10 +83,27 @@ export type PublicToolState =
 export function publicToolState(
   effectiveMaturity: ProviderMaturity,
   accessBlocker: CapabilityAccessBlocker | null | undefined = null,
+  /**
+   * Whether execution is CONTINUOUSLY available, or needs an operator to arm it first.
+   *
+   * This is what separates LIVE from BETA, and the distinction is not cosmetic. `verified` is a claim
+   * about EVIDENCE: a real payment settled and a real delivery was observed. LIVE is a claim about
+   * AVAILABILITY: someone can call this now and it will work. Purch shop.search satisfies the first and
+   * not the second, because its treasury signer is removed after every bounded run, so a caller
+   * arriving between runs finds nothing that can pay.
+   *
+   * Collapsing the two would publish LIVE for a capability that is switched off almost all of the time,
+   * which is the kind of claim that is technically traceable to a real settlement and still misleads
+   * every person who reads it.
+   *
+   * Defaults true so existing callers keep their meaning. It never feeds the execution gate: this is a
+   * label, and `assertExecutable` still reads `maturity` alone.
+   */
+  standingExecution = true,
 ): PublicToolState {
   switch (effectiveMaturity) {
     case "verified":
-      return "LIVE";
+      return standingExecution ? "LIVE" : "BETA";
     case "sandbox":
       return "BETA";
     case "experimental":
@@ -100,12 +117,37 @@ export function publicToolState(
 export function publicToolStateFor(
   provider: ProviderRecord,
   capability: ProviderCapabilityRecord,
+  standingExecution = true,
 ): PublicToolState {
   if (!provider.enabled) return "DISABLED";
   return publicToolState(
     ProviderRegistry.effectiveMaturity(provider, capability),
     capability.accessBlocker ?? null,
+    standingExecution,
   );
+}
+
+/**
+ * Does this chain have a signer that is available WITHOUT an operator arming step?
+ *
+ * Derived from configuration rather than stored, so the public label cannot drift from the deployment
+ * it describes. A proof-mode instance reads as NOT standing on purpose: proof mode exists to authorise
+ * exactly one bounded intent, which is the opposite of ordinary availability.
+ *
+ * Base is standing whenever its treasury key is configured, because nothing removes it between calls.
+ */
+export function railHasStandingSigner(
+  chain: string,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const on = (v: string | undefined): boolean => v?.trim() === "1" || v?.trim().toLowerCase() === "true";
+
+  if (chain.startsWith("solana:")) {
+    if (on(env.CONSUMER_SOLANA_PROOF_MODE)) return false;
+    return Boolean(env.CONSUMER_TREASURY_SOLANA_SECRET_KEY?.trim()) && on(env.CONSUMER_SOLANA_EXECUTION_ENABLED);
+  }
+  if (chain === "eip155:8453") return Boolean(env.CONSUMER_TREASURY_BASE_PRIVATE_KEY?.trim());
+  return false;
 }
 
 export interface MaturityGate {
