@@ -66,13 +66,37 @@
  */
 
 import { createHash } from "node:crypto";
-import { createPublicClient, createWalletClient, http, decodeEventLog, type Address, type Hex } from "viem";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  createPublicClient,
+  createWalletClient,
+  decodeEventLog,
+  decodeFunctionData,
+  formatEther,
+  formatGwei,
+  http,
+  toFunctionSelector,
+  type Address,
+  type Hex,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { hashCanonicalJson } from "../packages/canon/src/index";
 import { activeChain, activeRpcUrl } from "../packages/shared/src/chains";
 import { POLICY_REGISTRY_ABI } from "../packages/policy-store/src/registry";
 import { resolvePolicyRegistry } from "../packages/policy-store/src/config";
 
 const ok = (s: string): void => console.log(`  \x1b[32m✓\x1b[0m ${s}`);
+const dim = (s: string): string => `\x1b[2m${s}\x1b[0m`;
+
+/**
+ * Where the redacted inspection record lands.
+ *
+ * Gitignored, because it names a wallet and a chain state at an instant rather than anything anyone
+ * needs in the repository. It exists so the inspection that preceded a mainnet transaction can be read
+ * back afterwards, which a terminal scrollback cannot be relied on for.
+ */
+const RECORD_DIR = "internal/policy-registration";
 const field = (k: string, v: string): void => console.log(`     ${k.padEnd(24)} ${v}`);
 const step = (n: number, s: string): void => console.log(`\n\x1b[1m${String(n).padStart(2)}. ${s}\x1b[0m`);
 const warn = (s: string): void => console.log(`  \x1b[33m!\x1b[0m ${s}`);
@@ -244,6 +268,7 @@ async function main(): Promise<void> {
     stop(2, `unknown --profile ${JSON.stringify(profileName)}; known: ${Object.keys(PROFILES).join(", ")}`);
   }
   const dryRun = has("dry-run");
+  const confirmed = has("confirm");
   const aspUrl = (process.env.UNTCH_ASP_URL?.trim() || "https://asp.untch.xyz").replace(/\/+$/, "");
 
   step(1, "THE SIGNER");
@@ -285,12 +310,41 @@ async function main(): Promise<void> {
   field("profile", `${profile.name} — ${profile.description}`);
 
   const gas = await publicClient.getBalance({ address: account.address });
-  field("gas balance", `${gas} wei`);
-  if (gas === 0n) stop(2, `${account.address} holds no gas on chain ${chain.id}; fund it before registering`);
+  field("gas balance", `${formatEther(gas)} OKB`);
+  /**
+   * An empty wallet is fine for a DRY RUN, and refusing here was the wrong order.
+   *
+   * The whole point of the rehearsal is to inspect the calldata, the canonical hash and the fee estimate
+   * BEFORE deciding to fund anything. A balance check at this point forced funding first, which inverts
+   * the sequence: money moves before the thing it is meant to pay for has been read. The check now sits
+   * where it belongs, immediately before the broadcast, and compares against the real estimate rather
+   * than against zero.
+   */
+  if (gas === 0n) {
+    warn(`${account.address} holds no gas yet. Fine for a dry run; required before a broadcast.`);
+  }
 
   // ── 2. build the unsigned call through the ASP ──────────────────────────────
   step(2, "BUILD — the ASP canonicalises and hashes the rules. It never signs.");
-  const expiryIso = new Date(Date.now() + profile.expiryHours * 3_600_000).toISOString();
+  /**
+   * The expiry is PINNABLE, and pinning it is what makes the rehearsal meaningful.
+   *
+   * It defaults to `now + profile.expiryHours`, which means two runs minutes apart produce different
+   * rulesets and therefore different canonical hashes. That is fatal to the one cross-check worth having:
+   * "the hash the chain anchored is the hash the dry run showed me". So the dry run prints the exact flag
+   * to reuse, and the broadcast run takes it, so both hash the identical ruleset.
+   *
+   * Validated rather than trusted: a past expiry would revert on chain, and an unbounded one would defeat
+   * the point of a bounded proof policy.
+   */
+  const pinnedExpiry = arg("expires-at");
+  const expiryIso =
+    pinnedExpiry === null
+      ? new Date(Date.now() + profile.expiryHours * 3_600_000).toISOString()
+      : new Date(Date.parse(pinnedExpiry)).toISOString();
+  if (pinnedExpiry !== null && Number.isNaN(Date.parse(pinnedExpiry))) {
+    stop(2, `--expires-at ${JSON.stringify(pinnedExpiry)} is not a parseable instant`);
+  }
   const rules = profile.rules(expiryIso);
   /**
    * The `agent` the policy governs.
@@ -334,23 +388,251 @@ async function main(): Promise<void> {
     stop(3, `the ASP builds for chain ${String(buildBody.chainId)} but this command is on ${chain.id}`);
   }
 
-  const localHash = `0x${createHash("sha256").update(JSON.stringify(rules)).digest("hex")}`;
-  field("local rules digest", `${localHash.slice(0, 18)}… (not the canonical hash; a change detector only)`);
+  /**
+   * Recompute the canonical hash LOCALLY, with the same library the ASP uses, and require a match.
+   *
+   * The previous version hashed `JSON.stringify(rules)` and admitted in its own label that this was a
+   * change detector rather than the canonical hash. That is not a verification: it could not have caught
+   * an ASP that hashed a different ruleset than the one submitted, which is the single thing worth
+   * checking before anchoring a hash on mainnet forever. `hashCanonicalJson` is the function the ASP
+   * calls, so computing it here and comparing is an independent confirmation rather than a restatement.
+   */
+  const localCanonicalHash = hashCanonicalJson(rules as unknown as Record<string, unknown>) as Hex;
+  field("local canonical hash", localCanonicalHash);
+  if (localCanonicalHash.toLowerCase() !== policyHash.toLowerCase()) {
+    stop(
+      3,
+      `the ASP anchored hash ${policyHash} does not match the locally recomputed canonical hash ` +
+        `${localCanonicalHash}. The ASP hashed something other than the ruleset submitted. Refusing.`,
+    );
+  }
+  ok("the ASP hashed exactly the ruleset this command submitted");
+
+  // ── 2b. the calldata, decoded and checked against what it claims to be ──────
+  step(3, "CALLDATA — decoded locally, never trusted as returned");
+  const calldata = String(buildBody.unsignedTx && (buildBody.unsignedTx as Record<string, unknown>).calldata) as Hex;
+  const unsignedTo = String((buildBody.unsignedTx as Record<string, unknown>).to);
+  const expectedSelector = toFunctionSelector("registerPolicy(address,bytes32,uint64)");
+  const expiry = BigInt(String(buildBody.expiry));
+
+  field("target", unsignedTo);
+  field("selector", `${calldata.slice(0, 10)} (registerPolicy = ${expectedSelector})`);
+  field("calldata length", `${(calldata.length - 2) / 2} bytes`);
+  const calldataHash = `0x${createHash("sha256").update(calldata).digest("hex")}`;
+  field("calldata hash", calldataHash);
+
+  /**
+   * Decode it and compare every argument, rather than trusting the decoded args the ASP also returned.
+   *
+   * A route that returned correct-looking `args` alongside calldata encoding something else is exactly
+   * the failure a caller cannot see. The bytes are what gets signed, so the bytes are what gets checked.
+   */
+  const decoded = decodeFunctionData({ abi: POLICY_REGISTRY_ABI, data: calldata });
+  const problems: string[] = [];
+  if (unsignedTo.toLowerCase() !== registry.toLowerCase()) {
+    problems.push(`target ${unsignedTo} is not the production PolicyRegistry ${registry}`);
+  }
+  if (!calldata.toLowerCase().startsWith(expectedSelector.toLowerCase())) {
+    problems.push(`selector ${calldata.slice(0, 10)} is not registerPolicy`);
+  }
+  if (decoded.functionName !== "registerPolicy") {
+    problems.push(`the calldata calls ${decoded.functionName}, not registerPolicy`);
+  }
+  const args = (decoded.args ?? []) as readonly unknown[];
+  if (args.length !== 3) problems.push(`registerPolicy takes 3 arguments; the calldata carries ${args.length}`);
+  if (String(args[0]).toLowerCase() !== agent.toLowerCase()) {
+    problems.push(`the encoded agent ${String(args[0])} is not this wallet`);
+  }
+  if (String(args[1]).toLowerCase() !== localCanonicalHash.toLowerCase()) {
+    problems.push(`the encoded policy hash ${String(args[1])} is not the locally recomputed hash`);
+  }
+  if (BigInt(String(args[2])) !== expiry) {
+    problems.push(`the encoded expiry ${String(args[2])} is not ${expiry}`);
+  }
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  if (expiry <= nowSec) problems.push(`expiry ${expiry} is not in the future`);
+  if (expiry > nowSec + 7n * 86_400n) {
+    problems.push(`expiry ${expiry} is more than seven days out; a proof policy must be bounded`);
+  }
+  if (problems.length > 0) {
+    stop(3, `the calldata does not match what it claims:\n  ${problems.join("\n  ")}`);
+  }
+  ok("target, selector, agent, policy hash and expiry all match, decoded from the bytes");
+  console.log(
+    dim(
+      "     registerPolicy takes an agent, a hash and an expiry. It moves no value, approves no token,\n" +
+        "     names no treasury, grants no role, calls no arbitrary target and cannot be bundled: the\n" +
+        "     decoded argument list above is the entire effect of this transaction.",
+    ),
+  );
+
+  // ── 2c. what the deterministic engine will and will not enforce ─────────────
+  step(4, "RULES — what the engine evaluates, and what it does not");
+  const cats = (rules.categories as { allow: string[]; deny: string[] });
+  const budgets = rules.budgets as { daily: number; token: string };
+  const dup = rules.duplicates as { ttlMin: number; keys: string[] };
+  field("category allow", cats.allow.join(", "));
+  field("category deny", `${cats.deny.length} denied, incl. ${cats.deny.slice(0, 3).join(", ")}`);
+  field("perCallCap", `${String(rules.perCallCap)} ${budgets.token} (FUNDING token display units)`);
+  field("onPerCallCapExceeded", String(rules.onPerCallCapExceeded));
+  field("daily budget", `${budgets.daily} ${budgets.token}`);
+  field("rateLimit", `${String((rules.rateLimit as { callsPerHour: number }).callsPerHour)} call(s)/hour`);
+  field("cooldown", `${String((rules.cooldowns as { sameServiceMin: number }).sameServiceMin)} min same-service`);
+  field("duplicates", `${dup.ttlMin} min window on ${dup.keys.join(" + ")}`);
+  field("expiry", expiryIso);
+  field("policy version", "1 (registerPolicy always mints version 1)");
+  console.log(
+    dim(
+      "     ENFORCED by the engine: the category allow/deny lists, the funding-token per-call cap and\n" +
+        "     daily budget, the duplicate window, the cooldown, the calls-per-hour limit, the expiry.\n" +
+        "     NOT enforced by the engine: the PROVIDER's identity. There is no provider rule. `purch only`\n" +
+        "     is enforced by the production registry, by CONSUMER_PROVIDER_PURCH_ENABLED, and by the proof\n" +
+        "     gate's providerId. The 0.020000 USDC SETTLEMENT ceiling is likewise not here: it is carried\n" +
+        "     by the operator route's maxProviderAmount, CONSUMER_SOLANA_PROOF_MAX_USDC, and the payment\n" +
+        "     capability the treasury router mints. Both ceilings are real; neither substitutes for the other.",
+    ),
+  );
+
+  // ── 2d. gas, estimated against the real chain ──────────────────────────────
+  step(5, "COST — estimated against the live chain");
+  /**
+   * Estimated with a BALANCE OVERRIDE when the wallet is still empty.
+   *
+   * X Layer's node enforces the sender's balance during `eth_estimateGas`, so an unfunded account cannot
+   * price its own transaction — which would force funding before the rehearsal that decides whether to
+   * fund. A state override lends the sender a synthetic balance for the simulation only. Nothing else
+   * about the call changes: same sender, same nonce, same calldata, so the gas figure is this
+   * transaction's, and a revert for any REAL reason still surfaces as a revert.
+   *
+   * A failed estimate is a REFUSAL rather than a warning. The simulation executes the call, so a revert
+   * means this exact transaction would revert on chain — an id collision, a zero hash, an expiry already
+   * past. Broadcasting anyway would spend gas to learn what the simulation already said.
+   */
+  const estimateArgs = {
+    address: registry,
+    abi: POLICY_REGISTRY_ABI,
+    functionName: "registerPolicy" as const,
+    args: [agent, localCanonicalHash, expiry] as const,
+    account,
+  };
+  let gasEstimate: bigint | null = null;
+  let estimateMode = "direct";
+  try {
+    gasEstimate = await publicClient.estimateContractGas(estimateArgs);
+  } catch (direct) {
+    try {
+      gasEstimate = await publicClient.estimateContractGas({
+        ...estimateArgs,
+        stateOverride: [{ address: account.address, balance: 10n ** 16n }],
+      });
+      estimateMode = "with a simulated balance (this wallet is not yet funded)";
+    } catch (overridden) {
+      stop(
+        5,
+        "the gas estimate reverted, so this transaction would revert on chain.\n" +
+          `  direct:     ${(direct as Error).message.slice(0, 200)}\n` +
+          `  overridden: ${(overridden as Error).message.slice(0, 200)}`,
+      );
+    }
+  }
+  const gasPrice = await publicClient.getGasPrice();
+  const maxFee = (gasEstimate ?? 0n) * gasPrice;
+  field("estimated gas", `${String(gasEstimate)} (${estimateMode})`);
+  field("gas price", `${formatGwei(gasPrice)} gwei`);
+  field("maximum fee", `${formatEther(maxFee)} OKB`);
+  field("owner balance", `${formatEther(gas)} OKB`);
+  field("funding needed", gas >= maxFee ? "none" : `${formatEther(maxFee - gas)} OKB`);
+
+  /**
+   * A redacted record of exactly what was inspected, written before anything is signed.
+   *
+   * It holds no key and no signed transaction: a signed transaction on disk is a broadcastable artefact,
+   * and the point of this file is to be a record rather than a second way to submit.
+   */
+  const record = {
+    inspectedAt: new Date().toISOString(),
+    owner: account.address,
+    agent,
+    policyHash: localCanonicalHash,
+    hashConfirmedIndependently: true,
+    registry,
+    chainId: chain.id,
+    expiry: Number(expiry),
+    expiryIso,
+    calldataHash,
+    calldataBytes: (calldata.length - 2) / 2,
+    selector: calldata.slice(0, 10),
+    estimatedGas: String(gasEstimate),
+    maximumFeeOkb: formatEther(maxFee),
+    rulesSummary: {
+      categoryAllow: cats.allow,
+      categoryDenyCount: cats.deny.length,
+      perCallCap: rules.perCallCap,
+      dailyBudget: budgets.daily,
+      fundingToken: budgets.token,
+      callsPerHour: (rules.rateLimit as { callsPerHour: number }).callsPerHour,
+      cooldownMin: (rules.cooldowns as { sameServiceMin: number }).sameServiceMin,
+      duplicateWindowMin: dup.ttlMin,
+    },
+  };
+  mkdirSync(RECORD_DIR, { recursive: true });
+  const recordPath = join(RECORD_DIR, `policy-dry-run-${localCanonicalHash.slice(2, 18)}.json`);
+  writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+  field("record", recordPath);
 
   if (dryRun) {
-    step(3, "DRY RUN — nothing was signed, submitted or stored.");
-    console.log(JSON.stringify({ agent, policyHash, expiry: buildBody.expiry, rules }, null, 2));
+    step(6, "DRY RUN — nothing was signed, submitted or stored.");
+    console.log(JSON.stringify({ agent, policyHash: localCanonicalHash, expiry: Number(expiry), rules }, null, 2));
+    console.log(
+      `\n  To submit EXACTLY this ruleset and EXACTLY this hash, reuse the pinned expiry:\n` +
+        `    pnpm consumer:policy:create --profile ${profile.name} \\\n` +
+        `      --expires-at ${expiryIso} --confirm\n\n` +
+        `  Without --expires-at the expiry moves, the canonical hash changes, and the hash anchored on\n` +
+        `  chain would not be the one inspected above.`,
+    );
+    return;
+  }
+
+  /**
+   * An explicit confirmation flag for the broadcast, separate from the absence of --dry-run.
+   *
+   * Forgetting a flag should not be how a mainnet transaction gets signed. `--dry-run` off means "I am
+   * not asking for a rehearsal"; `--confirm` means "I have read the inspection above and I am asking for
+   * this exact transaction". Requiring both makes the accidental case a no-op rather than a broadcast.
+   */
+  if (!confirmed) {
+    step(6, "NOT SUBMITTED — every check above passed, and --confirm was not passed.");
+    console.log(
+      `  Everything is verified and nothing was signed. To submit exactly one transaction:\n` +
+        `    pnpm consumer:policy:create --profile ${profile.name} --confirm`,
+    );
     return;
   }
 
   // ── 3. sign and submit ─────────────────────────────────────────────────────
-  step(3, "REGISTER — this wallet signs, so this wallet becomes the on-chain owner.");
-  const expiry = BigInt(String(buildBody.expiry));
+  /**
+   * The balance gate, where it can be compared against a real number.
+   *
+   * Re-read rather than reused: the dry run may have been minutes or hours earlier, and the funding
+   * transaction that followed it is exactly the state change this needs to see.
+   */
+  const balanceNow = await publicClient.getBalance({ address: account.address });
+  if (balanceNow < maxFee) {
+    stop(
+      6,
+      `this wallet holds ${formatEther(balanceNow)} OKB, under the ${formatEther(maxFee)} OKB this ` +
+        "transaction is estimated to cost. Fund it and re-run.",
+    );
+  }
+
+  step(7, "REGISTER — this wallet signs, so this wallet becomes the on-chain owner.");
+  field("owner balance", `${formatEther(balanceNow)} OKB`);
   const txHash = await walletClient.writeContract({
     address: registry,
     abi: POLICY_REGISTRY_ABI,
     functionName: "registerPolicy",
-    args: [agent, policyHash, expiry],
+    // The verified values, not the returned ones. Everything here was decoded from the calldata above.
+    args: [agent, localCanonicalHash, expiry],
   });
   field("tx", txHash);
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 2 });
@@ -379,7 +661,7 @@ async function main(): Promise<void> {
   field("policyId", policyId);
 
   // ── 4. sync ────────────────────────────────────────────────────────────────
-  step(4, "SYNC — the ASP reads the confirmed event and stores the row with the owner it finds there.");
+  step(8, "SYNC — the ASP reads the confirmed event and stores the row with the owner it finds there.");
   const syncRes = await fetch(`${aspUrl}/sync_policy_registration`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -408,7 +690,7 @@ async function main(): Promise<void> {
     );
   }
 
-  step(5, "VERIFY — production resolves it as ACTIVE, read back through its own preflight.");
+  step(9, "VERIFY — production resolves it as ACTIVE, read back through its own preflight.");
   const opsToken = process.env.INTERNAL_OPS_TOKEN?.trim();
   if (!opsToken) {
     warn("INTERNAL_OPS_TOKEN is not set, so the readback was skipped. Verify with the controller instead:");
