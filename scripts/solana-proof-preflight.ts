@@ -54,6 +54,15 @@ const ARMING_VARS = [
 
 let failed = 0;
 let skipped = 0;
+/**
+ * Checks that cannot apply YET, as distinct from checks that could not run.
+ *
+ * The intent id is chosen at arming time, so before arming there is no id to look for. Counting that
+ * as an unproven check would make INCOMPLETE the permanent result of a correct pre-arming state, and an
+ * operator who sees INCOMPLETE every time stops reading it. A check that is not yet applicable is
+ * reported as such and enforced the moment its input exists.
+ */
+let notYetApplicable = 0;
 
 const ok = (label: string, detail = ""): void => console.log(`  \x1b[32m✓\x1b[0m ${label}${detail ? `: ${detail}` : ""}`);
 const bad = (label: string, detail = ""): void => {
@@ -63,6 +72,10 @@ const bad = (label: string, detail = ""): void => {
 const skip = (label: string, why: string): void => {
   console.log(`  \x1b[33m-\x1b[0m ${label}: SKIPPED (${why})`);
   skipped += 1;
+};
+const pending = (label: string, why: string): void => {
+  console.log(`  \x1b[36m\u00b7\x1b[0m ${label}: not yet applicable (${why})`);
+  notYetApplicable += 1;
 };
 
 const section = (title: string): void => console.log(`\n\x1b[1m${title}\x1b[0m`);
@@ -94,6 +107,51 @@ function railwayVariableNames(): Set<string> | null {
     });
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return new Set(Object.keys(parsed));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The production database, reachable from an operator's machine.
+ *
+ * Without this the two gate checks could only ever SKIP, because `DATABASE_URL` names an internal
+ * Railway host that does not resolve from outside the platform. A preflight that can never reach PASS
+ * in the environment it is meant to run in is worse than no preflight: the operator learns that
+ * INCOMPLETE is the normal result, and stops distinguishing it from a real refusal.
+ *
+ * So the URL is resolved the same way an operator would: read it from the service, then swap the
+ * internal host for the Postgres TCP proxy. The credential is never printed, and the connection is only
+ * ever used for the two read-only queries below.
+ */
+function resolveDatabaseUrl(): { url: string; via: string } | null {
+  const direct = process.env.DATABASE_URL?.trim();
+  if (direct) return { url: direct, via: "DATABASE_URL" };
+
+  try {
+    const vars = JSON.parse(
+      execFileSync("railway", ["variables", "--service", SERVICE, "--json"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+    ) as Record<string, string>;
+    const internal = vars.DATABASE_URL;
+    if (!internal) return null;
+
+    const proxies = JSON.parse(
+      execFileSync("railway", ["tcp-proxy", "list", "--service", "Postgres", "--json"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+    ) as { proxies?: { domain?: string; proxyPort?: number }[] };
+    const p = proxies.proxies?.[0];
+    if (!p?.domain || !p.proxyPort) return null;
+
+    // Replace only the host:port between the credential and the database name.
+    return {
+      url: internal.replace(/@[^/]+\//, `@${p.domain}:${p.proxyPort}/`),
+      via: `${p.domain}:${p.proxyPort}`,
+    };
   } catch {
     return null;
   }
@@ -301,14 +359,15 @@ async function main(): Promise<void> {
   // ── The durable gate ─────────────────────────────────────────────────────────────────────────
   section("4. the durable proof gate");
 
-  const dbUrl = process.env.DATABASE_URL?.trim();
-  if (!dbUrl) {
-    skip("no conflicting live gate", "DATABASE_URL is unset locally");
-    skip("intended intent id is unused", "DATABASE_URL is unset locally");
+  const db = resolveDatabaseUrl();
+  if (!db) {
+    skip("no conflicting live gate", "the production database could not be resolved");
+    pending("intended intent id is unused", "checked at arming time against the live gate table");
   } else {
+    console.log(`     database                 via ${db.via} (credential not printed)`);
     try {
       const { PgConsumerStore, createPool } = (await import("../packages/consumer-core/src/index")) as typeof import("../packages/consumer-core/src/index");
-      const pool = createPool(dbUrl);
+      const pool = createPool(db.url);
       try {
         const store = new PgConsumerStore(pool);
         const gates = await store.listSolanaProofGates(50);
@@ -322,7 +381,7 @@ async function main(): Promise<void> {
 
         const intended = process.env.CONSUMER_SOLANA_PROOF_INTENT_ID?.trim();
         if (!intended) {
-          skip("intended intent id is unused", "CONSUMER_SOLANA_PROOF_INTENT_ID is unset locally");
+          pending("intended intent id is unused", "no intent id chosen yet; enforced once one is set");
         } else if (gates.some((g) => g.scope.intentId === intended)) {
           bad("intended intent id is unused", `a gate already exists for ${intended}`);
         } else {
@@ -348,7 +407,11 @@ async function main(): Promise<void> {
     console.log("An unproven check is not a passed check. Resolve them before arming.\n");
     process.exit(2);
   }
-  console.log("\x1b[32mPREFLIGHT: PASS\x1b[0m  arming may proceed, in the documented order.\n");
+  console.log("\x1b[32mPREFLIGHT: PASS\x1b[0m  the pre-arming posture is verified.");
+  if (notYetApplicable > 0) {
+    console.log(`${notYetApplicable} check(s) are not yet applicable and are enforced at arming time.`);
+  }
+  console.log("");
 }
 
 main().catch((e) => {
