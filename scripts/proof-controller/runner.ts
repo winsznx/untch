@@ -294,14 +294,26 @@ export async function runController(): Promise<void> {
      */
     const expected = arg("expect-readiness") ?? "READY_TO_ARM";
     assertExpectedReadiness(plan, expected);
-    // The structural facts are checked for BOTH classes: an armed deployment whose policy vanished is
-    // not something to proceed from either.
-    assertReadyToArm(plan, {
-      policyId: req.policyId,
-      provider: req.provider,
-      capability: req.capability,
-      publicMaturity: "BETA",
-    });
+    /**
+     * The structural facts, checked only where they are not already implied.
+     *
+     * `assertReadyToArm` asserts the CLASS as well as the facts, so calling it unconditionally made an
+     * `--expect-readiness ARMED_AND_EXECUTABLE` run refuse itself with "readinessClass is
+     * ARMED_AND_EXECUTABLE, not READY_TO_ARM" — the controller contradicting the expectation it had just
+     * been given and satisfied.
+     *
+     * The armed case needs no separate structural pass: `assertExpectedReadiness` requires an EMPTY
+     * refusal list for that class, and every structural defect is a refusal. An empty list is strictly
+     * stronger than the structural subset, so checking it again could only ever agree.
+     */
+    if (expected === "READY_TO_ARM") {
+      assertReadyToArm(plan, {
+        policyId: req.policyId,
+        provider: req.provider,
+        capability: req.capability,
+        publicMaturity: "BETA",
+      });
+    }
     console.log(`\n  ${green(expected)} — production is where this run expected it to be.`);
     console.log(
       dim(
