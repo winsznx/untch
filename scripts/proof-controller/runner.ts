@@ -36,6 +36,7 @@ import {
   EXECUTION_PLAN,
   assertArmedAndExecutable,
   assertDeploymentIdentity,
+  assertExpectedReadiness,
   assertKeylessEnvironment,
   assertReadyToArm,
   buildIdempotencyKey,
@@ -285,13 +286,23 @@ export async function runController(): Promise<void> {
   for (const r of plan.refusals ?? []) console.log(`     ${dim("refusal")} ${r.code}: ${r.message}`);
 
   if (preflightOnly) {
+    /**
+     * The expectation is STATED, not assumed.
+     *
+     * Defaults to READY_TO_ARM because that is the pre-arming check and the one an operator runs most,
+     * but an armed deployment is a legitimate posture and a run that meant to confirm it says so.
+     */
+    const expected = arg("expect-readiness") ?? "READY_TO_ARM";
+    assertExpectedReadiness(plan, expected);
+    // The structural facts are checked for BOTH classes: an armed deployment whose policy vanished is
+    // not something to proceed from either.
     assertReadyToArm(plan, {
       policyId: req.policyId,
       provider: req.provider,
       capability: req.capability,
       publicMaturity: "BETA",
     });
-    console.log(`\n  ${green("READY_TO_ARM")} — every structural check holds; only arming controls remain.`);
+    console.log(`\n  ${green(expected)} — production is where this run expected it to be.`);
     console.log(
       dim(
         "     No intent was created, no reservation was made, no queue row was written, no provider was\n" +

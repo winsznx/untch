@@ -7,6 +7,7 @@ import {
   FORBIDDEN_LOCAL_ENV,
   assertArmedAndExecutable,
   assertDeploymentIdentity,
+  assertExpectedReadiness,
   assertKeylessEnvironment,
   assertReadyToArm,
   buildIdempotencyKey,
@@ -375,6 +376,67 @@ describe("readiness is asserted against the plan's own fields", () => {
     } catch (err) {
       assert.ok(err instanceof ControllerRefusal);
       assert.ok(err.detail.some((d) => d.includes("EXECUTION_CONTROLS_DISABLED")));
+    }
+  });
+});
+
+describe("the readiness expectation is stated, and a mismatch stops the run", () => {
+  /**
+   * `--preflight-only` used to assert READY_TO_ARM unconditionally, so it exited non-zero once production
+   * was legitimately ARMED_AND_EXECUTABLE — the correct posture reading as a failure. The fix is not to
+   * accept every class, which would turn the check into one that always says yes.
+   */
+  test("READY_TO_ARM succeeds only before arming", () => {
+    assert.doesNotThrow(() => assertExpectedReadiness(readyPlan(), "READY_TO_ARM"));
+    assert.equal(
+      refusalCode(() =>
+        assertExpectedReadiness({ accepted: true, readinessClass: "ARMED_AND_EXECUTABLE", refusals: [] }, "READY_TO_ARM"),
+      ),
+      "READINESS_MISMATCH",
+    );
+  });
+
+  test("ARMED_AND_EXECUTABLE succeeds only after arming", () => {
+    assert.doesNotThrow(() =>
+      assertExpectedReadiness({ accepted: true, readinessClass: "ARMED_AND_EXECUTABLE", refusals: [] }, "ARMED_AND_EXECUTABLE"),
+    );
+    assert.equal(
+      refusalCode(() => assertExpectedReadiness(readyPlan(), "ARMED_AND_EXECUTABLE")),
+      "READINESS_MISMATCH",
+    );
+  });
+
+  /** The class alone is not enough: `accepted` and an empty refusal list are checked too. */
+  test("ARMED_AND_EXECUTABLE still requires accepted and no refusals", () => {
+    assert.equal(
+      refusalCode(() =>
+        assertExpectedReadiness({ accepted: false, readinessClass: "ARMED_AND_EXECUTABLE", refusals: [] }, "ARMED_AND_EXECUTABLE"),
+      ),
+      "NOT_ARMED_AND_EXECUTABLE",
+    );
+  });
+
+  test("a mismatch against an already-armed deployment says so plainly", () => {
+    try {
+      assertExpectedReadiness({ accepted: true, readinessClass: "ARMED_AND_EXECUTABLE", refusals: [] }, "READY_TO_ARM");
+      assert.fail("expected a refusal");
+    } catch (err) {
+      assert.ok(err instanceof ControllerRefusal);
+      assert.ok(err.detail.some((d) => d.includes("already armed")));
+    }
+  });
+
+  test("an unknown expectation is refused rather than treated as a pass", () => {
+    assert.equal(refusalCode(() => assertExpectedReadiness(readyPlan(), "PROBABLY_FINE")), "READINESS_EXPECTATION_UNKNOWN");
+    assert.equal(refusalCode(() => assertExpectedReadiness(readyPlan(), "")), "READINESS_EXPECTATION_UNKNOWN");
+  });
+
+  test("STRUCTURAL_BLOCKED never satisfies either expectation", () => {
+    for (const expected of ["READY_TO_ARM", "ARMED_AND_EXECUTABLE"]) {
+      assert.equal(
+        refusalCode(() => assertExpectedReadiness(readyPlan({ readinessClass: "STRUCTURAL_BLOCKED" }), expected)),
+        "READINESS_MISMATCH",
+      );
     }
   });
 });
