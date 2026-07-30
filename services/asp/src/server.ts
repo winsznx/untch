@@ -1,4 +1,5 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import { privateKeyToAccount } from "viem/accounts";
 import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
@@ -94,6 +95,9 @@ import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes"
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
+import { loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
+import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
+import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -130,6 +134,14 @@ export function createSellerApp(
   scoreWiring: ScoreWiring | null = null,
   reportWiring: ReportWiring | null = null,
   consumerWiring: ConsumerWiring | null = null,
+  /**
+   * Present only when the process was booted through the real startup path.
+   *
+   * Null means "this app was constructed without a lifecycle", which is the case in the local buyer
+   * driver and in tests. The health route then reports STARTING rather than pretending to be ready,
+   * because a default of ready is the failure this whole mechanism exists to prevent.
+   */
+  lifecycle: DeploymentLifecycle | null = null,
 ): Express {
   const facilitatorClient = new OKXFacilitatorClient({
     apiKey: config.okxApiKey,
@@ -152,6 +164,15 @@ export function createSellerApp(
   // Railway terminates TLS before forwarding to Express. Trust its forwarded
   // protocol so x402's resource.url stays HTTPS and matches the marketplace URL.
   app.set("trust proxy", 1);
+
+  /**
+   * Readiness and deployment identity, registered BEFORE the payment gate.
+   *
+   * Ordering is the point. Registered after `paymentMiddleware` these would be reachable only by a
+   * paying caller, and a platform health probe cannot pay. A health check that 402s reads as an
+   * unhealthy container, which would make every deployment fail for the wrong reason.
+   */
+  registerDeploymentRoutes(app, lifecycle);
 
   // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
   app.use(
@@ -570,9 +591,40 @@ function send(res: Response, result: HandlerResult): void {
   res.status(result.status).json(result.body);
 }
 
+/**
+ * The Base treasury's PUBLIC address, for the deployment attestation.
+ *
+ * Derivation is one-way, so this publishes nothing the chain does not already show. It is worth
+ * reporting because "which treasury is this deployment actually holding" is a question the incident
+ * made concrete, and an operator comparing an expected address against a serving one should not have to
+ * infer it from a balance.
+ *
+ * Any failure returns null. A malformed key is a real condition to surface elsewhere, and it must not
+ * take down startup from inside a reporting helper.
+ */
+function baseTreasuryAddress(): string | null {
+  const key = process.env.CONSUMER_TREASURY_BASE_PRIVATE_KEY?.trim();
+  if (!key) return null;
+  try {
+    return privateKeyToAccount(key as `0x${string}`).address;
+  } catch {
+    return null;
+  }
+}
+
 const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1]);
 if (isMain) {
   const config = loadSellerConfig();
+
+  /**
+   * The lifecycle is created FIRST, before any wiring can throw.
+   *
+   * Everything after this point can fail, and when it does the health route has to be able to say so.
+   * Constructing this later would leave a window where the process is up, the port may be bound, and
+   * nothing can report that the startup sequence never finished.
+   */
+  const lifecycle = new DeploymentLifecycle(process.env);
+
   Promise.all([
     initReceiptWiring(),
     initPolicyWiring(),
@@ -610,7 +662,34 @@ if (isMain) {
           console.log("[asp] Consumer Pack NOT wired (needs DATABASE_URL + a policy store) — /consumer/* returns 503");
         }
 
-        createSellerApp(config, receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring, consumerWiring).listen(config.port, () => {
+        /**
+         * What the database ACTUALLY has, read rather than assumed.
+         *
+         * The gate code being compiled in says nothing about whether migration 011 ran. Those two facts
+         * diverged during the incident this reporting exists for: the code that knew about the gate never
+         * started, so the schema it needed was never created, while the operator had already granted the
+         * authority the gate was supposed to bound. Reporting them as separate fields keeps them from
+         * being conflated again.
+         */
+        lifecycle.recordGateCode(typeof loadSolanaProofGate === "function");
+        if (consumerWiring) {
+          lifecycle.recordRails(consumerWiring.availableRails);
+          try {
+            const schema = await readSchemaState(consumerWiring.pool);
+            lifecycle.recordSchema(
+              schema.migrationVersion,
+              schema.proofGateTablePresent && schema.proofGateLiveIndexPresent,
+            );
+          } catch (err) {
+            // A schema probe that cannot run is a readiness failure, not a warning. Serving with an
+            // unknown schema is exactly the state that must not be armed.
+            lifecycle.markFailed(`schema probe failed: ${(err as Error).message}`);
+            console.error(`[asp] schema probe failed: ${(err as Error).message}`);
+          }
+        }
+        lifecycle.recordBaseTreasury(baseTreasuryAddress());
+
+        createSellerApp(config, receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring, consumerWiring, lifecycle).listen(config.port, () => {
           console.log(`[asp] listening on http://localhost:${config.port}`);
           console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
           console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canon hash + real-policy binding)`);
@@ -634,7 +713,23 @@ if (isMain) {
               `[asp]     settlement rails: ${consumerWiring.availableRails.length > 0 ? consumerWiring.availableRails.join(", ") : "NONE (discovery + quoting only)"}`,
             );
           }
+          console.log(`[asp]   GET  ${HEALTH_ROUTE}  (readiness, unauthenticated — the platform health gate)`);
+          console.log(`[asp]   GET  ${DEPLOYMENT_INFO_ROUTE}  (operator token required)`);
           console.log(`[asp] network ${NETWORK} · payTo ${config.payTo}`);
+
+          /**
+           * Readiness is declared HERE, and nowhere earlier.
+           *
+           * By this line the wirings resolved, the workers started, the schema was probed and the port is
+           * bound. Marking ready any sooner would let the platform route traffic to a process that had
+           * not finished one of those, which is the difference between "the container is up" and "the
+           * deployment is serving".
+           *
+           * A failed schema probe has already moved the lifecycle to FAILED, and markReady refuses to
+           * overwrite that, so this cannot paper over a startup failure.
+           */
+          lifecycle.markReady();
+          console.log(`\n${describeDeployment(lifecycle.snapshot())}\n`);
         });
         // Non-blocking integrity probe — logs only; never blocks serving the card.
         assertIdentityRegistry()
@@ -649,7 +744,15 @@ if (isMain) {
       },
     )
     .catch((err) => {
+      /**
+       * Recorded before exiting, so the reason survives in the logs next to the deployment identity
+       * rather than only as a bare stack trace. The process still exits non-zero: a service that cannot
+       * wire itself must not stay up answering health checks, and Railway's ON_FAILURE restart policy
+       * is the right response to it.
+       */
+      lifecycle.markFailed(`wiring init failed: ${(err as Error).message}`);
       console.error(`[asp] failed to init wiring: ${(err as Error).message}`);
+      console.error(`\n${describeDeployment(lifecycle.snapshot())}\n`);
       process.exit(1);
     });
 }

@@ -45,7 +45,12 @@
     "lint:public-copy": "tsx scripts/lint-public-copy.ts",
     "test:lint-copy": "node --import tsx --test scripts/test/*.test.ts",
     "gen:solana-treasury": "tsx scripts/gen-solana-treasury.ts",
-    "purch:funding": "tsx scripts/purch-funding-estimate.ts"
+    "purch:funding": "tsx scripts/purch-funding-estimate.ts",
+    "lint:lockfile": "tsx scripts/lint-lockfile-sync.ts",
+    "deploy:asp": "tsx scripts/deploy-asp.ts",
+    "solana:rpc-gate": "tsx scripts/solana-rpc-gate.ts",
+    "solana:gate:status": "tsx scripts/solana-proof-gate-status.ts",
+    "solana:proof:preflight": "tsx scripts/solana-proof-preflight.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
