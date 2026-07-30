@@ -58,6 +58,54 @@ export type ConsumerActionType =
   | "mail.subdomain.status"
   | "mail.subdomain.send";
 
+/**
+ * The same union, at runtime.
+ *
+ * A route that takes a capability name off the wire has to narrow a `string` into a
+ * `ConsumerActionType`, and the only alternatives to a runtime list are a cast — which would let any
+ * string through and fail somewhere further in — or a hand-written type guard that can silently fall
+ * behind the union. `satisfies` binds the two together: adding a member to the union without adding
+ * it here is a compile error, and so is a typo in this list.
+ */
+export const CONSUMER_ACTION_TYPES = [
+  "shop.search",
+  "shop.detail",
+  "shop.quote",
+  "shop.purchase",
+  "shop.track",
+  "domains.check",
+  "domains.quote",
+  "domains.register",
+  "domains.renew",
+  "domains.dns",
+  "travel.search",
+  "travel.compare",
+  "travel.quote",
+  "travel.book",
+  "travel.cancel",
+  "gifts.quote",
+  "gifts.order",
+  "gifts.track",
+  "notify.confirmation",
+  "notify.receipt",
+  "notify.exception",
+  "mail.send",
+  "mail.inbox.buy",
+  "mail.inbox.status",
+  "mail.inbox.messages",
+  "mail.inbox.topup",
+  "mail.inbox.cancel",
+  "mail.subdomain.buy",
+  "mail.subdomain.status",
+  "mail.subdomain.send",
+] as const satisfies readonly ConsumerActionType[];
+
+const ACTION_TYPE_SET: ReadonlySet<string> = new Set<string>(CONSUMER_ACTION_TYPES);
+
+export function isConsumerActionType(value: unknown): value is ConsumerActionType {
+  return typeof value === "string" && ACTION_TYPE_SET.has(value);
+}
+
 /** Whether an action can move value, and therefore whether it needs the full funding lifecycle. */
 export const VALUE_MOVING_ACTIONS: ReadonlySet<ConsumerActionType> = new Set<ConsumerActionType>([
   "shop.purchase",

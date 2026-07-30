@@ -149,6 +149,27 @@ export class StaleIntentStateError extends Error {
   }
 }
 
+/**
+ * Raised when a durable uniqueness constraint refuses a second writer.
+ *
+ * Typed rather than a bare `Error` because a caller has to be able to tell "you lost a race" from
+ * "something broke". The distinction is not cosmetic: the first means READ THE INTENT, the second
+ * means investigate — and a caller that cannot tell them apart will retry, which is how one
+ * authorisation becomes two settlements.
+ *
+ * The message is unchanged from the string the in-memory store threw before this class existed, so
+ * an assertion written against that text still holds.
+ */
+export class IdempotencyConflictError extends Error {
+  constructor(
+    public readonly tenantId: string,
+    public readonly idempotencyKey: string,
+  ) {
+    super(`idempotency key already used for tenant ${tenantId}`);
+    this.name = "IdempotencyConflictError";
+  }
+}
+
 export function canTransition(from: ConsumerIntentState, to: ConsumerIntentState): boolean {
   return TRANSITIONS[from].includes(to);
 }

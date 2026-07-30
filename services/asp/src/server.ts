@@ -95,7 +95,8 @@ import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes"
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
-import { loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
+import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
+import { loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
 import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
 import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
 
@@ -540,6 +541,23 @@ export function createSellerApp(
     receiptWiring ? (receiptId) => receiptWiring.status(receiptId) : null,
     consumerAuth,
   );
+
+  /**
+   * The authenticated operator control surface.
+   *
+   * Registered here rather than beside `/internal/deployment-info` because it needs `express.json()`
+   * to have run and it needs the Consumer Pack wiring, both of which only exist at this point. It is
+   * the same credential as deployment-info — one operator token, one comparison, in
+   * `src/internal-auth.ts` — and it deliberately sits OUTSIDE the x402 priced-route table: an
+   * operator control route is not a product, and pricing it would mean an outage in the facilitator
+   * could stop an operator from inspecting production.
+   */
+  registerConsumerOperatorRoutes(app, {
+    wiring: consumerWiring,
+    policyProvider: policyWiring?.provider ?? null,
+    lifecycle,
+    flags: loadConsumerFlags(),
+  });
 
   // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
