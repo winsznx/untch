@@ -10,7 +10,8 @@
  * versioned transaction, who supplies the blockhash, `transfer` versus `transferChecked`, and
  * whether an associated-token-account creation instruction belongs in the message. A
  * plausible-but-wrong payload against a real merchant is a failed purchase, so the rail reported
- * PROTOCOL_NOT_EXECUTABLE rather than guess.
+ * PROTOCOL_NOT_EXECUTABLE rather than guess. That refusal is history: the payload is now built by the
+ * official client and a real payment settled on 2026-07-29.
  *
  * Reading the reference implementation answered all four, and this file now DEFERS to it rather
  * than reproducing its answers, because a copy drifts and a dependency does not:

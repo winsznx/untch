@@ -10,12 +10,17 @@
  * anywhere in its `accepts[]`, and its own OpenAPI says so in plain text: "All endpoints are payable
  * via the x402 protocol (USDC on Solana)."
  *
- * This build cannot construct a Solana x402 payload it can vouch for (see
- * src/x402/solana-exact.ts), so every Purch call — including a search — ends at
- * PROTOCOL_NOT_EXECUTABLE. The adapter is written in full anyway, because the shape of the
- * integration is not the uncertain part: the endpoints, the request bodies, the response schemas and
- * the pricing modes are all read from the live OpenAPI and are exercised against fixtures in the
- * tests. When the Solana rail lands, this file needs no change — only the provider's maturity row.
+ * The Solana rail settled on 2026-07-29. x402 v2 payload construction works, the PAYMENT-SIGNATURE
+ * header is accepted, 0.010000 USDC settled from an Untch treasury, and Purch returned five real
+ * Shopify products. shop.search is verified on that evidence and executes.
+ *
+ * The other capabilities do not. shop.quote, shop.purchase and shop.track have no settlement or
+ * delivery evidence, so their capability rows stay experimental and the registry refuses them even
+ * though the provider is verified. The capability row is the execution boundary, not the provider row.
+ *
+ * The endpoints, request bodies, response schemas and pricing modes are read from the live OpenAPI and
+ * exercised against fixtures in the tests, so promoting one of the remaining capabilities needs
+ * evidence rather than code.
  *
  * Two facts worth carrying forward, both from the live spec:
  *   • `/x402/buy` uses `pricingMode: "quote"` — the 402's amount IS the product total including tax

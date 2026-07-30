@@ -281,6 +281,7 @@ export {
   maturityAtLeast,
   publicToolState,
   publicToolStateFor,
+  railHasStandingSigner,
 } from "./registry";
 
 export {

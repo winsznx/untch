@@ -149,8 +149,8 @@ function main(): void {
     console.log("\n  The secret was NOT printed and NOT written.");
     console.log(`  Re-run with --write to append ${envVar} to .env, or set it in Railway by hand.`);
     console.log("\n  \x1b[33mNothing spends from this wallet yet.\x1b[0m Execution stays off until");
-    console.log("  CONSUMER_PROVIDER_PURCH_ENABLED and the Solana chain flag are both set, and the");
-    console.log("  rail's pay() is still PROTOCOL_NOT_EXECUTABLE by design.");
+    console.log("  CONSUMER_PROVIDER_PURCH_ENABLED, the Solana chain and asset flags, and");
+    console.log("  CONSUMER_SOLANA_EXECUTION_ENABLED are all set, which is a deliberate arming step.");
     return;
   }
 

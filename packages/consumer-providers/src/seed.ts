@@ -247,7 +247,15 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
     provider: {
       providerId: "purch",
       displayName: "Purch",
-      maturity: "experimental",
+      /**
+       * VERIFIED at the provider level, which is a statement about evidence rather than about scope.
+       *
+       * It records that at least one capability under this provider has completed a real settled
+       * payment and a real delivery. It does NOT mean every capability has. The registry takes the
+       * LOWER of provider and capability maturity, so each capability row stays the final execution
+       * boundary and the three experimental ones below remain unexecutable.
+       */
+      maturity: "verified",
       baseUrl: PURCH_BASE_URL,
       protocol: "x402",
       chains: [SOLANA_MAINNET],
@@ -256,17 +264,30 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
         "402s offering exactly ONE option, on solana:5eykt4Us… in USDC (mint EPjFWd…Dt1v, payTo " +
         "8LiXrHC6…6HT2, sponsoring feePayer BENrLoUb…R9SP). NO Base option appears in any Purch " +
         "challenge, and its OpenAPI states 'All endpoints are payable via the x402 protocol (USDC on " +
-        "Solana).' EXPERIMENTAL: this build cannot construct a Solana x402 payload it can vouch for, so " +
-        "every Purch call — including search — ends at PROTOCOL_NOT_EXECUTABLE. Promotion needs the " +
-        "Solana rail finished AND a funded Solana treasury.",
+        "Solana).' 2026-07-29: the Solana rail settled. x402 v2 payload construction works, the " +
+        "PAYMENT-SIGNATURE header is accepted, 0.010000 USDC settled from an Untch treasury, and Purch " +
+        "returned five real Shopify products. shop.search is verified on that payment and delivery " +
+        "evidence. The full ConsumerOrchestrator lifecycle is awaiting its bounded production proof, " +
+        "and continuous Solana execution stays disabled until a persistent signer arrangement is " +
+        "approved.",
       enabled: true,
     },
     capabilities: [
       {
         providerId: "purch",
         capability: "shop.search",
-        maturity: "experimental",
-        notes: "GET /x402/search, $0.01, Solana only — unpayable in this build.",
+        /**
+         * The only Purch capability with settlement AND delivery evidence behind it.
+         *
+         * Promoted on 2026-07-29 after 0.010000 USDC settled on Solana from an Untch treasury and the
+         * call returned five real Shopify products. For a paid search the returned product set IS the
+         * delivered service, so both halves of the verified definition are met.
+         */
+        maturity: "verified",
+        notes:
+          "GET /x402/search, $0.01, Solana only. Settled and delivered. Public state stays BETA " +
+          "rather than LIVE because execution needs an operator arming sequence: the treasury signer " +
+          "is removed after each bounded run.",
       },
       {
         providerId: "purch",
@@ -278,13 +299,15 @@ export const PROVIDER_SEEDS: readonly ProviderSeed[] = Object.freeze([
         providerId: "purch",
         capability: "shop.purchase",
         maturity: "experimental",
-        notes: "POST /x402/buy, dynamic total, Solana only — unpayable in this build.",
+        notes: "POST /x402/buy, dynamic total, Solana only. No settlement or delivery evidence yet, so it stays " +
+          "experimental and cannot execute even though the provider is verified.",
       },
       {
         providerId: "purch",
         capability: "shop.track",
         maturity: "experimental",
-        notes: "GET /x402/track, $0.52 per call, Solana only.",
+        notes: "GET /x402/track, $0.52 per call, Solana only. The endpoint exists in the live 402 surface. No " +
+          "settlement or delivery evidence yet, so it stays experimental and cannot execute.",
       },
     ],
   },
