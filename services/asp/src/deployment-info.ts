@@ -183,7 +183,19 @@ export class DeploymentLifecycle {
   private gate = { codePresent: false, schemaReady: false };
   private baseTreasuryAddress: string | null = null;
 
-  constructor(private readonly env: NodeJS.ProcessEnv = process.env, nowIso?: string) {
+  /**
+   * `attestationDir` is a TEST SEAM and nothing more.
+   *
+   * `readBuildAttestation` already takes a start directory for exactly this reason; the lifecycle
+   * simply passes one through. A deployed process never supplies it, so the search still begins at
+   * this module and still walks up to the uploaded tree's root — the attestation cannot be pointed
+   * somewhere else by configuration, which is the property that makes it worth trusting.
+   */
+  constructor(
+    private readonly env: NodeJS.ProcessEnv = process.env,
+    nowIso?: string,
+    private readonly attestationDir?: string,
+  ) {
     this.startedAtIso = nowIso ?? new Date().toISOString();
   }
 
@@ -220,7 +232,7 @@ export class DeploymentLifecycle {
   }
 
   snapshot(): DeploymentInfo {
-    const attestation = readBuildAttestation();
+    const attestation = readBuildAttestation(this.attestationDir);
     return {
       app: "untch-asp",
       phase: this.phase,

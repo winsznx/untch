@@ -15,30 +15,11 @@
  */
 
 import type { Express, Request, Response } from "express";
-import { createHash, timingSafeEqual } from "node:crypto";
 import { DeploymentLifecycle, type DeploymentInfo } from "./deployment-info";
+import { authenticateOperator } from "./internal-auth";
 
 export const HEALTH_ROUTE = "/healthz";
 export const DEPLOYMENT_INFO_ROUTE = "/internal/deployment-info";
-
-/**
- * Constant-time comparison that does not leak length.
- *
- * `timingSafeEqual` throws on unequal lengths, and catching that throw would itself be a length
- * oracle. Comparing fixed-width digests of both sides removes the difference.
- */
-function tokenMatches(presented: string, expected: string): boolean {
-  const a = createHash("sha256").update(presented).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
-}
-
-function presentedToken(req: Request): string | null {
-  const bearer = /^Bearer\s+(.+)$/i.exec(req.header("authorization") ?? "")?.[1];
-  if (bearer) return bearer.trim();
-  const header = req.header("x-untch-ops-token");
-  return header ? header.trim() : null;
-}
 
 /**
  * Everything the endpoint is allowed to say.
@@ -100,26 +81,16 @@ export function registerDeploymentRoutes(app: Express, lifecycle: DeploymentLife
   });
 
   app.get(DEPLOYMENT_INFO_ROUTE, (req: Request, res: Response) => {
-    const expected = process.env.INTERNAL_OPS_TOKEN?.trim();
-
-    // Fail CLOSED. With no token configured the endpoint is unavailable rather than public, because
-    // the alternative is an internal posture map served to anyone who finds the path.
-    if (!expected) {
-      res.status(503).json({
-        code: "OPS_AUTH_NOT_CONFIGURED",
-        message: "INTERNAL_OPS_TOKEN is unset on this instance, so deployment info cannot be served",
-        retryable: false,
-        docsUrl: null,
-      });
-      return;
-    }
-
-    const presented = presentedToken(req);
-    if (!presented || !tokenMatches(presented, expected)) {
-      res.status(401).json({
-        code: "OPS_AUTH_REQUIRED",
-        message: "send the operator token as `Authorization: Bearer <token>`",
-        retryable: false,
+    // Fails CLOSED in both directions: an instance with no token configured is unavailable rather
+    // than public, and an absent or wrong token is a refusal rather than a default identity.
+    const auth = authenticateOperator(req, { route: DEPLOYMENT_INFO_ROUTE });
+    if (!auth.ok) {
+      res.status(auth.status).json({
+        code: auth.code,
+        message: auth.code === "OPS_AUTH_NOT_CONFIGURED"
+          ? "INTERNAL_OPS_TOKEN is unset on this instance, so deployment info cannot be served"
+          : auth.message,
+        retryable: auth.code === "OPS_AUTH_THROTTLED",
         docsUrl: null,
       });
       return;
