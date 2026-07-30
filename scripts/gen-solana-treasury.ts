@@ -49,6 +49,20 @@ const TREASURY_ENV_VAR = "CONSUMER_TREASURY_SOLANA_SECRET_KEY";
 const PROOF_SECRET_ENV_VAR = "CONSUMER_SOLANA_PROOF_SECRET_KEY";
 const PROOF_ADDRESS_ENV_VAR = "CONSUMER_SOLANA_PROOF_TREASURY_ADDRESS";
 
+/**
+ * The reserve variables, used by `--reserve`.
+ *
+ * A custody wallet, deliberately not a treasury. It holds the Consumer Pack float that no proof needs,
+ * so that the wallet which DOES get an execution flag holds only the bounded amount that proof can
+ * lose. Splitting them is the whole point: a single wallet holding both the float and the execution
+ * authority makes the blast radius of any arming mistake the entire balance.
+ *
+ * Neither name is read by the runtime, and neither ever belongs in Railway. Nothing in production has a
+ * reason to spend from the reserve, so nothing in production is given the means to.
+ */
+const RESERVE_SECRET_ENV_VAR = "CONSUMER_SOLANA_RESERVE_SECRET_KEY";
+const RESERVE_ADDRESS_ENV_VAR = "CONSUMER_SOLANA_RESERVE_ADDRESS";
+
 interface Generated {
   readonly address: string;
   readonly secretBase58: string;
@@ -84,7 +98,19 @@ function main(): void {
    * it. Everything else, including the refusal to print the secret, is shared.
    */
   const proof = process.argv.includes("--proof");
-  const envVar = proof ? PROOF_SECRET_ENV_VAR : TREASURY_ENV_VAR;
+  /**
+   * Reserve mode, for the custody wallet that holds the float no proof needs.
+   *
+   * Same refusal to print, same non-runtime storage name. It differs from `--proof` only in intent, and
+   * the intent is worth a separate flag: the reserve must never be confused with the wallet that gets an
+   * execution flag, and two flags cannot be mixed up as easily as one flag and a comment.
+   */
+  const reserve = process.argv.includes("--reserve");
+  if (proof && reserve) {
+    console.error("\x1b[31m--proof and --reserve are different wallets. Pass one.\x1b[0m");
+    process.exit(1);
+  }
+  const envVar = proof ? PROOF_SECRET_ENV_VAR : reserve ? RESERVE_SECRET_ENV_VAR : TREASURY_ENV_VAR;
 
   const generated = generate();
 
@@ -101,12 +127,20 @@ function main(): void {
     process.exit(1);
   }
 
-  console.log(`\n\x1b[1m${proof ? "Solana PROOF signer (rotated)" : "Solana settlement treasury"}\x1b[0m`);
+  const title = proof
+    ? "Solana PROOF signer (rotated)"
+    : reserve
+      ? "Solana RESERVE wallet (custody only)"
+      : "Solana settlement treasury";
+  console.log(`\n\x1b[1m${title}\x1b[0m`);
   console.log(`  address       ${generated.address}`);
   console.log(`  key format    base58, 64 bytes (32-byte seed + 32-byte public key)`);
   console.log(`  explorer      https://solscan.io/account/${generated.address}`);
-  if (proof) {
-    console.log(`  stored as     ${PROOF_SECRET_ENV_VAR} (the runtime does NOT read this name)`);
+  if (proof || reserve) {
+    console.log(`  stored as     ${envVar} (the runtime does NOT read this name)`);
+  }
+  if (reserve) {
+    console.log("  role          custody only. Never armed, never in Railway, never given to a worker.");
   }
 
   const envPath = join(process.cwd(), ".env");
@@ -139,8 +173,15 @@ function main(): void {
           `# \`pnpm solana:proof:preflight\` passes.\n` +
           `${PROOF_SECRET_ENV_VAR}=${generated.secretBase58}\n` +
           `${PROOF_ADDRESS_ENV_VAR}=${generated.address}\n`
-      : `\n# Solana settlement treasury, generated ${stamp}. Address ${generated.address}\n` +
-          `${TREASURY_ENV_VAR}=${generated.secretBase58}\n`,
+      : reserve
+        ? `\n# Solana RESERVE wallet, generated ${stamp}. Address ${generated.address}\n` +
+            `# Custody only. Holds the Consumer Pack float that no proof needs, so the wallet that DOES\n` +
+            `# get an execution flag holds only what that proof can lose.\n` +
+            `# The runtime does NOT read ${RESERVE_SECRET_ENV_VAR}, and it never belongs in Railway.\n` +
+            `${RESERVE_SECRET_ENV_VAR}=${generated.secretBase58}\n` +
+            `${RESERVE_ADDRESS_ENV_VAR}=${generated.address}\n`
+        : `\n# Solana settlement treasury, generated ${stamp}. Address ${generated.address}\n` +
+            `${TREASURY_ENV_VAR}=${generated.secretBase58}\n`,
   );
   console.log(`\n  \x1b[32m✓\x1b[0m secret appended to .env (gitignored). It was not printed.`);
 
@@ -151,6 +192,13 @@ function main(): void {
     console.log("    2. Run `pnpm solana:proof:preflight` and get a PASS.");
     console.log(`    3. ONLY THEN copy the secret into ${TREASURY_ENV_VAR} in Railway.`);
     console.log("\n  \x1b[33mThe old treasury key must never be restored to Railway.\x1b[0m");
+    return;
+  }
+
+  if (reserve) {
+    console.log(`  \x1b[32m✓\x1b[0m ${RESERVE_ADDRESS_ENV_VAR} written.`);
+    console.log("\n  \x1b[33mThis wallet is custody only.\x1b[0m Do not put it in Railway, do not give it to a");
+    console.log("  worker, and do not use it as a settlement treasury.");
     return;
   }
 
