@@ -30,11 +30,13 @@
  */
 
 import {
+  DEFAULT_CAPABILITY_EXECUTION_SHAPE,
   hashQuote,
   newDiscoveryId,
   normalizedError,
   ProviderError,
   sha256Hex,
+  stableStringify,
   type DeliveryEvidence,
   type DiscoveryInput,
   type DiscoveryResult,
@@ -61,6 +63,85 @@ export interface ShippingAddress {
   readonly state: string | null;
   readonly postalCode: string;
   readonly country: string;
+}
+
+export interface SearchProduct {
+  readonly asin: string | null;
+  readonly title: string;
+  readonly price: string | null;
+  readonly currency: string | null;
+  readonly source: string | null;
+  readonly url: string | null;
+  readonly imageUrl: string | null;
+}
+
+/**
+ * Validate a search response into products, in one place.
+ *
+ * Shared by `discover` and by the paid-read execution so the two cannot disagree about what a product is.
+ * Product text is DATA: it is sanitized at this boundary and never concatenated into an instruction
+ * anywhere, so a listing whose title is a prompt-injection payload is just an oddly-named product.
+ */
+export function parseSearchProducts(json: unknown): readonly SearchProduct[] {
+  const body = validated("Purch /x402/search", () => obj(json, "search"));
+  return validated("Purch products", () =>
+    arr(body.products ?? [], "search.products").map((p, i) => {
+      const o = obj(p, `search.products[${i}]`);
+      return {
+        asin: optStr(o.asin, `search.products[${i}].asin`, 40),
+        title: str(o.title, `search.products[${i}].title`, 300),
+        price: o.price === undefined || o.price === null ? null : decimalString(o.price, `search.products[${i}].price`),
+        currency: optStr(o.currency, `search.products[${i}].currency`, 8),
+        source: optStr(o.source, `search.products[${i}].source`, 40),
+        url: optHttpsUrl(o.productUrl ?? o.url, `search.products[${i}].url`),
+        imageUrl: optHttpsUrl(o.imageUrl, `search.products[${i}].imageUrl`),
+      };
+    }),
+  );
+}
+
+/** The endpoint CLASS a paid read is authorised against. Compared at execution; never a full path. */
+export const PURCH_ENDPOINT_CLASS_SEARCH = "purch:/x402/search" as const;
+
+export interface SearchRequest {
+  readonly query: string;
+  readonly priceMin: number | null;
+  readonly priceMax: number | null;
+  readonly brand: string | null;
+}
+
+/**
+ * The search request, parsed and NORMALISED once.
+ *
+ * Shared by `discover`, the paid-read quote and the paid-read execution, so all three agree on what the
+ * request is. Three separate readings of `params` would be three chances for the thing quoted to differ
+ * from the thing paid for, and the request hash that binds them would be measuring different objects.
+ *
+ * It requires a query and NOTHING else. No shipping address, no email: a search has nothing to ship and
+ * nobody to notify, and demanding either is exactly the defect this replaces.
+ */
+export function parseSearchRequest(params: Readonly<Record<string, unknown>>): SearchRequest {
+  return validated("Purch search request", () => {
+    const q = str(params.query ?? params.q, "params.query", 200).trim();
+    if (q === "") {
+      throw new ProviderError(normalizedError("PROVIDER_BAD_REQUEST", "`query` is required"));
+    }
+    return {
+      query: q,
+      priceMin: typeof params.priceMin === "number" ? params.priceMin : null,
+      priceMax: typeof params.priceMax === "number" ? params.priceMax : null,
+      brand: typeof params.brand === "string" ? params.brand.slice(0, 80) : null,
+    };
+  });
+}
+
+/** The one place the search path is built, so a quote and its payment address the same URL. */
+export function searchPath(search: SearchRequest): string {
+  const qs = new URLSearchParams({ q: search.query });
+  if (search.priceMax !== null) qs.set("priceMax", String(search.priceMax));
+  if (search.priceMin !== null) qs.set("priceMin", String(search.priceMin));
+  if (search.brand !== null) qs.set("brand", search.brand);
+  return `/x402/search?${qs.toString()}`;
 }
 
 export function parseShippingAddress(raw: unknown): ShippingAddress {
@@ -100,39 +181,18 @@ export class PurchAdapter extends BaseAdapter {
 
   /** GET /x402/search — $0.01, Solana only. */
   async discover(input: DiscoveryInput, ctx: AdapterContext): Promise<DiscoveryResult> {
-    const q = str(input.params.query ?? input.params.q, "params.query", 200);
-    if (q.trim() === "") {
-      throw new ProviderError(normalizedError("PROVIDER_BAD_REQUEST", "`query` is required"));
-    }
-    const search = new URLSearchParams({ q });
-    if (typeof input.params.priceMax === "number") search.set("priceMax", String(input.params.priceMax));
-    if (typeof input.params.priceMin === "number") search.set("priceMin", String(input.params.priceMin));
-    if (typeof input.params.brand === "string") search.set("brand", input.params.brand.slice(0, 80));
-
+    // The SAME parser and path builder the paid-read quote uses, so discovery and the quoted execution
+    // cannot address different URLs for the same request.
     const result = await this.paid(
       {
         method: "GET",
-        path: `/x402/search?${search.toString()}`,
+        path: searchPath(parseSearchRequest(input.params)),
         ...(ctx.discoveryPayment ? { payment: ctx.discoveryPayment } : {}),
       },
       ctx,
     );
 
-    const body = validated("Purch /x402/search", () => obj(result.json, "search"));
-    const products = validated("Purch products", () =>
-      arr(body.products ?? [], "search.products").map((p, i) => {
-        const o = obj(p, `search.products[${i}]`);
-        return {
-          asin: optStr(o.asin, `search.products[${i}].asin`, 40),
-          title: str(o.title, `search.products[${i}].title`, 300),
-          price: o.price === undefined || o.price === null ? null : decimalString(o.price, `search.products[${i}].price`),
-          currency: optStr(o.currency, `search.products[${i}].currency`, 8),
-          source: optStr(o.source, `search.products[${i}].source`, 40),
-          url: optHttpsUrl(o.productUrl ?? o.url, `search.products[${i}].url`),
-          imageUrl: optHttpsUrl(o.imageUrl, `search.products[${i}].imageUrl`),
-        };
-      }),
-    );
+    const products = parseSearchProducts(result.json);
 
     return {
       providerId: this.providerId,
@@ -161,11 +221,88 @@ export class PurchAdapter extends BaseAdapter {
   }
 
   /**
+   * Dispatch on the capability's EXECUTION SHAPE, never on its name.
+   *
+   * The shape arrives from the registry via the orchestrator. Reading `input.action` here and branching
+   * on the string would put the lifecycle's routing decision inside the adapter and duplicate it at
+   * `execute`, which is how the two would eventually disagree about which endpoint priced a quote.
+   *
+   * An absent shape resolves to FULFILMENT, which is what every caller meant before the field existed.
+   */
+  async quote(input: QuoteInput, ctx: AdapterContext): Promise<ProviderQuote> {
+    return (input.executionShape ?? DEFAULT_CAPABILITY_EXECUTION_SHAPE) === "PAID_READ"
+      ? this.quotePaidRead(input, ctx)
+      : this.quoteFulfilment(input, ctx);
+  }
+
+  /**
+   * Price a PAID READ from the read endpoint's own 402.
+   *
+   * This is the path the first production proof attempt needed and did not have. A search has nothing to
+   * ship and nobody to notify, so it requires none of the fields a purchase does — and demanding them was
+   * the defect: `shop.search` reached the quote stage and died on `shippingAddress: expected an object,
+   * got undefined`, because the only quote path probed `/x402/buy`.
+   *
+   * `/x402/search` is the SAME endpoint `discover` pays, so the price quoted here is the price the
+   * execution will be charged. Probing it is free: the request goes unpaid and the 402 is the answer.
+   *
+   * `discover` is deliberately NOT reused as a lifecycle shortcut. It PAYS, and a quote that paid would
+   * settle before policy had run, before a reservation existed and before the proof gate had been
+   * claimed — inverting the whole order the lifecycle exists to enforce.
+   */
+  private async quotePaidRead(input: QuoteInput, ctx: AdapterContext): Promise<ProviderQuote> {
+    const search = parseSearchRequest(input.params);
+    const path = searchPath(search);
+    const { payment, challenge } = await this.probe402Detailed("GET", path, ctx);
+
+    const requestHash = `0x${sha256Hex(stableStringify(search as unknown as Record<string, unknown>))}`;
+    const challengeHash = `0x${sha256Hex(stableStringify(challenge as unknown as Record<string, unknown>))}`;
+
+    return {
+      providerId: this.providerId,
+      providerRef: input.providerRef,
+      cost: payment.amount,
+      settlementRecipient: payment.recipient,
+      settlementChain: payment.option.network,
+      settlementAsset: payment.asset,
+      summary: `Paid search: ${search.query}`,
+      /**
+       * The binding a paid read is authorised under.
+       *
+       * Every field here is compared again at execution before the signer is reachable. `endpointClass`
+       * rather than the full path, because the path carries the query and a stored quote should not be a
+       * second copy of the request; the request itself is bound by `requestHash`.
+       */
+      terms: {
+        action: input.action,
+        executionShape: "PAID_READ",
+        endpointClass: PURCH_ENDPOINT_CLASS_SEARCH,
+        providerRef: input.providerRef,
+        requestHash,
+        searchParamsHash: requestHash,
+        x402Version: challenge.x402Version,
+        challengeHash,
+        challengeResourceUrl: challenge.resource.url,
+        scheme: payment.option.scheme,
+        mint: payment.option.asset,
+        payTo: payment.recipient,
+        maxTimeoutSeconds: payment.option.maxTimeoutSeconds,
+        quotedAtomicAmount: payment.amount.amount.toString(),
+        // Stated so a reader never has to infer it from an absence.
+        shippingRequired: false,
+        contactRequired: false,
+        quotedAt: new Date(ctx.clock?.() ?? Date.now()).toISOString(),
+      },
+      expiresAt: new Date((ctx.clock?.() ?? Date.now()) + 10 * 60_000).toISOString(),
+    };
+  }
+
+  /**
    * The quote comes from `/x402/buy`'s OWN 402 — `pricingMode: "quote"` means the challenge amount is
    * the product total including tax and shipping. Reading it costs nothing and binds to the
    * merchant's exact figure rather than to a listed price that excludes both.
    */
-  async quote(input: QuoteInput, ctx: AdapterContext): Promise<ProviderQuote> {
+  private async quoteFulfilment(input: QuoteInput, ctx: AdapterContext): Promise<ProviderQuote> {
     const shipping = parseShippingAddress(input.params.shippingAddress);
     const email = str(input.params.email, "params.email", 320);
     const body = buildBuyBody(input.providerRef, input.params, shipping, email);
@@ -194,6 +331,116 @@ export class PurchAdapter extends BaseAdapter {
   }
 
   async execute(
+    input: ExecuteInput,
+    payment: PaymentCapability,
+    ctx: AdapterContext,
+  ): Promise<ProviderExecution> {
+    return (input.executionShape ?? DEFAULT_CAPABILITY_EXECUTION_SHAPE) === "PAID_READ"
+      ? this.executePaidRead(input, payment, ctx)
+      : this.executeFulfilment(input, payment, ctx);
+  }
+
+  /**
+   * Pay for the read that was quoted, and refuse if the offer has changed.
+   *
+   * The order here is the point. A FRESH challenge is fetched and compared against the authorised quote
+   * BEFORE `paid()` is called, so every mismatch is refused while the signer is still unreachable — the
+   * payment capability is only handed over once the two agree. Comparing afterwards would mean discovering
+   * a substituted recipient or a raised price with a signature already in flight.
+   *
+   * The comparison is on IDENTITY, not just on cost. A cheaper challenge for a different resource, a
+   * different mint or a different payTo is not a better deal; it is a different purchase wearing this
+   * one's authorisation.
+   */
+  private async executePaidRead(
+    input: ExecuteInput,
+    payment: PaymentCapability,
+    ctx: AdapterContext,
+  ): Promise<ProviderExecution> {
+    const search = parseSearchRequest(input.params);
+    const path = searchPath(search);
+    const authorised = input.quote;
+    const terms = (authorised.terms ?? {}) as Record<string, unknown>;
+
+    const fresh = await this.probe402Detailed("GET", path, ctx);
+    const requestHash = `0x${sha256Hex(stableStringify(search as unknown as Record<string, unknown>))}`;
+
+    const drift: string[] = [];
+    if (terms.endpointClass !== PURCH_ENDPOINT_CLASS_SEARCH) {
+      drift.push(`the quote authorised endpoint class ${String(terms.endpointClass)}`);
+    }
+    if (terms.requestHash !== requestHash) drift.push("the request differs from the one quoted");
+    if (fresh.payment.option.network !== authorised.settlementChain) drift.push("the settlement chain changed");
+    if (fresh.payment.asset.symbol !== authorised.settlementAsset.symbol) drift.push("the settlement asset changed");
+    if (fresh.payment.option.asset !== terms.mint) drift.push("the token mint changed");
+    if (fresh.payment.recipient.toLowerCase() !== authorised.settlementRecipient.toLowerCase()) {
+      drift.push("the payment recipient changed");
+    }
+    if (fresh.payment.amount.amount > authorised.cost.amount) {
+      drift.push(
+        `the provider now asks ${fresh.payment.amount.amount} atomic units against an authorised ` +
+          `${authorised.cost.amount}`,
+      );
+    }
+    if (drift.length > 0) {
+      throw new ProviderError(
+        normalizedError(
+          "PAYMENT_BINDING_MISMATCH",
+          `QUOTE_CHANGED: refusing before the signer is reached — ${drift.join("; ")}. A reservation is ` +
+            "never widened to fit a new offer, and a different offer needs a new authorisation.",
+        ),
+      );
+    }
+
+    const result = await this.paid(
+      {
+        method: "GET",
+        path,
+        payment,
+        allowedRecipients: [authorised.settlementRecipient],
+        // The AUTHORISED figure, not the refreshed one. The refreshed amount has already been proven no
+        // greater; pinning the ceiling to the authorisation means a race between the two cannot raise it.
+        ceilingFor: () => authorised.cost,
+        headers: { "x-untch-request-id": input.idempotencyKey },
+      },
+      ctx,
+    );
+
+    if (result.response.status >= 400) {
+      throw this.classifyStatus(result.response, `${this.providerId} /x402/search`);
+    }
+    if (!result.settlement) {
+      throw new ProviderError(
+        normalizedError(
+          "PROVIDER_MALFORMED_RESPONSE",
+          "/x402/search returned success without demanding payment, so nothing was bought",
+        ),
+      );
+    }
+
+    const products = parseSearchProducts(result.json);
+    const resultHash = `0x${sha256Hex(stableStringify({ query: search.query, products } as unknown as Record<string, unknown>))}`;
+
+    return {
+      providerReference: `search-${input.intentId}`,
+      settlement: {
+        txHash: result.settlement.txHash,
+        chain: result.settlement.chain,
+        amount: result.settlement.amount,
+        recipient: result.settlement.recipient,
+      },
+      /**
+       * A paid read is FULFILLED the moment the answer arrives. There is no shipment to await, so the
+       * returned product set IS the delivered service — which is the same reasoning that earned this
+       * capability its `verified` maturity.
+       */
+      providerStatus: "fulfilled",
+      payload: { query: search.query, count: products.length, products, resultHash },
+      acknowledgedAt: new Date(ctx.clock?.() ?? Date.now()).toISOString(),
+    };
+  }
+
+  private async executeFulfilment(
     input: ExecuteInput,
     payment: PaymentCapability,
     ctx: AdapterContext,

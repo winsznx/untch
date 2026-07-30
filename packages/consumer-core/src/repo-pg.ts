@@ -58,6 +58,7 @@ import type {
   ProviderRecord,
   TransitionEvent,
   TransitionResult,
+  CapabilityExecutionShape,
   SettlementAccountAttestation,
   TreasuryAccountRecord,
   TreasuryBalanceObservation,
@@ -993,13 +994,17 @@ export class PgConsumerStore implements ConsumerStore {
 
   async upsertCapability(c: ProviderCapabilityRecord): Promise<void> {
     await this.pool.query(
-      `INSERT INTO consumer_provider_capabilities (provider_id, capability, maturity, notes, access_blocker)
-       VALUES ($1,$2,$3,$4,$5)
+      `INSERT INTO consumer_provider_capabilities
+        (provider_id, capability, maturity, notes, access_blocker, execution_shape)
+       VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (provider_id, capability) DO UPDATE SET
          maturity = EXCLUDED.maturity,
          notes = EXCLUDED.notes,
-         access_blocker = EXCLUDED.access_blocker`,
-      [c.providerId, c.capability, c.maturity, c.notes, c.accessBlocker ?? null],
+         access_blocker = EXCLUDED.access_blocker,
+         -- COALESCE for the same reason the treasury attestation uses one: a caller that does not know
+         -- the shape must not erase one that was set deliberately.
+         execution_shape = COALESCE(EXCLUDED.execution_shape, consumer_provider_capabilities.execution_shape)`,
+      [c.providerId, c.capability, c.maturity, c.notes, c.accessBlocker ?? null, c.executionShape ?? null],
     );
   }
 
@@ -1014,6 +1019,9 @@ export class PgConsumerStore implements ConsumerStore {
       maturity: str(r.maturity) as ProviderMaturity,
       notes: str(r.notes),
       accessBlocker: strOrNull(r.access_blocker) as CapabilityAccessBlocker | null,
+      // Null on rows written before migration 013. `resolveExecutionShape` turns that into FULFILMENT,
+      // which is what those rows meant.
+      executionShape: strOrNull(r.execution_shape) as CapabilityExecutionShape | null,
     }));
   }
 

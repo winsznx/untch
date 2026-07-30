@@ -25,13 +25,16 @@
 import type { AssetRef, CaipChainId } from "./assets";
 import { ProviderError, normalizedError } from "./errors";
 import { checkExecutionFlags, loadConsumerFlags, type ConsumerFlags } from "./flags";
-import type {
-  CapabilityAccessBlocker,
-  ConsumerStore,
-  PauseFlag,
-  ProviderCapabilityRecord,
-  ProviderMaturity,
-  ProviderRecord,
+import {
+  DEFAULT_CAPABILITY_EXECUTION_SHAPE,
+  isCapabilityExecutionShape,
+  type CapabilityAccessBlocker,
+  type CapabilityExecutionShape,
+  type ConsumerStore,
+  type PauseFlag,
+  type ProviderCapabilityRecord,
+  type ProviderMaturity,
+  type ProviderRecord,
 } from "./repo";
 
 const ORDER: Readonly<Record<ProviderMaturity, number>> = Object.freeze({
@@ -181,6 +184,20 @@ export function railSignerConfigured(
  * asset flags are the whole of its gating, and inventing a phantom Base switch would make this
  * function report a control that no code enforces.
  */
+/**
+ * The shape a capability is bought in, resolved rather than read raw.
+ *
+ * One function, so the default lives in one place. A caller that reached for
+ * `capability.executionShape` directly would get `undefined` for every row written before migration 013
+ * and would have to remember what that meant — and the two callers who forgot would disagree.
+ */
+export function resolveExecutionShape(
+  capability: Pick<ProviderCapabilityRecord, "executionShape"> | null | undefined,
+): CapabilityExecutionShape {
+  const declared = capability?.executionShape ?? null;
+  return isCapabilityExecutionShape(declared) ? declared : DEFAULT_CAPABILITY_EXECUTION_SHAPE;
+}
+
 export function railExecutionEnabled(
   chain: string,
   env: Record<string, string | undefined> = process.env,

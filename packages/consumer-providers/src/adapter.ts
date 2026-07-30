@@ -38,6 +38,7 @@ import {
   decodeChallengeHeader,
   selectPayment,
   type SelectedPayment,
+  type X402Challenge,
 } from "./x402/challenge";
 import { parseWwwAuthenticate, isMppOnly } from "./mpp/challenge";
 import type { SiwxSigner } from "./siwx/sign";
@@ -356,6 +357,24 @@ export abstract class BaseAdapter implements ConsumerProviderAdapter {
     ctx: AdapterContext,
     body?: unknown,
   ): Promise<SelectedPayment> {
+    return (await this.probe402Detailed(method, path, ctx, body)).payment;
+  }
+
+  /**
+   * The same unpaid probe, returning the CHALLENGE alongside the selected option.
+   *
+   * A paid-read quote has to bind more than a price. It records the x402 version and a hash of the
+   * challenge it was priced from, so that at execution time a refreshed challenge can be compared
+   * against the authorised one rather than merely re-selected — which is the difference between
+   * "cheap enough" and "the same offer". `probe402` keeps its narrower return type because four
+   * adapters and several proof scripts already depend on it, and none of them needs the challenge.
+   */
+  protected async probe402Detailed(
+    method: string,
+    path: string,
+    ctx: AdapterContext,
+    body?: unknown,
+  ): Promise<{ readonly payment: SelectedPayment; readonly challenge: X402Challenge }> {
     const res = await this.raw(method, path, ctx, {}, body);
     if (res.status !== 402) {
       throw new ProviderError(
@@ -378,10 +397,13 @@ export abstract class BaseAdapter implements ConsumerProviderAdapter {
         ),
       );
     }
-    return selectPayment(classified.challenge, {
-      signableChains: ctx.signableChains,
-      ceilingFor: () => null,
-    });
+    return {
+      payment: selectPayment(classified.challenge, {
+        signableChains: ctx.signableChains,
+        ceilingFor: () => null,
+      }),
+      challenge: classified.challenge,
+    };
   }
 
   /**
