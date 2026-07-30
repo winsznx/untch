@@ -34,7 +34,31 @@ import { join } from "node:path";
 import { findDrift, describeDrift } from "./lint/lockfile-sync";
 
 const SERVICE = "untch-asp";
+const ENVIRONMENT = "production";
 const ATTESTATION_FILENAME = ".untch-build-attestation.json";
+
+/**
+ * Which Railway project to upload to, resolved from THIS repository's link.
+ *
+ * `railway up <path>` resolves the project from the directory it is given, and the export is a plain
+ * directory with no Railway link, so it fails with "prefix not found". Passing the project explicitly is
+ * the fix, and reading it from the repo's own link rather than hardcoding an id keeps the two from
+ * drifting apart.
+ */
+function linkedProjectId(): string {
+  const raw = execFileSync("railway", ["status", "--json"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const parsed = JSON.parse(raw) as { id?: string; name?: string };
+  if (!parsed.id) throw new Error("railway status returned no project id");
+  if (parsed.name !== SERVICE) {
+    // The project and the service share a name here. A mismatch means this repo is linked somewhere
+    // unexpected, and uploading production code to a project nobody intended is worth refusing over.
+    throw new Error(`this repo is linked to project '${parsed.name}', expected '${SERVICE}'`);
+  }
+  return parsed.id;
+}
 
 const git = (...args: string[]): string =>
   execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -61,10 +85,27 @@ function main(): void {
     return fail(`'${ref}' is not a commit in this repository`);
   }
 
+  /**
+   * The branch that CONTAINS the deployed commit, not whatever is checked out.
+   *
+   * The first real deploy through this script exposed the difference. It ran from a feature branch with
+   * `--ref=origin/main`, and the attestation recorded the local branch name while the commit was main's
+   * tip. The commit was right, so nothing was actually mis-deployed, but an operator reading
+   * `branch: fix/...` next to a commit that is main would reasonably conclude the wrong code had
+   * shipped. An attestation field that can contradict the commit beside it is worse than no field.
+   *
+   * Remote branches are preferred because those are the ones other people can resolve.
+   */
   const branch = (() => {
     try {
-      const name = git("rev-parse", "--abbrev-ref", "HEAD");
-      return name === "HEAD" ? null : name;
+      const remotes = git("branch", "--remotes", "--contains", commit)
+        .split("\n")
+        .map((l) => l.trim().replace(/^origin\//, ""))
+        .filter((l) => l !== "" && !l.includes("->"));
+      if (remotes.includes("main")) return "main";
+      if (remotes[0] !== undefined) return remotes[0];
+      const local = git("rev-parse", "--abbrev-ref", "HEAD");
+      return local === "HEAD" ? null : local;
     } catch {
       return null;
     }
@@ -175,8 +216,20 @@ function main(): void {
     }
 
     // ── 7. Upload ──────────────────────────────────────────────────────────────────────────────
-    console.log(`\n  uploading to service ${SERVICE} ...\n`);
-    execFileSync("railway", ["up", exportDir, "--service", SERVICE, "--detach"], { stdio: "inherit" });
+    const projectId = linkedProjectId();
+    console.log(`\n  uploading to ${SERVICE} (project ${projectId}, env ${ENVIRONMENT}) ...\n`);
+    /**
+     * Run FROM the export directory, with no path argument.
+     *
+     * `railway up <path>` computes the upload prefix relative to the current working directory and
+     * fails with "prefix not found" when handed a path outside it. Setting cwd instead of passing the
+     * path is what makes an out-of-tree export uploadable at all.
+     */
+    execFileSync(
+      "railway",
+      ["up", "--service", SERVICE, "--project", projectId, "--environment", ENVIRONMENT, "--detach"],
+      { stdio: "inherit", cwd: exportDir },
+    );
 
     console.log("\n\x1b[32mUPLOADED\x1b[0m");
     console.log("  This is NOT a successful deployment yet. Verify, in this order:");
