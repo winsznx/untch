@@ -150,8 +150,38 @@ export async function initConsumerWiring(
     // same reason: `notes` is where a promoted capability records its settlement evidence.
     const existingCaps = await store.listCapabilities(seed.provider.providerId);
     for (const cap of seed.capabilities) {
-      if (!existingCaps.some((c) => c.capability === cap.capability)) {
+      const existingCap = existingCaps.find((c) => c.capability === cap.capability) ?? null;
+      if (!existingCap) {
         await store.upsertCapability(cap);
+        continue;
+      }
+
+      /**
+       * Fill in an execution shape the stored row does not have yet, and never overwrite one it does.
+       *
+       * `executionShape` is DESCRIPTIVE, like the provider's base URL: it says how a capability is
+       * bought, which is a property of the merchant's contract rather than a decision an operator makes.
+       * Maturity and `enabled` are operational and stay with the operator; this is not one of those.
+       *
+       * Without this the field could never reach a capability that already existed, because the loop
+       * above only introduces absent ones — and that is exactly what happened. Migration 013 added the
+       * column, the seed declared `shop.search` as a paid read, production kept a NULL, and the live
+       * quote probe reproduced the original failure against the deployed service. The probe caught it
+       * for free, before arming, with no intent consumed and nothing paid, which is what it is for.
+       *
+       * Only ever NULL → declared. An operator who has deliberately set a shape keeps it, so this can
+       * correct an omission and cannot undo a decision.
+       */
+      const storedShape = existingCap.executionShape ?? null;
+      if (storedShape === null && cap.executionShape) {
+        await store.upsertCapability({
+          ...existingCap,
+          executionShape: cap.executionShape,
+        });
+        log(
+          `[consumer] set execution shape ${cap.executionShape} on ${seed.provider.providerId}.` +
+            `${cap.capability} (it had none; maturity and notes untouched)`,
+        );
       }
     }
   }

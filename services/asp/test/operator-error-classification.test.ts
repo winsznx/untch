@@ -1,7 +1,36 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { ProviderError, normalizedError, resolveExecutionShape } from "@untch/consumer-core";
+import {
+  InMemoryConsumerStore,
+  ProviderError,
+  normalizedError,
+  resolveExecutionShape,
+  type ConsumerStore,
+  type ProviderCapabilityRecord,
+} from "@untch/consumer-core";
 import { classifyFailure } from "../src/consumer/operator-error-classification";
+
+/**
+ * The seeding rule under test, extracted so it can be exercised without booting the whole wiring.
+ *
+ * Kept identical to `initConsumerWiring`'s loop on purpose — two implementations of "fill only a NULL"
+ * would be two chances to disagree about whether an operator's decision survives a deploy.
+ */
+async function backfillExecutionShapes(
+  store: ConsumerStore,
+  seeds: readonly ProviderCapabilityRecord[],
+): Promise<void> {
+  for (const cap of seeds) {
+    const existing = (await store.listCapabilities(cap.providerId)).find((c) => c.capability === cap.capability) ?? null;
+    if (!existing) {
+      await store.upsertCapability(cap);
+      continue;
+    }
+    if ((existing.executionShape ?? null) === null && cap.executionShape) {
+      await store.upsertCapability({ ...existing, executionShape: cap.executionShape });
+    }
+  }
+}
 
 /**
  * Turning a domain failure into an answer a controller can act on.
@@ -97,6 +126,64 @@ describe("a provider failure becomes a structured answer", () => {
       assert.ok(c.status >= 400 && c.status <= 599, `${code} produced ${c.status}`);
       assert.equal(c.code, code);
     }
+  });
+});
+
+describe("the seed fills an absent execution shape and never overwrites one", () => {
+  /**
+   * The gap the live quote probe found, as a test.
+   *
+   * Migration 013 added the column, the seed declared `shop.search` as a paid read, and production kept a
+   * NULL — because the seeding loop only INTRODUCES capabilities that are absent, and `shop.search`
+   * already existed. So the deployed service still took the fulfilment path and still demanded a shipping
+   * address. The probe reproduced it against production for free, before anything was armed.
+   */
+  test("a stored capability with no shape gets the declared one, keeping operator state", async () => {
+    const store = new InMemoryConsumerStore();
+    await store.upsertCapability({
+      providerId: "purch",
+      capability: "shop.search",
+      // Operator state: promoted after a real settlement, with the evidence in the notes.
+      maturity: "verified",
+      notes: "promoted 2026-07-29 on observed settlement",
+    });
+
+    await backfillExecutionShapes(store, [
+      { providerId: "purch", capability: "shop.search", maturity: "sandbox", notes: "seed text", executionShape: "PAID_READ" },
+    ]);
+
+    const [row] = await store.listCapabilities("purch");
+    assert.equal(row?.executionShape, "PAID_READ", "the shape must be filled in");
+    assert.equal(row?.maturity, "verified", "maturity is operator state and must survive");
+    assert.equal(row?.notes, "promoted 2026-07-29 on observed settlement", "the evidence must survive");
+  });
+
+  test("a shape an operator already set is never overwritten", async () => {
+    const store = new InMemoryConsumerStore();
+    await store.upsertCapability({
+      providerId: "purch",
+      capability: "shop.track",
+      maturity: "experimental",
+      notes: "n",
+      executionShape: "PAID_READ",
+    });
+    await backfillExecutionShapes(store, [
+      { providerId: "purch", capability: "shop.track", maturity: "experimental", notes: "n", executionShape: "FULFILMENT" },
+    ]);
+    const [row] = await store.listCapabilities("purch");
+    assert.equal(row?.executionShape, "PAID_READ", "a decision already made must not be undone");
+  });
+
+  test("a seed that declares no shape leaves the stored row alone", async () => {
+    const store = new InMemoryConsumerStore();
+    await store.upsertCapability({ providerId: "purch", capability: "shop.quote", maturity: "experimental", notes: "n" });
+    await backfillExecutionShapes(store, [
+      { providerId: "purch", capability: "shop.quote", maturity: "experimental", notes: "n" },
+    ]);
+    const [row] = await store.listCapabilities("purch");
+    assert.equal(row?.executionShape ?? null, null);
+    // …and the resolver still gives it the safe meaning.
+    assert.equal(resolveExecutionShape(row), "FULFILMENT");
   });
 });
 
