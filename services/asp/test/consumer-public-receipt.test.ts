@@ -4,6 +4,7 @@ import { asset, moneyToJson, parseMoney } from "@untch/consumer-core";
 import type {
   ConsumerIntent,
   ConsumerStore,
+  DeliveryEvidence,
   DeliveryVerificationRecord,
   Money,
   ProviderExecutionRecord,
@@ -44,6 +45,15 @@ function stubStore(
     receiptId?: string | null;
     executions?: readonly ProviderExecutionRecord[];
     verification?: DeliveryVerificationRecord | null;
+    /**
+     * The delivery projection, which a redrive MUTATES.
+     *
+     * Previously this stub always returned null, so `delivery` was null before and after and the
+     * settlement-digest test passed over a receipt that had no delivery block at all. Production then
+     * moved the digest on the very first redrive. A fixture that cannot express the change it is
+     * guarding against does not guard against anything.
+     */
+    evidence?: DeliveryEvidence | null;
   } = {},
 ): ConsumerStore {
   const intent = {
@@ -87,7 +97,7 @@ function stubStore(
       return over.executions ?? [];
     },
     async getDeliveryEvidence() {
-      return null;
+      return over.evidence ?? null;
     },
     async latestDeliveryVerification() {
       return over.verification ?? null;
@@ -120,8 +130,32 @@ function depsFor(store: ConsumerStore): ConsumerDeps {
 }
 
 const seed = async (
-  over: { receiptId?: string | null; verification?: DeliveryVerificationRecord | null } = {},
+  over: {
+    receiptId?: string | null;
+    verification?: DeliveryVerificationRecord | null;
+    evidence?: DeliveryEvidence | null;
+  } = {},
 ): Promise<ConsumerDeps> => depsFor(stubStore(over));
+
+/** The delivery projection as settlement wrote it: the merchant spoke, Untch had not yet checked. */
+const EVIDENCE_UNVERIFIED: DeliveryEvidence = {
+  intentId: INTENT_ID,
+  providerId: "purch",
+  providerAttested: { status: "fulfilled", reference: "search-1", fields: {}, attestedAt: NOW_ISO },
+  untchVerified: { verified: false, method: "NONE", detail: "no shape-aware check existed", verifiedAt: null },
+  evidenceHash: `0x${"7".repeat(64)}`,
+};
+
+/** The same evidence AFTER a redrive moved Untch's own claim. Only `untchVerified` differs. */
+const EVIDENCE_VERIFIED: DeliveryEvidence = {
+  ...EVIDENCE_UNVERIFIED,
+  untchVerified: {
+    verified: true,
+    method: "PAID_READ_RESULT_BINDING",
+    detail: "verified after settlement",
+    verifiedAt: "2026-07-28T09:00:00.000Z",
+  },
+};
 
 /**
  * A verification established AFTER the receipt was written.
@@ -386,17 +420,65 @@ describe("public receipt — a later verification is appended, never merged", ()
    * rewritten history.
    */
   test("the settlement digest is unchanged by a verification, and the full digest moves", async () => {
-    const before = (await handlePublicConsumerReceipt(INTENT_ID, await seed(), null)).body as {
-      integrity: { digest: string; settlementDigest: string };
-    };
+    /**
+     * Both sides carry a REAL delivery projection, and the projection differs between them.
+     *
+     * The earlier version of this test seeded no evidence at all, so `delivery` was null on both sides
+     * and the assertion held over a receipt with nothing to move. Production moved the settlement digest
+     * on the first redrive it ever ran. The fixture now expresses the exact change being guarded
+     * against, which is the only reason the assertion means anything.
+     */
+    const before = (await handlePublicConsumerReceipt(
+      INTENT_ID,
+      await seed({ evidence: EVIDENCE_UNVERIFIED }),
+      null,
+    )).body as { integrity: { digest: string; settlementDigest: string } };
     const after = (await handlePublicConsumerReceipt(
       INTENT_ID,
-      await seed({ verification: LATER_VERIFICATION }),
+      await seed({ evidence: EVIDENCE_VERIFIED, verification: LATER_VERIFICATION }),
       null,
     )).body as { integrity: { digest: string; settlementDigest: string } };
 
     assert.equal(after.integrity.settlementDigest, before.integrity.settlementDigest, "the original claim must stay verifiable");
     assert.notEqual(after.integrity.digest, before.integrity.digest, "the current document did change, and must say so");
+  });
+
+  /**
+   * The narrower statement of the same defect, so a regression names its cause directly.
+   *
+   * `untchVerified` moving is the ONLY thing a redrive does to the projection. If that alone can move
+   * the settlement digest, the digest is not evidence of anything.
+   */
+  test("Untch's own verification claim is outside the settlement digest entirely", async () => {
+    const unverified = (await handlePublicConsumerReceipt(INTENT_ID, await seed({ evidence: EVIDENCE_UNVERIFIED }), null))
+      .body as { integrity: { settlementDigest: string }; delivery: { untchVerified: boolean } };
+    const verified = (await handlePublicConsumerReceipt(INTENT_ID, await seed({ evidence: EVIDENCE_VERIFIED }), null))
+      .body as { integrity: { settlementDigest: string }; delivery: { untchVerified: boolean } };
+
+    // The projection genuinely differs...
+    assert.equal(unverified.delivery.untchVerified, false);
+    assert.equal(verified.delivery.untchVerified, true);
+    // ...and the settlement digest does not notice.
+    assert.equal(verified.integrity.settlementDigest, unverified.integrity.settlementDigest);
+  });
+
+  /**
+   * What the MERCHANT said is a settlement-time fact and stays inside the digest.
+   *
+   * Otherwise the split would have gone too far: a receipt whose provider attestation could change
+   * without moving the settlement digest would be worse than one that moved it too eagerly.
+   */
+  test("the provider's attestation IS inside the settlement digest", async () => {
+    const fulfilled = (await handlePublicConsumerReceipt(INTENT_ID, await seed({ evidence: EVIDENCE_UNVERIFIED }), null))
+      .body as { integrity: { settlementDigest: string } };
+    const disputed = (await handlePublicConsumerReceipt(
+      INTENT_ID,
+      await seed({
+        evidence: { ...EVIDENCE_UNVERIFIED, providerAttested: { ...EVIDENCE_UNVERIFIED.providerAttested, status: "disputed" } },
+      }),
+      null,
+    )).body as { integrity: { settlementDigest: string } };
+    assert.notEqual(disputed.integrity.settlementDigest, fulfilled.integrity.settlementDigest);
   });
 
   test("a REFUSED verification is published as refused, with its grounds named", async () => {
