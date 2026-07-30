@@ -59,6 +59,7 @@ import type {
   TransitionEvent,
   TransitionResult,
   CapabilityExecutionShape,
+  DeliveryVerificationRecord,
   SettlementAccountAttestation,
   TreasuryAccountRecord,
   TreasuryBalanceObservation,
@@ -723,6 +724,56 @@ export class PgConsumerStore implements ConsumerStore {
         e.evidenceHash,
       ],
     );
+  }
+
+  /**
+   * Idempotent by PRIMARY KEY, not by a read-then-write.
+   *
+   * `ON CONFLICT DO NOTHING` followed by a read means two concurrent redrives converge on one row
+   * instead of racing to insert two. A check-then-insert would let both see nothing and both write.
+   */
+  async recordDeliveryVerification(r: DeliveryVerificationRecord): Promise<DeliveryVerificationRecord> {
+    await this.pool.query(
+      `INSERT INTO consumer_delivery_verifications
+        (intent_id, verifier_version, evidence_digest, verification_id, provider_id, capability,
+         execution_shape, method, verified, detail, request_hash, result_hash, quote_hash,
+         settlement_tx, settled_amount, settlement_chain, original_receipt_id, superseding_receipt_id,
+         refusals, verified_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       ON CONFLICT (intent_id, verifier_version, evidence_digest) DO NOTHING`,
+      [
+        r.intentId, r.verifierVersion, r.evidenceDigest, r.verificationId, r.providerId, r.capability,
+        r.executionShape, r.method, r.verified, r.detail, r.requestHash, r.resultHash, r.quoteHash,
+        r.settlementTx, r.settledAmount, r.settlementChain, r.originalReceiptId, r.supersedingReceiptId,
+        JSON.stringify(r.refusals), r.verifiedAt,
+      ],
+    );
+    const { rows } = await this.pool.query(
+      `SELECT * FROM consumer_delivery_verifications
+        WHERE intent_id = $1 AND verifier_version = $2 AND evidence_digest = $3`,
+      [r.intentId, r.verifierVersion, r.evidenceDigest],
+    );
+    const row = rows[0] as Row | undefined;
+    // Unreachable: the insert either wrote it or found it already there.
+    return row ? rowToVerification(row) : r;
+  }
+
+  async latestDeliveryVerification(intentId: string): Promise<DeliveryVerificationRecord | null> {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM consumer_delivery_verifications WHERE intent_id = $1
+        ORDER BY verified_at DESC LIMIT 1`,
+      [intentId],
+    );
+    const row = rows[0] as Row | undefined;
+    return row ? rowToVerification(row) : null;
+  }
+
+  async listDeliveryVerifications(intentId: string): Promise<readonly DeliveryVerificationRecord[]> {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM consumer_delivery_verifications WHERE intent_id = $1 ORDER BY verified_at DESC`,
+      [intentId],
+    );
+    return (rows as Row[]).map(rowToVerification);
   }
 
   async getDeliveryEvidence(intentId: string): Promise<DeliveryEvidence | null> {
@@ -1688,6 +1739,31 @@ function rowToProvider(row: Row): ProviderRecord {
     chains: jsonArr(row.chains).map((c) => str(c) as CaipChainId),
     provenance: str(row.provenance),
     enabled: bool(row.enabled),
+  };
+}
+
+function rowToVerification(row: Row): DeliveryVerificationRecord {
+  return {
+    verificationId: str(row.verification_id),
+    intentId: str(row.intent_id),
+    verifierVersion: str(row.verifier_version),
+    evidenceDigest: str(row.evidence_digest),
+    providerId: str(row.provider_id),
+    capability: str(row.capability),
+    executionShape: str(row.execution_shape),
+    method: str(row.method) as DeliveryVerificationRecord["method"],
+    verified: bool(row.verified),
+    detail: str(row.detail),
+    requestHash: strOrNull(row.request_hash),
+    resultHash: strOrNull(row.result_hash),
+    quoteHash: strOrNull(row.quote_hash),
+    settlementTx: strOrNull(row.settlement_tx),
+    settledAmount: strOrNull(row.settled_amount),
+    settlementChain: strOrNull(row.settlement_chain),
+    originalReceiptId: strOrNull(row.original_receipt_id),
+    supersedingReceiptId: strOrNull(row.superseding_receipt_id),
+    refusals: (row.refusals as DeliveryVerificationRecord["refusals"] | null) ?? [],
+    verifiedAt: iso(row.verified_at),
   };
 }
 

@@ -98,6 +98,7 @@ import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consum
 import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
 import { registerConsumerSettlementRoutes } from "./consumer/operator-settlement-routes";
 import { registerConsumerQuotePreviewRoute } from "./consumer/operator-quote-routes";
+import { registerConsumerVerifyRoutes } from "./consumer/operator-verify-routes";
 import { loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
 import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
 import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
@@ -580,6 +581,15 @@ export function createSellerApp(
    * first bounded production proof paid.
    */
   registerConsumerQuotePreviewRoute(app, { wiring: consumerWiring });
+
+  /**
+   * Re-running delivery verification over evidence production already holds.
+   *
+   * Same credential and posture. It exists because a receipt is a historical claim: the first bounded
+   * Purch proof recorded `untchVerified: false` truthfully, and the honest way to correct that later is
+   * to append a dated verification rather than edit the row. It writes no settlement and cannot pay.
+   */
+  registerConsumerVerifyRoutes(app, { wiring: consumerWiring });
 
   // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

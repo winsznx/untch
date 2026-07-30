@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { asset, moneyToJson, parseMoney } from "@untch/consumer-core";
-import type { ConsumerIntent, ConsumerStore, Money, ProviderExecutionRecord } from "@untch/consumer-core";
+import type {
+  ConsumerIntent,
+  ConsumerStore,
+  DeliveryVerificationRecord,
+  Money,
+  ProviderExecutionRecord,
+} from "@untch/consumer-core";
 import {
   handleConsumerReceipt,
   handlePublicConsumerReceipt,
@@ -33,7 +39,13 @@ const PRIVATE_REQUEST = { domain: "the-users-secret-startup-idea.com", shipTo: "
  * covers, and none of them would make the disclosure assertions any stronger. What matters is that
  * the intent handed to the handler carries private data, so the handler has something to leak.
  */
-function stubStore(over: { receiptId?: string | null; executions?: readonly ProviderExecutionRecord[] } = {}): ConsumerStore {
+function stubStore(
+  over: {
+    receiptId?: string | null;
+    executions?: readonly ProviderExecutionRecord[];
+    verification?: DeliveryVerificationRecord | null;
+  } = {},
+): ConsumerStore {
   const intent = {
     intentId: INTENT_ID,
     tenantId: "tenant-a",
@@ -77,6 +89,9 @@ function stubStore(over: { receiptId?: string | null; executions?: readonly Prov
     async getDeliveryEvidence() {
       return null;
     },
+    async latestDeliveryVerification() {
+      return over.verification ?? null;
+    },
     async getQuote() {
       return null;
     },
@@ -104,7 +119,38 @@ function depsFor(store: ConsumerStore): ConsumerDeps {
   };
 }
 
-const seed = async (over: { receiptId?: string | null } = {}): Promise<ConsumerDeps> => depsFor(stubStore(over));
+const seed = async (
+  over: { receiptId?: string | null; verification?: DeliveryVerificationRecord | null } = {},
+): Promise<ConsumerDeps> => depsFor(stubStore(over));
+
+/**
+ * A verification established AFTER the receipt was written.
+ *
+ * Dated a day later on purpose: the whole question these tests answer is whether a reader can still
+ * tell what was known when the money moved from what was established afterwards.
+ */
+const LATER_VERIFICATION: DeliveryVerificationRecord = {
+  verificationId: "dv_00112233445566778899",
+  intentId: INTENT_ID,
+  verifierVersion: "purch-paid-read/1.0.0",
+  evidenceDigest: `0x${"f".repeat(64)}`,
+  providerId: "purch",
+  capability: "shop.search",
+  executionShape: "PAID_READ",
+  method: "PAID_READ_RESULT_BINDING",
+  verified: true,
+  detail: "the paid search returned 5 schema-valid products bound to the authorised request",
+  requestHash: `0x${"1".repeat(64)}`,
+  resultHash: `0x${"2".repeat(64)}`,
+  quoteHash: `0x${"b".repeat(64)}`,
+  settlementTx: "63cbzAEuDkMFs41TwuGKjYC3YWz3e8FeYbQVfrt2WGmvWotdUMmiJCf3yzyd8EypPDikfQjWAxWGUa5rDTJLrhVK",
+  settledAmount: "10000",
+  settlementChain: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+  originalReceiptId: null,
+  supersedingReceiptId: null,
+  refusals: [],
+  verifiedAt: "2026-07-28T09:00:00.000Z",
+};
 
 const statusReader =
   (view: ReceiptStatusLike | null | "invalid") =>
@@ -271,6 +317,110 @@ describe("public receipt — the integrity digest", () => {
       statusReader({ status: "CONFIRMED", txHash: `0x${"e".repeat(64)}`, blockNumber: 9, batchId: 1 }),
     )).body as { integrity: { digest: string } };
     assert.equal(anchored.integrity.digest, pending.integrity.digest);
+  });
+});
+
+/**
+ * A verification that lands after settlement is an ADDENDUM, never a rewrite.
+ *
+ * The first bounded Purch proof settled real money and completed with `untchVerified: false,
+ * method: NONE`, because the delivery check had been written for a physical shipment and was not yet
+ * shape-aware. Verifying it days later must not make the receipt read as though the check had always
+ * been there. A reader who cannot separate the two can no longer tell a legitimate correction from a
+ * quietly edited history, and on a receipt that is the only distinction that matters.
+ */
+describe("public receipt — a later verification is appended, never merged", () => {
+  test("with no verification the receipt is revision 1 and says it is the original", async () => {
+    // #given a receipt nobody has re-verified
+    const deps = await seed();
+    // #when it is rendered
+    const body = (await handlePublicConsumerReceipt(INTENT_ID, deps, null)).body as {
+      revision: { number: number; supersedes: number | null; reason: string | null; revisedAt: string | null };
+      verification: unknown;
+    };
+    // #then it reads as an absence, not as a failure
+    assert.equal(body.revision.number, 1);
+    assert.equal(body.revision.supersedes, null);
+    assert.equal(body.revision.reason, null);
+    assert.equal(body.revision.revisedAt, null);
+    assert.equal(body.verification, null);
+  });
+
+  test("a verification appears as revision 2, dated when it happened and not when settlement did", async () => {
+    const deps = await seed({ verification: LATER_VERIFICATION });
+    const body = (await handlePublicConsumerReceipt(INTENT_ID, deps, null)).body as {
+      revision: { number: number; supersedes: number | null; reason: string; originalRecordedAt: string; revisedAt: string };
+      verification: { verifiedAt: string; relationship: string; verified: boolean; method: string };
+      createdAt: string;
+    };
+    assert.equal(body.revision.number, 2);
+    assert.equal(body.revision.supersedes, 1);
+    assert.equal(body.revision.reason, "DELIVERY_VERIFIED_AFTER_SETTLEMENT");
+    // The two dates are different, and the receipt shows both rather than picking one.
+    assert.equal(body.revision.originalRecordedAt, NOW_ISO);
+    assert.equal(body.revision.revisedAt, "2026-07-28T09:00:00.000Z");
+    assert.equal(body.verification.verifiedAt, "2026-07-28T09:00:00.000Z");
+    assert.equal(body.verification.relationship, "SUBSEQUENT_TO_SETTLEMENT");
+  });
+
+  test("the original settlement fields and timestamps are untouched by the addendum", async () => {
+    // #given the same intent, rendered before and after a verification exists
+    const before = (await handlePublicConsumerReceipt(INTENT_ID, await seed(), null)).body as Record<string, unknown>;
+    const after = (await handlePublicConsumerReceipt(
+      INTENT_ID,
+      await seed({ verification: LATER_VERIFICATION }),
+      null,
+    )).body as Record<string, unknown>;
+
+    // #then every settlement-time field is byte-identical
+    for (const field of ["intentId", "action", "state", "settlement", "fee", "spread", "policy", "quoteHash", "spendIntentHash", "createdAt", "updatedAt"]) {
+      assert.deepEqual(after[field], before[field], `${field} must not move when a verification is appended`);
+    }
+  });
+
+  /**
+   * The settlement digest is the load-bearing half.
+   *
+   * A holder who recorded it before any verification existed can still prove that part was never
+   * rewritten. If the only digest moved, they would be unable to tell a legitimate addendum from a
+   * rewritten history.
+   */
+  test("the settlement digest is unchanged by a verification, and the full digest moves", async () => {
+    const before = (await handlePublicConsumerReceipt(INTENT_ID, await seed(), null)).body as {
+      integrity: { digest: string; settlementDigest: string };
+    };
+    const after = (await handlePublicConsumerReceipt(
+      INTENT_ID,
+      await seed({ verification: LATER_VERIFICATION }),
+      null,
+    )).body as { integrity: { digest: string; settlementDigest: string } };
+
+    assert.equal(after.integrity.settlementDigest, before.integrity.settlementDigest, "the original claim must stay verifiable");
+    assert.notEqual(after.integrity.digest, before.integrity.digest, "the current document did change, and must say so");
+  });
+
+  test("a REFUSED verification is published as refused, with its grounds named", async () => {
+    // A verification that could not be established is still a fact about the intent, and hiding it
+    // would leave `untchVerified: false` looking like nobody had ever tried.
+    const refused: DeliveryVerificationRecord = {
+      ...LATER_VERIFICATION,
+      verified: false,
+      detail: "verification refused on 1 ground(s): RESULT_NOT_BOUND",
+      refusals: [{ code: "RESULT_NOT_BOUND", detail: "the persisted result answers a different query" }],
+    };
+    const body = (await handlePublicConsumerReceipt(INTENT_ID, await seed({ verification: refused }), null)).body as {
+      verification: { verified: boolean; refusals: readonly string[] };
+    };
+    assert.equal(body.verification.verified, false);
+    assert.deepEqual(body.verification.refusals, ["RESULT_NOT_BOUND"]);
+  });
+
+  test("the addendum publishes no request payload of its own", async () => {
+    // The verification record carries hashes, never the query that was searched for.
+    const body = (await handlePublicConsumerReceipt(INTENT_ID, await seed({ verification: LATER_VERIFICATION }), null)).body;
+    const serialised = JSON.stringify(body);
+    assert.equal(serialised.includes("the-users-secret-startup-idea.com"), false);
+    assert.equal(serialised.includes("12 Private Road"), false);
   });
 });
 

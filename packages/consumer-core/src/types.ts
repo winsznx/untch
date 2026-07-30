@@ -332,7 +332,20 @@ export interface DeliveryEvidence {
   };
   readonly untchVerified: {
     readonly verified: boolean;
-    readonly method: "PROVIDER_STATUS_POLL" | "DNS_LOOKUP" | "HTTP_PROBE" | "NONE";
+    /**
+     * How Untch checked, or `NONE` when it did not.
+     *
+     * `PAID_READ_RESULT_BINDING` is the method for a paid read: the persisted result is checked to be a
+     * schema-valid answer BOUND to the authorised request and to the settled execution that paid for it.
+     * It deliberately does not claim the answer is factually correct or current — a search result is
+     * evidence that the service ran and returned what was bought, not a warranty on the listings.
+     */
+    readonly method:
+      | "PROVIDER_STATUS_POLL"
+      | "DNS_LOOKUP"
+      | "HTTP_PROBE"
+      | "PAID_READ_RESULT_BINDING"
+      | "NONE";
     readonly detail: string;
     readonly verifiedAt: string | null;
   };

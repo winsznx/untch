@@ -52,6 +52,13 @@ export {
   selectPayment,
 } from "./x402/challenge";
 
+export {
+  PAID_READ_VERIFIER_VERSION,
+  paidReadResultHash,
+  verifyPersistedPaidRead,
+  type PaidReadVerification,
+  type PaidReadVerificationInput,
+} from "./adapters/purch-paid-read-verify";
 export { X402EvmExactClient, buildAuthorizationTypedData, type EvmExactClientDeps } from "./x402/evm-exact";
 export {
   X402SolanaExactClient,
@@ -115,7 +122,11 @@ export {
   PurchAdapter,
   PURCH_BASE_URL,
   PURCH_SOLANA_PAYTO,
+  /** The endpoint CLASS a paid read is authorised against. Compared at execution and at verification. */
+  PURCH_ENDPOINT_CLASS_SEARCH,
+  parseSearchProducts,
   parseShippingAddress,
+  type SearchProduct,
   type ShippingAddress,
 } from "./adapters/purch";
 export { StableTravelAdapter, STABLETRAVEL_BASE_URL } from "./adapters/stabletravel";

@@ -44,6 +44,8 @@ import {
   ProviderError,
   ProviderRegistry,
   resolveExecutionShape,
+  isTerminal,
+  type DeliveryVerificationRecord,
   type CapabilityExecutionShape,
   type ProviderQuote,
   recognitionGroup,
@@ -71,7 +73,11 @@ import {
   moneyToJson,
 } from "@untch/consumer-core";
 import type { AdapterContext, AdapterRegistry } from "@untch/consumer-providers";
-import { redactForLog } from "@untch/consumer-providers";
+import {
+  PAID_READ_VERIFIER_VERSION,
+  redactForLog,
+  verifyPersistedPaidRead,
+} from "@untch/consumer-providers";
 import type { Decision } from "@untch/policy-engine";
 import { evaluateIntentSerialized, type Ledger } from "@untch/policy-engine";
 import type { PolicyProvider, StoredPolicy } from "@untch/policy-store";
@@ -259,6 +265,184 @@ export class ConsumerOrchestrator {
     );
 
     return { quote, executionShape, providerId: args.providerId };
+  }
+
+  /**
+   * Re-run delivery verification from PERSISTED evidence, and record the answer immutably.
+   *
+   * WHY A REDRIVE RATHER THAN A FIX-FORWARD
+   *
+   * The first bounded Purch proof completed with `untchVerified: false, method: NONE`, because the
+   * adapter's delivery check was written for a physical shipment and was never made shape-aware. The
+   * settlement is real, the result is persisted, and the only thing missing is the check itself.
+   *
+   * Re-running the whole intent to fix that would mean paying again for an answer already bought. This
+   * reads what production already stored and verifies it in place.
+   *
+   * WHY IT CANNOT PAY
+   *
+   * It touches no adapter method that takes a payment capability, mints no capability, and constructs no
+   * rail client. `verifyPersistedPaidRead` is a pure function over data — it has no fetch, no key and no
+   * RPC. A verifier that re-fetched the result would be checking a NEW answer against an OLD payment,
+   * which proves nothing about what was actually bought and would spend money to prove it.
+   *
+   * WHY THE ORIGINAL RECORD IS NOT EDITED
+   *
+   * A receipt is a historical claim. Flipping `untchVerified` on a row dated at settlement time would
+   * assert Untch checked something at a moment when it had not, and nobody could later tell. So the
+   * verification is its own row with its own timestamp, and the projection is updated to point at it
+   * while the original evidence keeps its original fields.
+   */
+  async redriveDeliveryVerification(intentId: string): Promise<{
+    readonly record: DeliveryVerificationRecord;
+    readonly alreadyRecorded: boolean;
+    readonly intent: ConsumerIntent;
+  }> {
+    const intent = await this.mustGet(intentId);
+
+    /**
+     * Only a TERMINAL, paid intent may be verified.
+     *
+     * An intent still in flight has evidence that is still changing, and a verification of a moving
+     * target is a claim about an instant nobody can reproduce.
+     */
+    if (!isTerminal(intent.state)) {
+      throw new ProviderError(
+        normalizedError(
+          "PROVIDER_BAD_REQUEST",
+          `intent ${intentId} is ${intent.state}, which is not terminal. Verification reads settled ` +
+            "evidence and refuses to describe an intent that is still moving.",
+        ),
+      );
+    }
+    if (intent.state !== "COMPLETED") {
+      throw new ProviderError(
+        normalizedError(
+          "PROVIDER_BAD_REQUEST",
+          `intent ${intentId} is ${intent.state}; only a COMPLETED intent has a delivery to verify`,
+        ),
+      );
+    }
+
+    const providerId = intent.providerId;
+    if (providerId === null) {
+      throw new ProviderError(normalizedError("PROVIDER_BAD_REQUEST", "this intent names no provider"));
+    }
+
+    const quote = await this.mustQuote(intent);
+    const executions = await this.d.store.listExecutions(intentId);
+    const funding = await this.d.store.getFunding(intentId);
+    const evidence = await this.d.store.getDeliveryEvidence(intentId);
+    if (evidence === null) {
+      throw new ProviderError(
+        normalizedError("PROVIDER_BAD_REQUEST", "no delivery evidence is persisted for this intent"),
+      );
+    }
+
+    const capabilityName = capabilityFor(intent.action, "execute");
+    const executionShape = resolveExecutionShape(
+      (await this.d.store.listCapabilities(providerId)).find((c) => c.capability === capabilityName) ?? null,
+    );
+    if (executionShape !== "PAID_READ") {
+      throw new ProviderError(
+        normalizedError(
+          "PROTOCOL_NOT_EXECUTABLE",
+          `delivery verification for the ${executionShape} shape is unchanged and has no redrive; only ` +
+            "PAID_READ is re-verifiable from persisted evidence today",
+        ),
+      );
+    }
+
+    const settlementAccount = await this.d.store.findTreasuryAccount(
+      quote.settlementAsset.chain,
+      quote.settlementAsset.symbol,
+      "SETTLEMENT",
+    );
+
+    /**
+     * The armed gate's ceiling, read from the DURABLE gate row rather than from the environment.
+     *
+     * The environment no longer carries it: production is disarmed by the time a redrive runs, which is
+     * the point. The row is what recorded the authority that actually governed the payment.
+     */
+    const gates = await this.d.store.listSolanaProofGates(50);
+    const gate = gates.find((g) => g.scope.intentId === intentId) ?? null;
+
+    const verification = verifyPersistedPaidRead({
+      intentId,
+      providerId,
+      capability: capabilityName,
+      executionShape,
+      quoteTerms: quote.terms,
+      quoteCost: quote.providerCost,
+      quoteHash: intent.quoteHash,
+      settlementRecipient: quote.settlementRecipient,
+      settlementChain: quote.settlementAsset.chain,
+      settlementAssetSymbol: quote.settlementAsset.symbol,
+      settlementMint: quote.settlementAsset.address,
+      reservedAtomic: funding?.amount.amount ?? null,
+      gateCeilingAtomic: gate?.scope.maxAmount.amount ?? null,
+      executions: executions.map((e) => ({
+        state: e.state,
+        settlementTxHash: e.settlementTxHash,
+        settlementChain: e.settlementChain,
+        settledAtomic: e.settledAmount?.amount ?? null,
+      })),
+      registeredAuthority: settlementAccount?.address ?? null,
+      attestedFields: evidence.providerAttested.fields,
+      attestedStatus: evidence.providerAttested.status,
+      request: intent.request,
+    });
+
+    const settled = executions[0] ?? null;
+    const record: DeliveryVerificationRecord = {
+      verificationId: `dv_${randomBytes(10).toString("hex")}`,
+      intentId,
+      verifierVersion: PAID_READ_VERIFIER_VERSION,
+      evidenceDigest: verification.evidenceDigest,
+      providerId,
+      capability: capabilityName,
+      executionShape,
+      method: verification.method,
+      verified: verification.verified,
+      detail: verification.detail,
+      requestHash: verification.requestHash,
+      resultHash: verification.resultHash,
+      quoteHash: intent.quoteHash,
+      settlementTx: settled?.settlementTxHash ?? null,
+      settledAmount: settled?.settledAmount?.amount.toString() ?? null,
+      settlementChain: settled?.settlementChain ?? null,
+      originalReceiptId: intent.receiptId,
+      // Set by the caller that mints one. A verification is recorded whether or not a receipt follows.
+      supersedingReceiptId: null,
+      refusals: verification.refusals,
+      verifiedAt: this.now(),
+    };
+
+    const stored = await this.d.store.recordDeliveryVerification(record);
+    const alreadyRecorded = stored.verificationId !== record.verificationId;
+
+    /**
+     * The PROJECTION is updated; the provider's attestation is not.
+     *
+     * `providerAttested` keeps exactly what the merchant said at execution time. Only `untchVerified`
+     * moves, and it moves to a value carrying its own later timestamp — so the two claims stay
+     * distinguishable, which is the same reason they were never merged in the first place.
+     */
+    if (verification.verified && !alreadyRecorded) {
+      await this.d.store.upsertDeliveryEvidence({
+        ...evidence,
+        untchVerified: {
+          verified: true,
+          method: verification.method,
+          detail: `${verification.detail} Verified after settlement by ${PAID_READ_VERIFIER_VERSION}; ` +
+            `see verification ${stored.verificationId}.`,
+          verifiedAt: stored.verifiedAt,
+        },
+      });
+    }
+
+    return { record: stored, alreadyRecorded, intent };
   }
 
   // ── 1. CREATE ───────────────────────────────────────────────────────────────

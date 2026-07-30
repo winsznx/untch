@@ -216,6 +216,40 @@ export interface TreasuryAccountRecord {
   readonly attestation?: SettlementAccountAttestation | null;
 }
 
+/**
+ * One immutable statement that Untch checked a delivery, and what it read to do so.
+ *
+ * Separate from `DeliveryEvidence` on purpose. That record is written at execution time and describes
+ * what the provider attested; this one is written whenever verification actually ran, which may be much
+ * later. Collapsing them would make a receipt unable to distinguish "verified at settlement" from
+ * "verified afterwards", and the second is the honest description of a redrive.
+ */
+export interface DeliveryVerificationRecord {
+  readonly verificationId: string;
+  readonly intentId: string;
+  /** Bumped when the checks change, so two versions can disagree in the record rather than in silence. */
+  readonly verifierVersion: string;
+  /** Hash over every persisted input read. Identical inputs produce an identical row. */
+  readonly evidenceDigest: string;
+  readonly providerId: string;
+  readonly capability: string;
+  readonly executionShape: string;
+  readonly method: DeliveryEvidence["untchVerified"]["method"];
+  readonly verified: boolean;
+  readonly detail: string;
+  readonly requestHash: string | null;
+  readonly resultHash: string | null;
+  readonly quoteHash: string | null;
+  readonly settlementTx: string | null;
+  readonly settledAmount: string | null;
+  readonly settlementChain: string | null;
+  readonly originalReceiptId: string | null;
+  readonly supersedingReceiptId: string | null;
+  /** Every reason a verification failed. Kept because a failed check is evidence too. */
+  readonly refusals: readonly { readonly code: string; readonly detail: string }[];
+  readonly verifiedAt: string;
+}
+
 export interface TreasuryBalanceObservation {
   readonly treasuryRef: string;
   readonly onchain: Money;
@@ -341,6 +375,18 @@ export interface ConsumerStore {
   // ── delivery ──────────────────────────────────────────────────────────────
   upsertDeliveryEvidence(evidence: DeliveryEvidence): Promise<void>;
   getDeliveryEvidence(intentId: string): Promise<DeliveryEvidence | null>;
+
+  /**
+   * Record a delivery verification. Idempotent on (intentId, verifierVersion, evidenceDigest).
+   *
+   * Returns the row that ended up stored — the new one, or the existing one when an identical redrive
+   * collided with it. A caller therefore cannot tell a first run from a repeat by the return value, and
+   * does not need to: both mean "this verification is on record", which is the only thing it acts on.
+   */
+  recordDeliveryVerification(record: DeliveryVerificationRecord): Promise<DeliveryVerificationRecord>;
+  /** The newest verification for an intent, or null. Never merged into the delivery evidence. */
+  latestDeliveryVerification(intentId: string): Promise<DeliveryVerificationRecord | null>;
+  listDeliveryVerifications(intentId: string): Promise<readonly DeliveryVerificationRecord[]>;
 
   // ── ledger ────────────────────────────────────────────────────────────────
   /** Validates balance, then appends. Rejects a duplicate (intentId, kind) for non-ADJUSTMENT groups. */
