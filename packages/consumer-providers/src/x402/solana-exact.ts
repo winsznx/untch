@@ -75,6 +75,26 @@ import {
  */
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 
+/**
+ * The owner's associated token account for a mint, derived by the official library.
+ *
+ * Exported so the RPC health gate derives it the same way the payment path does. Two copies of a PDA
+ * derivation is two chances to disagree, and a gate that derives a different account than the code it
+ * is gating would report a healthy endpoint as broken, or worse, the reverse.
+ *
+ * The program addresses come from the library rather than from literals here. A bare 44-character
+ * base58 constant is also what a secret scanner matches on, and the SPL token program id is about as
+ * public as an address gets, so the finding would be false and would still have to be triaged.
+ */
+export async function associatedTokenAccountFor(owner: string, mint: string): Promise<string> {
+  const [ata] = await findAssociatedTokenPda({
+    mint: mint as never,
+    owner: owner as never,
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+  });
+  return ata;
+}
+
 /** Solana mainnet's genesis hash. CAIP-2 truncates it to 32 characters. */
 export const SOLANA_MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 export const SOLANA_MAINNET_CAIP2 = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";

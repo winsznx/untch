@@ -32,6 +32,16 @@
  */
 export {};
 
+/**
+ * The gate derives the token account with the SAME function the payment path uses.
+ *
+ * Not a second copy. Two derivations are two chances to disagree, and a gate that computes a different
+ * account than the code it is gating would report a healthy endpoint as broken, or miss a real fault.
+ * It also keeps the SPL program ids out of this file, where a bare base58 constant is both noise and a
+ * false positive for a secret scanner.
+ */
+import { associatedTokenAccountFor } from "../packages/consumer-providers/src/index";
+
 const URL_RAW = process.env.CONSUMER_SOLANA_RPC_URL?.trim() ?? "";
 if (!URL_RAW) {
   console.error("CONSUMER_SOLANA_RPC_URL is not set. There is no endpoint to check.");
@@ -42,8 +52,20 @@ if (!URL_RAW) {
 const HOST = URL_RAW.replace(/^https?:\/\//, "").split("/")[0] ?? "(unparseable)";
 const IS_PUBLIC = URL_RAW.includes("api.mainnet-beta.solana.com");
 
-const TREASURY = "HsTvSTrXn1HeDzUJTbH4ETXEKTTf2ifEXaQGGEEQ2XUy";
-const TREASURY_ATA = "4C5JJbFTZFRYPM3264mVWu1UqNkC7kos8tWvWfiHrhXo";
+/**
+ * The wallet under test, read from the environment rather than pinned in source.
+ *
+ * It used to be a hardcoded pair: the old treasury and its associated token account. Retiring that
+ * treasury and closing its token account made this gate FAIL on two checks, and fail for a reason that
+ * had nothing to do with the endpoint it exists to judge. A health gate that reports the RPC as broken
+ * when the RPC is fine is worse than no gate, because the next real failure looks identical.
+ *
+ * The account is now DERIVED from the owner rather than stored beside it, so the two can no longer
+ * disagree, and the owner comes from the same variable the arming preflight asserts.
+ */
+const TREASURY = (process.env.CONSUMER_SOLANA_PROOF_TREASURY_ADDRESS?.trim() ||
+  process.env.SOLANA_GATE_OWNER?.trim() ||
+  "").trim();
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 
@@ -83,6 +105,16 @@ async function main(): Promise<void> {
   console.log("\n\x1b[1mSolana RPC health gate\x1b[0m");
   console.log(`     host                     ${HOST}`);
   console.log("     credentials              redacted (the key is in the path and is never logged)");
+
+  if (TREASURY === "") {
+    console.error(
+      "\n  Set CONSUMER_SOLANA_PROOF_TREASURY_ADDRESS (or SOLANA_GATE_OWNER) to the wallet to check.",
+    );
+    process.exit(2);
+  }
+  const TREASURY_ATA = await associatedTokenAccountFor(TREASURY, USDC_MINT);
+  console.log(`     owner                    ${TREASURY}`);
+  console.log(`     derived USDC account     ${TREASURY_ATA}`);
 
   if (IS_PUBLIC) {
     bad("this is the PUBLIC mainnet-beta endpoint, not a dedicated RPC");
