@@ -631,12 +631,18 @@ export type PublicReceiptAnchor =
 function anchorFrom(
   receiptId: string | null,
   view: { status: string; txHash: string | null; blockNumber: number | null; batchId: number | null } | null,
+  /**
+   * Why THIS receipt is absent, which differs by which claim the anchor covers.
+   *
+   * The settlement message was reused for the verification anchor when the two were split, and it
+   * misdirected: it told a reader to consult `consumer.completed`, which says nothing about a VERIFY
+   * receipt, and it read as though a settlement receipt were missing when one exists and is anchored.
+   * A public page pointing readers somewhere useless is a defect even when the state beside it is right.
+   */
+  absentReason = "no §7.4 receipt was recorded for this intent — see the consumer.completed event for the reason",
 ): PublicReceiptAnchor {
   if (receiptId === null) {
-    return {
-      state: "NOT_RECORDED",
-      reason: "no §7.4 receipt was recorded for this intent — see the consumer.completed event for the reason",
-    };
+    return { state: "NOT_RECORDED", reason: absentReason };
   }
   if (view === null) return { state: "NOT_FOUND", receiptId };
   if (view.status === "CONFIRMED") {
@@ -855,7 +861,20 @@ export async function handlePublicConsumerReceipt(
           : {
               covers: "DELIVERY_VERIFICATION_ADDENDUM",
               verificationId: verification.verificationId,
-              ...anchorFrom(verification.supersedingReceiptId, verificationStatusView),
+              ...anchorFrom(
+                verification.supersedingReceiptId,
+                verificationStatusView,
+                /**
+                 * States what is missing and nothing more.
+                 *
+                 * The verification itself EXISTS and is published above; only its receipt is unminted.
+                 * Saying so plainly keeps a reader from concluding the check failed, that a settlement
+                 * receipt is absent, or that this addendum is already on chain.
+                 */
+                "No delivery-verification receipt has been recorded for this intent. The verification " +
+                  "record exists and is shown above; its VERIFY receipt has not been minted yet, so the " +
+                  "addendum is not on chain.",
+              ),
             },
       /**
        * True only when BOTH claims are on chain.

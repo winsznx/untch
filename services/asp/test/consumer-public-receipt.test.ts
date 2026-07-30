@@ -583,13 +583,54 @@ describe("public receipt — a later verification is appended, never merged", ()
     assert.equal(body.fullyAnchored, false);
   });
 
-  test("a verification with no receipt yet reports NOT_RECORDED, not anchored", async () => {
+  /**
+   * The absent-receipt message must describe the RIGHT absence.
+   *
+   * When the two anchors were split, the verification anchor inherited the settlement path's wording:
+   * "no §7.4 receipt was recorded for this intent — see the consumer.completed event for the reason".
+   * On a receipt whose settlement IS recorded and whose verification succeeded, every part of that
+   * sentence misleads. The state was right and the prose sent readers somewhere useless.
+   */
+  test("a verification with no receipt yet reports NOT_RECORDED, and says exactly what is missing", async () => {
+    // #given a completed verification whose VERIFY receipt has not been minted
     const body = (await handlePublicConsumerReceipt(
       INTENT_ID,
       await seed({ receiptId: `0x${"d".repeat(64)}`, evidence: EVIDENCE_VERIFIED, verification: LATER_VERIFICATION }),
       null,
-    )).body as { verificationAnchor: { state: string } };
+    )).body as {
+      verificationAnchor: { state: string; reason: string };
+      settlementAnchor: { receiptId?: string };
+      verification: { verified: boolean };
+    };
+
+    // #then the state is the absence of a RECEIPT...
     assert.equal(body.verificationAnchor.state, "NOT_RECORDED");
+
+    // ...and the reason names the delivery-verification receipt specifically.
+    const reason = body.verificationAnchor.reason;
+    assert.match(reason, /delivery-verification receipt/i);
+    assert.match(reason, /not been minted/i);
+
+    // It must not misdirect in any of the four ways the old wording did.
+    assert.equal(/consumer\.completed/.test(reason), false, "must not point at the settlement event");
+    assert.equal(/§7\.4 receipt was recorded for this intent/.test(reason), false, "must not imply the settlement receipt is missing");
+    assert.equal(/fail|refused|invalid/i.test(reason), false, "must not imply the verification failed");
+    assert.equal(/anchored on chain|is anchored/i.test(reason), false, "must not imply the addendum is anchored");
+
+    // The surrounding facts confirm each of those would have been wrong here.
+    assert.equal(body.settlementAnchor.receiptId, `0x${"d".repeat(64)}`, "a settlement receipt DOES exist");
+    assert.equal(body.verification.verified, true, "the verification DID succeed");
+  });
+
+  test("the settlement anchor keeps its own wording when no settlement receipt exists", async () => {
+    // The fix must not swap the messages: an intent that never produced a settlement receipt still
+    // points a reader at the event that explains why.
+    const body = (await handlePublicConsumerReceipt(INTENT_ID, await seed({ receiptId: null }), null)).body as {
+      settlementAnchor: { state: string; reason: string };
+    };
+    assert.equal(body.settlementAnchor.state, "NOT_RECORDED");
+    assert.match(body.settlementAnchor.reason, /consumer\.completed/);
+    assert.equal(/delivery-verification/i.test(body.settlementAnchor.reason), false);
   });
 
   test("the addendum publishes no request payload of its own", async () => {
