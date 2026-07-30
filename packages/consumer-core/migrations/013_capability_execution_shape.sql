@@ -22,8 +22,11 @@
 -- Every row written before this migration meant FULFILMENT, because that is the only thing the code
 -- could do. Absence therefore resolves to FULFILMENT rather than to the cheaper path: defaulting to
 -- PAID_READ would route a purchase at a read endpoint and silently drop the address a merchant needs.
--- Rows are NOT backfilled for the same reason a provider seed does not re-assert maturity on boot —
--- the resolver's default already expresses it, and a backfill would write a value nobody chose.
+-- The MIGRATION does not backfill: a SQL backfill would write a value nobody declared, using whatever
+-- the author of this file guessed each capability was. The provider SEED fills it instead, at boot, and
+-- only where the stored value is NULL — because the seed is where a capability's shape is actually
+-- declared, next to its base URL and its protocol. See `initConsumerWiring`, which never overwrites a
+-- shape an operator has set.
 
 ALTER TABLE consumer_provider_capabilities
   ADD COLUMN IF NOT EXISTS execution_shape TEXT;
