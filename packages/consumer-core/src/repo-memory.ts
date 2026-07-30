@@ -495,7 +495,12 @@ export class InMemoryConsumerStore implements ConsumerStore {
   // ── treasury ───────────────────────────────────────────────────────────────
 
   async upsertTreasuryAccount(record: TreasuryAccountRecord): Promise<void> {
-    this.treasury.set(record.treasuryRef, record);
+    // Mirrors the Postgres COALESCE: an upsert carrying no attestation must not erase one that a
+    // registration wrote. The two stores disagreeing about that would mean a behaviour tests could
+    // never catch, because tests run against this one.
+    const existing = this.treasury.get(record.treasuryRef);
+    const attestation = record.attestation ?? existing?.attestation ?? null;
+    this.treasury.set(record.treasuryRef, { ...record, attestation });
   }
 
   async getTreasuryAccount(treasuryRef: string): Promise<TreasuryAccountRecord | null> {

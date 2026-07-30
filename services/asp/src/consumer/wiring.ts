@@ -305,6 +305,57 @@ export async function initConsumerWiring(
     enabled: true,
   });
 
+  /**
+   * Does the Solana key loaded here control the float an operator registered?
+   *
+   * The one combination that must never serve traffic. A registered settlement account names the wallet
+   * somebody funded, attested and took responsibility for; a loaded key names the wallet this process
+   * can actually spend from. If they differ, arming Solana execution would spend from a float that no
+   * attestation covers, and every downstream control — the balance floor, the daily limit, the
+   * reconciliation drift check — would be measuring the wrong wallet.
+   *
+   * A mismatch THROWS, which fails `initConsumerWiring`, which leaves the lifecycle FAILED and the
+   * health check failing, so Railway never routes to the container. That is deliberately harsher than a
+   * refusal at payment time: by then the proof gate has been claimed, and a claimed gate is a one-way
+   * door. The cheap place to discover a wallet mix-up is before the process serves anything.
+   *
+   * Absence is not a mismatch. No key, or no registered account, means there is nothing to compare, and
+   * the ordinary unarmed deployment sits in exactly that state.
+   */
+  const solanaRail = rails.get(SOLANA_MAINNET);
+  const solanaKeyPresent = Boolean(keys.solana?.secret);
+  if (solanaKeyPresent && solanaRail) {
+    const registered = await store.findTreasuryAccount(SOLANA_MAINNET, asset("solana.usdc").symbol, "SETTLEMENT");
+    if (registered) {
+      let signerAddress: string | null = null;
+      try {
+        signerAddress = solanaRail.address();
+      } catch (err) {
+        throw new Error(
+          "a Solana treasury key is configured but its public address could not be derived, so it " +
+            `cannot be checked against the registered settlement authority: ${(err as Error).message}`,
+        );
+      }
+      if (signerAddress !== registered.address) {
+        throw new Error(
+          `the Solana treasury key loaded on this instance controls a different wallet than the ` +
+            `registered settlement account '${registered.treasuryRef}'. Refusing to start: arming this ` +
+            "deployment would spend from a float that no attestation covers. Either register the wallet " +
+            "this key controls, or install the key for the registered authority.",
+        );
+      }
+      log(
+        `[consumer] Solana signer matches registered settlement authority '${registered.treasuryRef}' ` +
+          `(attested: ${registered.attestation ? "yes" : "no"})`,
+      );
+    } else {
+      log(
+        "[consumer] a Solana treasury key is configured but NO Solana settlement account is registered. " +
+          "Execution will refuse until one is registered through the operator route.",
+      );
+    }
+  }
+
   const siwxKey = loadSiwxKey();
   const siwx = siwxKey === null ? null : new SiwxSigner({ privateKey: siwxKey as `0x${string}` });
   if (siwx === null) {
