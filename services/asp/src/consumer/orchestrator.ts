@@ -138,6 +138,23 @@ export interface CreateIntentRequest {
   readonly idempotencyKey: string;
   readonly correlationId: string;
   readonly intentId: string;
+  /**
+   * An absolute expiry, which may only SHORTEN the action's normal TTL.
+   *
+   * A caller that could lengthen it could keep a funded, approved intent reachable by a worker
+   * indefinitely, which is the one property the TTL exists to deny. Shortening is always safe, so
+   * that is the only direction this is allowed to move.
+   */
+  readonly expiresAt?: string;
+  /**
+   * Durable, NON-EXECUTABLE provenance, recorded on the creation event.
+   *
+   * It answers "who created this, from where, against which deployment" for an intent that did not
+   * arrive through a paid public route. Nothing reads it back as authority — it is evidence, and the
+   * orchestrator never consults it when deciding anything. Values are scalars so an event payload
+   * cannot become a place to smuggle a structure past redaction.
+   */
+  readonly provenance?: Readonly<Record<string, string | number | boolean | null>>;
 }
 
 const FUNDING_ASSET = asset("xlayer.usdt0");
@@ -184,6 +201,13 @@ export class ConsumerOrchestrator {
       ? this.d.config.fundingTtlSec * 1000
       : this.d.config.quoteTtlSec * 1000;
 
+    const defaultExpiry = this.clock() + ttlMs;
+    const requestedExpiry = req.expiresAt === undefined ? null : Date.parse(req.expiresAt);
+    const expiresAtMs =
+      requestedExpiry !== null && Number.isFinite(requestedExpiry) && requestedExpiry < defaultExpiry
+        ? requestedExpiry
+        : defaultExpiry;
+
     const { intent } = await this.d.store.createIntent(
       {
         intentId: req.intentId,
@@ -196,11 +220,15 @@ export class ConsumerOrchestrator {
         policyId: req.policyId,
         correlationId: req.correlationId,
         idempotencyKey: req.idempotencyKey,
-        expiresAt: new Date(this.clock() + ttlMs).toISOString(),
+        expiresAt: new Date(expiresAtMs).toISOString(),
       },
       {
         name: "consumer.intent.created",
-        data: { action: req.action, policyId: req.policyId },
+        data: {
+          action: req.action,
+          policyId: req.policyId,
+          ...(req.provenance === undefined ? {} : { provenance: req.provenance }),
+        },
       },
     );
     return { intent, replayed: false };

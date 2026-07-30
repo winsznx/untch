@@ -94,6 +94,7 @@ export {
   EXPIRY_TARGET,
   InvalidStateTransitionError,
   POST_PAYMENT_STATES,
+  IdempotencyConflictError,
   StaleIntentStateError,
   TERMINAL_STATES,
   assertTransition,
@@ -203,6 +204,8 @@ export {
   type ProviderStatus,
   type QuoteInput,
   VALUE_MOVING_ACTIONS,
+  CONSUMER_ACTION_TYPES,
+  isConsumerActionType,
   policyCategoryFor,
 } from "./types";
 

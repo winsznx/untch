@@ -26,6 +26,7 @@ import { assertGroupBalanced, type LedgerGroup } from "./ledger";
 import { addMoney, money, type Money } from "./money";
 import {
   assertTransition,
+  IdempotencyConflictError,
   StaleIntentStateError,
   type ConsumerIntentState,
 } from "./state";
@@ -101,7 +102,7 @@ export class InMemoryConsumerStore implements ConsumerStore {
   async createIntent(input: CreateIntentInput, event: TransitionEvent): Promise<TransitionResult> {
     const idemKey = `${input.tenantId}|${input.idempotencyKey}`;
     if (this.idempotency.has(idemKey)) {
-      throw new Error(`idempotency key already used for tenant ${input.tenantId}`);
+      throw new IdempotencyConflictError(input.tenantId, input.idempotencyKey);
     }
     const now = this.nowIso();
     const intent: ConsumerIntent = {
