@@ -32,6 +32,51 @@ export function createPool(databaseUrl: string): Pool {
  */
 const MIGRATION_LOCK_KEY = 4021_1003;
 
+/** The table migration 011 creates. Named once so the readiness probe and the store cannot disagree. */
+const PROOF_GATE_TABLE = "consumer_solana_proof_gate";
+
+export interface SchemaState {
+  /** Highest applied migration filename, or null when nothing has been applied. */
+  readonly migrationVersion: string | null;
+  /** Whether migration 011's table actually exists, checked rather than inferred from the history. */
+  readonly proofGateTablePresent: boolean;
+  /** Whether the partial unique index that enforces one live gate per intent exists. */
+  readonly proofGateLiveIndexPresent: boolean;
+}
+
+/**
+ * What the database ACTUALLY has, for the readiness gate and the deployment-info endpoint.
+ *
+ * Deliberately checks the objects rather than trusting `schema_migrations`. A history row says a
+ * migration was recorded as applied; it does not say the table survived. The gate that decides whether
+ * Solana spending may be armed needs the stronger statement, and the two can diverge after a manual
+ * intervention, a restore, or a partially rolled-back deployment.
+ */
+export async function readSchemaState(pool: Pool): Promise<SchemaState> {
+  const history = await pool.query<{ name: string }>(
+    `SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1`,
+  );
+
+  const table = await pool.query<{ present: boolean }>(
+    `SELECT to_regclass($1) IS NOT NULL AS present`,
+    [`public.${PROOF_GATE_TABLE}`],
+  );
+
+  const index = await pool.query<{ present: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_indexes
+       WHERE schemaname = 'public' AND tablename = $1 AND indexname = $2
+     ) AS present`,
+    [PROOF_GATE_TABLE, `${PROOF_GATE_TABLE}_live_intent`],
+  );
+
+  return {
+    migrationVersion: history.rows[0]?.name ?? null,
+    proofGateTablePresent: table.rows[0]?.present === true,
+    proofGateLiveIndexPresent: index.rows[0]?.present === true,
+  };
+}
+
 export async function runMigrations(pool: Pool): Promise<string[]> {
   const client = await pool.connect();
   try {

@@ -226,7 +226,7 @@ export {
 
 export { InMemoryConsumerStore } from "./repo-memory";
 export { PgConsumerStore } from "./repo-pg";
-export { createPool, runMigrations, type Pool } from "./db";
+export { createPool, runMigrations, readSchemaState, type Pool, type SchemaState } from "./db";
 
 export {
   type ExecutionPolicyConfig,

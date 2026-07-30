@@ -29,7 +29,25 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkSolanaSecretKey, encodeBase58 } from "../packages/consumer-core/src/index";
 
-const ENV_VAR = "CONSUMER_TREASURY_SOLANA_SECRET_KEY";
+/**
+ * The runtime variable. Setting this in Railway is what gives the Solana rail a signer.
+ */
+const TREASURY_ENV_VAR = "CONSUMER_TREASURY_SOLANA_SECRET_KEY";
+
+/**
+ * The rotation variables, used by `--proof`.
+ *
+ * The secret is stored locally under a name the RUNTIME DOES NOT READ. That is the point of the second
+ * name rather than an accident of it: after the 2026-07-29 incident the replacement key has to exist
+ * locally, be fundable, and be verifiable by preflight, all without any chance that its mere presence in
+ * an environment arms the rail. Promoting it is a deliberate, separate act of copying it into
+ * CONSUMER_TREASURY_SOLANA_SECRET_KEY in Railway, after preflight passes.
+ *
+ * The address is stored too, because the preflight asserts the rotated wallet by address. A preflight
+ * that merely found some funded Solana account would pass against the very key being retired.
+ */
+const PROOF_SECRET_ENV_VAR = "CONSUMER_SOLANA_PROOF_SECRET_KEY";
+const PROOF_ADDRESS_ENV_VAR = "CONSUMER_SOLANA_PROOF_TREASURY_ADDRESS";
 
 interface Generated {
   readonly address: string;
@@ -58,6 +76,15 @@ function generate(): Generated {
 
 function main(): void {
   const write = process.argv.includes("--write");
+  /**
+   * Rotation mode, for replacing a key that has to be treated as compromised.
+   *
+   * It differs from a first-time generation in exactly one way that matters: the output is stored under
+   * a name the runtime ignores, so a rotated key cannot arm anything until someone deliberately promotes
+   * it. Everything else, including the refusal to print the secret, is shared.
+   */
+  const proof = process.argv.includes("--proof");
+  const envVar = proof ? PROOF_SECRET_ENV_VAR : TREASURY_ENV_VAR;
 
   const generated = generate();
 
@@ -74,36 +101,59 @@ function main(): void {
     process.exit(1);
   }
 
-  console.log("\n\x1b[1mSolana settlement treasury\x1b[0m");
+  console.log(`\n\x1b[1m${proof ? "Solana PROOF signer (rotated)" : "Solana settlement treasury"}\x1b[0m`);
   console.log(`  address       ${generated.address}`);
   console.log(`  key format    base58, 64 bytes (32-byte seed + 32-byte public key)`);
   console.log(`  explorer      https://solscan.io/account/${generated.address}`);
+  if (proof) {
+    console.log(`  stored as     ${PROOF_SECRET_ENV_VAR} (the runtime does NOT read this name)`);
+  }
 
   const envPath = join(process.cwd(), ".env");
 
   if (!write) {
     console.log("\n  The secret was NOT printed and NOT written.");
-    console.log(`  Re-run with --write to append ${ENV_VAR} to .env, or set it in Railway by hand.`);
+    console.log(`  Re-run with --write to append ${envVar} to .env, or set it in Railway by hand.`);
     console.log("\n  \x1b[33mNothing spends from this wallet yet.\x1b[0m Execution stays off until");
     console.log("  CONSUMER_PROVIDER_PURCH_ENABLED and the Solana chain flag are both set, and the");
     console.log("  rail's pay() is still PROTOCOL_NOT_EXECUTABLE by design.");
     return;
   }
 
-  if (existsSync(envPath) && readFileSync(envPath, "utf8").includes(`${ENV_VAR}=`)) {
+  if (existsSync(envPath) && readFileSync(envPath, "utf8").includes(`${envVar}=`)) {
     console.error(
-      `\n\x1b[31m${ENV_VAR} is already present in .env. Refusing to append a second one —\x1b[0m` +
+      `\n\x1b[31m${envVar} is already present in .env. Refusing to append a second one —\x1b[0m` +
         "\nremove the existing line first if you really mean to rotate the treasury.",
     );
     process.exit(1);
   }
 
+  const stamp = new Date().toISOString().slice(0, 10);
   appendFileSync(
     envPath,
-    `\n# Solana settlement treasury, generated ${new Date().toISOString().slice(0, 10)}. Address ${generated.address}\n` +
-      `${ENV_VAR}=${generated.secretBase58}\n`,
+    proof
+      ? `\n# Solana PROOF signer, rotated ${stamp}. Address ${generated.address}\n` +
+          `# Replaces a treasury key that was exposed to a service with broader authority than intended.\n` +
+          `# The runtime does NOT read ${PROOF_SECRET_ENV_VAR}. Promoting it to\n` +
+          `# ${TREASURY_ENV_VAR} in Railway is a separate, deliberate step, taken only after\n` +
+          `# \`pnpm solana:proof:preflight\` passes.\n` +
+          `${PROOF_SECRET_ENV_VAR}=${generated.secretBase58}\n` +
+          `${PROOF_ADDRESS_ENV_VAR}=${generated.address}\n`
+      : `\n# Solana settlement treasury, generated ${stamp}. Address ${generated.address}\n` +
+          `${TREASURY_ENV_VAR}=${generated.secretBase58}\n`,
   );
   console.log(`\n  \x1b[32m✓\x1b[0m secret appended to .env (gitignored). It was not printed.`);
+
+  if (proof) {
+    console.log(`  \x1b[32m✓\x1b[0m ${PROOF_ADDRESS_ENV_VAR} written, so preflight can assert this wallet.`);
+    console.log("\n  Next, in this order:");
+    console.log(`    1. Fund ${generated.address} with 0.050000 USDC and 0.010000 SOL.`);
+    console.log("    2. Run `pnpm solana:proof:preflight` and get a PASS.");
+    console.log(`    3. ONLY THEN copy the secret into ${TREASURY_ENV_VAR} in Railway.`);
+    console.log("\n  \x1b[33mThe old treasury key must never be restored to Railway.\x1b[0m");
+    return;
+  }
+
   console.log("\n  Next:");
   console.log("    1. Fund the address with USDC and a little SOL (see `pnpm purch:funding`).");
   console.log("    2. Set the same variable in Railway. Do not copy it through a terminal you do");

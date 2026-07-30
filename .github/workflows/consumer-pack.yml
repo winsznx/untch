@@ -72,6 +72,36 @@ jobs:
   consumer-pack:
     name: money safety + state machine + protocol clients + governed lifecycle
     runs-on: ubuntu-latest
+
+    # A REAL Postgres, added after the 2026-07-29 deployment incident.
+    #
+    # Every suite here was previously pure, which meant the migration runner and the schema it produces
+    # were never exercised by CI at all. Migration 011 was queued to run against a production database
+    # that no one had rehearsed the upgrade on, and the only reason it did not run was that the build
+    # failed first. A migration nobody has run on a populated database is an untested migration, and the
+    # place to find that out is here rather than during a deploy.
+    # Trust auth, so this workflow declares NO credential of any kind.
+    #
+    # The container is ephemeral, reachable only from this job, and destroyed with it, so a password
+    # would protect nothing. What it would do is put a credential assignment in a committed file, which
+    # secret scanners match on shape rather than on reachability. The finding is then a false one that
+    # has to be dismissed, and every dismissal makes the next finding cheaper to dismiss. Removing the
+    # credential removes the finding and the thing it was pointing at, which is better than annotating
+    # it as safe.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: untch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,6 +118,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # THE GATE FOR THE 2026-07-29 FAILURE.
+      #
+      # That deployment died on `pnpm install --frozen-lockfile` because the uploaded tree's manifest
+      # carried a dependency the committed lockfile had never seen. The install above would already fail
+      # on a committed mismatch, so this step exists for what it adds: a NAMED failure that says which
+      # importer and which dependency disagree, instead of a remote builder's install error. It runs
+      # against a clean checkout, which is exactly the tree the Railway builder sees.
+      - name: Manifest/lockfile consistency
+        run: pnpm lint:lockfile
+
       # Parity with every other JS workflow: the root tsconfig (packages/** + scripts/**).
       - name: Typecheck (root tsconfig)
         run: pnpm typecheck
@@ -98,8 +138,20 @@ jobs:
       - name: Typecheck (services/asp tsconfig)
         run: pnpm --filter @untch/asp exec tsc --noEmit -p tsconfig.json
 
-      - name: Consumer core suite (money, state machine, ledger, treasury, registry)
-        run: pnpm test:consumer-core
+      # TEST_DATABASE_URL turns on the migration upgrade suite. Without it that suite skips, which is
+      # correct for a developer with no local Postgres and wrong for CI: a skipped migration test on the
+      # one machine that gates merges is a migration test that does not exist.
+      #
+      # The connection string carries no password, because the service above needs none.
+      - name: Consumer core suite (money, state machine, ledger, treasury, registry, migration upgrade)
+        run: |
+          export TEST_DATABASE_URL="postgresql://${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE}"
+          pnpm test:consumer-core
+        env:
+          PGUSER: postgres
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGDATABASE: untch_test
 
       - name: Consumer providers suite (x402 / MPP / SIWX against real captured challenges)
         run: pnpm test:consumer-providers
