@@ -23,6 +23,26 @@
  */
 
 import { normalizedError, ProviderError } from "@untch/consumer-core";
+/**
+ * The official packages, imported STATICALLY.
+ *
+ * These were three `await import()` calls inside `buildV2SvmCredential` and one inside
+ * `decodeSvmTransfer`. All four packages are production dependencies of this package and all four
+ * resolve in a production-only install, so nothing was broken. The placement was still wrong.
+ *
+ * `buildV2SvmCredential` is where the signer is constructed and the PAYMENT-SIGNATURE is produced, and
+ * it is reached only AFTER the durable proof gate has moved to CLAIMED. A module that fails to resolve
+ * at that point cannot be reported as a clean refusal: the gate already records that the treasury's
+ * authority may have been used, so the outcome is MANUAL_REVIEW on a payment that never happened.
+ * `decodeSvmTransfer` sits in the same window, verifying the transaction before it is handed to the
+ * sponsor.
+ *
+ * Resolving at module load moves every such failure to startup, where the readiness gate turns it into
+ * a deployment that never serves rather than an ambiguity that has to be investigated on chain.
+ */
+import { createKeyPairSignerFromBytes, getTransactionDecoder, getCompiledTransactionMessageDecoder } from "@solana/kit";
+import * as svm from "@x402/svm";
+import * as fetchExt from "@x402/fetch";
 
 export interface V2CredentialInput {
   /** The RAW decoded challenge, exactly as the provider sent it. Never a normalised copy. */
@@ -86,12 +106,6 @@ function decodeBase58Local(value: string): Uint8Array | null {
  * transaction before it is sent, which a wrapper that owns the fetch cannot.
  */
 export async function buildV2SvmCredential(input: V2CredentialInput): Promise<V2Credential> {
-  const [{ createKeyPairSignerFromBytes }, svm, fetchExt] = await Promise.all([
-    import("@solana/kit"),
-    import("@x402/svm"),
-    import("@x402/fetch"),
-  ]);
-
   const bytes = decodeBase58Local(input.secretKey.trim());
   if (bytes === null || bytes.length !== 64) {
     throw new ProviderError(
@@ -197,17 +211,16 @@ export interface DecodedTransfer {
  * format to drift, so this reads what the caller needs and reports honestly when it cannot.
  */
 export async function decodeSvmTransfer(wireTransaction: string): Promise<DecodedTransfer> {
-  const kit = await import("@solana/kit");
   const raw = Buffer.from(wireTransaction, "base64");
 
   try {
     // @solana/kit brands its byte arrays readonly, so the shapes below are asserted through unknown.
     // Widening a readonly view to a mutable one would be the wrong fix: nothing here writes.
-    const decoded = kit.getTransactionDecoder().decode(new Uint8Array(raw)) as unknown as {
+    const decoded = getTransactionDecoder().decode(new Uint8Array(raw)) as unknown as {
       messageBytes: Uint8Array;
       signatures: Record<string, unknown>;
     };
-    const message = kit.getCompiledTransactionMessageDecoder().decode(decoded.messageBytes) as unknown as {
+    const message = getCompiledTransactionMessageDecoder().decode(decoded.messageBytes) as unknown as {
       staticAccounts?: string[];
       instructions?: { programAddressIndex: number; data?: Uint8Array; accountIndices?: readonly number[] }[];
       lifetimeToken?: string;

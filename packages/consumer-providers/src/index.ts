@@ -57,6 +57,7 @@ export {
   X402SolanaExactClient,
   SOLANA_MAINNET_CAIP2,
   SOLANA_MAINNET_GENESIS,
+  associatedTokenAccountFor,
   SOLANA_MIN_LAMPORTS,
   SOLANA_RECIPIENT_ALLOWLIST,
   confirmSolanaSettlement,

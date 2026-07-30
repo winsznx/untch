@@ -128,6 +128,28 @@ jobs:
       - name: Manifest/lockfile consistency
         run: pnpm lint:lockfile
 
+      # THE PRODUCTION-ONLY INSTALL GATE.
+      #
+      # The Solana payment path imports @solana/kit, @x402/svm, @x402/fetch and @solana-program/token at
+      # MODULE LOAD, so a package misplaced into devDependencies would resolve here and vanish in
+      # production. Nothing else in this workflow would notice: the workspace install above includes dev
+      # dependencies, so the import would succeed in CI and fail on the deployed container.
+      #
+      # This installs with --prod into a clean checkout and imports the package for real. It runs in a
+      # separate directory so the workspace node_modules cannot satisfy the import by accident.
+      - name: Production-only install can load the Solana payment path
+        run: |
+          set -e
+          ART=$(mktemp -d)
+          git archive --format=tar HEAD | tar -x -C "$ART"
+          cd "$ART"
+          pnpm install --prod --frozen-lockfile --ignore-scripts
+          cd "$ART/packages/consumer-providers"
+          node --input-type=module -e "
+            const need = ['@solana/kit','@x402/svm','@x402/fetch','@solana-program/token'];
+            for (const p of need) { await import(p); console.log('loaded ' + p); }
+          "
+
       # Parity with every other JS workflow: the root tsconfig (packages/** + scripts/**).
       - name: Typecheck (root tsconfig)
         run: pnpm typecheck
