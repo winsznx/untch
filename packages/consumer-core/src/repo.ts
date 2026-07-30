@@ -304,6 +304,28 @@ export interface TransitionResult {
   readonly event: ConsumerEvent;
 }
 
+/**
+ * A second, DIFFERENT receipt id was offered for a verification that already has one.
+ *
+ * Its own class so a caller can tell "already done" from "someone is trying to repoint an anchored
+ * claim". The first is routine and idempotent; the second means two mint paths disagree about which
+ * receipt stands for one verification, and picking either would make the public record depend on
+ * which request arrived last.
+ */
+export class SupersedingReceiptConflictError extends Error {
+  constructor(
+    readonly intentId: string,
+    readonly existingReceiptId: string,
+    readonly offeredReceiptId: string,
+  ) {
+    super(
+      `verification for ${intentId} already carries receipt ${existingReceiptId}; refusing to repoint ` +
+        `it at ${offeredReceiptId}`,
+    );
+    this.name = "SupersedingReceiptConflictError";
+  }
+}
+
 export interface ConsumerStore {
   // ── intents ───────────────────────────────────────────────────────────────
   createIntent(input: CreateIntentInput, event: TransitionEvent): Promise<TransitionResult>;
@@ -387,6 +409,25 @@ export interface ConsumerStore {
   /** The newest verification for an intent, or null. Never merged into the delivery evidence. */
   latestDeliveryVerification(intentId: string): Promise<DeliveryVerificationRecord | null>;
   listDeliveryVerifications(intentId: string): Promise<readonly DeliveryVerificationRecord[]>;
+
+  /**
+   * Attach the VERIFY receipt minted for a verification. WRITE-ONCE.
+   *
+   * `supersedingReceiptId` is the one field on an otherwise immutable row that is legitimately filled
+   * in later: a verification is recorded whether or not a receipt follows, and the receipt is minted
+   * afterwards by a caller that may not exist yet.
+   *
+   * "Write-once" is the whole contract. Setting it from null is completing a record; overwriting it
+   * with a DIFFERENT id would silently repoint an anchored claim at another receipt, so that is
+   * refused rather than allowed to win. Re-setting the SAME id is a no-op, which is what makes an
+   * interrupted mint safe to retry.
+   *
+   * Returns the row as it now stands. Throws `SupersedingReceiptConflictError` on a conflicting id.
+   */
+  attachSupersedingReceipt(
+    key: { readonly intentId: string; readonly verifierVersion: string; readonly evidenceDigest: string },
+    receiptId: string,
+  ): Promise<DeliveryVerificationRecord>;
 
   // ── ledger ────────────────────────────────────────────────────────────────
   /** Validates balance, then appends. Rejects a duplicate (intentId, kind) for non-ADJUSTMENT groups. */

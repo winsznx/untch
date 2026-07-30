@@ -64,6 +64,7 @@ import type {
   TreasuryAccountRecord,
   TreasuryBalanceObservation,
 } from "./repo";
+import { SupersedingReceiptConflictError } from "./repo";
 import { randomBytes } from "node:crypto";
 
 type Row = Record<string, unknown>;
@@ -756,6 +757,45 @@ export class PgConsumerStore implements ConsumerStore {
     const row = rows[0] as Row | undefined;
     // Unreachable: the insert either wrote it or found it already there.
     return row ? rowToVerification(row) : r;
+  }
+
+  async attachSupersedingReceipt(
+    key: { readonly intentId: string; readonly verifierVersion: string; readonly evidenceDigest: string },
+    receiptId: string,
+  ): Promise<DeliveryVerificationRecord> {
+    /**
+     * Write-once enforced in the WHERE clause, not by a prior SELECT.
+     *
+     * A read-then-write would let two concurrent mints both observe null and both write, and the row
+     * would end up carrying whichever id committed last — with no trace that the other ever existed.
+     * The predicate makes exactly one of them update, and `rowCount` distinguishes the winner from a
+     * caller that must now go and look at what is already there.
+     */
+    const { rowCount } = await this.pool.query(
+      `UPDATE consumer_delivery_verifications SET superseding_receipt_id = $4
+        WHERE intent_id = $1 AND verifier_version = $2 AND evidence_digest = $3
+          AND superseding_receipt_id IS NULL`,
+      [key.intentId, key.verifierVersion, key.evidenceDigest, receiptId],
+    );
+
+    const { rows } = await this.pool.query(
+      `SELECT * FROM consumer_delivery_verifications
+        WHERE intent_id = $1 AND verifier_version = $2 AND evidence_digest = $3`,
+      [key.intentId, key.verifierVersion, key.evidenceDigest],
+    );
+    const row = rows[0] as Row | undefined;
+    if (!row) throw new Error(`no delivery verification for ${key.intentId}`);
+    const record = rowToVerification(row);
+
+    if ((rowCount ?? 0) === 0 && record.supersedingReceiptId !== receiptId) {
+      // Someone else got there first with a different id. Reported, never overwritten.
+      throw new SupersedingReceiptConflictError(
+        key.intentId,
+        record.supersedingReceiptId ?? "(none)",
+        receiptId,
+      );
+    }
+    return record;
   }
 
   async latestDeliveryVerification(intentId: string): Promise<DeliveryVerificationRecord | null> {

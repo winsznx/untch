@@ -17,6 +17,7 @@ import {
   type ConsumerQuote,
   type ConsumerStore,
   type Pool,
+  SupersedingReceiptConflictError,
   type ProviderExecutionRecord,
 } from "@untch/consumer-core";
 import { PROVIDER_SEEDS, PURCH_ENDPOINT_CLASS_SEARCH } from "@untch/consumer-providers";
@@ -409,6 +410,98 @@ describe(
       for (const column of ["state", "receipt_id", "created_at", "quote_hash", "spend_intent_hash", "policy_id"]) {
         assert.deepEqual(after[column], before[column], `consumer_intents.${column} must not move`);
       }
+    });
+
+    /**
+     * The write-once link from a verification to its VERIFY receipt.
+     *
+     * `supersedingReceiptId` is the one field on an immutable row that is filled in later, because the
+     * receipt is minted after the verification exists. Filling it from null completes the record;
+     * repointing it at a different receipt would silently move an anchored claim, so that is refused.
+     */
+    test("the superseding receipt attaches once, and the same id may be re-attached", async () => {
+      const id = intentId();
+      const store = storeNow();
+      await seed(store, id);
+      const { record } = await orchestratorOver(store).redriveDeliveryVerification(id);
+      assert.equal(record.supersedingReceiptId, null, "a fresh verification carries no receipt");
+
+      const key = { intentId: id, verifierVersion: record.verifierVersion, evidenceDigest: record.evidenceDigest };
+      const receipt = `0x${"5".repeat(64)}`;
+      const first = await store.attachSupersedingReceipt(key, receipt);
+      assert.equal(first.supersedingReceiptId, receipt);
+
+      // An interrupted mint being retried must be safe, not a conflict.
+      const again = await storeNow().attachSupersedingReceipt(key, receipt);
+      assert.equal(again.supersedingReceiptId, receipt);
+
+      const readBack = await storeNow().latestDeliveryVerification(id);
+      assert.equal(readBack?.supersedingReceiptId, receipt);
+    });
+
+    test("a DIFFERENT receipt id for the same verification is refused, never overwritten", async () => {
+      const id = intentId();
+      const store = storeNow();
+      await seed(store, id);
+      const { record } = await orchestratorOver(store).redriveDeliveryVerification(id);
+      const key = { intentId: id, verifierVersion: record.verifierVersion, evidenceDigest: record.evidenceDigest };
+
+      await store.attachSupersedingReceipt(key, `0x${"5".repeat(64)}`);
+      await assert.rejects(
+        () => storeNow().attachSupersedingReceipt(key, `0x${"6".repeat(64)}`),
+        (err: unknown) => err instanceof SupersedingReceiptConflictError,
+      );
+
+      // The original stands. A refused conflict must not have half-applied.
+      const readBack = await storeNow().latestDeliveryVerification(id);
+      assert.equal(readBack?.supersedingReceiptId, `0x${"5".repeat(64)}`);
+    });
+
+    /**
+     * The predicate does the work, not a read-then-write.
+     *
+     * Four concurrent mints offering four different ids is the shape of a retry storm. Exactly one must
+     * win at the constraint, and the row must not end up carrying whichever committed last.
+     */
+    test("four concurrent attaches with different ids leave exactly one winner", async () => {
+      const id = intentId();
+      const store = storeNow();
+      await seed(store, id);
+      const { record } = await orchestratorOver(store).redriveDeliveryVerification(id);
+      const key = { intentId: id, verifierVersion: record.verifierVersion, evidenceDigest: record.evidenceDigest };
+
+      const results = await Promise.allSettled(
+        ["a", "b", "c", "d"].map((ch) => storeNow().attachSupersedingReceipt(key, `0x${ch.repeat(64)}`)),
+      );
+      const won = results.filter((r) => r.status === "fulfilled");
+      assert.equal(won.length, 1, "exactly one attach may succeed");
+      assert.equal(
+        results.filter((r) => r.status === "rejected" && r.reason instanceof SupersedingReceiptConflictError).length,
+        3,
+        "the other three must be told they conflicted, not silently dropped",
+      );
+
+      const readBack = await storeNow().latestDeliveryVerification(id);
+      assert.equal(readBack?.supersedingReceiptId, (won[0] as PromiseFulfilledResult<{supersedingReceiptId: string|null}>).value.supersedingReceiptId);
+    });
+
+    test("attaching a receipt moves no settlement field and writes no ledger group", async () => {
+      const id = intentId();
+      const store = storeNow();
+      await seed(store, id);
+      const { record } = await orchestratorOver(store).redriveDeliveryVerification(id);
+      const before = (await (pool as Pool).query("SELECT * FROM consumer_intents WHERE intent_id = $1", [id])).rows[0] as Record<string, unknown>;
+
+      await store.attachSupersedingReceipt(
+        { intentId: id, verifierVersion: record.verifierVersion, evidenceDigest: record.evidenceDigest },
+        `0x${"5".repeat(64)}`,
+      );
+
+      const after = (await (pool as Pool).query("SELECT * FROM consumer_intents WHERE intent_id = $1", [id])).rows[0] as Record<string, unknown>;
+      for (const col of ["state", "receipt_id", "created_at", "quote_hash", "policy_id"]) {
+        assert.deepEqual(after[col], before[col], `consumer_intents.${col} must not move`);
+      }
+      assert.deepEqual(await storeNow().ledgerGroupsForIntent(id), [], "a VERIFY receipt moves no money");
     });
 
     test("no execution row and no ledger group is written by a redrive", async () => {

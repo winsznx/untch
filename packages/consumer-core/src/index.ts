@@ -232,6 +232,7 @@ export {
   type TreasuryAccountRecord,
   type TreasuryBalanceObservation,
 } from "./repo";
+export { SupersedingReceiptConflictError } from "./repo";
 
 export { InMemoryConsumerStore } from "./repo-memory";
 export { PgConsumerStore } from "./repo-pg";

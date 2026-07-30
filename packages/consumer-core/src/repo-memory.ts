@@ -54,6 +54,7 @@ import type {
   TreasuryAccountRecord,
   TreasuryBalanceObservation,
 } from "./repo";
+import { SupersedingReceiptConflictError } from "./repo";
 
 let eventCounter = 0;
 
@@ -374,6 +375,24 @@ export class InMemoryConsumerStore implements ConsumerStore {
     if (existing) return existing;
     this.deliveryVerifications.set(key, record);
     return record;
+  }
+
+  async attachSupersedingReceipt(
+    key: { readonly intentId: string; readonly verifierVersion: string; readonly evidenceDigest: string },
+    receiptId: string,
+  ): Promise<DeliveryVerificationRecord> {
+    const k = `${key.intentId}|${key.verifierVersion}|${key.evidenceDigest}`;
+    const existing = this.deliveryVerifications.get(k);
+    if (!existing) throw new Error(`no delivery verification ${k}`);
+    const current = existing.supersedingReceiptId;
+    // Same id: an interrupted mint being retried. Different id: two mint paths disagreeing.
+    if (current !== null && current !== receiptId) {
+      throw new SupersedingReceiptConflictError(key.intentId, current, receiptId);
+    }
+    if (current === receiptId) return existing;
+    const updated = { ...existing, supersedingReceiptId: receiptId };
+    this.deliveryVerifications.set(k, updated);
+    return updated;
   }
 
   async latestDeliveryVerification(intentId: string): Promise<DeliveryVerificationRecord | null> {
