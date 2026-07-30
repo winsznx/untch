@@ -36,9 +36,11 @@ import {
   formatMoney,
   newCorrelationId,
   stableStringify,
+  type CaipChainId,
   type ConsumerFlags,
 } from "@untch/consumer-core";
 import type { PolicyProvider } from "@untch/policy-store";
+import { ACCEPTED_TOKEN_PROGRAMS } from "@untch/consumer-providers";
 import { authenticateOperator } from "../internal-auth";
 import type { DeploymentLifecycle } from "../deployment-info";
 import type { ConsumerWiring } from "./wiring";
@@ -166,6 +168,7 @@ function deploymentIdentity(deps: OperatorRoutesDeps): OperatorDeploymentIdentit
 function redactPlan(plan: OperatorIntentPlan): Record<string, unknown> {
   return {
     accepted: plan.accepted,
+    readinessClass: plan.readinessClass,
     intentId: plan.intentId,
     provider: plan.provider,
     capability: plan.capability,
@@ -187,6 +190,29 @@ function redactPlan(plan: OperatorIntentPlan): Record<string, unknown> {
       "This is a plan, not an intent. Nothing was created, reserved, queued or paid, and no signer " +
       "was loaded. The provider recipient is read from the provider's own live payment challenge at " +
       "execution time and is never supplied by an operator.",
+  };
+}
+
+/**
+ * The PUBLIC address of the signer a rail holds, or null.
+ *
+ * The plan needs it to answer one question — does the key loaded here control the account an operator
+ * registered — and must not be able to answer it by reading a key. So the lookup lives with the
+ * treasury router, which already owns the only reference to one, and the plan receives a closure.
+ *
+ * `address()` throws on a rail with no key, which is the ordinary unarmed case rather than an error, so
+ * it is caught and reported as absence. A thrown exception here would turn "Solana is disarmed" into a
+ * 500 on the route an operator uses to find out whether Solana is disarmed.
+ */
+function signerAddressLookup(wiring: ConsumerWiring): (chain: CaipChainId) => string | null {
+  return (chain) => {
+    const rail = wiring.treasury.railFor(chain);
+    if (!rail) return null;
+    try {
+      return rail.address();
+    } catch {
+      return null;
+    }
   };
 }
 
@@ -269,6 +295,8 @@ export function registerConsumerOperatorRoutes(app: Express, deps: OperatorRoute
       config: wiring.config,
       deployment: deploymentIdentity(deps),
       env,
+      settlementSignerAddress: signerAddressLookup(wiring),
+      acceptedTokenPrograms: ACCEPTED_TOKEN_PROGRAMS,
     })
       .then((plan) => {
         /**
@@ -316,6 +344,8 @@ export function registerConsumerOperatorRoutes(app: Express, deps: OperatorRoute
         config: wiring.config,
         deployment,
         env,
+        settlementSignerAddress: signerAddressLookup(wiring),
+      acceptedTokenPrograms: ACCEPTED_TOKEN_PROGRAMS,
       });
 
       /**

@@ -223,6 +223,7 @@ export {
   type ProviderRecord,
   type TransitionEvent,
   type TransitionResult,
+  type SettlementAccountAttestation,
   type TreasuryAccountRecord,
   type TreasuryBalanceObservation,
 } from "./repo";
@@ -284,8 +285,19 @@ export {
   maturityAtLeast,
   publicToolState,
   publicToolStateFor,
+  railExecutionEnabled,
   railHasStandingSigner,
+  railSignerConfigured,
 } from "./registry";
+
+export {
+  type SettlementAccountDefect,
+  type SettlementAccountFunding,
+  type SettlementAccountSoundness,
+  SETTLEMENT_REGISTRATION_VERSION,
+  classifySettlementAccount,
+  classifySettlementFunding,
+} from "./settlement-account";
 
 export {
   type PauseChecker,

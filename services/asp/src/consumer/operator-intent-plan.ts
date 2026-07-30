@@ -45,8 +45,12 @@ import {
   normalizeIdempotencyKey,
   parseMoney,
   publicToolStateFor,
+  railExecutionEnabled,
   railHasStandingSigner,
+  railSignerConfigured,
   checkExecutionFlags,
+  classifySettlementAccount,
+  classifySettlementFunding,
   asset as assetByKey,
   type AssetRef,
   type CaipChainId,
@@ -59,6 +63,7 @@ import {
   type PublicToolState,
 } from "@untch/consumer-core";
 import type { PolicyProvider } from "@untch/policy-store";
+import { policyIdForTenant } from "./tenant";
 
 /** The funding modes an operator route accepts. Anything else is a refusal, never a default. */
 export const OPERATOR_FUNDING_MODES = ["operator-funded", "externally-funded"] as const;
@@ -97,6 +102,63 @@ export interface Refusal {
   readonly message: string;
 }
 
+/**
+ * How far from executable is this plan, and is the remaining distance an operator's to close?
+ *
+ * `accepted` alone could not answer that. It collapses two situations an operator arming a bounded
+ * production proof must never confuse: a request that is correctly scoped and merely waiting for the
+ * arming switches, and a request that is wrong about the world — a policy that does not exist, a
+ * treasury that was never registered, a capability below the execution floor. Both read as
+ * `accepted: false`, and the difference between them is the difference between "throw the switches"
+ * and "stop, you have misunderstood production".
+ *
+ *   STRUCTURAL_BLOCKED     something is wrong that arming will not fix.
+ *   READY_TO_ARM           everything structural holds; only arming controls remain.
+ *   ARMED_AND_EXECUTABLE   nothing remains.
+ *
+ * It is DERIVED from the refusal list, never set. A field that could be assigned would become a
+ * second execution control — one whose value a future edit could set to `ARMED_AND_EXECUTABLE` while
+ * refusals were still present, which is exactly the class of divergence the create route refuses to
+ * allow between preflight and itself.
+ */
+export const READINESS_CLASSES = ["STRUCTURAL_BLOCKED", "READY_TO_ARM", "ARMED_AND_EXECUTABLE"] as const;
+export type ReadinessClass = (typeof READINESS_CLASSES)[number];
+
+/**
+ * The refusal codes an operator clears by throwing a switch, and nothing else.
+ *
+ * `EXECUTION_CONTROLS_DISABLED` is deliberately ABSENT from this set and handled separately: it is
+ * raised for five distinct causes, and only three of them are arming controls. A missing
+ * `CONSUMER_PROVIDER_PURCH_ENABLED` is a switch. A missing `CONSUMER_PACK_ENABLED` means this
+ * instance is not running the Consumer Pack at all, and classifying that as "ready to arm" would
+ * invite an operator to arm a treasury on a deployment that cannot spend from it.
+ */
+const ARMING_CONTROL_REFUSALS: ReadonlySet<string> = new Set([
+  "SETTLEMENT_SIGNER_ABSENT",
+  "SETTLEMENT_RAIL_EXECUTION_DISABLED",
+  "PROOF_GATE_NOT_ARMED",
+]);
+
+/** The `flagRefusal` reasons that an operator throws a switch to clear. */
+const ARMING_CONTROL_FLAG_REASONS: ReadonlySet<string> = new Set([
+  "PROVIDER_FLAG_DISABLED",
+  "CHAIN_DISABLED",
+  "ASSET_DISABLED",
+]);
+
+export function classifyReadiness(
+  refusals: readonly Refusal[],
+  flagRefusal: string | null,
+): ReadinessClass {
+  if (refusals.length === 0) return "ARMED_AND_EXECUTABLE";
+  const everyRefusalIsAnArmingControl = refusals.every((r) =>
+    r.code === "EXECUTION_CONTROLS_DISABLED"
+      ? flagRefusal !== null && ARMING_CONTROL_FLAG_REASONS.has(flagRefusal)
+      : ARMING_CONTROL_REFUSALS.has(r.code),
+  );
+  return everyRefusalIsAnArmingControl ? "READY_TO_ARM" : "STRUCTURAL_BLOCKED";
+}
+
 export interface OperatorDeploymentIdentity {
   readonly phase: string;
   readonly commit: string | null;
@@ -111,6 +173,8 @@ export interface OperatorDeploymentIdentity {
 
 export interface OperatorIntentPlan {
   readonly accepted: boolean;
+  /** Derived from `refusals`. See `classifyReadiness`. Never assigned independently of them. */
+  readonly readinessClass: ReadinessClass;
   readonly intentId: string;
   readonly provider: string;
   readonly capability: string;
@@ -136,6 +200,20 @@ export interface OperatorIntentPlan {
     readonly treasuryConfigured: boolean;
     readonly treasuryEnabled: boolean;
     readonly standingSigner: boolean;
+    /**
+     * Four facts, kept apart because collapsing any two of them hides a real state.
+     *
+     * A public account can be registered with no signer anywhere near the process — that is the
+     * normal posture and the one production sits in. A signer can be present while the rail's own
+     * switch is off. And a registered account whose authority does not match the loaded signer is the
+     * one combination that must never execute, which is only expressible if both are reported.
+     */
+    readonly accountRegistered: boolean;
+    readonly accountFunded: boolean;
+    readonly signerConfigured: boolean;
+    readonly railExecutionEnabled: boolean;
+    /** null when there is no signer to compare, or no registered authority to compare it against. */
+    readonly signerMatchesAuthority: boolean | null;
   };
   readonly maxAuthorisedAmount: string | null;
   readonly executionFloor: {
@@ -173,6 +251,24 @@ export interface PlanDeps {
   readonly deployment: OperatorDeploymentIdentity;
   readonly env?: NodeJS.ProcessEnv;
   readonly now?: () => number;
+  /**
+   * The PUBLIC address of the signer loaded for a rail, or null when none is.
+   *
+   * Injected rather than derived here, so this module never touches a secret. The ASP passes a closure
+   * over the treasury router's rail clients, which already expose `address()` and already hold the only
+   * copy of a key. A plan module that could derive an address from a key would be a plan module that
+   * had read one.
+   */
+  readonly settlementSignerAddress?: (chain: CaipChainId) => string | null;
+  /**
+   * The token programs a settlement float may live under, from the layer that derives token accounts.
+   *
+   * Injected rather than known here for the reason `@untch/consumer-providers` records: the accepted set
+   * has to agree with the program the payment path derives the associated account under, and that
+   * derivation lives with the rail client. Defaulting to EMPTY is deliberate — a plan that was not told
+   * which programs are acceptable refuses every token account rather than accepting any.
+   */
+  readonly acceptedTokenPrograms?: readonly string[];
 }
 
 // ── input parsing ────────────────────────────────────────────────────────────
@@ -532,8 +628,15 @@ export async function planOperatorIntent(
   }
 
   // ── the settlement treasury, DERIVED ──
+  //
+  // Four separate facts, each with its own refusal. Collapsing them was the defect: an unarmed
+  // deployment reported SETTLEMENT_TREASURY_ABSENT for a wallet that was registered and funded,
+  // because "registered" could not be true without a signer being loaded to derive the address.
   let treasuryRef: string | null = null;
   let treasuryEnabled = false;
+  let accountRegistered = false;
+  let accountFunded = false;
+  let registeredAuthority: string | null = null;
   if (settlementChain && settlementAsset) {
     const account = await deps.store.findTreasuryAccount(
       settlementChain,
@@ -548,16 +651,101 @@ export async function planOperatorIntent(
     } else {
       treasuryRef = account.treasuryRef;
       treasuryEnabled = account.enabled;
+      accountRegistered = true;
+      registeredAuthority = account.attestation?.authority ?? null;
       if (!account.enabled) {
         add("SETTLEMENT_TREASURY_DISABLED", `treasury account '${account.treasuryRef}' is disabled`);
+      }
+
+      /**
+       * The on-chain soundness of the float, from what registration observed.
+       *
+       * Only enforced where an attestation is expected. The Base settlement row predates registration
+       * and is written from a key that genuinely is present, so demanding an attestation there would
+       * refuse a rail that has been settling real payments since D0.1. Solana accounts have no such
+       * history: every one of them is registered through the attested path, so an unattested Solana
+       * account is a defect rather than a legacy.
+       */
+      const attestationExpected = settlementChain.startsWith("solana:");
+      if (attestationExpected) {
+        const soundness = classifySettlementAccount(
+          account.attestation,
+          settlementAsset,
+          deps.acceptedTokenPrograms ?? [],
+        );
+        for (const defect of soundness.defects) {
+          add(`SETTLEMENT_ACCOUNT_${defect.code}`, defect.detail);
+        }
+      }
+
+      if (maxAmount) {
+        const funding = classifySettlementFunding(account, maxAmount);
+        accountFunded = funding.funded;
+        // Unattested accounts observe a zero balance, so this would fire spuriously on the Base row.
+        // There, float sufficiency is checked against the live chain at capability-mint time instead.
+        if (!funding.funded && account.attestation) {
+          add(
+            "SETTLEMENT_ACCOUNT_UNDERFUNDED",
+            `the registered float holds ${funding.observed} atomic units; this authorisation plus the ` +
+              `account's own floor requires ${funding.required}`,
+          );
+        }
       }
     }
   }
 
   const standingSigner = settlementChain ? railHasStandingSigner(settlementChain, env) : false;
 
+  /**
+   * The two arming controls the plan previously did not model at all.
+   *
+   * Without them an accepted plan could still be unexecutable: the flags could all be on, the policy
+   * could exist, the treasury could be registered and funded, and the rail would refuse anyway for
+   * want of a key or a thrown switch. `accepted: true` has to mean the worker will get as far as the
+   * provider, or ARMED_AND_EXECUTABLE is a claim nothing backs.
+   */
+  const signerConfigured = settlementChain ? railSignerConfigured(settlementChain, env) : false;
+  const railExecution = settlementChain ? railExecutionEnabled(settlementChain, env) : false;
+  if (settlementChain && !signerConfigured) {
+    add(
+      "SETTLEMENT_SIGNER_ABSENT",
+      `no signing key is configured for ${settlementChain} on this instance, so nothing here can sign ` +
+        "a settlement",
+    );
+  }
+  if (settlementChain && !railExecution) {
+    add(
+      "SETTLEMENT_RAIL_EXECUTION_DISABLED",
+      `the ${settlementChain} rail's own execution switch is not thrown`,
+    );
+  }
+
+  /**
+   * Does the loaded signer control the account that was registered?
+   *
+   * The one combination that must never execute. A registered authority names the float an operator
+   * funded and attested; a signer names what this process can actually spend from. If they differ, the
+   * deployment is armed against a wallet nobody checked — so this is a refusal even though every
+   * individual control is satisfied.
+   *
+   * `null` where there is nothing to compare: no signer, or an account with no attested authority. An
+   * absent comparison is never reported as a passed one.
+   */
+  const signerAddress = settlementChain ? (deps.settlementSignerAddress?.(settlementChain) ?? null) : null;
+  const signerMatchesAuthority =
+    signerAddress === null || registeredAuthority === null ? null : signerAddress === registeredAuthority;
+  if (signerMatchesAuthority === false) {
+    add(
+      "SETTLEMENT_SIGNER_AUTHORITY_MISMATCH",
+      "the signing key loaded on this instance does not control the registered settlement authority",
+    );
+  }
+
   // ── the policy path ──
-  const policyId = input.tenantId.startsWith("policy:") ? input.tenantId.slice("policy:".length) : null;
+  //
+  // Through the canonical helper, not a local slice. The tenant IS the policy partition, and a second
+  // implementation of that formula is how two routes come to disagree about which tenant a caller is in.
+  const policyId = policyIdForTenant(input.tenantId);
   let policyFound = false;
   let policyStatus: string | null = null;
   if (policyId === null) {
@@ -604,17 +792,29 @@ export async function planOperatorIntent(
       proofMode = gateConfig.enabled ? "enabled" : "disabled";
       if (!gateConfig.enabled) {
         /**
-         * A disabled gate is NOT a refusal, and treating it as one was wrong.
+         * An unarmed gate on a Solana settlement IS a blocker, and the earlier reading was too generous.
          *
-         * The gate is constructed only under `CONSUMER_SOLANA_PROOF_MODE=1`, and it NARROWS an
-         * authority the rail's own `CONSUMER_SOLANA_EXECUTION_ENABLED` switch grants. With no gate
-         * armed, that switch alone governs — which is exactly why production is refused today, and
-         * refused by name (`EXECUTION_CONTROLS_DISABLED`) rather than by a gate that is not there.
-         * Reporting an absent gate as a blocker would hide the real one.
+         * The old comment argued that an absent gate merely leaves the standing controls in charge, and
+         * that reporting it would hide the real refusal. That was true while the standing controls were
+         * themselves off — but it stops being true the moment they are thrown, which is precisely the
+         * state an operator is about to create. With the flags on and no gate, the two-second worker
+         * poll may spend from the Solana treasury on ANY queued Solana intent for as long as the flags
+         * stay set. The gate exists to make the blast radius of a proof equal to the proof, so its
+         * absence is not a neutral fact about a Solana execution — it is the widest the authority ever
+         * gets.
+         *
+         * Raised as an ARMING CONTROL rather than a structural defect: an operator clears it by arming
+         * the exact scope, which is the same action every other switch in this class needs.
          */
+        proofCompatible = false;
         proofReasons.push(
-          "no proof gate is armed, so nothing narrows this chain further; the standing execution " +
-            "controls alone govern it",
+          "no proof gate is armed. Solana settlement requires one: without it the standing controls " +
+            "authorise the worker to spend on any queued Solana intent rather than on this one",
+        );
+        add(
+          "PROOF_GATE_NOT_ARMED",
+          "Solana settlement requires an armed one-shot proof gate naming this exact intent, provider, " +
+            "capability, ceiling and expiry",
         );
       } else {
         if (gateConfig.intentId !== input.intentId) {
@@ -639,7 +839,14 @@ export async function planOperatorIntent(
         }
       }
     }
-    if (!proofCompatible) {
+    /**
+     * INCOMPATIBLE means "a gate is armed and it governs something else", which is a structural
+     * conflict an operator must resolve deliberately — the wrong intent is armed, or the ceiling is
+     * lower than the request, or the window has closed. It is emphatically not the same as "no gate is
+     * armed yet", which the branch above already reported as an arming control. Emitting both would
+     * classify a merely-unarmed deployment as structurally broken and stop the arming step that fixes it.
+     */
+    if (!proofCompatible && proofMode === "enabled") {
       add("PROOF_GATE_INCOMPATIBLE", proofReasons.join("; "));
     }
   }
@@ -651,6 +858,7 @@ export async function planOperatorIntent(
 
   return {
     accepted: refusals.length === 0,
+    readinessClass: classifyReadiness(refusals, flagRefusal),
     intentId: input.intentId,
     provider: input.provider,
     capability: input.capability,
@@ -676,6 +884,11 @@ export async function planOperatorIntent(
       treasuryConfigured: treasuryRef !== null,
       treasuryEnabled,
       standingSigner,
+      accountRegistered,
+      accountFunded,
+      signerConfigured,
+      railExecutionEnabled: railExecution,
+      signerMatchesAuthority,
     },
     maxAuthorisedAmount: maxAmount ? formatMoney(maxAmount) : null,
     executionFloor: { required: executionFloor, effective: effectiveMaturity, satisfied: floorSatisfied },

@@ -30,6 +30,7 @@ import { parseSiweMessage } from "viem/siwe";
 import { createPublicClient, http, type Address, type Hex } from "viem";
 import type { PolicyProvider } from "@untch/policy-store";
 import type { Pool } from "@untch/consumer-core";
+import { tenantForPolicy } from "./tenant";
 
 /** X Layer mainnet and testnet. Sign-in is identity, so either proves control of the same key. */
 const X_LAYER_MAINNET = 196;
@@ -200,10 +201,11 @@ export function openSession(secret: string, token: string | undefined, nowMs: nu
   }
 }
 
-/** Mirrors `tenantFor` in handlers.ts. Kept identical on purpose: one tenant identity, one formula. */
-export function tenantForPolicy(policyId: string): string {
-  return `policy:${policyId}`;
-}
+/**
+ * Re-exported rather than restated. `tenant.ts` is the one formula; this name is kept because the
+ * SIWE path and its tests have always called it this, and a rename would be churn with no reader.
+ */
+export { tenantForPolicy };
 
 // ── SIWE verification ─────────────────────────────────────────────────────────
 
