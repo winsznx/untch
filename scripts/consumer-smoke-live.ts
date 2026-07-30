@@ -539,7 +539,34 @@ async function main(): Promise<void> {
    */
   const operatorFunded = has("operator-funded");
   const prepareOnly = has("prepare-only");
-  const deployedWorkerOnly = has("deployed-worker-only");
+
+  /**
+   * `--deployed-worker-only` no longer lives here, and could not honestly live here.
+   *
+   * It used to skip one call — the local `executeIntent` — and keep every other production capability
+   * this file holds. By the time the flag was read, this module had already imported `PgConsumerStore`,
+   * `X402SolanaExactClient` and the adapter registry, opened the production database, seeded the
+   * provider registry, written a treasury account and supplied its own in-process policy literal. A run
+   * like that proves things about this script; it cannot prove anything about the deployed service,
+   * because every control the service enforces is advisory to a process holding write access to its
+   * database.
+   *
+   * The mode is now a separate entrypoint with a separate import graph:
+   * `scripts/proof-controller/runner.ts`, reached through `scripts/consumer-smoke-live-entry.ts`, which
+   * dispatches with `await import()` so exactly one implementation is ever loaded. Refusing here rather
+   * than ignoring the flag matters: an operator who passed it and got a local run would believe they had
+   * produced remote evidence.
+   */
+  if (has("deployed-worker-only")) {
+    stop(
+      2,
+      "--deployed-worker-only is not handled by this command. It is a separate entrypoint with a " +
+        "separate import graph, because this file holds a database credential, a treasury key and an " +
+        "adapter registry, and a flag cannot un-hold them. Run it through `pnpm consumer:smoke:live " +
+        "--deployed-worker-only`, which dispatches to scripts/proof-controller/runner.ts before either " +
+        "implementation is loaded. If you reached this message, the dispatcher was bypassed.",
+    );
+  }
   const funderKey = operatorFunded ? undefined : process.env.CONSUMER_TEST_FUNDER_PRIVATE_KEY?.trim();
   const funderAccount = funderKey ? privateKeyToAccount(funderKey as `0x${string}`) : null;
   if (operatorFunded) {
@@ -961,32 +988,7 @@ async function main(): Promise<void> {
    * already carried through payment is how one authorisation becomes two settlements.
    */
   let executed: ConsumerIntent;
-  if (deployedWorkerOnly) {
-    /**
-     * `--deployed-worker-only` deliberately does NOT execute the intent in this process.
-     *
-     * A maturity claim about production has to be earned by the thing that runs in production. This
-     * process has already done the honest part, creating and reserving through the same orchestrator
-     * the service uses, and now it stands back: the intent is queued, the deployed worker claims it
-     * within its two-second poll, and this side only reads.
-     *
-     * Reading is all it does. It never transitions anything, so it cannot influence the outcome it is
-     * reporting, and a timeout leaves the intent exactly where the worker put it.
-     */
-    warn("--deployed-worker-only: this process will NOT execute the intent.");
-    warn("waiting for the DEPLOYED Railway worker to claim it.");
-    const claimed = await waitForSettled(store, intentId, 180_000);
-    if (!claimed) stop(3, `intent ${intentId} vanished while waiting for the deployed worker`);
-    if (!SETTLED_STATES.has(claimed.state)) {
-      stop(
-        4,
-        `the deployed worker did not settle this intent within 180s (state ${claimed.state}). ` +
-          "Check the intent and the worker logs. Do NOT re-run: that is how one authorisation " +
-          "becomes two settlements.",
-      );
-    }
-    executed = claimed;
-  } else try {
+  try {
     executed = await orchestrator.executeIntent(intentId);
   } catch (err) {
     if (!(err instanceof Error) || !/no longer in EXECUTION_QUEUED/.test(err.message)) throw err;
