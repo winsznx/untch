@@ -50,6 +50,7 @@
     "gen:solana-treasury": "tsx scripts/gen-solana-treasury.ts",
     "purch:funding": "tsx scripts/purch-funding-estimate.ts",
     "lint:lockfile": "tsx scripts/lint-lockfile-sync.ts",
+    "guard:tracked": "tsx scripts/guard-tracked-changes.ts",
     "deploy:asp": "tsx scripts/deploy-asp.ts",
     "solana:rpc-gate": "tsx scripts/solana-rpc-gate.ts",
     "solana:gate:status": "tsx scripts/solana-proof-gate-status.ts",
