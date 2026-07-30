@@ -180,8 +180,23 @@ jobs:
 
       # Contains the end-to-end lifecycle suite, one describe per acceptance criterion, plus every
       # pre-existing ASP handler test that had never run on a CI machine.
-      - name: ASP suite (handlers + governed consumer lifecycle)
-        run: pnpm test:asp
+      #
+      # TEST_DATABASE_URL is passed here for the same reason it is passed to consumer-core: the
+      # operator-route integration suite proves the two properties only a real database has —
+      # uniqueness enforced by the store rather than by a check-then-write, and idempotency claimed
+      # durably. It found a real defect on its first run (a lost concurrent create surfaced as an
+      # HTML 500 instead of a refusal), which is exactly the class of bug an in-memory store cannot
+      # produce. Without the variable that suite skips, and a skipped integration test on the one
+      # machine that gates merges is a test that does not exist.
+      - name: ASP suite (handlers + governed consumer lifecycle + operator routes on real Postgres)
+        run: |
+          export TEST_DATABASE_URL="postgresql://${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE}"
+          pnpm test:asp
+        env:
+          PGUSER: postgres
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGDATABASE: untch_test
 
       # The Consumer Pack reuses the policy engine and the escalation authority boundary rather than
       # forking them. A change that breaks either must fail here too, not only in its own workflow.
