@@ -43,6 +43,7 @@ import type {
   CapabilityRecord,
   ConsumerStore,
   CreateIntentInput,
+  DeliveryVerificationRecord,
   PauseFlag,
   ProviderCapabilityRecord,
   ProviderHealthRecord,
@@ -79,6 +80,7 @@ export class InMemoryConsumerStore implements ConsumerStore {
   private readonly executions = new Map<string, ProviderExecutionRecord>();
   private readonly executionIdemIndex = new Set<string>();
   private readonly delivery = new Map<string, DeliveryEvidence>();
+  private readonly deliveryVerifications = new Map<string, DeliveryVerificationRecord>();
   private readonly ledgerGroups: LedgerGroup[] = [];
   private readonly ledgerGroupKeys = new Set<string>();
   private readonly outbox = new Map<string, OutboxRecord>();
@@ -359,6 +361,30 @@ export class InMemoryConsumerStore implements ConsumerStore {
 
   async upsertDeliveryEvidence(evidence: DeliveryEvidence): Promise<void> {
     this.delivery.set(evidence.intentId, evidence);
+  }
+
+  /**
+   * Idempotent on the same key the Postgres primary key uses, so the two stores agree about what a
+   * repeated redrive does. A Map keyed differently would let a test pass on a behaviour production does
+   * not have.
+   */
+  async recordDeliveryVerification(record: DeliveryVerificationRecord): Promise<DeliveryVerificationRecord> {
+    const key = `${record.intentId}|${record.verifierVersion}|${record.evidenceDigest}`;
+    const existing = this.deliveryVerifications.get(key);
+    if (existing) return existing;
+    this.deliveryVerifications.set(key, record);
+    return record;
+  }
+
+  async latestDeliveryVerification(intentId: string): Promise<DeliveryVerificationRecord | null> {
+    const all = await this.listDeliveryVerifications(intentId);
+    return all[0] ?? null;
+  }
+
+  async listDeliveryVerifications(intentId: string): Promise<readonly DeliveryVerificationRecord[]> {
+    return [...this.deliveryVerifications.values()]
+      .filter((v) => v.intentId === intentId)
+      .sort((a, b) => Date.parse(b.verifiedAt) - Date.parse(a.verifiedAt));
   }
 
   async getDeliveryEvidence(intentId: string): Promise<DeliveryEvidence | null> {

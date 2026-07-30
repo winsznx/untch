@@ -227,6 +227,7 @@ export {
   CAPABILITY_EXECUTION_SHAPES,
   DEFAULT_CAPABILITY_EXECUTION_SHAPE,
   isCapabilityExecutionShape,
+  type DeliveryVerificationRecord,
   type SettlementAccountAttestation,
   type TreasuryAccountRecord,
   type TreasuryBalanceObservation,

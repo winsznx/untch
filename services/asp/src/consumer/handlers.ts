@@ -676,10 +676,11 @@ export async function handlePublicConsumerReceipt(
     return { status: 404, body: envelope("INTENT_NOT_FOUND", `no consumer intent ${intentId}`) };
   }
 
-  const [executions, evidence, quote] = await Promise.all([
+  const [executions, evidence, quote, verification] = await Promise.all([
     deps.store.listExecutions(intentId),
     deps.store.getDeliveryEvidence(intentId),
     intent.quoteId === null ? Promise.resolve(null) : deps.store.getQuote(intent.quoteId),
+    deps.store.latestDeliveryVerification(intentId),
   ]);
 
   const paid = executions.find((e) => e.state === "PAID" || e.state === "ACKNOWLEDGED") ?? null;
@@ -691,7 +692,14 @@ export async function handlePublicConsumerReceipt(
     statusView = looked === "invalid" ? null : looked;
   }
 
-  const publicView = {
+  /**
+   * What the receipt asserted at settlement, separated from what was established later.
+   *
+   * Split so the ORIGINAL claim stays bit-verifiable after an addendum lands. If a later verification
+   * changed the one digest a holder had recorded, they would be unable to tell a legitimate addendum
+   * from a rewritten history, and the two are the whole distinction this receipt is trying to keep.
+   */
+  const settlementView = {
     intentId,
     action: intent.action,
     state: intent.state,
@@ -731,12 +739,83 @@ export async function handlePublicConsumerReceipt(
     updatedAt: intent.updatedAt,
   };
 
+  /**
+   * The addendum, and the revision number that says one exists.
+   *
+   * Never folded into `settlementView`. A reader must be able to answer "was this known when the money
+   * moved?" from the document itself rather than by comparing timestamps and hoping.
+   */
+  const publicView = {
+    ...settlementView,
+    revision: {
+      number: verification === null ? 1 : 2,
+      /**
+       * Named rather than left to inference.
+       *
+       * Revision 1 is the receipt exactly as settlement wrote it. Revision 2 says a verification was
+       * appended afterwards and nothing already written was touched.
+       */
+      supersedes: verification === null ? null : 1,
+      reason: verification === null ? null : "DELIVERY_VERIFIED_AFTER_SETTLEMENT",
+      originalRecordedAt: intent.createdAt,
+      revisedAt: verification?.verifiedAt ?? null,
+      note:
+        verification === null
+          ? "Original. No verification has been appended."
+          : "The settlement fields above are unchanged from the original receipt and keep their " +
+            "original timestamps. The verification below was established after settlement and is " +
+            "recorded separately, under its own digest.",
+    },
+    /**
+     * A verification that happened LATER, shown as its own dated claim.
+     *
+     * The first bounded Purch proof settled and completed with `untchVerified: false, method: NONE`,
+     * because the delivery check was written for a physical shipment and was not yet shape-aware. That
+     * was true when the receipt was written. Verifying it afterwards must not make the receipt read as
+     * though the check had always been there — a reader could no longer tell what was known at
+     * settlement from what was established days later.
+     *
+     * So the addendum carries its OWN timestamp and says plainly that it is subsequent. `null` where no
+     * verification has run, which is the ordinary case and reads as an absence rather than a failure.
+     */
+    verification:
+      verification === null
+        ? null
+        : {
+            verificationId: verification.verificationId,
+            verifierVersion: verification.verifierVersion,
+            method: verification.method,
+            verified: verification.verified,
+            verifiedAt: verification.verifiedAt,
+            resultHash: verification.resultHash,
+            evidenceDigest: verification.evidenceDigest,
+            settlementTx: verification.settlementTx,
+            originalReceiptId: verification.originalReceiptId,
+            supersedingReceiptId: verification.supersedingReceiptId,
+            refusals: verification.refusals.map((r) => r.code),
+            relationship: "SUBSEQUENT_TO_SETTLEMENT",
+            detail: verification.detail,
+          },
+  };
+
   return {
     status: 200,
     body: {
       ...publicView,
       receipt: anchorFrom(intent.receiptId, statusView),
-      integrity: { digest: `0x${sha256Hex(stableStringify(publicView))}` },
+      integrity: {
+        digest: `0x${sha256Hex(stableStringify(publicView))}`,
+        /**
+         * The settlement-time digest, which no later addendum can move.
+         *
+         * `digest` covers the receipt as it reads NOW, addenda included, so a holder can confirm they
+         * are looking at the whole current document. `settlementDigest` covers only what settlement
+         * itself asserted, so a holder who recorded it before any verification existed can still prove
+         * that part was never rewritten. Publishing one without the other would force a choice between
+         * those two guarantees.
+         */
+        settlementDigest: `0x${sha256Hex(stableStringify(settlementView))}`,
+      },
       disclosure:
         "Public view. The request payload, correlation id and approval channel are withheld; " +
         "every field shown is already public or already on chain.",
