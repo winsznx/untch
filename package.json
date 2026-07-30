@@ -50,7 +50,8 @@
     "deploy:asp": "tsx scripts/deploy-asp.ts",
     "solana:rpc-gate": "tsx scripts/solana-rpc-gate.ts",
     "solana:gate:status": "tsx scripts/solana-proof-gate-status.ts",
-    "solana:proof:preflight": "tsx scripts/solana-proof-preflight.ts"
+    "solana:proof:preflight": "tsx scripts/solana-proof-preflight.ts",
+    "promote:capability": "tsx scripts/promote-capability.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
