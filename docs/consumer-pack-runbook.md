@@ -262,8 +262,11 @@ Two authenticated routes let an operator drive one Consumer Intent against produ
 holding production's database credential, its treasury key, or any provider secret**.
 
 ```
-POST /internal/consumer/intents/preflight   # what production WOULD do. Writes nothing.
-POST /internal/consumer/intents             # create one intent through the normal path.
+POST /internal/consumer/intents/preflight    # what production WOULD do. Writes nothing.
+POST /internal/consumer/intents              # create one intent through the normal path.
+GET  /internal/consumer/intents/:intentId    # the production store's own view of one intent.
+POST /internal/consumer/settlement-accounts  # register a PUBLIC settlement authority. No key accepted.
+GET  /internal/consumer/settlement-accounts  # what is registered, and how sound each account is.
 ```
 
 Both authenticate with `INTERNAL_OPS_TOKEN`, the same credential and the same constant-time
@@ -321,12 +324,13 @@ reservation, queues nothing, loads no signer and calls no provider.
 | Field | Meaning |
 |-------|---------|
 | `accepted` | Whether production would create this intent right now |
+| `readinessClass` | `STRUCTURAL_BLOCKED` / `READY_TO_ARM` / `ARMED_AND_EXECUTABLE`. Derived from `refusals`, never set |
 | `refusals[]` | Every blocker, each with a code — not just the first |
 | `productionMaturity` | The registry's real provider / capability / effective maturity |
 | `publicMaturity` | The public label (LIVE / BETA / …), derived, never an input to the gate |
 | `executionControls` | The standing switches, as booleans |
 | `executionFloor` | Required, effective, and whether it is satisfied |
-| `expectedSettlement` | The derived chain, asset, treasury ref and whether a signer stands |
+| `expectedSettlement` | The derived chain and asset, plus four separate facts: `accountRegistered`, `accountFunded`, `signerConfigured`, `railExecutionEnabled`, and `signerMatchesAuthority` |
 | `proofGate` | Whether the chain is governed, and whether an armed gate admits this intent |
 | `deployment` | Phase, serving commit, deployment id, migration version, environment |
 
@@ -345,6 +349,148 @@ An intent created this way records, on its creation event: the source (`internal
 route and route version, a **truncated one-way digest of the operator token** (never the token), the
 request timestamp, a **hash of the request** (never the body), the idempotency key, the serving
 commit, the serving deployment id and the environment. Public receipts never expose any of it.
+
+### Readiness classes
+
+`accepted: false` covers two situations an operator must never confuse, so the class separates them.
+
+| Class | Meaning | What to do |
+|-------|---------|------------|
+| `STRUCTURAL_BLOCKED` | Something is wrong that arming will not fix: no policy, no registered settlement account, a capability below the execution floor, a frozen or delegated float, a gate armed for a different scope, a deployment that cannot prove itself | Stop. Fix the cause. Do not throw a switch |
+| `READY_TO_ARM` | Every structural check holds. The only refusals left are switches | Arm the exact scope |
+| `ARMED_AND_EXECUTABLE` | `accepted: true` and no refusals | Create the intent |
+
+Only these refusal codes may appear in `READY_TO_ARM`: `EXECUTION_CONTROLS_DISABLED` (when its
+`flagRefusal` is `PROVIDER_FLAG_DISABLED`, `CHAIN_DISABLED` or `ASSET_DISABLED`),
+`SETTLEMENT_SIGNER_ABSENT`, `SETTLEMENT_RAIL_EXECUTION_DISABLED` and `PROOF_GATE_NOT_ARMED`. Anything
+else is structural. `CONSUMER_PACK_ENABLED` or `CONSUMER_EXECUTION_ENABLED` being unset is deliberately
+**not** an arming control: that instance is not running the Consumer Pack, and arming a treasury against
+it would be arming the wrong deployment.
+
+**A Solana settlement requires an armed gate.** With the standing controls on and no gate, the worker's
+two-second poll may spend from the Solana treasury on *any* queued Solana intent. That is reported as
+`PROOF_GATE_NOT_ARMED`, an arming control. A gate that is armed for a *different* intent, provider,
+capability, ceiling or window is `PROOF_GATE_INCOMPATIBLE` and is structural.
+
+---
+
+## Registering a settlement account without a signer
+
+Registering a float and being able to spend from it used to be one act: the account row was written
+from `rail.address()`, which throws without a private key. So an unarmed deployment could not record
+that a funded wallet existed, and preflight reported `SETTLEMENT_TREASURY_ABSENT` for a wallet that was
+sitting there waiting. Four facts, now separate:
+
+| Fact | Means |
+|------|-------|
+| registered | A public authority is recorded, with on-chain evidence |
+| funded | The observed balance clears this authorisation plus the account's own floor |
+| signer | A key is present in the serving process |
+| executable | The rail's switch is thrown **and** the signer derives the registered authority |
+
+```bash
+curl -sS -X POST "$UNTCH_ASP_URL/internal/consumer/settlement-accounts" \
+  -H "authorization: Bearer $INTERNAL_OPS_TOKEN" -H "content-type: application/json" \
+  -d '{
+    "treasuryRef": "solana-usdc-settlement",
+    "chain": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "asset": "USDC",
+    "authority": "<PUBLIC base58 address>",
+    "role": "bounded proof treasury",
+    "minBalance": "0.000000",
+    "dailyLimit": "0.050000",
+    "expectedTokenBalance": "0.050000",
+    "expectedNativeBalance": "0.010000",
+    "enabled": true
+  }'
+```
+
+The route reads the chain and stores what it found: the derived associated token account, its program,
+its owner, the mint and decimals **taken from the registry rather than from the request**, the observed
+balances, and the three fields a balance cannot show — account state, delegate and close authority. A
+**frozen, delegated or closable** account is refused and **nothing is stored**: a delegate can move the
+float, a close authority can sweep it, and a frozen account accepts an authorisation and then fails the
+transfer after the gate has already been claimed.
+
+It never accepts a key, under any field name. `expectedTokenBalance` is checked against the chain and is
+not the source of the recorded figure; it exists to catch the wallet mix-up that survives every other
+check. Replacement is refused while any unsettled intent, live gate or `MANUAL_REVIEW` record exists —
+re-pointing reconciliation and authorisation at a float nothing in flight was checked against.
+
+When a signer is later loaded, `initConsumerWiring` compares its derived address to the registered
+authority and **throws on a mismatch**, so the process never reaches `READY` and Railway never routes to
+it. A mismatch discovered at payment time would be discovered after the gate had been claimed.
+
+---
+
+## Creating a production Consumer policy
+
+```bash
+pnpm consumer:policy:create --profile purch-shop-search-proof --dry-run   # print, sign nothing
+pnpm consumer:policy:create --profile purch-shop-search-proof            # register for real
+```
+
+There is deliberately **no route that mints a policy row**. Every `StoredPolicy` carries a `policyHash`
+anchored on X Layer mainnet by `PolicyRegistry.registerPolicy`, `runPolicy` binds that hash onto the
+intent, and the projection commits to it. A row written without that anchor would carry a hash that
+commits to nothing and would reduce every policy in the store to "as trustworthy as whoever holds the
+operator token".
+
+So the command drives the surface that already exists: `POST /create_spend_policy` returns **unsigned**
+calldata, a dedicated wallet signs it and thereby becomes the on-chain owner, and
+`POST /sync_policy_registration` makes the ASP read the confirmed `PolicyRegistered` event and store the
+row with the owner **it** found on chain.
+
+`registerPolicy` has no access control — `msg.sender` becomes the owner — so registering a policy grants
+no authority over anything else, and the right signer is therefore the **least** privileged wallet
+available. Set `CONSUMER_POLICY_OWNER_PRIVATE_KEY` to a dedicated wallet holding only gas. The command
+**refuses by derived address** if it is the admin, operator, writer, oracle, Base treasury or test-funder
+key. Holding the most gas is a reason to leave a key alone, not a reason to use it.
+
+What the policy actually enforces, stated exactly because this is the easiest place to write a claim
+nothing checks:
+
+| Control | Enforced by |
+|---------|-------------|
+| Capability (`shop.search` only) | The engine, via `categories.allow` / `categories.deny` — the projection sets `category` to `consumer.<action>` |
+| Funding-token per-call cap and daily budget | The engine, in DISPLAY units of the **funding** token (X Layer USDT0) |
+| One action, duplicates, cooldown, expiry | The engine |
+| `0.020000 USDC` settlement ceiling | **Not the policy.** The operator route's `maxProviderAmount`, `CONSUMER_SOLANA_PROOF_MAX_USDC`, and the payment capability the treasury router mints |
+| Provider identity (`purch` only) | **Not the policy.** There is no provider rule in the engine. The production registry, `CONSUMER_PROVIDER_PURCH_ENABLED`, and the proof gate's `providerId` |
+
+The provider allowlist is recorded in the ruleset so the anchored hash covers the operator's full stated
+intent, and it is labelled in the metadata as recorded rather than enforced.
+
+---
+
+## Driving one production intent from a local controller
+
+```bash
+env -u DATABASE_URL -u CONSUMER_TREASURY_SOLANA_SECRET_KEY -u CONSUMER_TREASURY_BASE_PRIVATE_KEY \
+    -u CONSUMER_SOLANA_PROOF_SECRET_KEY -u OPERATOR_PRIVATE_KEY -u ADMIN_PRIVATE_KEY \
+  UNTCH_ASP_URL=https://asp.untch.xyz \
+  INTERNAL_OPS_TOKEN=... \
+  UNTCH_EXPECTED_SERVING_COMMIT=<full 40-char SHA> \
+  pnpm consumer:smoke:live --deployed-worker-only --provider purch --operator-funded \
+    --policy-id <id> --intent-id ci_<24 hex> --preflight-only
+```
+
+Drop `--preflight-only` to create. The controller reads **only** `UNTCH_ASP_URL`,
+`INTERNAL_OPS_TOKEN` and `UNTCH_EXPECTED_SERVING_COMMIT`, and **refuses to start** if any known
+database, treasury, signer or provider credential is present in its environment — not because it would
+use one, but because a process holding one cannot claim that what it reports is evidence about the
+deployed service.
+
+`--deployed-worker-only` is a **separate entrypoint with a separate import graph**, not a flag inside the
+local smoke script. `scripts/consumer-smoke-live-entry.ts` dispatches with `await import()` so exactly
+one implementation is ever loaded, and `scripts/test/proof-controller-imports.test.ts` walks the real
+graph to assert the controller reaches no store, signer, adapter or rail client. Its closure is four
+modules and zero npm packages. The local script **refuses** the flag outright if the dispatcher is
+bypassed.
+
+The tenant is derived from `--policy-id` through the canonical helper. `--tenant-id` may be passed and is
+checked, but a value that disagrees is a refusal rather than an override: `tenantId = policy:<policyId>`
+is one binding, not two.
 
 ---
 
@@ -374,6 +520,25 @@ one. With no gate armed, the standing execution controls alone govern the rail.
 > already running, and that container keeps serving until it is replaced. A disarm that stops at the
 > deletion has removed the record of the authority while leaving the authority in place — which is
 > strictly worse than not having disarmed at all, because the posture map now says "off".
+
+**Run the command, not the checklist:**
+
+```bash
+pnpm solana:proof:disarm             # what it would delete, and the current posture
+pnpm solana:proof:disarm --confirm   # delete, verify, redeploy, verify again
+```
+
+It removes the eleven armed values **secret first** — so that after step one no subsequent redeploy can
+sign anything, whatever else is still set — verifies each is absent by re-reading the variable list,
+forces a new container, waits for a serving deployment id that differs from the old one **and** a start
+time after the deletions, and only then reports success, on the new container's own posture. A run that
+is interrupted halfway has still completed the half that matters.
+
+No `-y` on any deletion. `railway redeploy` carries `--yes` because the CLI's confirmation there cannot
+be answered non-interactively, and the step it guards removes authority rather than granting it — a
+redeploy that could not run would leave the armed container serving.
+
+The steps below are what the command does, kept for the case where it has to be done by hand.
 
 The only accepted deletion command:
 

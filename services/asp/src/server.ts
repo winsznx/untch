@@ -96,6 +96,7 @@ import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifie
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
+import { registerConsumerSettlementRoutes } from "./consumer/operator-settlement-routes";
 import { loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
 import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
 import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
@@ -558,6 +559,16 @@ export function createSellerApp(
     lifecycle,
     flags: loadConsumerFlags(),
   });
+
+  /**
+   * Registering a settlement float, separately from being able to spend from it.
+   *
+   * Same credential and same posture as the intent routes above. It is a distinct surface because the
+   * two acts are distinct: an intent route decides what production would DO, and this one records what
+   * production settles FROM. Collapsing them would put a durable treasury write behind a route whose
+   * whole documented promise is that preflight writes nothing.
+   */
+  registerConsumerSettlementRoutes(app, { wiring: consumerWiring, lifecycle });
 
   // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

@@ -72,12 +72,26 @@ import type { ConsumerWiring } from "../src/consumer/wiring";
  * REQUIRES a throwaway Postgres in TEST_DATABASE_URL. Skipped, loudly, when absent — and set in CI,
  * because a skipped integration test on the one machine that gates merges is a test that does not
  * exist.
+ *
+ * WHY THIS SUITE SETTLES ON BASE
+ *
+ * It used to settle on Solana, which stopped working when a Solana settlement began requiring an armed
+ * one-shot proof gate naming ONE exact intent id. Every test here mints a RANDOM id, so a single
+ * app-wide gate cannot name them, and the suite would have had to rebuild the server per test to satisfy
+ * a control that has nothing to do with what it measures.
+ *
+ * Uniqueness and durable idempotency are properties of the STORE. They do not vary by rail. Base has no
+ * one-shot gate — its authority is standing rather than bounded — so the durability assertions run
+ * unchanged on a rail whose configuration does not move underneath them. The Solana arming semantics are
+ * covered where they belong: in the in-memory operator suite, and end to end in
+ * `consumer-proof-controller-two-process.test.ts`, which runs a real worker against a real gate.
  */
 
 const TEST_DB = process.env.TEST_DATABASE_URL?.trim();
 
-const SOLANA: CaipChainId = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
-const SOL_USDC = asset("solana.usdc");
+/** Base, deliberately. See the header: this suite measures the store, not the arming controls. */
+const SETTLEMENT_CHAIN: CaipChainId = "eip155:8453";
+const SETTLEMENT_ASSET = asset("base.usdc");
 const USDT0 = asset("xlayer.usdt0");
 const NOW = Date.parse("2026-07-30T12:00:00.000Z");
 const OPS_TOKEN = ["operator", "pg", "suite", "token"].join("-");
@@ -99,18 +113,28 @@ const ENV: NodeJS.ProcessEnv = {
   CONSUMER_PACK_ENABLED: "1",
   CONSUMER_EXECUTION_ENABLED: "1",
   CONSUMER_PROVIDER_PURCH_ENABLED: "1",
-  CONSUMER_CHAIN_SOLANA_5EYKT4USFV8P8NJDTREPY1VZQKQZKVDP_ENABLED: "1",
+  CONSUMER_CHAIN_EIP155_8453_ENABLED: "1",
+  CONSUMER_ASSET_EIP155_8453_USDC_ENABLED: "1",
+  /**
+   * What makes the Base rail's signer report present. Never read as a key.
+   *
+   * `FakeRail` stands in for the client and this suite settles nothing on chain, so the only property
+   * that matters is that the variable is non-empty — `railSignerConfigured` checks presence, not shape.
+   * A plausible-looking hex string would be a secret-scanner finding that is false and still has to be
+   * triaged, so this says what it is instead.
+   */
+  CONSUMER_TREASURY_BASE_PRIVATE_KEY: "not-a-key-this-suite-never-signs",
 };
 
 class FakeRail implements RailClient {
-  readonly chain = SOLANA;
+  readonly chain = SETTLEMENT_CHAIN;
   address(): string {
-    return "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2";
+    return "0x0e79371813e88F31c2B60C80bad391a952039095";
   }
   available(): boolean {
     return true;
   }
-  async balanceOf(a: typeof SOL_USDC): Promise<Money> {
+  async balanceOf(a: typeof SETTLEMENT_ASSET): Promise<Money> {
     return money(1_000_000n, a);
   }
   async pay(_r: PaymentRequest): Promise<PaymentResult> {
@@ -144,10 +168,10 @@ class UnpayableAdapter implements ConsumerProviderAdapter {
     return {
       providerId: this.providerId,
       providerRef: input.providerRef,
-      cost: money(10_000n, SOL_USDC),
+      cost: money(10_000n, SETTLEMENT_ASSET),
       settlementRecipient: new FakeRail().address(),
-      settlementChain: SOLANA,
-      settlementAsset: SOL_USDC,
+      settlementChain: SETTLEMENT_CHAIN,
+      settlementAsset: SETTLEMENT_ASSET,
       summary: "Search",
       terms: { ref: input.providerRef },
       expiresAt: new Date(NOW + 600_000).toISOString(),
@@ -224,7 +248,7 @@ async function boot(): Promise<void> {
     maturity: "verified",
     baseUrl: "https://api.purch.xyz",
     protocol: "x402",
-    chains: [SOLANA],
+    chains: [SETTLEMENT_CHAIN],
     provenance: "pg integration harness",
     enabled: true,
   });
@@ -235,12 +259,12 @@ async function boot(): Promise<void> {
     notes: "pg integration harness",
   });
   await s.upsertTreasuryAccount({
-    treasuryRef: "solana-usdc-settlement",
-    asset: SOL_USDC,
+    treasuryRef: "base-usdc-settlement",
+    asset: SETTLEMENT_ASSET,
     purpose: "SETTLEMENT",
     address: new FakeRail().address(),
-    minBalance: parseMoney("0.00", SOL_USDC),
-    dailyLimit: parseMoney("5.00", SOL_USDC),
+    minBalance: parseMoney("0.00", SETTLEMENT_ASSET),
+    dailyLimit: parseMoney("5.00", SETTLEMENT_ASSET),
     enabled: true,
   });
   await s.upsertTreasuryAccount({
@@ -256,7 +280,7 @@ async function boot(): Promise<void> {
   const rail = new FakeRail();
   const treasury = new TreasuryRouter({
     store: s,
-    rails: new Map<CaipChainId, RailClient>([[SOLANA, rail]]),
+    rails: new Map<CaipChainId, RailClient>([[SETTLEMENT_CHAIN, rail]]),
     pauses: new StorePauseChecker(s),
     clock: () => NOW,
   });
@@ -310,7 +334,7 @@ async function boot(): Promise<void> {
     fundingPrice: makeFundingPrice({ store: s }),
     config,
     publicBaseUrl: "https://asp.untch.xyz",
-    availableRails: [SOLANA],
+    availableRails: [SETTLEMENT_CHAIN],
     pool: p,
     async close(): Promise<void> {},
   } satisfies ConsumerWiring;
@@ -347,7 +371,7 @@ function body(over: Record<string, unknown> = {}): Record<string, unknown> {
     request: { query: "usb c cable", limit: 5 },
     providerRef: "search:usb c cable",
     maxProviderAmount: "0.020000",
-    expectedSettlementChain: SOLANA,
+    expectedSettlementChain: SETTLEMENT_CHAIN,
     expectedSettlementAsset: "USDC",
     fundingMode: "operator-funded",
     idempotencyKey: `pg-${randomBytes(6).toString("hex")}`,

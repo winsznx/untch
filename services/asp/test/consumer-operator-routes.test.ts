@@ -2,6 +2,7 @@ import { after, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
 import type { Server } from "node:http";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,8 @@ import {
   type PaymentRequest,
   type PaymentResult,
   type RailClient,
+  SETTLEMENT_REGISTRATION_VERSION,
+  encodeBase58,
 } from "@untch/consumer-core";
 import type {
   AdapterContext,
@@ -39,6 +42,8 @@ import type {
   ProviderStatus,
   QuoteInput,
 } from "@untch/consumer-providers";
+import { ACCEPTED_TOKEN_PROGRAMS } from "@untch/consumer-providers";
+import type { SettlementAccountAttestation } from "@untch/consumer-core";
 import type { Ledger, LedgerWindowState, SpendIntentInput } from "@untch/policy-engine";
 import type { PolicyProvider, StoredPolicy } from "@untch/policy-store";
 import { ConsumerOrchestrator } from "../src/consumer/orchestrator";
@@ -88,6 +93,31 @@ const NOW = Date.parse("2026-07-30T12:00:00.000Z");
 const OPS_TOKEN = ["operator", "route", "test", "token"].join("-");
 const WRONG_TOKEN = ["operator", "route", "test", "wrong"].join("-");
 
+/**
+ * The one authority the fake rail controls AND the one the settlement account is registered against.
+ *
+ * Shared deliberately. Registration and signing are separate acts now, and the plan refuses when the
+ * loaded signer does not control the registered float — so a harness that used two different strings
+ * here would be testing the mismatch refusal on every single case rather than the happy path.
+ */
+/**
+ * Base58 identifiers DERIVED from a label rather than written down.
+ *
+ * Two reasons, and the repo already records the first: a bare 44-character base58 constant is what a
+ * secret scanner matches on, so a hardcoded one produces a finding that is false and still has to be
+ * triaged. `packages/consumer-providers/src/x402/solana-exact.ts` takes the SPL program addresses from
+ * its library for exactly this reason.
+ *
+ * The second is that these are arbitrary identifiers. Nothing in this suite signs, and nothing checks
+ * them against a chain — they only need to be well-formed, stable and distinct from each other. Deriving
+ * them from a label makes that obvious at the point of use, where a 44-character literal reads as though
+ * it came from somewhere real.
+ */
+const base58Fixture = (label: string): string =>
+  encodeBase58(createHash("sha256").update(`untch-test-fixture:${label}`).digest());
+
+const SOLANA_AUTHORITY = base58Fixture("solana-settlement-authority");
+
 const INTENT_A = `ci_${"a1".repeat(12)}`;
 const INTENT_B = `ci_${"b2".repeat(12)}`;
 
@@ -127,7 +157,7 @@ beforeEach(() => {
 class FakeRail implements RailClient {
   readonly chain = SOLANA;
   address(): string {
-    return "8LiXrHC61irY8qwj6qevoiRXxYfrTgSaHVbm8rav6HT2";
+    return SOLANA_AUTHORITY;
   }
   available(): boolean {
     return true;
@@ -280,6 +310,8 @@ async function harness(
     readonly readOnly?: boolean;
     readonly phase?: "READY" | "STARTING";
     readonly treasuryEnabled?: boolean;
+    /** `null` registers an UNATTESTED account; a partial bends one attested field. */
+    readonly attestation?: Partial<SettlementAccountAttestation> | null;
   } = {},
 ): Promise<Harness> {
   const store = new InMemoryConsumerStore(() => NOW);
@@ -301,14 +333,50 @@ async function harness(
     maturity: over.capabilityMaturity ?? "verified",
     notes: "test harness",
   });
+  /**
+   * A Solana settlement account registered the way the operator route registers one: with a public
+   * authority and an on-chain attestation, and no key anywhere near it.
+   *
+   * The attestation is not decoration. `planOperatorIntent` refuses a Solana account that is not
+   * attested, and refuses one whose token account is frozen, delegated or closable — so a harness
+   * without these fields would only ever exercise the refusal path. `over.attestation` lets a test
+   * bend one field and assert the specific defect it produces.
+   */
   await store.upsertTreasuryAccount({
     treasuryRef: "solana-usdc-settlement",
     asset: SOL_USDC,
     purpose: "SETTLEMENT",
-    address: new FakeRail().address(),
+    address: SOLANA_AUTHORITY,
     minBalance: parseMoney("0.00", SOL_USDC),
     dailyLimit: parseMoney("5.00", SOL_USDC),
     enabled: over.treasuryEnabled ?? true,
+    attestation:
+      over.attestation === null
+        ? null
+        : {
+            registrationVersion: SETTLEMENT_REGISTRATION_VERSION,
+            mint: SOL_USDC.address,
+            decimals: SOL_USDC.decimals,
+            authority: SOLANA_AUTHORITY,
+            tokenAccount: base58Fixture("solana-settlement-token-account"),
+            tokenProgram: ACCEPTED_TOKEN_PROGRAMS[0] ?? null,
+            tokenAccountOwner: SOLANA_AUTHORITY,
+            accountState: "initialized",
+            delegate: null,
+            closeAuthority: null,
+            observedTokenBalance: "50000",
+            observedNativeBalance: "10000000",
+            observedAt: new Date(NOW).toISOString(),
+            provenance: {
+              source: "test harness",
+              operatorKeyId: "test",
+              requestHash: `0x${"11".repeat(32)}`,
+              servingCommit: null,
+              servingDeploymentId: null,
+              rpcHost: "solana-mainnet.g.alchemy.com",
+            },
+            ...over.attestation,
+          },
   });
   await store.upsertTreasuryAccount({
     treasuryRef: "xlayer-usdt0-funding",
@@ -420,7 +488,45 @@ async function harness(
  * Deliberately NOT the production environment's shape: production is disarmed, and a test suite that
  * could only exercise the refusal path would never prove the accept path exists. Both are tested.
  */
-const ARMED_ENV: NodeJS.ProcessEnv = {
+/**
+ * An environment where every standing control is ON and a proof gate names one exact intent.
+ *
+ * The gate is now part of "fully armed" for a Solana settlement, which it was not before. Solana
+ * execution with the flags on and no gate lets the two-second worker poll spend on ANY queued Solana
+ * intent, so the plan refuses it as an arming control — meaning a harness that omitted the gate could
+ * no longer reach `accepted: true` at all.
+ *
+ * Parameterised by intent id because a gate names ONE intent by design. A single shared constant would
+ * force every test onto whichever id it happened to hold.
+ */
+function armedEnvFor(intentId: string): NodeJS.ProcessEnv {
+  return {
+    INTERNAL_OPS_TOKEN: OPS_TOKEN,
+    UNTCH_ENVIRONMENT: "production",
+    CONSUMER_PACK_ENABLED: "1",
+    CONSUMER_EXECUTION_ENABLED: "1",
+    CONSUMER_PROVIDER_PURCH_ENABLED: "1",
+    CONSUMER_CHAIN_SOLANA_5EYKT4USFV8P8NJDTREPY1VZQKQZKVDP_ENABLED: "1",
+    CONSUMER_TREASURY_SOLANA_SECRET_KEY: "not-a-real-key-and-never-read-in-this-suite",
+    CONSUMER_SOLANA_EXECUTION_ENABLED: "1",
+    CONSUMER_SOLANA_PROOF_MODE: "1",
+    CONSUMER_SOLANA_PROOF_INTENT_ID: intentId,
+    CONSUMER_SOLANA_PROOF_PROVIDER: "purch",
+    CONSUMER_SOLANA_PROOF_CAPABILITY: "shop.search",
+    CONSUMER_SOLANA_PROOF_MAX_USDC: "0.020000",
+    CONSUMER_SOLANA_PROOF_EXPIRES_AT: new Date(NOW + 3_600_000).toISOString(),
+  };
+}
+
+const ARMED_ENV: NodeJS.ProcessEnv = armedEnvFor(INTENT_A);
+
+/**
+ * Armed standing controls with NO proof gate.
+ *
+ * The state an operator is in one step before the final arming. Every structural check holds; the gate
+ * is the only thing left, which is exactly what READY_TO_ARM is supposed to mean.
+ */
+const READY_TO_ARM_ENV: NodeJS.ProcessEnv = {
   INTERNAL_OPS_TOKEN: OPS_TOKEN,
   UNTCH_ENVIRONMENT: "production",
   CONSUMER_PACK_ENABLED: "1",
@@ -429,6 +535,21 @@ const ARMED_ENV: NodeJS.ProcessEnv = {
   CONSUMER_CHAIN_SOLANA_5EYKT4USFV8P8NJDTREPY1VZQKQZKVDP_ENABLED: "1",
   CONSUMER_TREASURY_SOLANA_SECRET_KEY: "not-a-real-key-and-never-read-in-this-suite",
   CONSUMER_SOLANA_EXECUTION_ENABLED: "1",
+};
+
+/**
+ * Production's actual shape today: the pack and execution on, everything Solana off, no signer.
+ *
+ * This is what the deployed service answers with, and it is the case the controller's preflight-only
+ * run has to classify as READY_TO_ARM once a policy and a settlement account exist.
+ */
+const PRODUCTION_DISARMED_ENV: NodeJS.ProcessEnv = {
+  INTERNAL_OPS_TOKEN: OPS_TOKEN,
+  UNTCH_ENVIRONMENT: "production",
+  CONSUMER_PACK_ENABLED: "1",
+  CONSUMER_EXECUTION_ENABLED: "1",
+  CONSUMER_CHAIN_EIP155_8453_ENABLED: "1",
+  CONSUMER_ASSET_EIP155_8453_USDC_ENABLED: "1",
 };
 
 /** The disarmed shape production actually runs in today. */
@@ -643,20 +764,123 @@ describe("operator preflight", () => {
   });
 
   /**
-   * An absent gate is not a blocker.
+   * An absent gate on a SOLANA settlement IS a blocker. This reverses an earlier reading.
    *
-   * The one-shot gate NARROWS an authority the rail's own switch grants; it does not grant one. So
-   * a disarmed instance must be refused by the standing controls, by name, rather than by a gate
-   * that was never armed — otherwise the response points an operator at the wrong lever.
+   * The old assertion held that an unarmed gate merely leaves the standing controls in charge, so
+   * reporting it would point an operator at the wrong lever. That was true only while the standing
+   * controls were themselves off. Once they are on — which is the state an operator is about to create
+   * — the two-second worker poll may spend from the Solana treasury on ANY queued Solana intent for as
+   * long as the flags stay set. The gate exists so the blast radius of a proof equals the proof, so its
+   * absence is the widest the authority ever gets, not a neutral fact.
+   *
+   * It is raised as an ARMING CONTROL, not a structural defect: the operator clears it by arming the
+   * exact scope. That distinction is what keeps the response pointing at the right lever.
    */
-  test("an unarmed proof gate is reported as absent, not as the blocker", async () => {
-    const h = await harness();
+  test("an unarmed proof gate blocks a Solana settlement, as an arming control", async () => {
+    const h = await harness({ env: READY_TO_ARM_ENV });
     const r = await post(h.url, OPERATOR_PREFLIGHT_ROUTE, validBody());
     const gate = r.body.proofGate as Record<string, unknown>;
     assert.equal(gate.governsThisChain, true);
     assert.equal(gate.mode, "disabled");
-    assert.equal(gate.compatible, true);
-    assert.ok((gate.reasons as string[]).some((x) => x.includes("no proof gate is armed")));
+    assert.equal(gate.compatible, false);
+    const refusals = r.body.refusals as { code: string }[];
+    assert.ok(refusals.some((x) => x.code === "PROOF_GATE_NOT_ARMED"));
+    // …and NOT as a structural conflict, which is what an armed-but-wrong gate would be.
+    assert.ok(!refusals.some((x) => x.code === "PROOF_GATE_INCOMPATIBLE"));
+    assert.equal(r.body.readinessClass, "READY_TO_ARM");
+  });
+
+  test("a fully armed instance is ARMED_AND_EXECUTABLE with no refusals", async () => {
+    const h = await harness();
+    const r = await post(h.url, OPERATOR_PREFLIGHT_ROUTE, validBody());
+    assert.deepEqual(r.body.refusals, []);
+    assert.equal(r.body.accepted, true);
+    assert.equal(r.body.readinessClass, "ARMED_AND_EXECUTABLE");
+  });
+
+  test("production's own disarmed shape is READY_TO_ARM, not STRUCTURAL_BLOCKED", async () => {
+    const h = await harness({ env: PRODUCTION_DISARMED_ENV });
+    const r = await post(h.url, OPERATOR_PREFLIGHT_ROUTE, validBody());
+    assert.equal(r.body.accepted, false);
+    assert.equal(r.body.readinessClass, "READY_TO_ARM");
+    /**
+     * The whole point of the class. Every remaining refusal must be a switch an operator throws — no
+     * missing policy, no absent settlement account, no maturity failure, nothing about the deployment.
+     */
+    const codes = (r.body.refusals as { code: string }[]).map((x) => x.code).sort();
+    assert.deepEqual(codes, [
+      "EXECUTION_CONTROLS_DISABLED",
+      "PROOF_GATE_NOT_ARMED",
+      "SETTLEMENT_RAIL_EXECUTION_DISABLED",
+      "SETTLEMENT_SIGNER_ABSENT",
+    ]);
+    const settlement = r.body.expectedSettlement as Record<string, unknown>;
+    assert.equal(settlement.accountRegistered, true);
+    assert.equal(settlement.accountFunded, true);
+    assert.equal(settlement.signerConfigured, false);
+    assert.equal(settlement.railExecutionEnabled, false);
+  });
+
+  test("a structural defect is STRUCTURAL_BLOCKED even when the switches are on", async () => {
+    for (const [label, over] of [
+      ["a missing policy", { policyPresent: false }],
+      ["an unattested settlement account", { attestation: null }],
+      ["a capability below the floor", { capabilityMaturity: "experimental" as const }],
+    ] as const) {
+      const h = await harness(over as never);
+      const r = await post(h.url, OPERATOR_PREFLIGHT_ROUTE, validBody());
+      assert.equal(r.body.readinessClass, "STRUCTURAL_BLOCKED", `${label} must be structural`);
+    }
+  });
+
+  /**
+   * The three token-account facts a balance cannot show.
+   *
+   * Each is invisible from the authority address and each changes what "0.05 USDC is sitting there"
+   * means: a delegate can move it, a close authority can sweep it, a freeze makes it readable and
+   * unspendable. A frozen float would accept an authorisation and fail the transfer AFTER the gate had
+   * been claimed, and a claimed gate is a one-way door.
+   */
+  test("a delegated, frozen or closable float is refused before anything is armed", async () => {
+    const cases = [
+      ["delegate", { delegate: base58Fixture("a-third-party-delegate") }, "SETTLEMENT_ACCOUNT_DELEGATE_PRESENT"],
+      ["frozen", { accountState: "frozen" }, "SETTLEMENT_ACCOUNT_ACCOUNT_FROZEN"],
+      ["close authority", { closeAuthority: SOLANA_AUTHORITY }, "SETTLEMENT_ACCOUNT_CLOSE_AUTHORITY_PRESENT"],
+      ["foreign token-account owner", { tokenAccountOwner: base58Fixture("a-foreign-token-account-owner") }, "SETTLEMENT_ACCOUNT_TOKEN_ACCOUNT_OWNER_MISMATCH"],
+    ] as const;
+    for (const [label, bend, expected] of cases) {
+      const h = await harness({ attestation: bend as never });
+      const r = await post(h.url, OPERATOR_PREFLIGHT_ROUTE, validBody());
+      const codes = (r.body.refusals as { code: string }[]).map((x) => x.code);
+      assert.ok(codes.includes(expected), `${label} must raise ${expected}, got ${codes.join(", ")}`);
+      assert.equal(r.body.readinessClass, "STRUCTURAL_BLOCKED", `${label} is structural`);
+      assert.equal(r.body.accepted, false);
+    }
+  });
+
+  test("an underfunded float is refused, counting the account floor as well as the ceiling", async () => {
+    const h = await harness({ attestation: { observedTokenBalance: "5000" } });
+    const r = await post(h.url, OPERATOR_PREFLIGHT_ROUTE, validBody());
+    const codes = (r.body.refusals as { code: string }[]).map((x) => x.code);
+    assert.ok(codes.includes("SETTLEMENT_ACCOUNT_UNDERFUNDED"));
+    assert.equal((r.body.expectedSettlement as Record<string, unknown>).accountFunded, false);
+  });
+
+  /**
+   * The one combination that must never execute: a signer that controls a different wallet.
+   *
+   * Every individual control is satisfied here — the account is registered, attested, funded and sound,
+   * the flags are on, the gate is armed. And the key loaded on the instance spends from somewhere else,
+   * so the balance floor, the daily limit and the reconciliation drift check are all measuring a wallet
+   * nobody authorised.
+   */
+  test("a signer that does not control the registered authority is refused", async () => {
+    const h = await harness({ attestation: { authority: base58Fixture("a-wallet-this-instance-cannot-sign-for") } });
+    const r = await post(h.url, OPERATOR_PREFLIGHT_ROUTE, validBody());
+    const codes = (r.body.refusals as { code: string }[]).map((x) => x.code);
+    assert.ok(codes.includes("SETTLEMENT_SIGNER_AUTHORITY_MISMATCH"), codes.join(", "));
+    assert.equal(r.body.readinessClass, "STRUCTURAL_BLOCKED");
+    assert.equal((r.body.expectedSettlement as Record<string, unknown>).signerMatchesAuthority, false);
   });
 
   test("an armed gate naming a different intent refuses this one", async () => {

@@ -150,6 +150,46 @@ export function railHasStandingSigner(
   return false;
 }
 
+/**
+ * Is a signing key configured for this rail AT ALL — armed proof or not?
+ *
+ * Deliberately a different question from `railHasStandingSigner`, and the difference is load-bearing.
+ * That function answers "is this rail ordinarily available", so it reports FALSE during proof mode
+ * because a bounded one-shot authority is not ordinary availability. That is the right answer for a
+ * public maturity label and the wrong answer for readiness: an operator asking "can this deployment
+ * sign at all" during an armed proof needs `true`, and reusing the label would tell them the signer
+ * they had just installed was absent.
+ *
+ * Neither function reads a key. Both only ask whether one is present, which is why they are safe to
+ * call from a route that renders its answer into a response body.
+ */
+export function railSignerConfigured(
+  chain: string,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  if (chain.startsWith("solana:")) return Boolean(env.CONSUMER_TREASURY_SOLANA_SECRET_KEY?.trim());
+  if (chain === "eip155:8453") return Boolean(env.CONSUMER_TREASURY_BASE_PRIVATE_KEY?.trim());
+  return false;
+}
+
+/**
+ * Has the rail's own execution switch been thrown?
+ *
+ * Only Solana has one. It exists because a Solana payment is BROADCAST BY A THIRD PARTY — the
+ * provider's sponsor pays the fee and submits — so "may this rail sign at all" is a question the
+ * chain and asset flags do not answer. Base has no such switch and returns true here; its chain and
+ * asset flags are the whole of its gating, and inventing a phantom Base switch would make this
+ * function report a control that no code enforces.
+ */
+export function railExecutionEnabled(
+  chain: string,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  if (!chain.startsWith("solana:")) return true;
+  const raw = env.CONSUMER_SOLANA_EXECUTION_ENABLED?.trim();
+  return raw === "1" || raw?.toLowerCase() === "true";
+}
+
 export interface MaturityGate {
   /** The floor a production execution route requires. Always "verified". Not configurable. */
   readonly executionFloor: ProviderMaturity;

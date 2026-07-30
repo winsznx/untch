@@ -30,6 +30,7 @@ import {
 } from "@untch/consumer-core";
 import type { HandlerResult } from "../handlers";
 import type { ConsumerOrchestrator } from "./orchestrator";
+import { tenantForPolicy } from "./tenant";
 
 export interface ConsumerDeps {
   readonly store: ConsumerStore;
@@ -76,9 +77,7 @@ function requireString(b: Record<string, unknown>, key: string, max = 400): stri
  * tenant's scope by sending a header — which is the whole reason `getIntentForTenant` is the only
  * read a handler uses.
  */
-function tenantFor(policyId: string): string {
-  return `policy:${policyId}`;
-}
+const tenantFor = tenantForPolicy;
 
 function intentView(intent: ConsumerIntent, publicBaseUrl: string): Record<string, unknown> {
   const base = publicBaseUrl.replace(/\/+$/, "");

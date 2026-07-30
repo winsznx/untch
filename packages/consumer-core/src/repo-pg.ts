@@ -58,6 +58,7 @@ import type {
   ProviderRecord,
   TransitionEvent,
   TransitionResult,
+  SettlementAccountAttestation,
   TreasuryAccountRecord,
   TreasuryBalanceObservation,
 } from "./repo";
@@ -1073,11 +1074,19 @@ export class PgConsumerStore implements ConsumerStore {
     await this.pool.query(
       `INSERT INTO consumer_treasury_accounts
         (treasury_ref, chain, token, contract, decimals, purpose, address, min_balance, daily_limit,
-         enabled, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
+         enabled, attestation, registration_version, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
        ON CONFLICT (treasury_ref) DO UPDATE SET
          min_balance = EXCLUDED.min_balance, daily_limit = EXCLUDED.daily_limit,
-         address = EXCLUDED.address, enabled = EXCLUDED.enabled, updated_at = now()`,
+         address = EXCLUDED.address, enabled = EXCLUDED.enabled,
+         -- COALESCE, so a boot-time upsert that carries no attestation cannot erase one a registration
+         -- wrote. The rails re-upsert their own rows on every start; without this, restarting the
+         -- service would silently strip the on-chain evidence off an account and turn a verified float
+         -- back into an unattested one.
+         attestation = COALESCE(EXCLUDED.attestation, consumer_treasury_accounts.attestation),
+         registration_version =
+           COALESCE(EXCLUDED.registration_version, consumer_treasury_accounts.registration_version),
+         updated_at = now()`,
       [
         t.treasuryRef,
         t.asset.chain,
@@ -1089,6 +1098,8 @@ export class PgConsumerStore implements ConsumerStore {
         t.minBalance.amount.toString(),
         t.dailyLimit.amount.toString(),
         t.enabled,
+        t.attestation ? JSON.stringify(t.attestation) : null,
+        t.attestation?.registrationVersion ?? null,
       ],
     );
   }
@@ -1687,6 +1698,10 @@ function rowToTreasury(row: Row): TreasuryAccountRecord {
     minBalance: money(BigInt(str(row.min_balance)), asset),
     dailyLimit: money(BigInt(str(row.daily_limit)), asset),
     enabled: bool(row.enabled),
+    // `pg` already parses jsonb, so this is an object rather than a string. Absent (a row written
+    // before migration 012, or by a boot-time rail upsert) reads as null, which every consumer treats
+    // as unattested.
+    attestation: (row.attestation as SettlementAccountAttestation | null | undefined) ?? null,
   };
 }
 

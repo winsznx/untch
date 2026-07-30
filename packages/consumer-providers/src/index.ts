@@ -57,12 +57,15 @@ export {
   X402SolanaExactClient,
   SOLANA_MAINNET_CAIP2,
   SOLANA_MAINNET_GENESIS,
+  ACCEPTED_TOKEN_PROGRAMS,
   associatedTokenAccountFor,
   SOLANA_MIN_LAMPORTS,
   SOLANA_RECIPIENT_ALLOWLIST,
   confirmSolanaSettlement,
   isSolanaMainnet,
+  observeSolanaSettlementAccount,
   selectSolanaOption,
+  type ObservedSolanaAccount,
   type SolanaExactClientDeps,
 } from "./x402/solana-exact";
 export {

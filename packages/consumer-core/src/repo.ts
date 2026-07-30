@@ -102,6 +102,61 @@ export interface PauseFlag {
   readonly updatedAt: string;
 }
 
+/**
+ * What was observed on chain about a settlement account, at the moment it was registered.
+ *
+ * WHY THIS IS STORED RATHER THAN RE-READ
+ *
+ * Registering a treasury and being able to spend from it were one act until now: the account row was
+ * written from `rail.address()`, so a public address could not be recorded without a private key being
+ * present to derive it. That made "this float exists" and "this process can drain it" the same fact,
+ * and it is why an unarmed production deployment reported no Solana settlement account at all.
+ *
+ * Splitting them needs somewhere to keep the evidence. A public authority alone is not enough to trust
+ * a float: on Solana the spendable thing is the associated token account, and an account can be frozen,
+ * can carry a delegate that lets a third party move the balance, and can carry a close authority that
+ * lets one reclaim the rent and the remainder. None of those are visible from the authority address,
+ * and all three change what "0.05 USDC is sitting there" means. So they are read once, at registration,
+ * against the registry's own mint and decimals, and stored — which also makes the check auditable after
+ * the fact rather than only at the instant it ran.
+ *
+ * Re-reading them on every plan would be worse than useless: it would put a third-party RPC call on the
+ * path of a route whose job is to refuse quickly, and it would mean a transient RPC failure read as a
+ * treasury defect.
+ */
+export interface SettlementAccountAttestation {
+  /** Bumped when the set of facts below changes, so an old record is legible as old rather than wrong. */
+  readonly registrationVersion: number;
+  /** The mint the registry names for this asset. Compared, never accepted from a caller. */
+  readonly mint: string | null;
+  readonly decimals: number;
+  /** The PUBLIC spending authority. Base58 on Solana, a checksummed address on an EVM rail. */
+  readonly authority: string;
+  /** The derived token account the balance actually sits in. Null on rails that have no such concept. */
+  readonly tokenAccount: string | null;
+  readonly tokenProgram: string | null;
+  /** The token account's own owner. Must equal `authority`, or the balance is not ours to spend. */
+  readonly tokenAccountOwner: string | null;
+  readonly accountState: string | null;
+  /** Any of these being non-null is a refusal, not a note. A delegate can move the float. */
+  readonly delegate: string | null;
+  readonly closeAuthority: string | null;
+  /** Atomic units, as decimal strings. Bigints do not survive JSON, and a number would lose precision. */
+  readonly observedTokenBalance: string;
+  readonly observedNativeBalance: string;
+  readonly observedAt: string;
+  readonly provenance: {
+    readonly source: string;
+    /** A truncated one-way digest naming which operator credential acted. Never replayable as one. */
+    readonly operatorKeyId: string;
+    readonly requestHash: string;
+    readonly servingCommit: string | null;
+    readonly servingDeploymentId: string | null;
+    /** Host only. The RPC key lives in the URL path and must never be recorded. */
+    readonly rpcHost: string | null;
+  };
+}
+
 export interface TreasuryAccountRecord {
   readonly treasuryRef: string;
   readonly asset: AssetRef;
@@ -111,6 +166,12 @@ export interface TreasuryAccountRecord {
   readonly minBalance: Money;
   readonly dailyLimit: Money;
   readonly enabled: boolean;
+  /**
+   * Null for the accounts that predate registration — the Base settlement float and the X Layer
+   * funding row. Null means "not attested", never "attested clean": every consumer of this field
+   * treats absence as a reason to refuse rather than a reason to proceed.
+   */
+  readonly attestation?: SettlementAccountAttestation | null;
 }
 
 export interface TreasuryBalanceObservation {

@@ -60,7 +60,36 @@ function redact(info: DeploymentInfo): Record<string, unknown> {
   };
 }
 
-export function registerDeploymentRoutes(app: Express, lifecycle: DeploymentLifecycle | null): void {
+export interface DeploymentRoutesDeps {
+  readonly lifecycle: DeploymentLifecycle | null;
+  /**
+   * The environment the operator credential is read from. Omitted ⇒ `process.env`.
+   *
+   * A seam, and the same one `registerConsumerOperatorRoutes` already takes. It exists because the
+   * two-process integration test runs a server and a controller in one test run, and a server that could
+   * only read the credential from `process.env` would force the test to set a real operator token on the
+   * test process itself — where the spawned controller would then inherit it rather than be handed it,
+   * which is the one thing that suite is trying to demonstrate is not happening.
+   */
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+export function registerDeploymentRoutes(
+  app: Express,
+  deps: DeploymentRoutesDeps | DeploymentLifecycle | null,
+): void {
+  /**
+   * The positional lifecycle is still accepted, because `server.ts` and the existing tests pass one.
+   * Narrowed on a method rather than on a property so a future field on the deps object cannot be
+   * mistaken for a lifecycle.
+   */
+  const resolved: DeploymentRoutesDeps =
+    deps !== null && typeof (deps as DeploymentLifecycle).snapshot === "function"
+      ? { lifecycle: deps as DeploymentLifecycle }
+      : ((deps ?? { lifecycle: null }) as DeploymentRoutesDeps);
+  const lifecycle = resolved.lifecycle;
+  const env = resolved.env ?? process.env;
+
   /**
    * Railway's health gate.
    *
@@ -83,7 +112,7 @@ export function registerDeploymentRoutes(app: Express, lifecycle: DeploymentLife
   app.get(DEPLOYMENT_INFO_ROUTE, (req: Request, res: Response) => {
     // Fails CLOSED in both directions: an instance with no token configured is unavailable rather
     // than public, and an absent or wrong token is a refusal rather than a default identity.
-    const auth = authenticateOperator(req, { route: DEPLOYMENT_INFO_ROUTE });
+    const auth = authenticateOperator(req, { route: DEPLOYMENT_INFO_ROUTE, env });
     if (!auth.ok) {
       res.status(auth.status).json({
         code: auth.code,

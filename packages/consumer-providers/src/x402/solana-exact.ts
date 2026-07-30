@@ -77,6 +77,19 @@ import {
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 
 /**
+ * The token programs a settlement float may legitimately live under, taken from the library.
+ *
+ * One entry, and that is the honest number. `associatedTokenAccountFor` below derives the account under
+ * the CLASSIC SPL token program, and a Token-2022 mint's associated account is a different address —
+ * so accepting Token-2022 here would mean attesting one account and later spending from another. When
+ * this build can derive a Token-2022 account, this array grows and the classifier follows it.
+ *
+ * Derived rather than written down for the same reason as the addresses below: a bare 44-character
+ * base58 constant is what a secret scanner matches on.
+ */
+export const ACCEPTED_TOKEN_PROGRAMS: readonly string[] = [String(TOKEN_PROGRAM_ADDRESS)];
+
+/**
  * The owner's associated token account for a mint, derived by the official library.
  *
  * Exported so the RPC health gate derives it the same way the payment path does. Two copies of a PDA
@@ -666,6 +679,92 @@ async function readSplBalance(rpcUrl: string, owner: string, asset: AssetRef): P
 async function readLamports(rpcUrl: string, owner: string): Promise<bigint> {
   const result = (await solanaRpc(rpcUrl, "getBalance", [owner])) as { value?: number };
   return BigInt(result.value ?? 0);
+}
+
+/** Everything registration needs to know about a Solana float, read once, with nothing inferred. */
+export interface ObservedSolanaAccount {
+  readonly authority: string;
+  readonly tokenAccount: string;
+  readonly tokenProgram: string | null;
+  readonly tokenAccountOwner: string | null;
+  readonly mint: string | null;
+  readonly decimals: number | null;
+  readonly accountState: string | null;
+  readonly delegate: string | null;
+  readonly closeAuthority: string | null;
+  readonly tokenBalance: bigint;
+  readonly lamports: bigint;
+}
+
+/**
+ * Observe a Solana settlement float from its PUBLIC authority alone.
+ *
+ * The point of this function is what it does NOT need: no secret key, no keypair, no signing library.
+ * A public address and an RPC endpoint are enough to learn everything that decides whether a float is
+ * real and spendable, which is what lets an account be registered on a deployment that cannot spend.
+ *
+ * It reads the ASSOCIATED TOKEN ACCOUNT rather than scanning by owner. `getTokenAccountsByOwner` would
+ * return every account the authority holds for the mint and leave the caller to decide which one is
+ * "the" float — a choice with no correct answer, and one that changes as accounts are created. The
+ * derived ATA is the account the payment path itself will spend from, derived by the same helper, so
+ * what is attested here is what will later be debited.
+ *
+ * Three fields are read specifically because they are invisible from a balance: `delegate`,
+ * `closeAuthority` and `state`. A delegated account can be emptied by a third party, a closable one can
+ * be swept, and a frozen one will accept an authorisation and then fail the transfer. `classifySettlementAccount`
+ * in @untch/consumer-core turns each into a refusal; this function's job is only to see them.
+ *
+ * A token account that does not exist yet is reported with a zero balance and a null state rather than
+ * as an error. That is the honest description of an unfunded authority, and the classifier refuses it
+ * on the null state rather than on an exception that would be indistinguishable from an RPC outage.
+ */
+export async function observeSolanaSettlementAccount(args: {
+  readonly rpcUrl: string;
+  readonly authority: string;
+  readonly mint: string;
+}): Promise<ObservedSolanaAccount> {
+  const tokenAccount = await associatedTokenAccountFor(args.authority, args.mint);
+
+  const info = (await solanaRpc(args.rpcUrl, "getAccountInfo", [
+    tokenAccount,
+    { encoding: "jsonParsed", commitment: "confirmed" },
+  ])) as {
+    value?: {
+      owner?: string;
+      data?: {
+        parsed?: {
+          info?: {
+            mint?: string;
+            owner?: string;
+            state?: string;
+            delegate?: string;
+            closeAuthority?: string;
+            tokenAmount?: { amount?: string; decimals?: number };
+          };
+        };
+      };
+    } | null;
+  };
+
+  const value = info.value ?? null;
+  const parsed = value?.data?.parsed?.info ?? null;
+  const lamports = await readLamports(args.rpcUrl, args.authority);
+
+  return {
+    authority: args.authority,
+    tokenAccount,
+    tokenProgram: value?.owner ?? null,
+    tokenAccountOwner: parsed?.owner ?? null,
+    mint: parsed?.mint ?? null,
+    decimals: typeof parsed?.tokenAmount?.decimals === "number" ? parsed.tokenAmount.decimals : null,
+    accountState: parsed?.state ?? null,
+    // `undefined` and the absent key both mean "no delegate". Normalised to null so a consumer never
+    // has to distinguish two spellings of the same absence.
+    delegate: parsed?.delegate ?? null,
+    closeAuthority: parsed?.closeAuthority ?? null,
+    tokenBalance: BigInt(parsed?.tokenAmount?.amount ?? "0"),
+    lamports,
+  };
 }
 
 /**
