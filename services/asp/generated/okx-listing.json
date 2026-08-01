@@ -164,17 +164,14 @@
       "toolId": "preflight_payment",
       "listable": false,
       "blockedBy": [
-        "A registered spend policy, and its numeric policyId.",
-        "The policyHash of that policy — the exact hash the registry stored when it was registered."
+        "A registered spend policy, and its numeric policyId."
       ]
     },
     {
       "toolId": "verify_delivery",
       "listable": false,
       "blockedBy": [
-        "A registered spend policy, and its numeric policyId.",
-        "The policyHash of that policy — the exact hash the registry stored when it was registered.",
-        "The acceptanceHash that was committed when the work was commissioned."
+        "A registered spend policy, and its numeric policyId."
       ]
     },
     {

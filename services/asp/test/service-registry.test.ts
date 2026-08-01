@@ -85,30 +85,51 @@ describe("the generated listing description", () => {
   });
 
   /**
-   * The defect, stated as a test.
+   * The defect, stated as a test, on the service that still carries the internal shape.
    *
-   * The registered description said policy preflight needed two things. The validator demanded
-   * seventeen. A generated description that reproduced that number would be the same failure with a
-   * build step in front of it.
+   * `create_spend_intent` takes the raw sixteen-field object, because hashing one is what it is FOR.
+   * Its description therefore has to name all sixteen — a generated description that summarised them
+   * as "an intent" would be the rejected listing with a build step in front of it.
    */
-  test("names every field the validator demands, including the sixteen inside the intent", () => {
-    const preflight = serviceById("preflight_payment");
-    assert.ok(preflight);
-    const provide = threePartDescription(preflight).provide;
+  test("a service that really does take the internal struct names all sixteen of its fields", () => {
+    const create = serviceById("create_spend_intent");
+    assert.ok(create);
+    const provide = threePartDescription(create).provide;
     assert.match(provide, /policyId/);
     assert.match(provide, /all 16 of/);
     for (const field of ["owner", "policyHash", "acceptanceHash", "paramsHash", "amount"]) {
       assert.ok(provide.includes(field), `the description does not name ${field}`);
     }
-    assert.match(provide, /either .*intent.*, or intentHash/s);
   });
 
-  test("verify_delivery names BOTH of its independent choices", () => {
+  /**
+   * The redesign, stated as a test.
+   *
+   * Policy preflight used to demand seventeen fields, ten of which were protocol material the caller
+   * had no route to obtain. Its published contract now asks for six things a caller knows, and the
+   * description says so — briefly, because the request genuinely is brief now.
+   */
+  test("policy preflight asks for what a caller knows, and nothing it would have to look up", () => {
+    const preflight = serviceById("preflight_payment");
+    assert.ok(preflight);
+    const provide = threePartDescription(preflight).provide;
+    for (const field of ["provider", "capability", "task", "maxSpend", "currency", "deadline"]) {
+      assert.ok(provide.includes(field), `the description does not name ${field}`);
+    }
+    assert.match(provide, /either policyId .*, or useDefaultPolicy/);
+    for (const derived of ["policyHash", "taskHash", "paramsHash", "nonce"]) {
+      assert.ok(!provide.includes(derived), `${derived} is derived server-side and must not be asked for`);
+    }
+  });
+
+  test("delivery verification asks for the one thing only the caller knows", () => {
     const verify = serviceById("verify_delivery");
     assert.ok(verify);
     const provide = threePartDescription(verify).provide;
-    assert.match(provide, /intentHash/);
-    assert.match(provide, /payloadHash/);
+    assert.match(provide, /intentId/);
+    // The old contract asked the caller to resend acceptance criteria that nothing ever returned.
+    assert.ok(!provide.includes("acceptance"), "the caller is being asked for evidence this host holds");
+    assert.ok(!provide.includes("policyId"), "the policy is loaded from the intent, not resent");
   });
 
   test("no description cites a private section number", () => {
@@ -125,8 +146,8 @@ describe("the generated listing description", () => {
   });
 
   test("the number-inversion trap is stated where a caller will read it", () => {
-    const preflight = serviceById("preflight_payment");
-    const intent = preflight?.input.properties?.intent;
+    const create = serviceById("create_spend_intent");
+    const intent = create?.input.properties?.intent;
     assert.match(String(intent?.properties?.maxAmount?.description), /DECIMAL STRING/);
     assert.match(String(intent?.properties?.amount?.description), /JSON NUMBER/);
   });

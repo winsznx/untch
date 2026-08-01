@@ -98,3 +98,114 @@ export const POLICY_HASH_PREDECESSOR: Predecessor = {
   why: "It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer.",
   obtainableBy: null,
 };
+
+
+/**
+ * The public request shape for a policy decision.
+ *
+ * Written here rather than inside the service definition because delivery verification's contract
+ * refers to the same ideas, and because the point of the redesign is that this shape is a THING —
+ * the marketplace interface — rather than a paragraph inside one entry.
+ *
+ * Ten fields are absent on purpose: policyHash, owner, token, taskHash, acceptanceHash, schemaHash,
+ * paramsHash, nonce, endpoint and the two agent identifiers are derived from production state. A
+ * caller that could send them could send a wrong one, and a policy binding the caller chooses is not
+ * a binding.
+ */
+export const PUBLIC_PREFLIGHT_INPUT: JsonSchema = {
+  type: "object",
+  title: "PreflightRequest",
+  description:
+    "A payment you are considering, in your own terms. Every protocol value — the policy hash, the token contract, the hashes of the things you describe below, the nonce, the endpoint — is derived server-side from production state and returned to you, so there is nothing here you have to look up first.",
+  properties: {
+    policyId: policyIdField,
+    useDefaultPolicy: {
+      type: "boolean",
+      description:
+        "Use the policy this account has marked as its default. Send this or policyId, not neither — a request that silently fell back to a default would be a request whose limits nobody chose.",
+    },
+    provider: {
+      type: "string",
+      minLength: 1,
+      description: "The provider you want to pay, by its registered id.",
+      examples: ["stabledomains"],
+    },
+    capability: {
+      type: "string",
+      minLength: 1,
+      description: "What you want that provider to do, by its registered capability id.",
+      examples: ["domains.register"],
+    },
+    task: {
+      type: "string",
+      minLength: 1,
+      maxLength: 500,
+      description: "What this payment is for, in a sentence a person would recognise.",
+      examples: ["Register kyrve.xyz for one year"],
+    },
+    maxSpend: {
+      type: "string",
+      pattern: "^\\d+(\\.\\d+)?$",
+      description: "The most you will spend, in DISPLAY units — \"20.00\", not base units.",
+      examples: ["20.00"],
+    },
+    currency: {
+      type: "string",
+      minLength: 1,
+      description: "The settlement currency's symbol. It must be one this network actually settles.",
+      examples: ["USDT0"],
+    },
+    deadline: isoTimestamp("After this the request is stale and must be rebuilt rather than replayed."),
+    recipient: address("Optional. Constrains who may be paid. Without it, the recipient must come from a resolved quote."),
+    parameters: {
+      type: "object",
+      description: "Optional. The structured parameters that will be sent to the provider. Hashed and committed.",
+    },
+    acceptance: {
+      type: "object",
+      description:
+        "Optional. What \"delivered\" will mean, committed NOW so that verification later has something to compare against. Without it the task text is used.",
+    },
+    idempotencyKey: {
+      type: "string",
+      maxLength: 128,
+      description:
+        "Optional. Makes a retry of an identical request resolve to the same intent rather than creating a second one.",
+    },
+    buyerAgentId: {
+      type: "string",
+      pattern: UINT256_PATTERN,
+      description:
+        "Optional and temporary. Which agent is spending is a property of an account; send it explicitly until your wallet is bound to one.",
+    },
+    workerAgentId: {
+      type: "string",
+      pattern: UINT256_PATTERN,
+      description:
+        "Optional and temporary. Which agent is being paid is a property of the provider's registration; send it explicitly until that binding exists.",
+    },
+  },
+  required: ["provider", "capability", "task", "maxSpend", "currency", "deadline"],
+  anyOf: [{ required: ["policyId"] }, { required: ["useDefaultPolicy"] }],
+};
+
+/**
+ * The public request shape for delivery verification: one identifier.
+ *
+ * Everything else — the policy, the quote, the execution, the settlement, the result and the receipt
+ * — is evidence this service already holds against that intent. The old contract asked the caller to
+ * resend the acceptance criteria, a value that was never returned to them in the first place.
+ */
+export const PUBLIC_VERIFY_INPUT: JsonSchema = {
+  type: "object",
+  title: "VerifyRequest",
+  description:
+    "Ask for a delivery to be checked against what was agreed. Only the intent id is needed; the policy, quote, execution, settlement, result and receipt are loaded here.",
+  properties: {
+    intentId: bytes32("The intent to verify, as returned when it was created."),
+    expectedResultHash: bytes32(
+      "Optional. A hash you believe the result should have. It is compared and the comparison is reported, but it never overrides the acceptance criteria that were committed — asserting what an answer should be is not the same as it being what was agreed.",
+    ),
+  },
+  required: ["intentId"],
+};

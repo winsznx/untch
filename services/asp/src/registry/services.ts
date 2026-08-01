@@ -4,6 +4,8 @@ import {
   ERROR_ENVELOPE,
   POLICY_HASH_PREDECESSOR,
   POLICY_PREDECESSOR,
+  PUBLIC_PREFLIGHT_INPUT,
+  PUBLIC_VERIFY_INPUT,
   UINT256_PATTERN,
   address,
   bytes32,
@@ -138,6 +140,27 @@ const EXAMPLE_INTENT = {
   amount: 1.5,
 };
 
+/**
+ * The worked request the redesigned contract accepts.
+ *
+ * Six fields, all of them things the caller knows. The seventeen-field version is still what the
+ * policy engine evaluates — `services/asp/src/public-dto/mapping.ts` derives it — but a marketplace
+ * caller never sees it, which was the whole point of the redesign.
+ */
+const EXAMPLE_PREFLIGHT_REQUEST = {
+  policyId: "7",
+  provider: "stabledomains",
+  capability: "domains.register",
+  task: "Register kyrve.xyz for one year",
+  maxSpend: "20.00",
+  currency: "USDT0",
+  deadline: "2026-08-02T12:00:00.000Z",
+  recipient: "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
+  parameters: { domain: "kyrve.xyz", years: 1 },
+  buyerAgentId: "6047",
+  workerAgentId: "6086",
+};
+
 export const SERVICES: readonly ServiceDefinition[] = [
   // ── discovery ────────────────────────────────────────────────────────────
   {
@@ -230,29 +253,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     intendedCaller: "an operator funding an autonomous agent who wants every payment checked before it moves",
     delivers:
       "a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision",
-    input: {
-      type: "object",
-      title: "PreflightRequest",
-      description:
-        "Either an inline intent, or the hash of one already created through create_spend_intent on THIS instance.",
-      properties: {
-        policyId: policyIdField,
-        intent: SPEND_INTENT_INPUT,
-        intentHash: bytes32(
-          "The hash of an intent previously created on this instance. Resolves from an in-memory cache, so it is lost on restart and unknown to any other instance.",
-        ),
-        vaultAddress: address("Optional. When set, and an oracle key is configured, a Mode-C signature is returned."),
-      },
-      required: ["policyId"],
-      /**
-       * The choice, stated as a rule rather than as prose.
-       *
-       * `required: ["policyId"]` alone is what the registered listing effectively claimed, and it is
-       * how a caller ends up sending one field and being refused for sixteen. The alternative is
-       * expressed here so the generated description has to name it.
-       */
-      anyOf: [{ required: ["intent"] }, { required: ["intentHash"] }],
-    },
+    input: PUBLIC_PREFLIGHT_INPUT,
     output: OK_ENVELOPE(
       "PreflightDecision",
       {
@@ -276,15 +277,23 @@ export const SERVICES: readonly ServiceDefinition[] = [
       ["decision", "reasons", "ruleTrace"],
     ),
     validExample: {
-      title: "Judge a $1.50 API call against policy 7",
-      request: { policyId: "7", intent: EXAMPLE_INTENT },
+      title: "Check a domain registration against policy 7 before paying for it",
+      request: EXAMPLE_PREFLIGHT_REQUEST,
     },
     invalidExample: {
-      title: "Send maxAmount as a JSON number instead of a decimal string",
-      request: { policyId: "7", intent: { ...EXAMPLE_INTENT, maxAmount: 2000000 } },
-      refusalCode: "INTENT_MALFORMED",
+      title: "Name neither a policy nor the default one",
+      request: { ...EXAMPLE_PREFLIGHT_REQUEST, policyId: undefined },
+      refusalCode: "POLICY_NOT_SELECTED",
     },
-    predecessors: [POLICY_PREDECESSOR, POLICY_HASH_PREDECESSOR],
+    /**
+     * One predecessor now, not two.
+     *
+     * `policyHash` was a predecessor because the caller had to supply it and no route returned it.
+     * It is now derived from the stored policy, which is where it always came from. The policy itself
+     * remains genuinely required and genuinely unobtainable through any public route — that is the
+     * gap the policy-registration work closes, and until it does this service stays withheld.
+     */
+    predecessors: [POLICY_PREDECESSOR],
     sideEffects: [
       { what: "Records the decision in this instance's rolling ledger window.", durable: false },
       { what: "Writes a DECISION receipt and queues it for anchoring, when a receipt writer is wired.", durable: true },
@@ -292,15 +301,22 @@ export const SERVICES: readonly ServiceDefinition[] = [
     idempotency: "not-idempotent",
     refusals: [
       { code: "PAYMENT_REQUIRED", status: 402, when: "no valid payment accompanied the request" },
-      { code: "POLICY_ID_REQUIRED", status: 400, when: "policyId is absent or is not a decimal string" },
-      { code: "INTENT_REQUIRED", status: 400, when: "neither an inline intent nor an intentHash was given" },
-      { code: "INTENT_MALFORMED", status: 400, when: "a field of the intent has the wrong type or format" },
-      { code: "INTENT_NOT_FOUND", status: 404, when: "the intentHash is unknown to THIS instance" },
+      { code: "POLICY_NOT_SELECTED", status: 400, when: "neither policyId nor useDefaultPolicy was given" },
+      { code: "REQUEST_SCHEMA_VIOLATION", status: 400, when: "a field is missing or has the wrong shape; the message names each one" },
+      { code: "CURRENCY_NOT_SETTLEABLE", status: 400, when: "this network has no confirmed contract for that currency" },
+      { code: "MAX_SPEND_INVALID", status: 400, when: "maxSpend is not a decimal amount the settlement token can express" },
+      { code: "DEADLINE_IN_THE_PAST", status: 400, when: "the deadline has already passed" },
+      { code: "RECIPIENT_INVALID", status: 400, when: "recipient was given but is not a 20-byte address" },
+      { code: "PROVIDER_NOT_REGISTERED", status: 404, when: "no provider or capability with those ids is registered here" },
       { code: "POLICY_NOT_FOUND", status: 404, when: "no policy with that id is stored" },
-      { code: "POLICY_BINDING_MISMATCH", status: 400, when: "policyHash does not equal the stored policy's hash" },
+      {
+        code: "AUTHORITY_NOT_DERIVABLE",
+        status: 409,
+        when: "a protocol value cannot be derived without inventing it; the response names each one and what would supply it",
+      },
       { code: "POLICY_STORE_NOT_CONFIGURED", status: 503, when: "this instance has no policy store" },
     ],
-    schemaVersion: "1.0.0",
+    schemaVersion: "2.0.0",
   },
   {
     toolId: "verify_delivery",
@@ -314,27 +330,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
       "Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict.",
     intendedCaller: "a buyer deciding whether work they commissioned has actually been delivered",
     delivers: "a pass or fail verdict against the committed criteria, and a durable receipt of that verdict",
-    input: {
-      type: "object",
-      title: "VerifyRequest",
-      properties: {
-        policyId: policyIdField,
-        intent: SPEND_INTENT_INPUT,
-        intentHash: bytes32("The hash of an intent previously created on this instance."),
-        acceptanceCriteria: {
-          type: "object",
-          description: "Optional. The criteria to judge against, when they were not committed on the intent.",
-        },
-        payload: { type: "object", description: "The delivered result itself." },
-        payloadHash: bytes32("A hash of the delivered result, when the result itself is not being sent."),
-      },
-      required: ["policyId"],
-      /** Two independent choices: which intent, and which delivery. Neither implies the other. */
-      allOf: [
-        { anyOf: [{ required: ["intent"] }, { required: ["intentHash"] }] },
-        { anyOf: [{ required: ["payload"] }, { required: ["payloadHash"] }] },
-      ],
-    },
+    input: PUBLIC_VERIFY_INPUT,
     output: OK_ENVELOPE(
       "VerifyResult",
       {
@@ -346,21 +342,27 @@ export const SERVICES: readonly ServiceDefinition[] = [
       ["verified", "proofTier"],
     ),
     validExample: {
-      title: "Verify a delivery against policy 7",
-      request: { policyId: "7", intent: EXAMPLE_INTENT, payloadHash: `0x${"66".repeat(32)}` },
+      title: "Verify one intent",
+      request: { intentId: `0x${"11".repeat(32)}` },
     },
     invalidExample: {
-      title: "Omit both the delivered result and its hash",
-      request: { policyId: "7", intent: EXAMPLE_INTENT },
-      refusalCode: "DELIVERY_REQUIRED",
+      title: "Omit the intent id",
+      request: { expectedResultHash: `0x${"66".repeat(32)}` },
+      refusalCode: "REQUEST_SCHEMA_VIOLATION",
     },
+    /**
+     * The acceptance criteria are no longer a predecessor.
+     *
+     * They were, and it was the least defensible of the seventeen fields: the caller was asked to
+     * resend a value that nothing had ever returned to them. This service is the custodian of what was
+     * committed, so it loads it. What remains is the policy — an intent cannot exist without one.
+     */
     predecessors: [
       POLICY_PREDECESSOR,
-      POLICY_HASH_PREDECESSOR,
       {
-        what: "The acceptanceHash that was committed when the work was commissioned.",
-        why: "Verification compares against what was agreed BEFORE the work, which is the only comparison that means anything afterwards.",
-        obtainableBy: null,
+        what: "An intent created on this host.",
+        why: "Verification is about a specific commitment. Without one there is nothing to compare a delivery against.",
+        obtainableBy: "the intentId returned by POST /preflight_payment or POST /create_spend_intent",
       },
     ],
     sideEffects: [
@@ -372,16 +374,15 @@ export const SERVICES: readonly ServiceDefinition[] = [
     idempotency: "not-idempotent",
     refusals: [
       { code: "PAYMENT_REQUIRED", status: 402, when: "no valid payment accompanied the request" },
-      { code: "POLICY_ID_REQUIRED", status: 400, when: "policyId is absent or is not a decimal string" },
-      { code: "INTENT_REQUIRED", status: 400, when: "neither an inline intent nor an intentHash was given" },
-      { code: "INTENT_NOT_FOUND", status: 404, when: "the intentHash is unknown to THIS instance" },
-      { code: "POLICY_NOT_FOUND", status: 404, when: "no policy with that id is stored" },
-      { code: "POLICY_BINDING_MISMATCH", status: 400, when: "policyHash does not equal the stored policy's hash" },
-      { code: "CRITERIA_MALFORMED", status: 400, when: "acceptanceCriteria was given but is not an object" },
-      { code: "DELIVERY_REQUIRED", status: 400, when: "neither payload nor payloadHash was given" },
-      { code: "DELIVERY_MALFORMED", status: 400, when: "payloadHash is not a 32-byte hex string" },
+      { code: "REQUEST_SCHEMA_VIOLATION", status: 400, when: "intentId is missing or is not a 32-byte hex string" },
+      { code: "INTENT_NOT_FOUND", status: 404, when: "no intent with that id is known here" },
+      {
+        code: "EVIDENCE_INCOMPLETE",
+        status: 409,
+        when: "the record needed to judge this delivery is not all present; the response names which parts are missing rather than judging on less",
+      },
     ],
-    schemaVersion: "1.0.0",
+    schemaVersion: "2.0.0",
   },
   {
     toolId: "create_spend_intent",

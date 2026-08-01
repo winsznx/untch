@@ -99,23 +99,21 @@ null
 
 ## Policy preflight — `preflight_payment`
 
-`POST /preflight_payment` · $0.05 per call · schema v1.0.0
+`POST /preflight_payment` · $0.05 per call · schema v2.0.0
 
 Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.
 
-You provide: policyId (string); either intent, containing all 16 of: owner, buyerAgentId, workerAgentId, token, maxAmount, taskHash, acceptanceHash, schemaHash, policyHash, deadline, nonce, endpoint, paramsHash, recipientAddress, category, amount, or intentHash (string).
+You provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).
 
 You receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.
 
 > **Not listable.** This service cannot be completed by a caller who does not already
 > hold something no public route produces:
 > - A registered spend policy, and its numeric policyId.
-> - The policyHash of that policy — the exact hash the registry stored when it was registered.
 
 **Must already exist**
 
 - A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. **No public route produces this.**
-- The policyHash of that policy — the exact hash the registry stored when it was registered. It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer. **No public route produces this.**
 
 **What it changes**
 
@@ -127,12 +125,15 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
 **Refusals**
 
 - `PAYMENT_REQUIRED` (402) — no valid payment accompanied the request
-- `POLICY_ID_REQUIRED` (400) — policyId is absent or is not a decimal string
-- `INTENT_REQUIRED` (400) — neither an inline intent nor an intentHash was given
-- `INTENT_MALFORMED` (400) — a field of the intent has the wrong type or format
-- `INTENT_NOT_FOUND` (404) — the intentHash is unknown to THIS instance
+- `POLICY_NOT_SELECTED` (400) — neither policyId nor useDefaultPolicy was given
+- `REQUEST_SCHEMA_VIOLATION` (400) — a field is missing or has the wrong shape; the message names each one
+- `CURRENCY_NOT_SETTLEABLE` (400) — this network has no confirmed contract for that currency
+- `MAX_SPEND_INVALID` (400) — maxSpend is not a decimal amount the settlement token can express
+- `DEADLINE_IN_THE_PAST` (400) — the deadline has already passed
+- `RECIPIENT_INVALID` (400) — recipient was given but is not a 20-byte address
+- `PROVIDER_NOT_REGISTERED` (404) — no provider or capability with those ids is registered here
 - `POLICY_NOT_FOUND` (404) — no policy with that id is stored
-- `POLICY_BINDING_MISMATCH` (400) — policyHash does not equal the stored policy's hash
+- `AUTHORITY_NOT_DERIVABLE` (409) — a protocol value cannot be derived without inventing it; the response names each one and what would supply it
 - `POLICY_STORE_NOT_CONFIGURED` (503) — this instance has no policy store
 
 **A request that works**
@@ -140,74 +141,60 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
 ```json
 {
   "policyId": "7",
-  "intent": {
-    "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-    "buyerAgentId": "6047",
-    "workerAgentId": "6086",
-    "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-    "maxAmount": "2000000",
-    "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-    "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-    "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-    "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-    "deadline": "1790000000",
-    "nonce": "1",
-    "endpoint": "https://asp.untch.xyz/ping_untch",
-    "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-    "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-    "category": "api",
-    "amount": 1.5
-  }
+  "provider": "stabledomains",
+  "capability": "domains.register",
+  "task": "Register kyrve.xyz for one year",
+  "maxSpend": "20.00",
+  "currency": "USDT0",
+  "deadline": "2026-08-02T12:00:00.000Z",
+  "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
+  "parameters": {
+    "domain": "kyrve.xyz",
+    "years": 1
+  },
+  "buyerAgentId": "6047",
+  "workerAgentId": "6086"
 }
 ```
 
-**A request that is refused** — `INTENT_MALFORMED`
+**A request that is refused** — `POLICY_NOT_SELECTED`
 
 ```json
 {
-  "policyId": "7",
-  "intent": {
-    "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-    "buyerAgentId": "6047",
-    "workerAgentId": "6086",
-    "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-    "maxAmount": 2000000,
-    "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-    "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-    "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-    "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-    "deadline": "1790000000",
-    "nonce": "1",
-    "endpoint": "https://asp.untch.xyz/ping_untch",
-    "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-    "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-    "category": "api",
-    "amount": 1.5
-  }
+  "provider": "stabledomains",
+  "capability": "domains.register",
+  "task": "Register kyrve.xyz for one year",
+  "maxSpend": "20.00",
+  "currency": "USDT0",
+  "deadline": "2026-08-02T12:00:00.000Z",
+  "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
+  "parameters": {
+    "domain": "kyrve.xyz",
+    "years": 1
+  },
+  "buyerAgentId": "6047",
+  "workerAgentId": "6086"
 }
 ```
 
 ## Delivery verify — `verify_delivery`
 
-`POST /verify_delivery` · $0.10 per call · schema v1.0.0
+`POST /verify_delivery` · $0.10 per call · schema v2.0.0
 
 Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict. For a buyer deciding whether work they commissioned has actually been delivered.
 
-You provide: policyId (string); either intent, containing all 16 of: owner, buyerAgentId, workerAgentId, token, maxAmount, taskHash, acceptanceHash, schemaHash, policyHash, deadline, nonce, endpoint, paramsHash, recipientAddress, category, amount, or intentHash (string); either payload (object), or payloadHash (string).
+You provide: intentId (string).
 
 You receive: a pass or fail verdict against the committed criteria, and a durable receipt of that verdict.
 
 > **Not listable.** This service cannot be completed by a caller who does not already
 > hold something no public route produces:
 > - A registered spend policy, and its numeric policyId.
-> - The policyHash of that policy — the exact hash the registry stored when it was registered.
-> - The acceptanceHash that was committed when the work was commissioned.
 
 **Must already exist**
 
 - A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. **No public route produces this.**
-- The policyHash of that policy — the exact hash the registry stored when it was registered. It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer. **No public route produces this.**
-- The acceptanceHash that was committed when the work was commissioned. Verification compares against what was agreed BEFORE the work, which is the only comparison that means anything afterwards. **No public route produces this.**
+- An intent created on this host. Verification is about a specific commitment. Without one there is nothing to compare a delivery against. Obtain it with: the intentId returned by POST /preflight_payment or POST /create_spend_intent.
 
 **What it changes**
 
@@ -218,65 +205,23 @@ You receive: a pass or fail verdict against the committed criteria, and a durabl
 **Refusals**
 
 - `PAYMENT_REQUIRED` (402) — no valid payment accompanied the request
-- `POLICY_ID_REQUIRED` (400) — policyId is absent or is not a decimal string
-- `INTENT_REQUIRED` (400) — neither an inline intent nor an intentHash was given
-- `INTENT_NOT_FOUND` (404) — the intentHash is unknown to THIS instance
-- `POLICY_NOT_FOUND` (404) — no policy with that id is stored
-- `POLICY_BINDING_MISMATCH` (400) — policyHash does not equal the stored policy's hash
-- `CRITERIA_MALFORMED` (400) — acceptanceCriteria was given but is not an object
-- `DELIVERY_REQUIRED` (400) — neither payload nor payloadHash was given
-- `DELIVERY_MALFORMED` (400) — payloadHash is not a 32-byte hex string
+- `REQUEST_SCHEMA_VIOLATION` (400) — intentId is missing or is not a 32-byte hex string
+- `INTENT_NOT_FOUND` (404) — no intent with that id is known here
+- `EVIDENCE_INCOMPLETE` (409) — the record needed to judge this delivery is not all present; the response names which parts are missing rather than judging on less
 
 **A request that works**
 
 ```json
 {
-  "policyId": "7",
-  "intent": {
-    "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-    "buyerAgentId": "6047",
-    "workerAgentId": "6086",
-    "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-    "maxAmount": "2000000",
-    "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-    "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-    "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-    "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-    "deadline": "1790000000",
-    "nonce": "1",
-    "endpoint": "https://asp.untch.xyz/ping_untch",
-    "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-    "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-    "category": "api",
-    "amount": 1.5
-  },
-  "payloadHash": "0x6666666666666666666666666666666666666666666666666666666666666666"
+  "intentId": "0x1111111111111111111111111111111111111111111111111111111111111111"
 }
 ```
 
-**A request that is refused** — `DELIVERY_REQUIRED`
+**A request that is refused** — `REQUEST_SCHEMA_VIOLATION`
 
 ```json
 {
-  "policyId": "7",
-  "intent": {
-    "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-    "buyerAgentId": "6047",
-    "workerAgentId": "6086",
-    "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-    "maxAmount": "2000000",
-    "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-    "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-    "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-    "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-    "deadline": "1790000000",
-    "nonce": "1",
-    "endpoint": "https://asp.untch.xyz/ping_untch",
-    "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-    "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-    "category": "api",
-    "amount": 1.5
-  }
+  "expectedResultHash": "0x6666666666666666666666666666666666666666666666666666666666666666"
 }
 ```
 
