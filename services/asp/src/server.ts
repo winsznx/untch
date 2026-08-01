@@ -102,6 +102,9 @@ import { registerConsumerVerifyRoutes } from "./consumer/operator-verify-routes"
 import { loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
 import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
 import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
+import { challengeDescription, registerRegistryRoutes } from "./registry/routes";
+import { SERVICES } from "./registry/services";
+import { SETTLEMENT_TOKEN } from "./config";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -178,13 +181,33 @@ export function createSellerApp(
    */
   registerDeploymentRoutes(app, lifecycle);
 
+  /**
+   * The contract, published before the paywall.
+   *
+   * These sit here for the same reason the health routes do: registered after `paymentMiddleware`
+   * they would be reachable only by a paying caller. The failure being corrected is that the 402 body
+   * was `{}`, so the only way to learn what a tool took was to pay for a refusal — a discovery
+   * document behind that same paywall would reproduce the problem with extra steps.
+   */
+  const publicBaseUrl = process.env.ASP_PUBLIC_URL?.trim() || "https://asp.untch.xyz";
+  registerRegistryRoutes(app, {
+    baseUrl: publicBaseUrl,
+    network: NETWORK,
+    payTo: config.payTo,
+    asset: {
+      symbol: SETTLEMENT_TOKEN.symbol,
+      address: SETTLEMENT_TOKEN.address,
+      decimals: SETTLEMENT_TOKEN.decimals,
+    },
+  });
+
   // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
   app.use(
     paymentMiddleware(
       {
         [`GET ${PING_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PING_PRICE },
-          description: "Untch hello-world ping — D0.1 proof-of-rail health check",
+          description: challengeDescription("ping_untch", publicBaseUrl),
           mimeType: "application/json",
         },
         // Some marketplace validators probe a listed endpoint with GET/HEAD even when
@@ -192,102 +215,102 @@ export function createSellerApp(
         // than letting Express turn them into an unhelpful 404.
         [`HEAD ${PING_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PING_PRICE },
-          description: "Untch hello-world ping — D0.1 proof-of-rail health check",
+          description: challengeDescription("ping_untch", publicBaseUrl),
           mimeType: "application/json",
         },
         [`GET ${PREFLIGHT_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
-          description: "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
+          description: challengeDescription("preflight_payment", publicBaseUrl),
           mimeType: "application/json",
         },
         [`HEAD ${PREFLIGHT_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
-          description: "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
+          description: challengeDescription("preflight_payment", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${PREFLIGHT_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
-          description: "Untch preflight_payment — deterministic §7.1 policy preflight of a bounded SpendIntent",
+          description: challengeDescription("preflight_payment", publicBaseUrl),
           mimeType: "application/json",
         },
         [`GET ${VERIFY_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
-          description: "Untch verify_delivery — deterministic §13/§7.3 T0 proof of a delivery vs committed acceptance criteria",
+          description: challengeDescription("verify_delivery", publicBaseUrl),
           mimeType: "application/json",
         },
         [`HEAD ${VERIFY_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
-          description: "Untch verify_delivery — deterministic §13/§7.3 T0 proof of a delivery vs committed acceptance criteria",
+          description: challengeDescription("verify_delivery", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${VERIFY_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
-          description: "Untch verify_delivery — deterministic §13/§7.3 T0 proof of a delivery vs committed acceptance criteria",
+          description: challengeDescription("verify_delivery", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${SCORE_VENDOR_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SCORE_PRICE },
-          description: "Untch score_vendor — deterministic §12 vendor reliability score (weighted features, LCB, no LLM)",
+          description: challengeDescription("score_vendor", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${SCORE_BUYER_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SCORE_PRICE },
-          description: "Untch score_buyer — deterministic §12 buyer-hygiene score (fully receipt-backed, LCB, no LLM)",
+          description: challengeDescription("score_buyer", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${DISPUTE_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: DISPUTE_PRICE },
-          description: "Untch generate_dispute_packet — assemble an intent's evidence bundle from durable history, anchor via AuditAnchored (§10.3, no LLM)",
+          description: challengeDescription("generate_dispute_packet", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${RECONCILE_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: RECONCILE_PRICE },
-          description: "Untch reconcile_agent_spend — assemble an agent's spend/blocked-waste report over a period, anchor via AuditAnchored (§10.3, no LLM)",
+          description: challengeDescription("reconcile_agent_spend", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${CAFE_LATTE_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
-          description: "Untch demo café — paid oat latte order voucher (lifestyle / governed spend demo)",
+          description: challengeDescription("cafe_order_latte", publicBaseUrl),
           mimeType: "application/json",
         },
         [`GET ${CAFE_LATTE_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
-          description: "Untch demo café — paid oat latte order voucher (lifestyle / governed spend demo)",
+          description: challengeDescription("cafe_order_latte", publicBaseUrl),
           mimeType: "application/json",
         },
         [`HEAD ${CAFE_LATTE_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
-          description: "Untch demo café — paid oat latte order voucher (lifestyle / governed spend demo)",
+          description: challengeDescription("cafe_order_latte", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${SUGGEST_NAMES_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SUGGEST_NAMES_PRICE },
-          description: "Untch Launch Pack — product name suggestions (LLM when configured; structured fallback)",
+          description: challengeDescription("suggest_names", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${BRAND_PACK_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
-          description: "Untch Launch Pack — hireable brand pack: names + live RDAP domains + rank + SEO",
+          description: challengeDescription("brand_pack", publicBaseUrl),
           mimeType: "application/json",
         },
         [`GET ${BRAND_PACK_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
-          description: "Untch Launch Pack — hireable brand pack: names + live RDAP domains + rank + SEO",
+          description: challengeDescription("brand_pack", publicBaseUrl),
           mimeType: "application/json",
         },
         [`HEAD ${BRAND_PACK_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
-          description: "Untch Launch Pack — hireable brand pack: names + live RDAP domains + rank + SEO",
+          description: challengeDescription("brand_pack", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${DETECT_DUP_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: DETECT_DUP_PRICE },
-          description: "Untch detect_duplicate — check recent ledger window for a matching task/endpoint/params",
+          description: challengeDescription("detect_duplicate", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${REDACT_META_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: REDACT_META_PRICE },
-          description: "Untch redact_payment_metadata — strip PII patterns and hash redacted metadata",
+          description: challengeDescription("redact_payment_metadata", publicBaseUrl),
           mimeType: "application/json",
         },
         // ── Consumer Pack ──────────────────────────────────────────────────

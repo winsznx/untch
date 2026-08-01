@@ -1,0 +1,224 @@
+{
+  "role": "asp",
+  "name": "Untch",
+  "baseUrl": "https://asp.untch.xyz",
+  "network": "eip155:196",
+  "service": [
+    {
+      "toolId": "catalog",
+      "name": "Service catalog",
+      "endpoint": "https://asp.untch.xyz/catalog",
+      "method": "GET",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Lists every tool this host serves, with its route, price and purpose. For any agent deciding whether this host has a tool worth calling.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: a JSON catalog of every route, its price, and what it is for.",
+      "schemaUrl": "https://asp.untch.xyz/schema/catalog",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "ping_untch",
+      "name": "Rail ping",
+      "endpoint": "https://asp.untch.xyz/ping_untch",
+      "method": "GET",
+      "protocol": "A2MCP",
+      "pricing": "$0.01 per call",
+      "description": "Confirms that a paid call to this host settles end to end. For an integrator proving their x402 client can pay this host before wiring anything expensive.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: a timestamped acknowledgement, after a real settled payment of $0.01.",
+      "schemaUrl": "https://asp.untch.xyz/schema/ping_untch",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "detect_duplicate",
+      "name": "Duplicate check",
+      "endpoint": "https://asp.untch.xyz/detect_duplicate",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "$0.02 per call",
+      "description": "Says whether this exact task, endpoint and parameter set was already paid for recently. For an agent about to retry, that does not want to pay twice for one job.\n\nYou provide: policyId (string); taskHash (string); endpoint (string); paramsHash (string).\n\nYou receive: whether a matching prior intent exists, which one, and how long the match remains in the window.",
+      "schemaUrl": "https://asp.untch.xyz/schema/detect_duplicate",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "redact_payment_metadata",
+      "name": "Metadata redaction",
+      "endpoint": "https://asp.untch.xyz/redact_payment_metadata",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "$0.02 per call",
+      "description": "Strips emails, phone numbers, API keys and bearer tokens out of payment metadata and hashes what is left. For an agent that must attach metadata to a payment without publishing what is inside it.\n\nYou provide: metadata (object).\n\nYou receive: the redacted metadata and a hash of it, with nothing stored.",
+      "schemaUrl": "https://asp.untch.xyz/schema/redact_payment_metadata",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "log_receipt",
+      "name": "Receipt lookup",
+      "endpoint": "https://asp.untch.xyz/log_receipt",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Reports the anchoring state of a receipt this host wrote. For a caller holding a receiptRef who wants to know whether it has reached the chain.\n\nYou provide: receiptId (string).\n\nYou receive: the receipt's current state, and its anchoring transaction once it has one.",
+      "schemaUrl": "https://asp.untch.xyz/schema/log_receipt",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "receipt_status",
+      "name": "Receipt status",
+      "endpoint": "https://asp.untch.xyz/receipt_status/{receiptId}",
+      "method": "GET",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "The same receipt state, as a plain GET a browser or a poller can use. For anything polling for an anchor without wanting to POST.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: the receipt's state and its anchoring transaction once it has one.",
+      "schemaUrl": "https://asp.untch.xyz/schema/receipt_status",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "escalation_status",
+      "name": "Approval status",
+      "endpoint": "https://asp.untch.xyz/escalation_status/{pollRef}",
+      "method": "GET",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Reports whether a payment that was escalated to a human has been approved or denied yet. For an agent waiting on a human decision it triggered.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: the pending, approved or denied state of one escalation.",
+      "schemaUrl": "https://asp.untch.xyz/schema/escalation_status",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "cafe_menu",
+      "name": "Café menu",
+      "endpoint": "https://asp.untch.xyz/cafe/menu",
+      "method": "GET",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "A machine-readable café menu, used to demonstrate governed spending on something ordinary. For an agent being shown what a governed purchase looks like end to end.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: the items, their prices, and how long a quote holds.",
+      "schemaUrl": "https://asp.untch.xyz/schema/cafe_menu",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "cafe_order_latte",
+      "name": "Café order",
+      "endpoint": "https://asp.untch.xyz/cafe/order/latte",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "$0.04 per call",
+      "description": "Buys a demonstration coffee voucher, to show a real payment against a real policy. For anyone evaluating what a governed agent purchase feels like without spending much.\n\nYou provide: Any one of: buyerRef.\n\nYou receive: an order id and a pickup code. The fulfilment is a demonstration, not a real coffee.",
+      "schemaUrl": "https://asp.untch.xyz/schema/cafe_order_latte",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "suggest_names",
+      "name": "Product name suggestions",
+      "endpoint": "https://asp.untch.xyz/builder/suggest_names",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "$0.01 per call",
+      "description": "Proposes short product names for an idea, filtered against a list of over-used startup stems. For a founder or an agent naming something new.\n\nYou provide: idea (string).\n\nYou receive: a handful of candidate names, each with the reasoning behind it.",
+      "schemaUrl": "https://asp.untch.xyz/schema/suggest_names",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "rank_options",
+      "name": "Name ranking",
+      "endpoint": "https://asp.untch.xyz/builder/rank_options",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Orders a list of candidate names by length, character set and how easily they are said. For someone choosing between names they already have.\n\nYou provide: names (array).\n\nYou receive: the names in ranked order with their scores.",
+      "schemaUrl": "https://asp.untch.xyz/schema/rank_options",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "check_domains",
+      "name": "Domain availability",
+      "endpoint": "https://asp.untch.xyz/builder/check_domains",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Asks the registries whether the domains for a list of names are taken. For someone checking whether a name is usable before committing to it.\n\nYou provide: names (array).\n\nYou receive: one availability verdict per domain, with the registry response behind it.",
+      "schemaUrl": "https://asp.untch.xyz/schema/check_domains",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "seo_tips",
+      "name": "Launch checklist",
+      "endpoint": "https://asp.untch.xyz/builder/seo_tips",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Returns a short launch checklist for a chosen brand name. For someone who has picked a name and is about to launch.\n\nYou provide: name (string).\n\nYou receive: a list of concrete steps, using the name given.",
+      "schemaUrl": "https://asp.untch.xyz/schema/seo_tips",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "brand_pack",
+      "name": "Launch brand pack",
+      "endpoint": "https://asp.untch.xyz/builder/brand_pack",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "$0.05 per call",
+      "description": "Runs naming, domain checking, ranking and the launch checklist as one call. For a founder or an agent wanting a first pass at a brand in a single request.\n\nYou provide: idea (string).\n\nYou receive: candidate names, their domain verdicts, a ranking, and a launch checklist.",
+      "schemaUrl": "https://asp.untch.xyz/schema/brand_pack",
+      "schemaVersion": "1.0.0"
+    }
+  ],
+  "withheld": [
+    {
+      "toolId": "preflight_payment",
+      "listable": false,
+      "blockedBy": [
+        "A registered spend policy, and its numeric policyId.",
+        "The policyHash of that policy — the exact hash the registry stored when it was registered."
+      ]
+    },
+    {
+      "toolId": "verify_delivery",
+      "listable": false,
+      "blockedBy": [
+        "A registered spend policy, and its numeric policyId.",
+        "The policyHash of that policy — the exact hash the registry stored when it was registered.",
+        "The acceptanceHash that was committed when the work was commissioned."
+      ]
+    },
+    {
+      "toolId": "create_spend_intent",
+      "listable": false,
+      "blockedBy": [
+        "A registered spend policy, and its numeric policyId.",
+        "The policyHash of that policy — the exact hash the registry stored when it was registered."
+      ]
+    },
+    {
+      "toolId": "get_ledger",
+      "listable": false,
+      "blockedBy": [
+        "A registered spend policy, and its numeric policyId."
+      ]
+    },
+    {
+      "toolId": "score_vendor",
+      "listable": false,
+      "blockedBy": [
+        "Receipt history for that vendor, held by this host."
+      ]
+    },
+    {
+      "toolId": "score_buyer",
+      "listable": false,
+      "blockedBy": [
+        "Receipt history for that buyer, held by this host."
+      ]
+    },
+    {
+      "toolId": "generate_dispute_packet",
+      "listable": false,
+      "blockedBy": [
+        "An intentHash this host has history for."
+      ]
+    },
+    {
+      "toolId": "reconcile_agent_spend",
+      "listable": false,
+      "blockedBy": [
+        "Receipt and ledger history for that agent in that period."
+      ]
+    }
+  ]
+}
