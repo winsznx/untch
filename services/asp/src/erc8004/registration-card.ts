@@ -11,6 +11,7 @@ import {
   ERC8004_AGENT_REGISTRY,
   ERC8004_REGISTRATION_TYPE,
 } from "./constants";
+import { SERVICES } from "../registry/services";
 
 export type AgentService = {
   readonly name: string;
@@ -86,60 +87,25 @@ function buildServices(baseUrl: string, payTo: string | null): AgentService[] {
       description:
         "Untch multi-service ASP catalog (plain x402 HTTP tools; not a formal MCP JSON-RPC host)",
     },
-    {
-      name: "service",
-      endpoint: `${asp}/ping_untch`,
-      version: "1.0.0",
-      description: "Health / x402 rail proof ($0.01 USDT0)",
-    },
-    {
-      name: "service",
-      endpoint: `${asp}/preflight_payment`,
-      version: "1.0.0",
-      description: "Policy preflight ($0.05) — 13 RULE_EVAL, deterministic, no LLM on money path",
-    },
-    {
-      name: "service",
-      endpoint: `${asp}/verify_delivery`,
-      version: "1.0.0",
-      description: "T0 delivery verification ($0.10)",
-    },
-    {
-      name: "service",
-      endpoint: `${asp}/score_vendor`,
-      version: "1.0.0",
-      description: "Receipt-backed vendor score ($0.20)",
-    },
-    {
-      name: "service",
-      endpoint: `${asp}/score_buyer`,
-      version: "1.0.0",
-      description: "Receipt-backed buyer hygiene score ($0.20)",
-    },
-    {
-      name: "service",
-      endpoint: `${asp}/generate_dispute_packet`,
-      version: "1.0.0",
-      description: "Dispute evidence packet ($0.50)",
-    },
-    {
-      name: "service",
-      endpoint: `${asp}/reconcile_agent_spend`,
-      version: "1.0.0",
-      description: "Spend reconciliation report ($0.25)",
-    },
-    {
-      name: "service",
-      endpoint: `${asp}/cafe/menu`,
-      version: "1.0.0",
-      description: "Lifestyle demo café menu (free) + paid latte order",
-    },
-    {
-      name: "service",
-      endpoint: `${asp}/builder/brand_pack`,
-      version: "1.0.0",
-      description: "Hireable Launch Pack: names + live RDAP domains + rank + SEO ($0.05)",
-    },
+    /**
+     * One entry per registered service, generated rather than typed.
+     *
+     * These were eleven hand-written strings, and they were one of the six places the same contract
+     * was described. `/agent-registration.json` said policy preflight was "13 RULE_EVAL,
+     * deterministic, no LLM on money path" — accurate about the engine, silent about every parameter,
+     * and unreconciled against the validator that demanded seventeen fields. Each entry now carries
+     * the registry's own summary and a link to the full contract, so a reader of the card and a
+     * reader of the schema cannot be told different things.
+     *
+     * `version` is the service's schemaVersion, not a build number: what a consumer of this card
+     * needs to know is whether the CONTRACT changed.
+     */
+    ...SERVICES.map((service) => ({
+      name: "service" as const,
+      endpoint: `${asp}${service.path}`,
+      version: service.schemaVersion,
+      description: `${service.publicName} — ${service.summary} Contract: ${asp}/schema/${service.toolId}`,
+    })),
     {
       name: "OASF",
       endpoint: `${asp}/catalog`,

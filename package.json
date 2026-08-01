@@ -61,7 +61,9 @@
     "promote:capability": "tsx scripts/promote-capability.ts",
     "gen:chains": "tsx scripts/gen-chain-registry.ts",
     "lint:surface": "tsx scripts/lint-production-surface.ts",
-    "test:chain-truth": "node --import tsx --test packages/shared/test/*.test.ts scripts/test/production-surface.test.ts"
+    "test:chain-truth": "node --import tsx --test packages/shared/test/*.test.ts scripts/test/production-surface.test.ts",
+    "gen:schemas": "tsx scripts/gen-service-schemas.ts",
+    "test:schemas": "node --import tsx --test services/asp/test/service-registry.test.ts scripts/test/service-schema-drift.test.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",

@@ -1,0 +1,75 @@
+# The service-contract gate.
+#
+# WHY ITS OWN WORKFLOW
+#
+# The cold relisting audit traced one service contract to six places, none generated from another, and
+# the only one that was enforced — the validators — disagreed with all five of the others. The listing
+# said a service needed three things; the validator demanded seventeen. The 402 body was `{}`, so the
+# only way to learn what a tool took was to pay for a refusal.
+#
+# The registry makes the validators the single source. This workflow is what stops a seventh copy from
+# appearing: the committed artefacts must equal what the registry produces today, so a definition
+# change that lands without regenerated artefacts fails rather than quietly reintroducing the drift.
+#
+# The path filter covers the registry, the generators and the served routes. It also covers the
+# ERC-8004 card, because its service list is now generated too — a change there that is not a
+# regeneration is exactly the hand-edit this exists to catch.
+name: service-schema
+
+on:
+  push:
+    paths:
+      - "services/asp/src/registry/**"
+      - "services/asp/src/erc8004/**"
+      - "services/asp/src/server.ts"
+      - "services/asp/generated/**"
+      - "services/asp/test/service-registry.test.ts"
+      - "scripts/gen-service-schemas.ts"
+      - "scripts/test/service-schema-drift.test.ts"
+      - ".github/workflows/service-schema.yml"
+  pull_request:
+    paths:
+      - "services/asp/src/registry/**"
+      - "services/asp/src/erc8004/**"
+      - "services/asp/src/server.ts"
+      - "services/asp/generated/**"
+      - "services/asp/test/service-registry.test.ts"
+      - "scripts/gen-service-schemas.ts"
+      - "scripts/test/service-schema-drift.test.ts"
+      - ".github/workflows/service-schema.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  service-schema:
+    name: one contract, published, no drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: services/asp typecheck (own tsconfig)
+        run: pnpm --filter @untch/asp typecheck
+
+      # The registry's own properties first: three-part descriptions, examples that pass their own
+      # schema, examples that are actually refused, and a service nobody can complete not being listed.
+      # A drift check over artefacts generated from a registry that no longer holds those would pass
+      # while publishing something wrong.
+      - name: Registry and listing tests
+        run: pnpm test:schemas
+
+      - name: Generated artefacts are in sync
+        run: pnpm gen:schemas --check

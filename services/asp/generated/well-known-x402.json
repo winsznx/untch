@@ -1,0 +1,244 @@
+{
+  "x402Version": 2,
+  "network": "eip155:196",
+  "payTo": "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
+  "asset": {
+    "symbol": "USD₮",
+    "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+    "decimals": 6
+  },
+  "schemaIndex": "https://asp.untch.xyz/schema",
+  "openapi": "https://asp.untch.xyz/openapi.json",
+  "resources": [
+    {
+      "toolId": "ping_untch",
+      "name": "Rail ping",
+      "resource": "https://asp.untch.xyz/ping_untch",
+      "method": "GET",
+      "scheme": "exact",
+      "price": "$0.01",
+      "amountBaseUnits": "10000",
+      "description": "Confirms that a paid call to this host settles end to end.",
+      "schema": "https://asp.untch.xyz/schema/ping_untch",
+      "schemaVersion": "1.0.0",
+      "idempotency": "not-idempotent",
+      "maturity": "live"
+    },
+    {
+      "toolId": "preflight_payment",
+      "name": "Policy preflight",
+      "resource": "https://asp.untch.xyz/preflight_payment",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.05",
+      "amountBaseUnits": "50000",
+      "description": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it.",
+      "schema": "https://asp.untch.xyz/schema/preflight_payment",
+      "schemaVersion": "1.0.0",
+      "idempotency": "not-idempotent",
+      "maturity": "blocked"
+    },
+    {
+      "toolId": "verify_delivery",
+      "name": "Delivery verify",
+      "resource": "https://asp.untch.xyz/verify_delivery",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.10",
+      "amountBaseUnits": "100000",
+      "description": "Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict.",
+      "schema": "https://asp.untch.xyz/schema/verify_delivery",
+      "schemaVersion": "1.0.0",
+      "idempotency": "not-idempotent",
+      "maturity": "blocked"
+    },
+    {
+      "toolId": "detect_duplicate",
+      "name": "Duplicate check",
+      "resource": "https://asp.untch.xyz/detect_duplicate",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.02",
+      "amountBaseUnits": "20000",
+      "description": "Says whether this exact task, endpoint and parameter set was already paid for recently.",
+      "schema": "https://asp.untch.xyz/schema/detect_duplicate",
+      "schemaVersion": "1.0.0",
+      "idempotency": "read-only",
+      "maturity": "demo"
+    },
+    {
+      "toolId": "redact_payment_metadata",
+      "name": "Metadata redaction",
+      "resource": "https://asp.untch.xyz/redact_payment_metadata",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.02",
+      "amountBaseUnits": "20000",
+      "description": "Strips emails, phone numbers, API keys and bearer tokens out of payment metadata and hashes what is left.",
+      "schema": "https://asp.untch.xyz/schema/redact_payment_metadata",
+      "schemaVersion": "1.0.0",
+      "idempotency": "idempotent",
+      "maturity": "live"
+    },
+    {
+      "toolId": "score_vendor",
+      "name": "Vendor score",
+      "resource": "https://asp.untch.xyz/score_vendor",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.20",
+      "amountBaseUnits": "200000",
+      "description": "Scores how reliably a vendor has delivered, from receipts this host holds.",
+      "schema": "https://asp.untch.xyz/schema/score_vendor",
+      "schemaVersion": "1.0.0",
+      "idempotency": "read-only",
+      "maturity": "blocked"
+    },
+    {
+      "toolId": "score_buyer",
+      "name": "Buyer score",
+      "resource": "https://asp.untch.xyz/score_buyer",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.20",
+      "amountBaseUnits": "200000",
+      "description": "Scores how well a buyer has behaved — paying, not disputing spuriously, not retrying blindly.",
+      "schema": "https://asp.untch.xyz/schema/score_buyer",
+      "schemaVersion": "1.0.0",
+      "idempotency": "read-only",
+      "maturity": "blocked"
+    },
+    {
+      "toolId": "generate_dispute_packet",
+      "name": "Dispute packet",
+      "resource": "https://asp.untch.xyz/generate_dispute_packet",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.50",
+      "amountBaseUnits": "500000",
+      "description": "Assembles everything this host recorded about one payment into a single hashed evidence bundle.",
+      "schema": "https://asp.untch.xyz/schema/generate_dispute_packet",
+      "schemaVersion": "1.0.0",
+      "idempotency": "idempotent",
+      "maturity": "blocked"
+    },
+    {
+      "toolId": "reconcile_agent_spend",
+      "name": "Spend reconciliation",
+      "resource": "https://asp.untch.xyz/reconcile_agent_spend",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.25",
+      "amountBaseUnits": "250000",
+      "description": "Totals what one agent spent over a period, and what was blocked before it spent.",
+      "schema": "https://asp.untch.xyz/schema/reconcile_agent_spend",
+      "schemaVersion": "1.0.0",
+      "idempotency": "idempotent",
+      "maturity": "blocked"
+    },
+    {
+      "toolId": "cafe_order_latte",
+      "name": "Café order",
+      "resource": "https://asp.untch.xyz/cafe/order/latte",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.04",
+      "amountBaseUnits": "40000",
+      "description": "Buys a demonstration coffee voucher, to show a real payment against a real policy.",
+      "schema": "https://asp.untch.xyz/schema/cafe_order_latte",
+      "schemaVersion": "1.0.0",
+      "idempotency": "not-idempotent",
+      "maturity": "demo"
+    },
+    {
+      "toolId": "suggest_names",
+      "name": "Product name suggestions",
+      "resource": "https://asp.untch.xyz/builder/suggest_names",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.01",
+      "amountBaseUnits": "10000",
+      "description": "Proposes short product names for an idea, filtered against a list of over-used startup stems.",
+      "schema": "https://asp.untch.xyz/schema/suggest_names",
+      "schemaVersion": "1.0.0",
+      "idempotency": "not-idempotent",
+      "maturity": "demo"
+    },
+    {
+      "toolId": "brand_pack",
+      "name": "Launch brand pack",
+      "resource": "https://asp.untch.xyz/builder/brand_pack",
+      "method": "POST",
+      "scheme": "exact",
+      "price": "$0.05",
+      "amountBaseUnits": "50000",
+      "description": "Runs naming, domain checking, ranking and the launch checklist as one call.",
+      "schema": "https://asp.untch.xyz/schema/brand_pack",
+      "schemaVersion": "1.0.0",
+      "idempotency": "not-idempotent",
+      "maturity": "blocked"
+    }
+  ],
+  "freeResources": [
+    {
+      "toolId": "catalog",
+      "resource": "https://asp.untch.xyz/catalog",
+      "method": "GET",
+      "schema": "https://asp.untch.xyz/schema/catalog"
+    },
+    {
+      "toolId": "create_spend_intent",
+      "resource": "https://asp.untch.xyz/create_spend_intent",
+      "method": "POST",
+      "schema": "https://asp.untch.xyz/schema/create_spend_intent"
+    },
+    {
+      "toolId": "get_ledger",
+      "resource": "https://asp.untch.xyz/get_ledger",
+      "method": "POST",
+      "schema": "https://asp.untch.xyz/schema/get_ledger"
+    },
+    {
+      "toolId": "log_receipt",
+      "resource": "https://asp.untch.xyz/log_receipt",
+      "method": "POST",
+      "schema": "https://asp.untch.xyz/schema/log_receipt"
+    },
+    {
+      "toolId": "receipt_status",
+      "resource": "https://asp.untch.xyz/receipt_status/{receiptId}",
+      "method": "GET",
+      "schema": "https://asp.untch.xyz/schema/receipt_status"
+    },
+    {
+      "toolId": "escalation_status",
+      "resource": "https://asp.untch.xyz/escalation_status/{pollRef}",
+      "method": "GET",
+      "schema": "https://asp.untch.xyz/schema/escalation_status"
+    },
+    {
+      "toolId": "cafe_menu",
+      "resource": "https://asp.untch.xyz/cafe/menu",
+      "method": "GET",
+      "schema": "https://asp.untch.xyz/schema/cafe_menu"
+    },
+    {
+      "toolId": "rank_options",
+      "resource": "https://asp.untch.xyz/builder/rank_options",
+      "method": "POST",
+      "schema": "https://asp.untch.xyz/schema/rank_options"
+    },
+    {
+      "toolId": "check_domains",
+      "resource": "https://asp.untch.xyz/builder/check_domains",
+      "method": "POST",
+      "schema": "https://asp.untch.xyz/schema/check_domains"
+    },
+    {
+      "toolId": "seo_tips",
+      "resource": "https://asp.untch.xyz/builder/seo_tips",
+      "method": "POST",
+      "schema": "https://asp.untch.xyz/schema/seo_tips"
+    }
+  ]
+}
