@@ -63,7 +63,8 @@
     "lint:surface": "tsx scripts/lint-production-surface.ts",
     "test:chain-truth": "node --import tsx --test packages/shared/test/*.test.ts scripts/test/production-surface.test.ts",
     "gen:schemas": "tsx scripts/gen-service-schemas.ts",
-    "test:schemas": "node --import tsx --test services/asp/test/service-registry.test.ts scripts/test/service-schema-drift.test.ts"
+    "test:schemas": "node --import tsx --test services/asp/test/service-registry.test.ts scripts/test/service-schema-drift.test.ts",
+    "test:accounts": "node --import tsx --test packages/consumer-core/test/accounts.test.ts packages/consumer-core/test/accounts-pg.test.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
