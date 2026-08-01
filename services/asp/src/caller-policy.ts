@@ -1,4 +1,4 @@
-import { xLayerTestnet } from "@untch/policy-store";
+import { activeChain, activeRpcUrl } from "@untch/shared";
 import {
   createPublicClient,
   createWalletClient,
@@ -55,7 +55,16 @@ export async function createPolicyViaEndpoint(args: {
   readonly rules: Record<string, unknown>;
   readonly rpcUrl?: string;
 }): Promise<CallerCreatedPolicy> {
-  const rpcUrl = args.rpcUrl ?? xLayerTestnet.rpcUrls.default.http[0]!;
+  /**
+   * The chain comes from the SAME env contract the seller resolves its own chain from.
+   *
+   * It was pinned to X Layer testnet. This is the helper a caller uses to obtain the policy id the two
+   * marketplace-listed services demand, so a testnet default meant the documented path to a usable
+   * policy quietly created one on a network production has never read. An explicit `rpcUrl` still
+   * wins; what changed is that the fallback follows CHAIN_ID/NETWORK instead of a retyped constant.
+   */
+  const chain = activeChain(process.env);
+  const rpcUrl = args.rpcUrl ?? activeRpcUrl(process.env);
   const account = privateKeyToAccount(args.callerKey);
 
   // 1) ask the seller to BUILD the unsigned registerPolicy call.
@@ -74,17 +83,17 @@ export async function createPolicyViaEndpoint(args: {
   }
 
   // 2) the CALLER's own wallet signs + submits the built calldata (caller becomes the on-chain owner).
-  const pub = createPublicClient({ chain: xLayerTestnet, transport: http(rpcUrl) });
+  const pub = createPublicClient({ chain, transport: http(rpcUrl) });
   const balance = await pub.getBalance({ address: account.address });
   if (balance === 0n) {
     throw new Error(
-      `caller ${account.address} has 0 OKB on X Layer testnet — fund it to submit registerPolicy (the seller no longer signs on your behalf)`,
+      `caller ${account.address} has 0 OKB on ${chain.name} (chain ${chain.id}) — fund it to submit registerPolicy (the seller no longer signs on your behalf)`,
     );
   }
-  const wallet = createWalletClient({ account, chain: xLayerTestnet, transport: http(rpcUrl) });
+  const wallet = createWalletClient({ account, chain, transport: http(rpcUrl) });
   const registerTx = await wallet.sendTransaction({
     account,
-    chain: xLayerTestnet,
+    chain,
     to: to as Address,
     data: calldata as Hex,
   });

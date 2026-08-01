@@ -58,7 +58,10 @@
     "solana:rpc-gate": "tsx scripts/solana-rpc-gate.ts",
     "solana:gate:status": "tsx scripts/solana-proof-gate-status.ts",
     "solana:proof:preflight": "tsx scripts/solana-proof-preflight.ts",
-    "promote:capability": "tsx scripts/promote-capability.ts"
+    "promote:capability": "tsx scripts/promote-capability.ts",
+    "gen:chains": "tsx scripts/gen-chain-registry.ts",
+    "lint:surface": "tsx scripts/lint-production-surface.ts",
+    "test:chain-truth": "node --import tsx --test packages/shared/test/*.test.ts scripts/test/production-surface.test.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",

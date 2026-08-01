@@ -18,6 +18,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { RouteConfig } from "@okxweb3/x402-core/server";
 import type { Network } from "@okxweb3/x402-core/types";
 import { publicToolStateFor, toSseFrame, type ConsumerActionType } from "@untch/consumer-core";
+import { SIGNIN_CHAIN_IDS } from "@untch/shared";
 import type { HandlerResult } from "../handlers";
 import { attachSseStream } from "./dispatcher";
 import {
@@ -475,7 +476,9 @@ export function registerConsumerRoutes(
               "untch:policy:<policyId> — REQUIRED. Binds this session to one policy; the signer must be its on-chain owner.",
               "untch:agent:<agentId> — optional. Recorded on the session for audit.",
             ],
-            chains: [196, 195],
+            // Advertised from the same set /verify enforces. Two hand-written lists is how this route
+            // came to publish 195, a chain the verifier would accept and no RPC would answer.
+            chains: [...SIGNIN_CHAIN_IDS],
             note:
               "Sign a SIWE message naming this domain, this nonce and an X Layer chainId, then POST " +
               "{message, signature} to /consumer/auth/verify.",

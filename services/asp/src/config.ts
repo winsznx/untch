@@ -168,6 +168,8 @@ export function loadSellerConfig(): SellerConfig {
 export function loadBuyerConfig(): BuyerConfig {
   return {
     buyerPrivateKey: asPrivateKey(requireEnv("BUYER_PRIVATE_KEY"), "BUYER_PRIVATE_KEY"),
+    // loadBuyerConfig is called only by `pnpm pay` and the proof drivers; nothing the seller serves
+    // reads it. production-surface-allow: localhost — the local buyer driver's own default target.
     sellerUrl: process.env.SELLER_URL ?? `http://localhost:${resolvePort()}`,
   };
 }

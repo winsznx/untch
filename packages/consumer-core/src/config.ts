@@ -78,7 +78,13 @@ export interface RailKeys {
  * that gets set in production during an incident, and no legitimate local flow needs these keys to
  * pass through `loadRailKeys` — the local scripts import them directly.
  */
-const WELL_KNOWN_DEV_KEYS: ReadonlySet<string> = new Set([
+/**
+ * Exported so the production-surface scanner enforces the SAME list rather than keeping its own.
+ *
+ * A scanner with a private copy of this list would eventually cover four of the five keys, and the
+ * fifth would be the one somebody pasted. One list, two consumers.
+ */
+export const WELL_KNOWN_DEV_KEYS: ReadonlySet<string> = new Set([
   // Anvil / Hardhat default account #0
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
   // Anvil / Hardhat default account #1 — the one GitGuardian flags in this repository
