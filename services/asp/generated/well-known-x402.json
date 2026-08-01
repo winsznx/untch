@@ -34,7 +34,7 @@
       "amountBaseUnits": "50000",
       "description": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it.",
       "schema": "https://asp.untch.xyz/schema/preflight_payment",
-      "schemaVersion": "1.0.0",
+      "schemaVersion": "2.0.0",
       "idempotency": "not-idempotent",
       "maturity": "blocked"
     },
@@ -48,7 +48,7 @@
       "amountBaseUnits": "100000",
       "description": "Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict.",
       "schema": "https://asp.untch.xyz/schema/verify_delivery",
-      "schemaVersion": "1.0.0",
+      "schemaVersion": "2.0.0",
       "idempotency": "not-idempotent",
       "maturity": "blocked"
     },

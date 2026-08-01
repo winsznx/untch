@@ -41,117 +41,69 @@
     {
       "toolId": "preflight_payment",
       "kind": "valid",
-      "title": "Judge a $1.50 API call against policy 7",
+      "title": "Check a domain registration against policy 7 before paying for it",
       "method": "POST",
       "path": "/preflight_payment",
       "request": {
         "policyId": "7",
-        "intent": {
-          "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-          "buyerAgentId": "6047",
-          "workerAgentId": "6086",
-          "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-          "maxAmount": "2000000",
-          "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-          "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-          "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-          "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-          "deadline": "1790000000",
-          "nonce": "1",
-          "endpoint": "https://asp.untch.xyz/ping_untch",
-          "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-          "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-          "category": "api",
-          "amount": 1.5
-        }
+        "provider": "stabledomains",
+        "capability": "domains.register",
+        "task": "Register kyrve.xyz for one year",
+        "maxSpend": "20.00",
+        "currency": "USDT0",
+        "deadline": "2026-08-02T12:00:00.000Z",
+        "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
+        "parameters": {
+          "domain": "kyrve.xyz",
+          "years": 1
+        },
+        "buyerAgentId": "6047",
+        "workerAgentId": "6086"
       }
     },
     {
       "toolId": "preflight_payment",
       "kind": "refused",
-      "title": "Send maxAmount as a JSON number instead of a decimal string",
+      "title": "Name neither a policy nor the default one",
       "method": "POST",
       "path": "/preflight_payment",
       "request": {
-        "policyId": "7",
-        "intent": {
-          "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-          "buyerAgentId": "6047",
-          "workerAgentId": "6086",
-          "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-          "maxAmount": 2000000,
-          "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-          "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-          "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-          "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-          "deadline": "1790000000",
-          "nonce": "1",
-          "endpoint": "https://asp.untch.xyz/ping_untch",
-          "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-          "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-          "category": "api",
-          "amount": 1.5
-        }
+        "provider": "stabledomains",
+        "capability": "domains.register",
+        "task": "Register kyrve.xyz for one year",
+        "maxSpend": "20.00",
+        "currency": "USDT0",
+        "deadline": "2026-08-02T12:00:00.000Z",
+        "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
+        "parameters": {
+          "domain": "kyrve.xyz",
+          "years": 1
+        },
+        "buyerAgentId": "6047",
+        "workerAgentId": "6086"
       },
-      "expectRefusalCode": "INTENT_MALFORMED"
+      "expectRefusalCode": "POLICY_NOT_SELECTED"
     },
     {
       "toolId": "verify_delivery",
       "kind": "valid",
-      "title": "Verify a delivery against policy 7",
+      "title": "Verify one intent",
       "method": "POST",
       "path": "/verify_delivery",
       "request": {
-        "policyId": "7",
-        "intent": {
-          "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-          "buyerAgentId": "6047",
-          "workerAgentId": "6086",
-          "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-          "maxAmount": "2000000",
-          "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-          "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-          "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-          "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-          "deadline": "1790000000",
-          "nonce": "1",
-          "endpoint": "https://asp.untch.xyz/ping_untch",
-          "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-          "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-          "category": "api",
-          "amount": 1.5
-        },
-        "payloadHash": "0x6666666666666666666666666666666666666666666666666666666666666666"
+        "intentId": "0x1111111111111111111111111111111111111111111111111111111111111111"
       }
     },
     {
       "toolId": "verify_delivery",
       "kind": "refused",
-      "title": "Omit both the delivered result and its hash",
+      "title": "Omit the intent id",
       "method": "POST",
       "path": "/verify_delivery",
       "request": {
-        "policyId": "7",
-        "intent": {
-          "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-          "buyerAgentId": "6047",
-          "workerAgentId": "6086",
-          "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-          "maxAmount": "2000000",
-          "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-          "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-          "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-          "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-          "deadline": "1790000000",
-          "nonce": "1",
-          "endpoint": "https://asp.untch.xyz/ping_untch",
-          "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-          "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-          "category": "api",
-          "amount": 1.5
-        }
+        "expectedResultHash": "0x6666666666666666666666666666666666666666666666666666666666666666"
       },
-      "expectRefusalCode": "DELIVERY_REQUIRED"
+      "expectRefusalCode": "REQUEST_SCHEMA_VIOLATION"
     },
     {
       "toolId": "create_spend_intent",

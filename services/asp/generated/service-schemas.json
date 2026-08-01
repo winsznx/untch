@@ -171,16 +171,16 @@
         "amountBaseUnits": "50000"
       },
       "maturity": "blocked",
-      "schemaVersion": "1.0.0",
+      "schemaVersion": "2.0.0",
       "description": {
         "what": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.",
-        "provide": "You provide: policyId (string); either intent, containing all 16 of: owner, buyerAgentId, workerAgentId, token, maxAmount, taskHash, acceptanceHash, schemaHash, policyHash, deadline, nonce, endpoint, paramsHash, recipientAddress, category, amount, or intentHash (string).",
+        "provide": "You provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).",
         "receive": "You receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision."
       },
       "input": {
         "type": "object",
         "title": "PreflightRequest",
-        "description": "Either an inline intent, or the hash of one already created through create_spend_intent on THIS instance.",
+        "description": "A payment you are considering, in your own terms. Every protocol value — the policy hash, the token contract, the hashes of the things you describe below, the nonce, the endpoint — is derived server-side from production state and returned to you, so there is nothing here you have to look up first.",
         "properties": {
           "policyId": {
             "type": "string",
@@ -190,188 +190,108 @@
               "7"
             ]
           },
-          "intent": {
-            "type": "object",
-            "title": "SpendIntent",
-            "description": "The bounded object a spend decision is made about. Eleven of these fields are hashed together into the intentHash that the receipt commits to; the remaining five are the operational values the rules read.",
-            "properties": {
-              "owner": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{40}$",
-                "description": "The address that owns the policy this intent is judged against.",
-                "examples": [
-                  "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
-                ]
-              },
-              "buyerAgentId": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "The ERC-8004 agent id of the agent doing the spending. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "workerAgentId": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "The ERC-8004 agent id of the agent being paid. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "token": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{40}$",
-                "description": "The ERC-20 the payment settles in.",
-                "examples": [
-                  "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
-                ]
-              },
-              "maxAmount": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "The ceiling for this payment, in the token's BASE UNITS. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "taskHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "A hash of the task description this payment is for.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "acceptanceHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "A hash of the acceptance criteria delivery will later be judged against.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "schemaHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "A hash of the schema the delivered result must conform to.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "policyHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "The stored hash of the policy named by policyId. Must match exactly.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "deadline": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "Unix seconds after which this intent is no longer valid. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "nonce": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "A value that makes this intent distinct from an otherwise identical one. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The absolute URL the payment is for. Must be absolute, including the scheme.",
-                "pattern": "^https?://",
-                "examples": [
-                  "https://asp.untch.xyz/ping_untch"
-                ]
-              },
-              "paramsHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "A hash of the parameters that will be sent to that endpoint.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "recipientAddress": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{40}$",
-                "description": "The address that will receive the funds.",
-                "examples": [
-                  "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
-                ]
-              },
-              "category": {
-                "type": "string",
-                "minLength": 1,
-                "description": "The spend category, as your policy names it. Used by category rules.",
-                "examples": [
-                  "api"
-                ]
-              },
-              "amount": {
-                "type": "number",
-                "minimum": 0,
-                "description": "The amount in DISPLAY units, as a JSON NUMBER. This is the one field that must not be a string — every other numeric field above is a decimal string. The inversion is load-bearing: maxAmount is a uint256 ceiling in base units, and this is the human-scale figure the budget rules read.",
-                "examples": [
-                  1.5
-                ]
-              }
-            },
-            "required": [
-              "owner",
-              "buyerAgentId",
-              "workerAgentId",
-              "token",
-              "maxAmount",
-              "taskHash",
-              "acceptanceHash",
-              "schemaHash",
-              "policyHash",
-              "deadline",
-              "nonce",
-              "endpoint",
-              "paramsHash",
-              "recipientAddress",
-              "category",
-              "amount"
-            ]
+          "useDefaultPolicy": {
+            "type": "boolean",
+            "description": "Use the policy this account has marked as its default. Send this or policyId, not neither — a request that silently fell back to a default would be a request whose limits nobody chose."
           },
-          "intentHash": {
+          "provider": {
             "type": "string",
-            "pattern": "^0x[0-9a-fA-F]{64}$",
-            "description": "The hash of an intent previously created on this instance. Resolves from an in-memory cache, so it is lost on restart and unknown to any other instance.",
+            "minLength": 1,
+            "description": "The provider you want to pay, by its registered id.",
             "examples": [
-              "0xabababababababababababababababababababababababababababababababab"
+              "stabledomains"
             ]
           },
-          "vaultAddress": {
+          "capability": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What you want that provider to do, by its registered capability id.",
+            "examples": [
+              "domains.register"
+            ]
+          },
+          "task": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "What this payment is for, in a sentence a person would recognise.",
+            "examples": [
+              "Register kyrve.xyz for one year"
+            ]
+          },
+          "maxSpend": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)?$",
+            "description": "The most you will spend, in DISPLAY units — \"20.00\", not base units.",
+            "examples": [
+              "20.00"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The settlement currency's symbol. It must be one this network actually settles.",
+            "examples": [
+              "USDT0"
+            ]
+          },
+          "deadline": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+            "description": "After this the request is stale and must be rebuilt rather than replayed.",
+            "examples": [
+              "2026-08-01T12:00:00.000Z"
+            ]
+          },
+          "recipient": {
             "type": "string",
             "pattern": "^0x[0-9a-fA-F]{40}$",
-            "description": "Optional. When set, and an oracle key is configured, a Mode-C signature is returned.",
+            "description": "Optional. Constrains who may be paid. Without it, the recipient must come from a resolved quote.",
             "examples": [
               "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
             ]
+          },
+          "parameters": {
+            "type": "object",
+            "description": "Optional. The structured parameters that will be sent to the provider. Hashed and committed."
+          },
+          "acceptance": {
+            "type": "object",
+            "description": "Optional. What \"delivered\" will mean, committed NOW so that verification later has something to compare against. Without it the task text is used."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional. Makes a retry of an identical request resolve to the same intent rather than creating a second one."
+          },
+          "buyerAgentId": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Optional and temporary. Which agent is spending is a property of an account; send it explicitly until your wallet is bound to one."
+          },
+          "workerAgentId": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Optional and temporary. Which agent is being paid is a property of the provider's registration; send it explicitly until that binding exists."
           }
         },
         "required": [
-          "policyId"
+          "provider",
+          "capability",
+          "task",
+          "maxSpend",
+          "currency",
+          "deadline"
         ],
         "anyOf": [
           {
             "required": [
-              "intent"
+              "policyId"
             ]
           },
           {
             "required": [
-              "intentHash"
+              "useDefaultPolicy"
             ]
           }
         ]
@@ -427,64 +347,48 @@
       },
       "examples": {
         "valid": {
-          "title": "Judge a $1.50 API call against policy 7",
+          "title": "Check a domain registration against policy 7 before paying for it",
           "request": {
             "policyId": "7",
-            "intent": {
-              "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-              "buyerAgentId": "6047",
-              "workerAgentId": "6086",
-              "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-              "maxAmount": "2000000",
-              "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-              "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-              "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-              "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-              "deadline": "1790000000",
-              "nonce": "1",
-              "endpoint": "https://asp.untch.xyz/ping_untch",
-              "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-              "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-              "category": "api",
-              "amount": 1.5
-            }
+            "provider": "stabledomains",
+            "capability": "domains.register",
+            "task": "Register kyrve.xyz for one year",
+            "maxSpend": "20.00",
+            "currency": "USDT0",
+            "deadline": "2026-08-02T12:00:00.000Z",
+            "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
+            "parameters": {
+              "domain": "kyrve.xyz",
+              "years": 1
+            },
+            "buyerAgentId": "6047",
+            "workerAgentId": "6086"
           }
         },
         "refused": {
-          "title": "Send maxAmount as a JSON number instead of a decimal string",
+          "title": "Name neither a policy nor the default one",
           "request": {
-            "policyId": "7",
-            "intent": {
-              "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-              "buyerAgentId": "6047",
-              "workerAgentId": "6086",
-              "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-              "maxAmount": 2000000,
-              "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-              "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-              "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-              "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-              "deadline": "1790000000",
-              "nonce": "1",
-              "endpoint": "https://asp.untch.xyz/ping_untch",
-              "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-              "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-              "category": "api",
-              "amount": 1.5
-            }
+            "provider": "stabledomains",
+            "capability": "domains.register",
+            "task": "Register kyrve.xyz for one year",
+            "maxSpend": "20.00",
+            "currency": "USDT0",
+            "deadline": "2026-08-02T12:00:00.000Z",
+            "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
+            "parameters": {
+              "domain": "kyrve.xyz",
+              "years": 1
+            },
+            "buyerAgentId": "6047",
+            "workerAgentId": "6086"
           },
-          "refusalCode": "INTENT_MALFORMED"
+          "refusalCode": "POLICY_NOT_SELECTED"
         }
       },
       "predecessors": [
         {
           "what": "A registered spend policy, and its numeric policyId.",
           "why": "Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged.",
-          "obtainableBy": null
-        },
-        {
-          "what": "The policyHash of that policy — the exact hash the registry stored when it was registered.",
-          "why": "It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer.",
           "obtainableBy": null
         }
       ],
@@ -506,24 +410,39 @@
           "when": "no valid payment accompanied the request"
         },
         {
-          "code": "POLICY_ID_REQUIRED",
+          "code": "POLICY_NOT_SELECTED",
           "status": 400,
-          "when": "policyId is absent or is not a decimal string"
+          "when": "neither policyId nor useDefaultPolicy was given"
         },
         {
-          "code": "INTENT_REQUIRED",
+          "code": "REQUEST_SCHEMA_VIOLATION",
           "status": 400,
-          "when": "neither an inline intent nor an intentHash was given"
+          "when": "a field is missing or has the wrong shape; the message names each one"
         },
         {
-          "code": "INTENT_MALFORMED",
+          "code": "CURRENCY_NOT_SETTLEABLE",
           "status": 400,
-          "when": "a field of the intent has the wrong type or format"
+          "when": "this network has no confirmed contract for that currency"
         },
         {
-          "code": "INTENT_NOT_FOUND",
+          "code": "MAX_SPEND_INVALID",
+          "status": 400,
+          "when": "maxSpend is not a decimal amount the settlement token can express"
+        },
+        {
+          "code": "DEADLINE_IN_THE_PAST",
+          "status": 400,
+          "when": "the deadline has already passed"
+        },
+        {
+          "code": "RECIPIENT_INVALID",
+          "status": 400,
+          "when": "recipient was given but is not a 20-byte address"
+        },
+        {
+          "code": "PROVIDER_NOT_REGISTERED",
           "status": 404,
-          "when": "the intentHash is unknown to THIS instance"
+          "when": "no provider or capability with those ids is registered here"
         },
         {
           "code": "POLICY_NOT_FOUND",
@@ -531,9 +450,9 @@
           "when": "no policy with that id is stored"
         },
         {
-          "code": "POLICY_BINDING_MISMATCH",
-          "status": 400,
-          "when": "policyHash does not equal the stored policy's hash"
+          "code": "AUTHORITY_NOT_DERIVABLE",
+          "status": 409,
+          "when": "a protocol value cannot be derived without inventing it; the response names each one and what would supply it"
         },
         {
           "code": "POLICY_STORE_NOT_CONFIGURED",
@@ -555,234 +474,36 @@
         "amountBaseUnits": "100000"
       },
       "maturity": "blocked",
-      "schemaVersion": "1.0.0",
+      "schemaVersion": "2.0.0",
       "description": {
         "what": "Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict. For a buyer deciding whether work they commissioned has actually been delivered.",
-        "provide": "You provide: policyId (string); either intent, containing all 16 of: owner, buyerAgentId, workerAgentId, token, maxAmount, taskHash, acceptanceHash, schemaHash, policyHash, deadline, nonce, endpoint, paramsHash, recipientAddress, category, amount, or intentHash (string); either payload (object), or payloadHash (string).",
+        "provide": "You provide: intentId (string).",
         "receive": "You receive: a pass or fail verdict against the committed criteria, and a durable receipt of that verdict."
       },
       "input": {
         "type": "object",
         "title": "VerifyRequest",
+        "description": "Ask for a delivery to be checked against what was agreed. Only the intent id is needed; the policy, quote, execution, settlement, result and receipt are loaded here.",
         "properties": {
-          "policyId": {
-            "type": "string",
-            "pattern": "^[0-9]+$",
-            "description": "The id of a policy registered on the PolicyRegistry contract, as a decimal string. It names the spending rules this request is judged against.",
-            "examples": [
-              "7"
-            ]
-          },
-          "intent": {
-            "type": "object",
-            "title": "SpendIntent",
-            "description": "The bounded object a spend decision is made about. Eleven of these fields are hashed together into the intentHash that the receipt commits to; the remaining five are the operational values the rules read.",
-            "properties": {
-              "owner": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{40}$",
-                "description": "The address that owns the policy this intent is judged against.",
-                "examples": [
-                  "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
-                ]
-              },
-              "buyerAgentId": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "The ERC-8004 agent id of the agent doing the spending. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "workerAgentId": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "The ERC-8004 agent id of the agent being paid. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "token": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{40}$",
-                "description": "The ERC-20 the payment settles in.",
-                "examples": [
-                  "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
-                ]
-              },
-              "maxAmount": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "The ceiling for this payment, in the token's BASE UNITS. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "taskHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "A hash of the task description this payment is for.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "acceptanceHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "A hash of the acceptance criteria delivery will later be judged against.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "schemaHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "A hash of the schema the delivered result must conform to.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "policyHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "The stored hash of the policy named by policyId. Must match exactly.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "deadline": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "Unix seconds after which this intent is no longer valid. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "nonce": {
-                "type": "string",
-                "pattern": "^[0-9]+$",
-                "description": "A value that makes this intent distinct from an otherwise identical one. Sent as a DECIMAL STRING, not a JSON number — JSON numbers cannot carry uint256 without losing precision, so a number here is refused rather than rounded.",
-                "examples": [
-                  "1000000"
-                ]
-              },
-              "endpoint": {
-                "type": "string",
-                "description": "The absolute URL the payment is for. Must be absolute, including the scheme.",
-                "pattern": "^https?://",
-                "examples": [
-                  "https://asp.untch.xyz/ping_untch"
-                ]
-              },
-              "paramsHash": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{64}$",
-                "description": "A hash of the parameters that will be sent to that endpoint.",
-                "examples": [
-                  "0xabababababababababababababababababababababababababababababababab"
-                ]
-              },
-              "recipientAddress": {
-                "type": "string",
-                "pattern": "^0x[0-9a-fA-F]{40}$",
-                "description": "The address that will receive the funds.",
-                "examples": [
-                  "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
-                ]
-              },
-              "category": {
-                "type": "string",
-                "minLength": 1,
-                "description": "The spend category, as your policy names it. Used by category rules.",
-                "examples": [
-                  "api"
-                ]
-              },
-              "amount": {
-                "type": "number",
-                "minimum": 0,
-                "description": "The amount in DISPLAY units, as a JSON NUMBER. This is the one field that must not be a string — every other numeric field above is a decimal string. The inversion is load-bearing: maxAmount is a uint256 ceiling in base units, and this is the human-scale figure the budget rules read.",
-                "examples": [
-                  1.5
-                ]
-              }
-            },
-            "required": [
-              "owner",
-              "buyerAgentId",
-              "workerAgentId",
-              "token",
-              "maxAmount",
-              "taskHash",
-              "acceptanceHash",
-              "schemaHash",
-              "policyHash",
-              "deadline",
-              "nonce",
-              "endpoint",
-              "paramsHash",
-              "recipientAddress",
-              "category",
-              "amount"
-            ]
-          },
-          "intentHash": {
+          "intentId": {
             "type": "string",
             "pattern": "^0x[0-9a-fA-F]{64}$",
-            "description": "The hash of an intent previously created on this instance.",
+            "description": "The intent to verify, as returned when it was created.",
             "examples": [
               "0xabababababababababababababababababababababababababababababababab"
             ]
           },
-          "acceptanceCriteria": {
-            "type": "object",
-            "description": "Optional. The criteria to judge against, when they were not committed on the intent."
-          },
-          "payload": {
-            "type": "object",
-            "description": "The delivered result itself."
-          },
-          "payloadHash": {
+          "expectedResultHash": {
             "type": "string",
             "pattern": "^0x[0-9a-fA-F]{64}$",
-            "description": "A hash of the delivered result, when the result itself is not being sent.",
+            "description": "Optional. A hash you believe the result should have. It is compared and the comparison is reported, but it never overrides the acceptance criteria that were committed — asserting what an answer should be is not the same as it being what was agreed.",
             "examples": [
               "0xabababababababababababababababababababababababababababababababab"
             ]
           }
         },
         "required": [
-          "policyId"
-        ],
-        "allOf": [
-          {
-            "anyOf": [
-              {
-                "required": [
-                  "intent"
-                ]
-              },
-              {
-                "required": [
-                  "intentHash"
-                ]
-              }
-            ]
-          },
-          {
-            "anyOf": [
-              {
-                "required": [
-                  "payload"
-                ]
-              },
-              {
-                "required": [
-                  "payloadHash"
-                ]
-              }
-            ]
-          }
+          "intentId"
         ]
       },
       "output": {
@@ -820,54 +541,17 @@
       },
       "examples": {
         "valid": {
-          "title": "Verify a delivery against policy 7",
+          "title": "Verify one intent",
           "request": {
-            "policyId": "7",
-            "intent": {
-              "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-              "buyerAgentId": "6047",
-              "workerAgentId": "6086",
-              "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-              "maxAmount": "2000000",
-              "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-              "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-              "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-              "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-              "deadline": "1790000000",
-              "nonce": "1",
-              "endpoint": "https://asp.untch.xyz/ping_untch",
-              "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-              "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-              "category": "api",
-              "amount": 1.5
-            },
-            "payloadHash": "0x6666666666666666666666666666666666666666666666666666666666666666"
+            "intentId": "0x1111111111111111111111111111111111111111111111111111111111111111"
           }
         },
         "refused": {
-          "title": "Omit both the delivered result and its hash",
+          "title": "Omit the intent id",
           "request": {
-            "policyId": "7",
-            "intent": {
-              "owner": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-              "buyerAgentId": "6047",
-              "workerAgentId": "6086",
-              "token": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-              "maxAmount": "2000000",
-              "taskHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
-              "acceptanceHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-              "schemaHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
-              "policyHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
-              "deadline": "1790000000",
-              "nonce": "1",
-              "endpoint": "https://asp.untch.xyz/ping_untch",
-              "paramsHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
-              "recipientAddress": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
-              "category": "api",
-              "amount": 1.5
-            }
+            "expectedResultHash": "0x6666666666666666666666666666666666666666666666666666666666666666"
           },
-          "refusalCode": "DELIVERY_REQUIRED"
+          "refusalCode": "REQUEST_SCHEMA_VIOLATION"
         }
       },
       "predecessors": [
@@ -877,14 +561,9 @@
           "obtainableBy": null
         },
         {
-          "what": "The policyHash of that policy — the exact hash the registry stored when it was registered.",
-          "why": "It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer.",
-          "obtainableBy": null
-        },
-        {
-          "what": "The acceptanceHash that was committed when the work was commissioned.",
-          "why": "Verification compares against what was agreed BEFORE the work, which is the only comparison that means anything afterwards.",
-          "obtainableBy": null
+          "what": "An intent created on this host.",
+          "why": "Verification is about a specific commitment. Without one there is nothing to compare a delivery against.",
+          "obtainableBy": "the intentId returned by POST /preflight_payment or POST /create_spend_intent"
         }
       ],
       "sideEffects": [
@@ -901,44 +580,19 @@
           "when": "no valid payment accompanied the request"
         },
         {
-          "code": "POLICY_ID_REQUIRED",
+          "code": "REQUEST_SCHEMA_VIOLATION",
           "status": 400,
-          "when": "policyId is absent or is not a decimal string"
-        },
-        {
-          "code": "INTENT_REQUIRED",
-          "status": 400,
-          "when": "neither an inline intent nor an intentHash was given"
+          "when": "intentId is missing or is not a 32-byte hex string"
         },
         {
           "code": "INTENT_NOT_FOUND",
           "status": 404,
-          "when": "the intentHash is unknown to THIS instance"
+          "when": "no intent with that id is known here"
         },
         {
-          "code": "POLICY_NOT_FOUND",
-          "status": 404,
-          "when": "no policy with that id is stored"
-        },
-        {
-          "code": "POLICY_BINDING_MISMATCH",
-          "status": 400,
-          "when": "policyHash does not equal the stored policy's hash"
-        },
-        {
-          "code": "CRITERIA_MALFORMED",
-          "status": 400,
-          "when": "acceptanceCriteria was given but is not an object"
-        },
-        {
-          "code": "DELIVERY_REQUIRED",
-          "status": 400,
-          "when": "neither payload nor payloadHash was given"
-        },
-        {
-          "code": "DELIVERY_MALFORMED",
-          "status": 400,
-          "when": "payloadHash is not a 32-byte hex string"
+          "code": "EVIDENCE_INCOMPLETE",
+          "status": 409,
+          "when": "the record needed to judge this delivery is not all present; the response names which parts are missing rather than judging on less"
         }
       ]
     },
