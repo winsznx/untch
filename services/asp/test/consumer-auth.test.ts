@@ -184,10 +184,28 @@ describe("SIWE ownership — what an attacker would try", () => {
     assert.equal(r.code, "SIWE_WRONG_CHAIN");
   });
 
-  test("X Layer testnet is accepted — sign-in is identity, and it is the same key", async () => {
+  test("the LIVE X Layer testnet is accepted — sign-in is identity, and it is the same key", async () => {
+    const { nonce, d } = await deps();
+    const r = await authenticateSiwe({ message: siwe({ nonce, chainId: 1952 }), signature: SIG }, d);
+    assert.equal(r.ok, true);
+  });
+
+  /**
+   * This test previously asserted the defect: it accepted 195 and called it "X Layer testnet".
+   *
+   * 195 is the retired original testnet with no live RPC. Accepting it widened the set of messages
+   * that could mint a session to include one naming a chain this deployment cannot reach, while 1952
+   * — the testnet that answers — was refused. The refusal now names the replacement, because someone
+   * holding a 195 signature needs to know which id to sign for, not merely that they failed a check.
+   */
+  test("the RETIRED testnet is refused, and the refusal names the chain that replaced it", async () => {
     const { nonce, d } = await deps();
     const r = await authenticateSiwe({ message: siwe({ nonce, chainId: 195 }), signature: SIG }, d);
-    assert.equal(r.ok, true);
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.equal(r.code, "SIWE_WRONG_CHAIN");
+    assert.match(r.reason, /retired/);
+    assert.match(r.reason, /1952/);
   });
 
   test("a message with no policy resource cannot mint a session for an unspecified tenant", async () => {

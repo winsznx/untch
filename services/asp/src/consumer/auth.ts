@@ -28,14 +28,21 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { parseSiweMessage } from "viem/siwe";
 import { createPublicClient, http, type Address, type Hex } from "viem";
+import { SIGNIN_CHAIN_IDS, signInRefusal } from "@untch/shared";
 import type { PolicyProvider } from "@untch/policy-store";
 import type { Pool } from "@untch/consumer-core";
 import { tenantForPolicy } from "./tenant";
 
-/** X Layer mainnet and testnet. Sign-in is identity, so either proves control of the same key. */
-const X_LAYER_MAINNET = 196;
-const X_LAYER_TESTNET = 195;
-const SIGNIN_CHAINS = new Set<number>([X_LAYER_MAINNET, X_LAYER_TESTNET]);
+/**
+ * Which chains a sign-in may name — asked of the shared registry, never retyped here.
+ *
+ * It was retyped here, and the retyped value was 195: the DEPRECATED original X Layer testnet, which
+ * has no live RPC. So this route accepted signatures for a chain nothing can reach and refused the
+ * one that answers. Sign-in is identity and the same key signs on every chain, so the harm was not a
+ * misdirected payment — it was that the accepted set was decided in a file that had no way of knowing
+ * `chains.ts` had already recorded 195 as retired.
+ */
+const SIGNIN_CHAINS = new Set<number>(SIGNIN_CHAIN_IDS);
 
 const NONCE_TTL_MS = 10 * 60_000;
 const SESSION_TTL_MS = 30 * 60_000;
@@ -310,8 +317,17 @@ export async function authenticateSiwe(
       reason: `the message was signed for ${parsed.domain ?? "(none)"}, not ${deps.config.domain}`,
     };
   }
-  if (parsed.chainId === undefined || !SIGNIN_CHAINS.has(parsed.chainId)) {
+  if (parsed.chainId === undefined) {
     return { ok: false, code: "SIWE_WRONG_CHAIN", reason: "sign-in must name an X Layer chain" };
+  }
+  if (!SIGNIN_CHAINS.has(parsed.chainId)) {
+    // Named rather than generic: someone holding a 195 signature needs to be told the chain was
+    // retired and which id replaced it, not that their message failed an unspecified check.
+    return {
+      ok: false,
+      code: "SIWE_WRONG_CHAIN",
+      reason: signInRefusal(parsed.chainId) ?? "sign-in must name an X Layer chain",
+    };
   }
   if (parsed.expirationTime && parsed.expirationTime.getTime() <= now) {
     return { ok: false, code: "SIWE_EXPIRED", reason: "the message's own expirationTime has passed" };

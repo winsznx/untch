@@ -2,6 +2,7 @@ import {
   activeChain,
   activeRpcUrl,
   CONTRACTS_BY_CHAIN,
+  DEFAULT_CHAIN_ID,
   X_LAYER_MAINNET_ID,
   X_LAYER_TESTNET_ID,
 } from "@untch/shared";
@@ -15,17 +16,27 @@ import type { Address, Chain, Hex } from "viem";
  *     + the PolicyRegistry address, because it broadcasts real registerPolicy/updatePolicy/pausePolicy.
  *
  * The chain + RPC are resolved through the single shared source (packages/shared/src/chains.ts) via
- * the CHAIN_ID/NETWORK env contract — no chain constants live here. Default network is testnet.
+ * the CHAIN_ID/NETWORK env contract — no chain constants live here. The default network is whatever
+ * `DEFAULT_CHAIN_ID` says, which is mainnet.
  */
 
 export { X_LAYER_MAINNET_ID, X_LAYER_TESTNET_ID, xLayerMainnet, xLayerTestnet } from "@untch/shared";
 
 /**
- * Deployed PolicyRegistry (§10.1) on X Layer testnet — the anchoring target on the default network.
- * This is the POST-lint-fix redeploy (supersedes the earlier 0xc571…); see contracts/deploy/testnet-receipt.json.
- * Overridable via POLICY_REGISTRY, but never guess a different address — a stale one silently anchors to nothing.
+ * Deployed PolicyRegistry (§10.1) on the DEFAULT network — which is mainnet, the network this build
+ * ships on.
+ *
+ * It defaulted to testnet, with a module comment saying so, while `DEFAULT_CHAIN_ID` said mainnet.
+ * Production overrode it through `POLICY_REGISTRY`, so the wrong value never served — but a default
+ * that is only ever correct because something else overrides it is a trap with a timer on it: the
+ * first environment that forgets the override anchors policies to a network nobody is watching.
+ * The default now follows `DEFAULT_CHAIN_ID`, so there is one answer to "which network is default"
+ * rather than two that happen to disagree.
+ *
+ * Overridable via POLICY_REGISTRY, but never guess a different address — a stale one silently anchors
+ * to nothing.
  */
-export const POLICY_REGISTRY_DEFAULT: Address = CONTRACTS_BY_CHAIN[X_LAYER_TESTNET_ID]!.policyRegistry;
+export const POLICY_REGISTRY_DEFAULT: Address = CONTRACTS_BY_CHAIN[DEFAULT_CHAIN_ID]!.policyRegistry;
 
 /**
  * PolicyRegistry address per network, sourced from the shared CONTRACTS_BY_CHAIN registry (chains.ts)

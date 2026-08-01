@@ -1,0 +1,88 @@
+# The chain-truth gate.
+#
+# WHY ITS OWN WORKFLOW
+#
+# The cold relisting audit of 2026-08-01 found four independent testnet references in
+# production-visible code. None of them was caught by a type, a test or a review, and none of them
+# would have been caught by any existing workflow either: they were spread across services/asp,
+# packages/consumer-core and packages/policy-store, so no single path filter saw them together. What
+# they had in common was not a directory — it was a claim about which network this product runs on.
+#
+# So the filter here is deliberately wide. A chain claim can be made from anywhere, and the failure
+# mode this closes is precisely a change landing in a directory whose workflow does not think chains
+# are its business.
+#
+# Three gates:
+#
+#   1. the generated chain registry matches its TypeScript source (drift means two answers to
+#      "which chains exist", which is the state this whole change removes);
+#   2. the scanner's OWN tests pass, in both directions — it catches the four audit defects in the
+#      shape they shipped, and it does not flag the prose explaining why they are wrong. A scanner
+#      that has silently stopped catching anything passes every file it is pointed at;
+#   3. the scanner runs over the repository's production scopes.
+#
+# The deployment half of the scanner (`--deployment=<url>`) is NOT run here. It reads what production
+# is currently serving, which is an operator question about a specific deployment, not a property of
+# a commit — and a CI job that fails because production is mid-deploy teaches people to ignore it.
+name: chain-truth
+
+on:
+  push:
+    paths:
+      - "packages/shared/**"
+      - "packages/policy-store/src/config.ts"
+      - "packages/consumer-core/src/flags.ts"
+      - "packages/consumer-core/src/config.ts"
+      - "services/asp/src/**"
+      - "scripts/gen-chain-registry.ts"
+      - "scripts/lint-production-surface.ts"
+      - "scripts/test/production-surface.test.ts"
+      - ".github/workflows/chain-truth.yml"
+  pull_request:
+    paths:
+      - "packages/shared/**"
+      - "packages/policy-store/src/config.ts"
+      - "packages/consumer-core/src/flags.ts"
+      - "packages/consumer-core/src/config.ts"
+      - "services/asp/src/**"
+      - "scripts/gen-chain-registry.ts"
+      - "scripts/lint-production-surface.ts"
+      - "scripts/test/production-surface.test.ts"
+      - ".github/workflows/chain-truth.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  chain-truth:
+    name: one registry, no testnet in a production surface
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Root typecheck (packages/** + scripts/**)
+        run: pnpm typecheck
+
+      # Runs before the scanner, for the same reason public-copy.yml runs its linter's tests first:
+      # a green scan proves nothing unless the scanner still fails on what it was written for.
+      - name: Registry and scanner tests
+        run: pnpm test:chain-truth
+
+      - name: Generated chain registry is in sync
+        run: pnpm gen:chains --check
+
+      - name: No testnet reference in a production surface
+        run: pnpm lint:surface

@@ -740,6 +740,8 @@ if (isMain) {
         lifecycle.recordBaseTreasury(baseTreasuryAddress());
 
         createSellerApp(config, receiptWiring, policyWiring, escalationWiring, scoreWiring, reportWiring, consumerWiring, lifecycle).listen(config.port, () => {
+          // A boot line in the container's own stdout, addressed to whoever is reading the logs.
+          // production-surface-allow: localhost — it is not served to any caller.
           console.log(`[asp] listening on http://localhost:${config.port}`);
           console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
           console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canon hash + real-policy binding)`);

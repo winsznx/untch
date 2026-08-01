@@ -17,6 +17,7 @@
  * of those missing is a refusal with a named reason.
  */
 
+import { CHAIN_FLAG_ALIASES } from "@untch/shared";
 import type { AssetRef, CaipChainId } from "./assets";
 import { assetKey, describeAsset } from "./assets";
 
@@ -49,10 +50,18 @@ export function chainFlagName(chain: CaipChainId): string {
  * So both are read, with the canonical winning where it is explicitly set. That ordering matters:
  * it means a canonical `=0` cannot be overridden by a stale friendly `=1` left in an environment.
  */
+/**
+ * X Layer aliases come from the shared chain registry rather than being retyped.
+ *
+ * They were retyped, and `CONSUMER_XLAYER_TESTNET_ENABLED` was mapped onto `eip155:195` — the retired
+ * testnet. An operator setting that variable would have enabled a rail pointing at a chain with no
+ * live RPC, which is the precise failure the alias layer exists to prevent: believing you enabled
+ * something. Base is not in the registry (it is a settlement chain, not an Untch-contract chain) so
+ * it stays spelled out here.
+ */
 const CHAIN_ALIASES: Readonly<Record<string, string>> = {
   "eip155:8453": "CONSUMER_BASE_ENABLED",
-  "eip155:196": "CONSUMER_XLAYER_ENABLED",
-  "eip155:195": "CONSUMER_XLAYER_TESTNET_ENABLED",
+  ...CHAIN_FLAG_ALIASES,
 };
 
 const ASSET_ALIASES: Readonly<Record<string, string>> = {
