@@ -319,3 +319,33 @@ export {
   TreasuryRouter,
   assertRebalancingDisabled,
 } from "./treasury";
+
+/**
+ * The account model (migration 015).
+ *
+ * Exported beside the store rather than from a new package because it shares the pool, the migration
+ * runner and the tenancy vocabulary — and because a second package would need its own lockfile entry
+ * to say something the existing one already says.
+ */
+export {
+  AccountAuthorityError,
+  PgAccountStore,
+  newAccountId,
+  newDraftId,
+  normaliseAddress,
+  resolveScope,
+  type AccountStatus,
+  type AccountStore,
+  type ChainKind,
+  type MarketplaceBinding,
+  type MarketplaceProof,
+  type PolicyDraft,
+  type PolicyDraftStatus,
+  type PolicyLinkKind,
+  type Provenance,
+  type ResolvedScope,
+  type UntchAccount,
+  type WalletBinding,
+  type WalletProofKind,
+  type WalletRole,
+} from "./accounts";
