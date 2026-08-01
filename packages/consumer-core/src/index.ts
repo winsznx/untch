@@ -331,13 +331,21 @@ export {
   AccountAuthorityError,
   PgAccountStore,
   newAccountId,
+  newChannelBindingId,
   newDraftId,
+  newMarketplaceBindingId,
+  newWalletBindingId,
   normaliseAddress,
   resolveScope,
   type AccountStatus,
   type AccountStore,
+  type BindingScope,
+  type BindingStatus,
   type ChainKind,
+  type ChannelBinding,
+  type ChannelKind,
   type MarketplaceBinding,
+  type MarketplaceBindingStatus,
   type MarketplaceProof,
   type PolicyDraft,
   type PolicyDraftStatus,
@@ -349,3 +357,27 @@ export {
   type WalletProofKind,
   type WalletRole,
 } from "./accounts";
+
+/**
+ * Account linking (migration 016) — the one-time code that binds an identity and never a payment.
+ *
+ * Beside the account model for the same reason it is: same pool, same migration set, same vocabulary.
+ */
+export {
+  LINK_CODE_TTL_MS,
+  LINK_MAX_ATTEMPTS,
+  PgLinkRequestStore,
+  canonicaliseCode,
+  codeMatches,
+  hashCode,
+  newLinkCode,
+  newLinkRequestId,
+  returnUrlAllowed,
+  type CreatedLinkRequest,
+  type LinkRequest,
+  type LinkRequestContext,
+  type LinkRequestStatus,
+  type LinkRequestStore,
+  type RedeemFailure,
+  type RedeemOutcome,
+} from "./account-link";

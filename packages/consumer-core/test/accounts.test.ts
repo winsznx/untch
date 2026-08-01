@@ -66,6 +66,8 @@ describe("the migration path off policy-partition tenancy", () => {
       accountId: "acct_abcdefghijklmnopqrstuvwxyz",
       status: "ACTIVE" as const,
       displayName: null,
+      primaryWalletBindingId: null,
+      lastAuthenticatedAt: null,
       defaultPolicyId: null,
       lastUsedPolicyId: null,
       createdAt: "2026-08-01T00:00:00.000Z",
