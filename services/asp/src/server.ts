@@ -103,8 +103,8 @@ import { loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/
 import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
 import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
 import { challengeDescription, registerRegistryRoutes } from "./registry/routes";
-import { SERVICES } from "./registry/services";
 import { SETTLEMENT_TOKEN } from "./config";
+import { installUnhandledRejectionGuard, registerJsonErrorBoundary } from "./http-errors";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -614,14 +614,18 @@ export function createSellerApp(
    */
   registerConsumerVerifyRoutes(app, { wiring: consumerWiring });
 
-  // Turn a malformed-JSON body (express.json SyntaxError) into the §11 error envelope, not HTML.
-  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
-    if (err instanceof SyntaxError && "body" in err) {
-      res.status(400).json(errorBody("BODY_NOT_JSON", "request body is not valid JSON"));
-      return;
-    }
-    next(err);
-  });
+  /**
+   * The JSON error boundary, registered LAST and deliberately so.
+   *
+   * Everything above answers in the §11 envelope. Below this line Express used to answer for the
+   * requests nobody wrote a route for — with HTML, and with a stack trace attached whenever NODE_ENV
+   * is not "production", which on this deployment it is not. `GET /consumer/auth/nonce` is the case
+   * that made it concrete: an advertised path, the wrong verb, and an HTML page where the catalog
+   * promised a contract.
+   *
+   * It replaces the malformed-JSON handler that used to sit here, which is now one branch inside it.
+   */
+  registerJsonErrorBoundary(app);
 
   return app;
 }
@@ -687,6 +691,12 @@ function baseTreasuryAddress(): string | null {
 
 const isMain = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1]);
 if (isMain) {
+  /**
+   * Installed before anything can reject. A rejection during wiring would otherwise terminate the
+   * process before the lifecycle below has a chance to record why.
+   */
+  installUnhandledRejectionGuard();
+
   const config = loadSellerConfig();
 
   /**
