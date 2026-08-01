@@ -93,6 +93,7 @@ import {
 } from "./erc8004/constants";
 import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes";
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
+import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
@@ -567,6 +568,27 @@ export function createSellerApp(
     receiptWiring ? (receiptId) => receiptWiring.status(receiptId) : null,
     consumerAuth,
   );
+
+  /**
+   * The ACCOUNT surface — a wallet proving who it is, without naming a policy.
+   *
+   * Registered beside the policy-scoped auth routes rather than inside them because it answers a
+   * different question. `/consumer/auth/*` asks "may this signer read THIS policy" and needs the policy
+   * store to answer. This asks "who is this signer", which needs no policy to exist at all — and that
+   * is the whole point: a user with no policy yet is exactly the user who needs to sign in so they can
+   * create one.
+   */
+  const accountRoutesDeps =
+    consumerAuthConfig.secret && consumerWiring
+      ? makeAccountRoutesDeps({
+          pool: consumerWiring.pool,
+          verifier: makeSiweVerifier(process.env.XLAYER_RPC_URL?.trim() || "https://rpc.xlayer.tech"),
+          domain: consumerAuthConfig.domain,
+          publicBaseUrl: consumerWiring.publicBaseUrl,
+          secret: consumerAuthConfig.secret,
+        })
+      : null;
+  registerAccountRoutes(app, send, accountRoutesDeps);
 
   /**
    * The authenticated operator control surface.
