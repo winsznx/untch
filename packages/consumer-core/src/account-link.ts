@@ -124,6 +124,15 @@ export function codeMatches(candidate: string, storedHash: string): boolean {
  * An attacker-chosen return URL turns a link flow into an open redirect with a session at the end of
  * it. The allowlist is by ORIGIN and the comparison is exact — a `startsWith` check on the origin would
  * accept `https://asp.untch.xyz.evil.test`, which is a different host that happens to share a prefix.
+ *
+ * TLS IS REQUIRED, WITH NO DEVELOPMENT EXEMPTION
+ *
+ * An earlier draft waved through a plaintext loopback origin so a local dev server could be returned
+ * to. The production-surface scanner refused it, and the scanner was right: the exemption is a branch
+ * in shipped code whose only job is to relax a transport guarantee, and the condition it keys on is a
+ * hostname the request supplies. A deployment wanting a plaintext origin can put one in
+ * `allowedOrigins` explicitly and see it in its own configuration, which is the difference between a
+ * decision somebody made and a hole nobody noticed.
  */
 export function returnUrlAllowed(url: string, allowedOrigins: readonly string[]): boolean {
   let parsed: URL;
@@ -132,7 +141,7 @@ export function returnUrlAllowed(url: string, allowedOrigins: readonly string[])
   } catch {
     return false;
   }
-  if (parsed.protocol !== "https:" && parsed.hostname !== "localhost") return false;
+  if (parsed.protocol !== "https:") return false;
   return allowedOrigins.some((origin) => {
     try {
       return new URL(origin).origin === parsed.origin;
