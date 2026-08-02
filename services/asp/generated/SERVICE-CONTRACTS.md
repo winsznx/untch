@@ -10,9 +10,9 @@ from — so there is no version of this page that can disagree with the service.
 | --- | --- | --- | --- |
 | `catalog` | free | live | [/schema/catalog](https://asp.untch.xyz/schema/catalog) |
 | `ping_untch` | $0.01 | live | [/schema/ping_untch](https://asp.untch.xyz/schema/ping_untch) |
-| `preflight_payment` | $0.05 | blocked | [/schema/preflight_payment](https://asp.untch.xyz/schema/preflight_payment) |
-| `verify_delivery` | $0.10 | blocked | [/schema/verify_delivery](https://asp.untch.xyz/schema/verify_delivery) |
-| `create_spend_intent` | free | blocked | [/schema/create_spend_intent](https://asp.untch.xyz/schema/create_spend_intent) |
+| `preflight_payment` | $0.05 | demo | [/schema/preflight_payment](https://asp.untch.xyz/schema/preflight_payment) |
+| `verify_delivery` | $0.10 | demo | [/schema/verify_delivery](https://asp.untch.xyz/schema/verify_delivery) |
+| `create_spend_intent` | free | demo | [/schema/create_spend_intent](https://asp.untch.xyz/schema/create_spend_intent) |
 | `get_ledger` | free | demo | [/schema/get_ledger](https://asp.untch.xyz/schema/get_ledger) |
 | `detect_duplicate` | $0.02 | demo | [/schema/detect_duplicate](https://asp.untch.xyz/schema/detect_duplicate) |
 | `redact_payment_metadata` | $0.02 | live | [/schema/redact_payment_metadata](https://asp.untch.xyz/schema/redact_payment_metadata) |
@@ -30,6 +30,12 @@ from — so there is no version of this page that can disagree with the service.
 | `check_domains` | free | blocked | [/schema/check_domains](https://asp.untch.xyz/schema/check_domains) |
 | `seo_tips` | free | demo | [/schema/seo_tips](https://asp.untch.xyz/schema/seo_tips) |
 | `brand_pack` | $0.05 | blocked | [/schema/brand_pack](https://asp.untch.xyz/schema/brand_pack) |
+| `account_link_start` | free | live | [/schema/account_link_start](https://asp.untch.xyz/schema/account_link_start) |
+| `account_link_complete` | free | live | [/schema/account_link_complete](https://asp.untch.xyz/schema/account_link_complete) |
+| `policy_draft` | free | live | [/schema/policy_draft](https://asp.untch.xyz/schema/policy_draft) |
+| `policy_sync` | free | live | [/schema/policy_sync](https://asp.untch.xyz/schema/policy_sync) |
+| `set_default_policy` | free | live | [/schema/set_default_policy](https://asp.untch.xyz/schema/set_default_policy) |
+| `approval_decide` | free | live | [/schema/approval_decide](https://asp.untch.xyz/schema/approval_decide) |
 
 ## Service catalog — `catalog`
 
@@ -107,13 +113,9 @@ You provide: provider (string); capability (string); task (string); maxSpend (st
 
 You receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.
 
-> **Not listable.** This service cannot be completed by a caller who does not already
-> hold something no public route produces:
-> - A registered spend policy, and its numeric policyId.
-
 **Must already exist**
 
-- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. **No public route produces this.**
+- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. Obtain it with: POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot..
 
 **What it changes**
 
@@ -187,13 +189,10 @@ You provide: intentId (string).
 
 You receive: a pass or fail verdict against the committed criteria, and a durable receipt of that verdict.
 
-> **Not listable.** This service cannot be completed by a caller who does not already
-> hold something no public route produces:
-> - A registered spend policy, and its numeric policyId.
-
 **Must already exist**
 
-- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. **No public route produces this.**
+- A verified channel binding, for any decision arriving from Telegram or Discord. A callback carries a platform identity, which authorises nothing until that identity has been bound to an account. Email never gains a decision path at all: a sender address is forged trivially, so email carries a link to an authenticated session. Obtain it with: start the binding from an authenticated dashboard session; production sending stays disabled until the channel credential is rotated (see /internal/credential-state).
+- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. Obtain it with: POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot..
 - An intent created on this host. Verification is about a specific commitment. Without one there is nothing to compare a delivery against. Obtain it with: the intentId returned by POST /preflight_payment or POST /create_spend_intent.
 
 **What it changes**
@@ -235,15 +234,10 @@ You provide: policyId (string); intent, containing all 16 of: owner, buyerAgentI
 
 You receive: the canonical form of the intent and its intentHash.
 
-> **Not listable.** This service cannot be completed by a caller who does not already
-> hold something no public route produces:
-> - A registered spend policy, and its numeric policyId.
-> - The policyHash of that policy — the exact hash the registry stored when it was registered.
-
 **Must already exist**
 
-- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. **No public route produces this.**
-- The policyHash of that policy — the exact hash the registry stored when it was registered. It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer. **No public route produces this.**
+- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. Obtain it with: POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot..
+- The policyHash of that policy — the exact hash the registry stored when it was registered. It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer. Obtain it with: returned by POST /consumer/policies/draft before registration and by GET /consumer/policies/:policyId afterwards; the on-chain value is authoritative.
 
 **What it changes**
 
@@ -303,13 +297,9 @@ You provide: policyId (string).
 
 You receive: the spend-so-far, the call count in the last hour, and the most recent intents.
 
-> **Not listable.** This service cannot be completed by a caller who does not already
-> hold something no public route produces:
-> - A registered spend policy, and its numeric policyId.
-
 **Must already exist**
 
-- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. **No public route produces this.**
+- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. Obtain it with: POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot..
 
 **Repeating an identical request:** read-only.
 
@@ -954,5 +944,316 @@ You receive: candidate names, their domain verdicts, a ranking, and a launch che
 
 ```json
 {}
+```
+
+## Account link — start — `account_link_start`
+
+`POST /consumer/account/link/start` · free · schema v1.0.0
+
+Opens a one-time request to bind a wallet — and optionally a marketplace identity — to an Untch account. For a marketplace caller whose agent id Untch has never seen, or a person signing in for the first time.
+
+You provide: Any one of: requestedScopes, marketplace, marketplaceAgentId, marketplaceBuyerId, taskRef, serviceOrderRef, returnUrl.
+
+You receive: a link request id, a one-time code shown exactly once, the message the wallet must sign, and the URL to sign it at.
+
+**What it changes**
+
+- Creates a pending link request holding a hashed one-time code.
+- Approves no payment. No route reachable from this code takes an amount. (does not outlive the request)
+
+**Repeating an identical request:** not-idempotent.
+
+**Refusals**
+
+- `UNKNOWN_SCOPE` (400) — requestedScopes contains a scope this host does not grant
+- `RETURN_URL_NOT_ALLOWED` (400) — returnUrl is not an exact-origin match for an allowed origin, or is not https
+- `ACCOUNT_LINK_UNAVAILABLE` (503) — this instance cannot mint sessions
+
+**A request that works**
+
+```json
+{
+  "marketplace": "okx",
+  "marketplaceAgentId": "6047",
+  "taskRef": "task-42",
+  "requestedScopes": [
+    "identity"
+  ]
+}
+```
+
+**A request that is refused** — `UNKNOWN_SCOPE`
+
+```json
+{
+  "requestedScopes": [
+    "spend-anything"
+  ]
+}
+```
+
+## Account link — complete — `account_link_complete`
+
+`POST /consumer/account/link/complete` · free · schema v1.0.0
+
+Verifies a wallet signature and binds the wallet, and any marketplace identity, to an account. For the same person who started the link, now holding a signature from their wallet.
+
+You provide: linkRequestId (string); code (string); message (string); signature (string).
+
+You receive: the account id, the wallet binding, any marketplace binding, and a session token.
+
+**Must already exist**
+
+- A pending link request and its one-time code. The request holds the nonce the signature must name, so a signature obtained for another purpose cannot complete this binding. Obtain it with: POST /consumer/account/link/start.
+- A wallet able to sign an EIP-191 personal_sign message on X Layer. Authority here is a verified wallet and nothing else. Obtain it with: the OKX Agentic Wallet (`wallet sign-message --type personal`), or any EVM wallet.
+
+**What it changes**
+
+- Creates or restores an account and binds the wallet to it.
+- Binds a marketplace identity, when the request carried one.
+- Consumes the one-time code. It cannot be redeemed twice.
+
+**Repeating an identical request:** not-idempotent.
+
+**Refusals**
+
+- `SIWE_NONCE_MISMATCH` (401) — the message names a nonce this link request did not issue
+- `SIWE_WRONG_DOMAIN` (401) — the message was signed for another site
+- `SIWE_WRONG_CHAIN` (401) — the message names a chain that is not X Layer 196 or 1952
+- `SIWE_BAD_SIGNATURE` (401) — the signature does not verify
+- `LINK_CODE_MISMATCH` (401) — the one-time code does not match this request
+- `LINK_REQUEST_NOT_PENDING` (409) — the request was already completed, cancelled or expired
+- `WALLET_BOUND_ELSEWHERE` (409) — that address is already the authority of another account
+- `MARKETPLACE_IDENTITY_BOUND_ELSEWHERE` (409) — that agent id is already bound to another account
+
+**A request that works**
+
+```json
+{
+  "linkRequestId": "ulnk_abcdefghijklmnopqrstuvwxyz",
+  "code": "ABCD-EFGH-IJKL-MNOP-QRST",
+  "message": "asp.untch.xyz wants you to sign in with your Ethereum account:\n0x…",
+  "signature": "0xdeadbeef"
+}
+```
+
+**A request that is refused** — `SIWE_NONCE_MISMATCH`
+
+```json
+{
+  "linkRequestId": "ulnk_abcdefghijklmnopqrstuvwxyz",
+  "code": "ABCD-EFGH-IJKL-MNOP-QRST",
+  "message": "asp.untch.xyz wants you to sign in…",
+  "signature": "0xdeadbeef"
+}
+```
+
+## Policy draft — `policy_draft`
+
+`POST /consumer/policies/draft` · free · schema v1.0.0
+
+Turns human spending limits into the exact unsigned transaction that registers them on chain. For an account owner setting the rules their agent will spend under.
+
+You provide: name (string); currency (string); perActionLimit (string); dailyLimit (string); autoApproveAtOrBelow (string); hardCap (string); allowedCapabilities (array); expiry (string).
+
+You receive: the canonical ruleset, its policy hash, the unsigned registerPolicy transaction, and the addresses permitted to send it.
+
+**Must already exist**
+
+- An Untch account, established by proving a wallet. Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to. Obtain it with: POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete.
+- A wallet on the account carrying the policy-authority scope. A wallet that proved identity has not thereby consented to hold spending rules. Obtain it with: request `policy-authority` in requestedScopes at POST /consumer/account/link/start.
+
+**What it changes**
+
+- Stores a draft. Nothing is registered and no transaction is sent.
+- Untch does NOT relay the registration: registerPolicy makes msg.sender the owner. (does not outlive the request)
+
+**Repeating an identical request:** not-idempotent.
+
+**Refusals**
+
+- `ACCOUNT_SESSION_REQUIRED` (401) — no account session accompanied the request
+- `POLICY_AUTHORITY_REQUIRED` (409) — no wallet on this account may own a policy
+- `POLICY_THRESHOLD_ABOVE_CAP` (400) — autoApproveAtOrBelow is above hardCap, which would make the cap unreachable
+- `POLICY_PER_ACTION_ABOVE_DAILY` (400) — perActionLimit is above dailyLimit, so one action would spend the day
+- `POLICY_NO_CAPABILITIES` (400) — allowedCapabilities is empty
+- `POLICY_EXPIRY_PAST` (400) — expiry has already passed; the registry would refuse it on chain
+- `POLICY_AMOUNT_INVALID` (400) — an amount is not a decimal string
+
+**A request that works**
+
+```json
+{
+  "name": "Gifts and small errands",
+  "currency": "USDC",
+  "perActionLimit": "8.00",
+  "dailyLimit": "40.00",
+  "autoApproveAtOrBelow": "5.00",
+  "hardCap": "8.00",
+  "allowedCapabilities": [
+    "gifts.order"
+  ],
+  "expiry": "2027-01-01T00:00:00.000Z"
+}
+```
+
+**A request that is refused** — `POLICY_THRESHOLD_ABOVE_CAP`
+
+```json
+{
+  "name": "Broken",
+  "currency": "USDC",
+  "perActionLimit": "8.00",
+  "dailyLimit": "40.00",
+  "autoApproveAtOrBelow": "20.00",
+  "hardCap": "8.00",
+  "allowedCapabilities": [
+    "gifts.order"
+  ],
+  "expiry": "2027-01-01T00:00:00.000Z"
+}
+```
+
+## Policy sync — `policy_sync`
+
+`POST /consumer/policies/sync` · free · schema v1.0.0
+
+Reads a confirmed registration from chain and links the policy to the account that can sign for it. For an account owner who has just sent their own registerPolicy transaction.
+
+You provide: policyDraftId (string); txHash (string).
+
+You receive: the numeric policyId, the on-chain owner, and whether the policy became this account's default.
+
+**Must already exist**
+
+- An Untch account, established by proving a wallet. Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to. Obtain it with: POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete.
+- A policy draft, and a confirmed registerPolicy transaction for it. The draft holds the rules the anchored hash is checked against; the transaction is what made you the owner. Obtain it with: POST /consumer/policies/draft, then send the returned transaction from your own wallet.
+
+**What it changes**
+
+- Stores the policy and links it to this account.
+- Sets it as the default when the account has none.
+
+**Repeating an identical request:** idempotent.
+
+**Refusals**
+
+- `ACCOUNT_SESSION_REQUIRED` (401) — no account session accompanied the request
+- `DRAFT_NOT_FOUND` (404) — no such draft, or it belongs to another account
+- `NOT_POLICY_OWNER` (403) — the on-chain owner is not a policy-authority wallet of this account
+- `RULES_HASH_MISMATCH` (409) — the draft's rules do not hash to what the transaction anchored
+- `REGISTRATION_UNREADABLE` (502) — no PolicyRegistered event could be read from that transaction
+
+**A request that works**
+
+```json
+{
+  "policyDraftId": "pdft_0a3d0588efcc785f367e9ee8",
+  "txHash": "0x1111111111111111111111111111111111111111111111111111111111111111"
+}
+```
+
+**A request that is refused** — `NOT_POLICY_OWNER`
+
+```json
+{
+  "policyDraftId": "pdft_0a3d0588efcc785f367e9ee8",
+  "txHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+}
+```
+
+## Default policy — `set_default_policy`
+
+`POST /consumer/account/default-policy` · free · schema v1.0.0
+
+Chooses which policy answers when a request names none. For an account owner holding more than one policy.
+
+You provide: policyId (string).
+
+You receive: the chosen default, after checking the account can actually sign for it.
+
+**Must already exist**
+
+- An Untch account, established by proving a wallet. Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to. Obtain it with: POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete.
+- A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. Obtain it with: POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot..
+
+**What it changes**
+
+- Changes which policy an unqualified request resolves to.
+
+**Repeating an identical request:** idempotent.
+
+**Refusals**
+
+- `ACCOUNT_SESSION_REQUIRED` (401) — no account session accompanied the request
+- `POLICY_NOT_FOUND` (404) — no such policy on this account
+- `POLICY_NOT_ACTIVE` (409) — the policy is paused
+- `POLICY_EXPIRED` (409) — the policy has expired
+- `NOT_POLICY_OWNER` (403) — no wallet on this account owns it
+
+**A request that works**
+
+```json
+{
+  "policyId": "9001"
+}
+```
+
+**A request that is refused** — `POLICY_EXPIRED`
+
+```json
+{
+  "policyId": "9001"
+}
+```
+
+## Approval decision — `approval_decide`
+
+`POST /consumer/approvals/:approvalRequestId/decide` · free · schema v1.0.0
+
+Approves or rejects one escalated action, naming the exact payment it authorises. For the account owner, through a wallet-backed session.
+
+You provide: decision (string); approvalDigest (string).
+
+You receive: the resolved state, and an explicit statement of whether anything was paid.
+
+**Must already exist**
+
+- An Untch account, established by proving a wallet. Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to. Obtain it with: POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete.
+- A pending approval request, raised because an action exceeded the policy's automatic-approval threshold. There is nothing to decide until the policy engine asks. Obtain it with: GET /consumer/approvals lists them; they are created by the decision path, never by a caller.
+- A verified channel binding, for any decision arriving from Telegram or Discord. A callback carries a platform identity, which authorises nothing until that identity has been bound to an account. Email never gains a decision path at all: a sender address is forged trivially, so email carries a link to an authenticated session. Obtain it with: start the binding from an authenticated dashboard session; production sending stays disabled until the channel credential is rotated (see /internal/credential-state).
+
+**What it changes**
+
+- Records a decision bound to the exact payment digest.
+- Resolves the approval request. It does NOT execute anything.
+
+**Repeating an identical request:** idempotent.
+
+**Refusals**
+
+- `ACCOUNT_SESSION_REQUIRED` (401) — no account session accompanied the request
+- `APPROVAL_DIGEST_REQUIRED` (400) — approvalDigest was omitted
+- `APPROVAL_NOT_FOUND` (404) — no such approval, or it belongs to another account
+- `APPROVAL_DIGEST_MISMATCH` (409) — the digest no longer describes this payment — the quote changed
+- `APPROVAL_NOT_PENDING` (409) — already resolved, or superseded by a re-quote
+- `APPROVAL_ALREADY_DECIDED` (409) — this actor already answered, and differently
+- `APPROVAL_EXPIRED` (410) — the approval expired before it was answered
+
+**A request that works**
+
+```json
+{
+  "decision": "APPROVE",
+  "approvalDigest": "apd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
+```
+
+**A request that is refused** — `APPROVAL_DIGEST_REQUIRED`
+
+```json
+{
+  "decision": "APPROVE"
+}
 ```
 

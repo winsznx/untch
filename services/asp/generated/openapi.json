@@ -665,12 +665,12 @@
           "price": "$0.05",
           "amountBaseUnits": "50000"
         },
-        "x-untch-maturity": "blocked",
+        "x-untch-maturity": "demo",
         "x-untch-predecessors": [
           {
             "what": "A registered spend policy, and its numeric policyId.",
             "why": "Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged.",
-            "obtainableBy": null
+            "obtainableBy": "POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot."
           }
         ],
         "x-untch-side-effects": [
@@ -957,12 +957,17 @@
           "price": "$0.10",
           "amountBaseUnits": "100000"
         },
-        "x-untch-maturity": "blocked",
+        "x-untch-maturity": "demo",
         "x-untch-predecessors": [
+          {
+            "what": "A verified channel binding, for any decision arriving from Telegram or Discord.",
+            "why": "A callback carries a platform identity, which authorises nothing until that identity has been bound to an account. Email never gains a decision path at all: a sender address is forged trivially, so email carries a link to an authenticated session.",
+            "obtainableBy": "start the binding from an authenticated dashboard session; production sending stays disabled until the channel credential is rotated (see /internal/credential-state)"
+          },
           {
             "what": "A registered spend policy, and its numeric policyId.",
             "why": "Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged.",
-            "obtainableBy": null
+            "obtainableBy": "POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot."
           },
           {
             "what": "An intent created on this host.",
@@ -1371,17 +1376,17 @@
           "price": null,
           "amountBaseUnits": null
         },
-        "x-untch-maturity": "blocked",
+        "x-untch-maturity": "demo",
         "x-untch-predecessors": [
           {
             "what": "A registered spend policy, and its numeric policyId.",
             "why": "Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged.",
-            "obtainableBy": null
+            "obtainableBy": "POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot."
           },
           {
             "what": "The policyHash of that policy — the exact hash the registry stored when it was registered.",
             "why": "It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer.",
-            "obtainableBy": null
+            "obtainableBy": "returned by POST /consumer/policies/draft before registration and by GET /consumer/policies/:policyId afterwards; the on-chain value is authoritative"
           }
         ],
         "x-untch-side-effects": [
@@ -1529,7 +1534,7 @@
           {
             "what": "A registered spend policy, and its numeric policyId.",
             "why": "Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged.",
-            "obtainableBy": null
+            "obtainableBy": "POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot."
           }
         ],
         "x-untch-side-effects": [],
@@ -4500,6 +4505,1763 @@
           }
         ],
         "x-untch-idempotency": "not-idempotent",
+        "x-untch-schema-version": "1.0.0"
+      }
+    },
+    "/consumer/account/link/start": {
+      "post": {
+        "operationId": "account_link_start",
+        "summary": "Opens a one-time request to bind a wallet — and optionally a marketplace identity — to an Untch account.",
+        "description": "Opens a one-time request to bind a wallet — and optionally a marketplace identity — to an Untch account. For a marketplace caller whose agent id Untch has never seen, or a person signing in for the first time.\n\nYou provide: Any one of: requestedScopes, marketplace, marketplaceAgentId, marketplaceBuyerId, taskRef, serviceOrderRef, returnUrl.\n\nYou receive: a link request id, a one-time code shown exactly once, the message the wallet must sign, and the URL to sign it at.",
+        "tags": [
+          "A2MCP"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "AccountLinkStart",
+                "properties": {
+                  "requestedScopes": {
+                    "type": "array",
+                    "description": "identity proves who you are. policy-authority additionally permits owning a policy.",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "identity",
+                        "policy-authority"
+                      ]
+                    }
+                  },
+                  "marketplace": {
+                    "type": "string",
+                    "description": "The marketplace this call arrived through, e.g. okx."
+                  },
+                  "marketplaceAgentId": {
+                    "type": "string",
+                    "description": "UNPROVEN on arrival. Recorded as context and authorises nothing until a wallet signs for it."
+                  },
+                  "marketplaceBuyerId": {
+                    "type": "string"
+                  },
+                  "taskRef": {
+                    "type": "string",
+                    "description": "The marketplace task or job this call belongs to."
+                  },
+                  "serviceOrderRef": {
+                    "type": "string"
+                  },
+                  "returnUrl": {
+                    "type": "string",
+                    "description": "Where to return afterwards. Matched against an allowlist by exact ORIGIN, and must be https."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "examples": {
+                "valid": {
+                  "summary": "Link a marketplace caller",
+                  "value": {
+                    "marketplace": "okx",
+                    "marketplaceAgentId": "6047",
+                    "taskRef": "task-42",
+                    "requestedScopes": [
+                      "identity"
+                    ]
+                  }
+                },
+                "refused": {
+                  "summary": "Ask for a scope that does not exist → UNKNOWN_SCOPE",
+                  "value": {
+                    "requestedScopes": [
+                      "spend-anything"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "a link request id, a one-time code shown exactly once, the message the wallet must sign, and the URL to sign it at",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "AccountLinkStarted",
+                  "properties": {
+                    "linkRequestId": {
+                      "type": "string",
+                      "pattern": "^ulnk_[a-z0-9]{26}$"
+                    },
+                    "oneTimeCode": {
+                      "type": "string",
+                      "description": "Returned once. Stored hashed; no later read can produce it."
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+                      "description": "When this link request stops being redeemable.",
+                      "examples": [
+                        "2026-08-01T12:00:00.000Z"
+                      ]
+                    },
+                    "proofMethod": {
+                      "type": "string",
+                      "const": "siwe-personal-sign"
+                    },
+                    "walletActionUrl": {
+                      "type": "string"
+                    },
+                    "requestedScopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "linkRequestId",
+                    "oneTimeCode",
+                    "expiresAt",
+                    "proofMethod"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "UNKNOWN_SCOPE — requestedScopes contains a scope this host does not grant; RETURN_URL_NOT_ALLOWED — returnUrl is not an exact-origin match for an allowed origin, or is not https",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ACCOUNT_LINK_UNAVAILABLE — this instance cannot mint sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-untch-pricing": {
+          "kind": "free",
+          "price": null,
+          "amountBaseUnits": null
+        },
+        "x-untch-maturity": "live",
+        "x-untch-predecessors": [],
+        "x-untch-side-effects": [
+          {
+            "what": "Creates a pending link request holding a hashed one-time code.",
+            "durable": true
+          },
+          {
+            "what": "Approves no payment. No route reachable from this code takes an amount.",
+            "durable": false
+          }
+        ],
+        "x-untch-idempotency": "not-idempotent",
+        "x-untch-schema-version": "1.0.0"
+      }
+    },
+    "/consumer/account/link/complete": {
+      "post": {
+        "operationId": "account_link_complete",
+        "summary": "Verifies a wallet signature and binds the wallet, and any marketplace identity, to an account.",
+        "description": "Verifies a wallet signature and binds the wallet, and any marketplace identity, to an account. For the same person who started the link, now holding a signature from their wallet.\n\nYou provide: linkRequestId (string); code (string); message (string); signature (string).\n\nYou receive: the account id, the wallet binding, any marketplace binding, and a session token.",
+        "tags": [
+          "A2MCP"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "AccountLinkComplete",
+                "properties": {
+                  "linkRequestId": {
+                    "type": "string",
+                    "pattern": "^ulnk_[a-z0-9]{26}$"
+                  },
+                  "code": {
+                    "type": "string",
+                    "description": "The one-time code. Case and hyphens are ignored."
+                  },
+                  "message": {
+                    "type": "string",
+                    "description": "The SIWE message, naming this domain and the nonce this request issued."
+                  },
+                  "signature": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]+$"
+                  },
+                  "walletProvider": {
+                    "type": "string",
+                    "description": "e.g. okx-agentic-wallet. Recorded, never trusted."
+                  }
+                },
+                "required": [
+                  "linkRequestId",
+                  "code",
+                  "message",
+                  "signature"
+                ],
+                "additionalProperties": false
+              },
+              "examples": {
+                "valid": {
+                  "summary": "Complete a link",
+                  "value": {
+                    "linkRequestId": "ulnk_abcdefghijklmnopqrstuvwxyz",
+                    "code": "ABCD-EFGH-IJKL-MNOP-QRST",
+                    "message": "asp.untch.xyz wants you to sign in with your Ethereum account:\n0x…",
+                    "signature": "0xdeadbeef"
+                  }
+                },
+                "refused": {
+                  "summary": "Present a signature naming another request's nonce → SIWE_NONCE_MISMATCH",
+                  "value": {
+                    "linkRequestId": "ulnk_abcdefghijklmnopqrstuvwxyz",
+                    "code": "ABCD-EFGH-IJKL-MNOP-QRST",
+                    "message": "asp.untch.xyz wants you to sign in…",
+                    "signature": "0xdeadbeef"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "the account id, the wallet binding, any marketplace binding, and a session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "AccountLinked",
+                  "properties": {
+                    "accountId": {
+                      "type": "string",
+                      "pattern": "^acct_[a-z0-9]{26}$"
+                    },
+                    "accountCreated": {
+                      "type": "boolean",
+                      "description": "False when the wallet restored an existing account."
+                    },
+                    "session": {
+                      "type": "object"
+                    },
+                    "nextAction": {
+                      "type": "object",
+                      "description": "READY, or POLICY_REQUIRED when the account holds no policy yet."
+                    }
+                  },
+                  "required": [
+                    "accountId",
+                    "accountCreated",
+                    "session"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SIWE_NONCE_MISMATCH — the message names a nonce this link request did not issue; SIWE_WRONG_DOMAIN — the message was signed for another site; SIWE_WRONG_CHAIN — the message names a chain that is not X Layer 196 or 1952; SIWE_BAD_SIGNATURE — the signature does not verify; LINK_CODE_MISMATCH — the one-time code does not match this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "LINK_REQUEST_NOT_PENDING — the request was already completed, cancelled or expired; WALLET_BOUND_ELSEWHERE — that address is already the authority of another account; MARKETPLACE_IDENTITY_BOUND_ELSEWHERE — that agent id is already bound to another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-untch-pricing": {
+          "kind": "free",
+          "price": null,
+          "amountBaseUnits": null
+        },
+        "x-untch-maturity": "live",
+        "x-untch-predecessors": [
+          {
+            "what": "A pending link request and its one-time code.",
+            "why": "The request holds the nonce the signature must name, so a signature obtained for another purpose cannot complete this binding.",
+            "obtainableBy": "POST /consumer/account/link/start"
+          },
+          {
+            "what": "A wallet able to sign an EIP-191 personal_sign message on X Layer.",
+            "why": "Authority here is a verified wallet and nothing else.",
+            "obtainableBy": "the OKX Agentic Wallet (`wallet sign-message --type personal`), or any EVM wallet"
+          }
+        ],
+        "x-untch-side-effects": [
+          {
+            "what": "Creates or restores an account and binds the wallet to it.",
+            "durable": true
+          },
+          {
+            "what": "Binds a marketplace identity, when the request carried one.",
+            "durable": true
+          },
+          {
+            "what": "Consumes the one-time code. It cannot be redeemed twice.",
+            "durable": true
+          }
+        ],
+        "x-untch-idempotency": "not-idempotent",
+        "x-untch-schema-version": "1.0.0"
+      }
+    },
+    "/consumer/policies/draft": {
+      "post": {
+        "operationId": "policy_draft",
+        "summary": "Turns human spending limits into the exact unsigned transaction that registers them on chain.",
+        "description": "Turns human spending limits into the exact unsigned transaction that registers them on chain. For an account owner setting the rules their agent will spend under.\n\nYou provide: name (string); currency (string); perActionLimit (string); dailyLimit (string); autoApproveAtOrBelow (string); hardCap (string); allowedCapabilities (array); expiry (string).\n\nYou receive: the canonical ruleset, its policy hash, the unsigned registerPolicy transaction, and the addresses permitted to send it.",
+        "tags": [
+          "A2MCP"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "PolicyDraft",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Settlement token symbol these limits are denominated in."
+                  },
+                  "perActionLimit": {
+                    "type": "string",
+                    "pattern": "^\\d{1,12}(\\.\\d{1,6})?$",
+                    "description": "DECIMAL STRING."
+                  },
+                  "dailyLimit": {
+                    "type": "string",
+                    "pattern": "^\\d{1,12}(\\.\\d{1,6})?$",
+                    "description": "DECIMAL STRING."
+                  },
+                  "autoApproveAtOrBelow": {
+                    "type": "string",
+                    "pattern": "^\\d{1,12}(\\.\\d{1,6})?$",
+                    "description": "At or below this, the decision is automatic. Above it, the owner is asked."
+                  },
+                  "hardCap": {
+                    "type": "string",
+                    "pattern": "^\\d{1,12}(\\.\\d{1,6})?$",
+                    "description": "The line nothing crosses, approval or not."
+                  },
+                  "allowedCapabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
+                  },
+                  "deniedCapabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "allowedRecipients": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "A permitted recipient.",
+                      "examples": [
+                        "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
+                      ]
+                    }
+                  },
+                  "deniedRecipients": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "A refused recipient.",
+                      "examples": [
+                        "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
+                      ]
+                    }
+                  },
+                  "expiry": {
+                    "type": "string",
+                    "description": "ISO-8601. After this the policy authorises nothing, with no transaction needed to stop it."
+                  },
+                  "duplicateWindowMinutes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "cooldownMinutes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "callsPerHour": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{40}$",
+                    "description": "The agent address this policy governs. Immutable on chain once registered.",
+                    "examples": [
+                      "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "currency",
+                  "perActionLimit",
+                  "dailyLimit",
+                  "autoApproveAtOrBelow",
+                  "hardCap",
+                  "allowedCapabilities",
+                  "expiry"
+                ],
+                "additionalProperties": false
+              },
+              "examples": {
+                "valid": {
+                  "summary": "Gifts and small errands",
+                  "value": {
+                    "name": "Gifts and small errands",
+                    "currency": "USDC",
+                    "perActionLimit": "8.00",
+                    "dailyLimit": "40.00",
+                    "autoApproveAtOrBelow": "5.00",
+                    "hardCap": "8.00",
+                    "allowedCapabilities": [
+                      "gifts.order"
+                    ],
+                    "expiry": "2027-01-01T00:00:00.000Z"
+                  }
+                },
+                "refused": {
+                  "summary": "A threshold above the hard cap → POLICY_THRESHOLD_ABOVE_CAP",
+                  "value": {
+                    "name": "Broken",
+                    "currency": "USDC",
+                    "perActionLimit": "8.00",
+                    "dailyLimit": "40.00",
+                    "autoApproveAtOrBelow": "20.00",
+                    "hardCap": "8.00",
+                    "allowedCapabilities": [
+                      "gifts.order"
+                    ],
+                    "expiry": "2027-01-01T00:00:00.000Z"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "the canonical ruleset, its policy hash, the unsigned registerPolicy transaction, and the addresses permitted to send it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "PolicyDrafted",
+                  "properties": {
+                    "policyDraftId": {
+                      "type": "string"
+                    },
+                    "policyHash": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{64}$",
+                      "description": "The hash the registry will store.",
+                      "examples": [
+                        "0xabababababababababababababababababababababababababababababababab"
+                      ]
+                    },
+                    "canonicalRules": {
+                      "type": "object",
+                      "description": "The full ruleset the hash covers. Shown, never hidden."
+                    },
+                    "derivedDefaults": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      },
+                      "description": "What the server decided that you did not state, with the reasoning."
+                    },
+                    "transaction": {
+                      "type": "object",
+                      "description": "The unsigned registerPolicy call, for YOUR wallet to send."
+                    },
+                    "mustBeSentBy": {
+                      "type": "object",
+                      "description": "Which addresses may send it, and why Untch cannot."
+                    }
+                  },
+                  "required": [
+                    "policyDraftId",
+                    "policyHash",
+                    "canonicalRules",
+                    "transaction",
+                    "mustBeSentBy"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "POLICY_THRESHOLD_ABOVE_CAP — autoApproveAtOrBelow is above hardCap, which would make the cap unreachable; POLICY_PER_ACTION_ABOVE_DAILY — perActionLimit is above dailyLimit, so one action would spend the day; POLICY_NO_CAPABILITIES — allowedCapabilities is empty; POLICY_EXPIRY_PAST — expiry has already passed; the registry would refuse it on chain; POLICY_AMOUNT_INVALID — an amount is not a decimal string",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ACCOUNT_SESSION_REQUIRED — no account session accompanied the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "POLICY_AUTHORITY_REQUIRED — no wallet on this account may own a policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-untch-pricing": {
+          "kind": "free",
+          "price": null,
+          "amountBaseUnits": null
+        },
+        "x-untch-maturity": "live",
+        "x-untch-predecessors": [
+          {
+            "what": "An Untch account, established by proving a wallet.",
+            "why": "Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to.",
+            "obtainableBy": "POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete"
+          },
+          {
+            "what": "A wallet on the account carrying the policy-authority scope.",
+            "why": "A wallet that proved identity has not thereby consented to hold spending rules.",
+            "obtainableBy": "request `policy-authority` in requestedScopes at POST /consumer/account/link/start"
+          }
+        ],
+        "x-untch-side-effects": [
+          {
+            "what": "Stores a draft. Nothing is registered and no transaction is sent.",
+            "durable": true
+          },
+          {
+            "what": "Untch does NOT relay the registration: registerPolicy makes msg.sender the owner.",
+            "durable": false
+          }
+        ],
+        "x-untch-idempotency": "not-idempotent",
+        "x-untch-schema-version": "1.0.0"
+      }
+    },
+    "/consumer/policies/sync": {
+      "post": {
+        "operationId": "policy_sync",
+        "summary": "Reads a confirmed registration from chain and links the policy to the account that can sign for it.",
+        "description": "Reads a confirmed registration from chain and links the policy to the account that can sign for it. For an account owner who has just sent their own registerPolicy transaction.\n\nYou provide: policyDraftId (string); txHash (string).\n\nYou receive: the numeric policyId, the on-chain owner, and whether the policy became this account's default.",
+        "tags": [
+          "A2MCP"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "PolicySync",
+                "properties": {
+                  "policyDraftId": {
+                    "type": "string"
+                  },
+                  "txHash": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{64}$",
+                    "description": "The confirmed registerPolicy transaction YOUR wallet sent.",
+                    "examples": [
+                      "0xabababababababababababababababababababababababababababababababab"
+                    ]
+                  }
+                },
+                "required": [
+                  "policyDraftId",
+                  "txHash"
+                ],
+                "additionalProperties": false
+              },
+              "examples": {
+                "valid": {
+                  "summary": "Sync a confirmed registration",
+                  "value": {
+                    "policyDraftId": "pdft_0a3d0588efcc785f367e9ee8",
+                    "txHash": "0x1111111111111111111111111111111111111111111111111111111111111111"
+                  }
+                },
+                "refused": {
+                  "summary": "Sync a registration somebody else made → NOT_POLICY_OWNER",
+                  "value": {
+                    "policyDraftId": "pdft_0a3d0588efcc785f367e9ee8",
+                    "txHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "the numeric policyId, the on-chain owner, and whether the policy became this account's default",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "PolicySynced",
+                  "properties": {
+                    "policyId": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "Read from the PolicyRegistered event, never from the caller.",
+                      "examples": [
+                        "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba"
+                      ]
+                    },
+                    "policyHash": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{64}$",
+                      "description": "The anchored hash.",
+                      "examples": [
+                        "0xabababababababababababababababababababababababababababababababab"
+                      ]
+                    },
+                    "becameDefault": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "policyId",
+                    "owner",
+                    "policyHash"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ACCOUNT_SESSION_REQUIRED — no account session accompanied the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NOT_POLICY_OWNER — the on-chain owner is not a policy-authority wallet of this account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "DRAFT_NOT_FOUND — no such draft, or it belongs to another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RULES_HASH_MISMATCH — the draft's rules do not hash to what the transaction anchored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "REGISTRATION_UNREADABLE — no PolicyRegistered event could be read from that transaction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-untch-pricing": {
+          "kind": "free",
+          "price": null,
+          "amountBaseUnits": null
+        },
+        "x-untch-maturity": "live",
+        "x-untch-predecessors": [
+          {
+            "what": "An Untch account, established by proving a wallet.",
+            "why": "Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to.",
+            "obtainableBy": "POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete"
+          },
+          {
+            "what": "A policy draft, and a confirmed registerPolicy transaction for it.",
+            "why": "The draft holds the rules the anchored hash is checked against; the transaction is what made you the owner.",
+            "obtainableBy": "POST /consumer/policies/draft, then send the returned transaction from your own wallet"
+          }
+        ],
+        "x-untch-side-effects": [
+          {
+            "what": "Stores the policy and links it to this account.",
+            "durable": true
+          },
+          {
+            "what": "Sets it as the default when the account has none.",
+            "durable": true
+          }
+        ],
+        "x-untch-idempotency": "idempotent",
+        "x-untch-schema-version": "1.0.0"
+      }
+    },
+    "/consumer/account/default-policy": {
+      "post": {
+        "operationId": "set_default_policy",
+        "summary": "Chooses which policy answers when a request names none.",
+        "description": "Chooses which policy answers when a request names none. For an account owner holding more than one policy.\n\nYou provide: policyId (string).\n\nYou receive: the chosen default, after checking the account can actually sign for it.",
+        "tags": [
+          "A2MCP"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "SetDefaultPolicy",
+                "properties": {
+                  "policyId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "policyId"
+                ],
+                "additionalProperties": false
+              },
+              "examples": {
+                "valid": {
+                  "summary": "Choose a default",
+                  "value": {
+                    "policyId": "9001"
+                  }
+                },
+                "refused": {
+                  "summary": "Choose an expired policy → POLICY_EXPIRED",
+                  "value": {
+                    "policyId": "9001"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "the chosen default, after checking the account can actually sign for it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "DefaultPolicySet",
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "defaultPolicyId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "accountId",
+                    "defaultPolicyId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ACCOUNT_SESSION_REQUIRED — no account session accompanied the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NOT_POLICY_OWNER — no wallet on this account owns it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "POLICY_NOT_FOUND — no such policy on this account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "POLICY_NOT_ACTIVE — the policy is paused; POLICY_EXPIRED — the policy has expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-untch-pricing": {
+          "kind": "free",
+          "price": null,
+          "amountBaseUnits": null
+        },
+        "x-untch-maturity": "live",
+        "x-untch-predecessors": [
+          {
+            "what": "An Untch account, established by proving a wallet.",
+            "why": "Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to.",
+            "obtainableBy": "POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete"
+          },
+          {
+            "what": "A registered spend policy, and its numeric policyId.",
+            "why": "Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged.",
+            "obtainableBy": "POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot."
+          }
+        ],
+        "x-untch-side-effects": [
+          {
+            "what": "Changes which policy an unqualified request resolves to.",
+            "durable": true
+          }
+        ],
+        "x-untch-idempotency": "idempotent",
+        "x-untch-schema-version": "1.0.0"
+      }
+    },
+    "/consumer/approvals/:approvalRequestId/decide": {
+      "post": {
+        "operationId": "approval_decide",
+        "summary": "Approves or rejects one escalated action, naming the exact payment it authorises.",
+        "description": "Approves or rejects one escalated action, naming the exact payment it authorises. For the account owner, through a wallet-backed session.\n\nYou provide: decision (string); approvalDigest (string).\n\nYou receive: the resolved state, and an explicit statement of whether anything was paid.",
+        "tags": [
+          "A2MCP"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "ApprovalDecision",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "APPROVE",
+                      "REJECT"
+                    ]
+                  },
+                  "approvalDigest": {
+                    "type": "string",
+                    "pattern": "^apd_[0-9a-f]{64}$",
+                    "description": "REQUIRED. The digest you were shown, covering intent, quote, amount, asset, provider, capability, recipient, policy, version, nonce and expiry. A decision without it is not a decision: a re-quote changes the digest, and approving the old one would agree to a number you were never shown."
+                  }
+                },
+                "required": [
+                  "decision",
+                  "approvalDigest"
+                ],
+                "additionalProperties": false
+              },
+              "examples": {
+                "valid": {
+                  "summary": "Approve the exact quote",
+                  "value": {
+                    "decision": "APPROVE",
+                    "approvalDigest": "apd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  }
+                },
+                "refused": {
+                  "summary": "Say yes without naming what → APPROVAL_DIGEST_REQUIRED",
+                  "value": {
+                    "decision": "APPROVE"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "the resolved state, and an explicit statement of whether anything was paid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "ApprovalDecided",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "PENDING",
+                        "APPROVED",
+                        "REJECTED",
+                        "EXPIRED",
+                        "SUPERSEDED",
+                        "EXECUTED"
+                      ]
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "description": "APPROVED_AWAITING_EXECUTION when provider execution is disabled."
+                    },
+                    "paid": {
+                      "type": "boolean",
+                      "description": "Whether money actually moved. Approving is not paying."
+                    },
+                    "repeat": {
+                      "type": "boolean",
+                      "description": "True when this repeated an identical earlier decision."
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "outcome",
+                    "paid"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "APPROVAL_DIGEST_REQUIRED — approvalDigest was omitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ACCOUNT_SESSION_REQUIRED — no account session accompanied the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "APPROVAL_NOT_FOUND — no such approval, or it belongs to another account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "APPROVAL_DIGEST_MISMATCH — the digest no longer describes this payment — the quote changed; APPROVAL_NOT_PENDING — already resolved, or superseded by a re-quote; APPROVAL_ALREADY_DECIDED — this actor already answered, and differently",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "APPROVAL_EXPIRED — the approval expired before it was answered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-untch-pricing": {
+          "kind": "free",
+          "price": null,
+          "amountBaseUnits": null
+        },
+        "x-untch-maturity": "live",
+        "x-untch-predecessors": [
+          {
+            "what": "An Untch account, established by proving a wallet.",
+            "why": "Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to.",
+            "obtainableBy": "POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete"
+          },
+          {
+            "what": "A pending approval request, raised because an action exceeded the policy's automatic-approval threshold.",
+            "why": "There is nothing to decide until the policy engine asks.",
+            "obtainableBy": "GET /consumer/approvals lists them; they are created by the decision path, never by a caller"
+          },
+          {
+            "what": "A verified channel binding, for any decision arriving from Telegram or Discord.",
+            "why": "A callback carries a platform identity, which authorises nothing until that identity has been bound to an account. Email never gains a decision path at all: a sender address is forged trivially, so email carries a link to an authenticated session.",
+            "obtainableBy": "start the binding from an authenticated dashboard session; production sending stays disabled until the channel credential is rotated (see /internal/credential-state)"
+          }
+        ],
+        "x-untch-side-effects": [
+          {
+            "what": "Records a decision bound to the exact payment digest.",
+            "durable": true
+          },
+          {
+            "what": "Resolves the approval request. It does NOT execute anything.",
+            "durable": true
+          }
+        ],
+        "x-untch-idempotency": "idempotent",
         "x-untch-schema-version": "1.0.0"
       }
     }

@@ -93,6 +93,10 @@ import {
 } from "./erc8004/constants";
 import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes";
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
+import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
+import { registerPolicyRoutes } from "./consumer/policy-routes";
+import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
+import { registerMarketplaceRoutes } from "./consumer/marketplace-continuity";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
@@ -566,6 +570,91 @@ export function createSellerApp(
     // "not recorded" rather than claiming a pending anchor that will never arrive.
     receiptWiring ? (receiptId) => receiptWiring.status(receiptId) : null,
     consumerAuth,
+  );
+
+  /**
+   * The ACCOUNT surface — a wallet proving who it is, without naming a policy.
+   *
+   * Registered beside the policy-scoped auth routes rather than inside them because it answers a
+   * different question. `/consumer/auth/*` asks "may this signer read THIS policy" and needs the policy
+   * store to answer. This asks "who is this signer", which needs no policy to exist at all — and that
+   * is the whole point: a user with no policy yet is exactly the user who needs to sign in so they can
+   * create one.
+   */
+  const accountRoutesDeps =
+    consumerAuthConfig.secret && consumerWiring
+      ? makeAccountRoutesDeps({
+          pool: consumerWiring.pool,
+          verifier: makeSiweVerifier(process.env.XLAYER_RPC_URL?.trim() || "https://rpc.xlayer.tech"),
+          domain: consumerAuthConfig.domain,
+          publicBaseUrl: consumerWiring.publicBaseUrl,
+          secret: consumerAuthConfig.secret,
+        })
+      : null;
+  registerAccountRoutes(app, send, accountRoutesDeps);
+
+  /**
+   * The public policy journey — draft here, register from your own wallet, sync back.
+   *
+   * It needs both wirings: the account store to know whose wallet is asking, and the policy store to
+   * canonicalise, hash and read the confirmed registration. Either missing means the journey answers
+   * a named 503 rather than a route that half-works.
+   */
+  registerPolicyRoutes(
+    app,
+    send,
+    accountRoutesDeps && policyWiring && consumerWiring && consumerAuthConfig.secret
+      ? {
+          accounts: accountRoutesDeps.accounts,
+          registration: policyWiring.registration,
+          policies: policyWiring.provider,
+          secret: consumerAuthConfig.secret,
+          defaultAgent: (process.env.MAINNET_WRITER_ADDRESS?.trim() as `0x${string}` | undefined) ?? null,
+        }
+      : null,
+  );
+
+  /**
+   * The web approval centre.
+   *
+   * `executionEnabled` is passed in rather than read at render time, and it decides what an APPROVED
+   * request is CALLED. With providers disabled the surface says APPROVED_AWAITING_EXECUTION and states
+   * that nothing was paid — the difference between an honest demo and a claim that a purchase happened.
+   */
+  registerApprovalRoutes(
+    app,
+    send,
+    accountRoutesDeps && consumerWiring && consumerAuthConfig.secret
+      ? makeApprovalRoutesDeps({
+          pool: consumerWiring.pool,
+          accounts: accountRoutesDeps.accounts,
+          secret: consumerAuthConfig.secret,
+          // Read from the FLAGS, which is where `CONSUMER_EXECUTION_ENABLED` actually lives.
+          // `wiring.config` is the execution POLICY (caps, rails, providers) and carries no such
+          // field — the root tsconfig cannot see this file, and the ASP's own tsconfig caught it.
+          executionEnabled: loadConsumerFlags().executionEnabled,
+        })
+      : null,
+  );
+
+  /**
+   * Marketplace continuity.
+   *
+   * An agent id arriving from OKX is a claim in a request. This route turns "we do not know you" into
+   * a link the same person can complete with the wallet that actually carries authority — rather than
+   * trusting the claim, or refusing with no way forward.
+   */
+  registerMarketplaceRoutes(
+    app,
+    send,
+    accountRoutesDeps
+      ? {
+          accounts: accountRoutesDeps.accounts,
+          links: accountRoutesDeps.links,
+          publicBaseUrl: accountRoutesDeps.publicBaseUrl,
+          allowedReturnOrigins: accountRoutesDeps.allowedReturnOrigins,
+        }
+      : null,
   );
 
   /**

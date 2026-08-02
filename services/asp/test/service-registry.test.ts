@@ -155,17 +155,18 @@ describe("the generated listing description", () => {
 
 describe("what may be listed", () => {
   /**
-   * The check that would have stopped the rejected submission.
+   * The check that would have stopped the rejected submission, still doing its job.
    *
-   * Both services were listed, and both required a policy id that no public route produces. A caller
-   * could follow the listing exactly, pay, and be refused.
+   * It is asserted against the four services that remain genuinely unreachable — every one of them
+   * needs receipt or ledger history this host holds and no public route produces.
    */
   test("a service whose predecessor nobody can obtain is withheld, with the reason recorded", () => {
     const listing = buildListingPayload({ baseUrl: BASE, network: "eip155:196", name: "Untch" });
     const withheldIds = listing.withheld.map((w) => w.toolId);
 
-    assert.ok(withheldIds.includes("preflight_payment"));
-    assert.ok(withheldIds.includes("verify_delivery"));
+    for (const stillBlocked of ["score_vendor", "score_buyer", "generate_dispute_packet", "reconcile_agent_spend"]) {
+      assert.ok(withheldIds.includes(stillBlocked), `${stillBlocked} must still be withheld`);
+    }
     for (const w of listing.withheld) {
       assert.ok(w.blockedBy.length > 0, `${w.toolId} was withheld without a recorded reason`);
     }
@@ -173,6 +174,73 @@ describe("what may be listed", () => {
     for (const entry of listing.service) {
       assert.equal(listingVerdict(serviceById(entry.toolId)!).listable, true);
     }
+  });
+
+  /**
+   * The gap the rejected submission was rejected FOR, now closed — asserted so it cannot silently reopen.
+   *
+   * `preflight_payment` and `verify_delivery` were withheld because both needed a policy id that no
+   * public route produced. That is no longer true: `/consumer/policies/draft` and
+   * `/consumer/policies/sync` let a stranger register a policy from their own wallet. This test pins
+   * the WHOLE chain rather than just the endpoint, because the value of the predecessor graph is that
+   * a caller can walk it — and a route named in an `obtainableBy` that does not itself exist as a
+   * service would be a chain with a missing link nobody would notice.
+   */
+  test("the policy chain is walkable end to end, so the two rejected services are reachable", () => {
+    const listing = buildListingPayload({ baseUrl: BASE, network: "eip155:196", name: "Untch" });
+    const listed = new Set(listing.service.map((s) => s.toolId));
+
+    for (const reachable of ["preflight_payment", "verify_delivery"]) {
+      assert.ok(listed.has(reachable), `${reachable} should now be listable`);
+    }
+
+    // preflight names a policy…
+    const preflight = serviceById("preflight_payment");
+    const policyNeed = preflight?.predecessors.find((p) => p.what.includes("registered spend policy"));
+    assert.ok(policyNeed?.obtainableBy, "the policy predecessor must name a route");
+    assert.match(String(policyNeed?.obtainableBy), /\/consumer\/policies\/draft/);
+
+    // …that route exists as a service of its own…
+    const draft = serviceById("policy_draft");
+    assert.ok(draft, "the route the policy predecessor names must itself be a registered service");
+
+    // …and it in turn names the account link, which also exists.
+    const accountNeed = draft?.predecessors.find((p) => p.what.includes("Untch account"));
+    assert.match(String(accountNeed?.obtainableBy), /\/consumer\/account\/link\/start/);
+    assert.ok(serviceById("account_link_start"), "the account link must be a registered service");
+    assert.ok(serviceById("account_link_complete"));
+  });
+
+  test("the registry knows a default policy may stand in for an explicit policyId", () => {
+    const setDefault = serviceById("set_default_policy");
+    assert.ok(setDefault, "choosing a default must be a described route");
+    assert.equal(setDefault?.path, "/consumer/account/default-policy");
+    // The refusal a caller hits when they have policies but chose no default, so the listing states
+    // that having a policy and having chosen one are separate steps.
+    assert.ok(
+      serviceById("preflight_payment")?.refusals.some((r) => r.code === "POLICY_NOT_SELECTED"),
+      "preflight must name the refusal for a request that selected no policy",
+    );
+  });
+
+  test("the registry knows Telegram and Discord cannot decide before a channel binding exists", () => {
+    const decide = serviceById("approval_decide");
+    const channel = decide?.predecessors.find((p) => p.what.includes("channel binding"));
+    assert.ok(channel, "the approval route must record the channel-binding predecessor");
+    assert.match(String(channel?.why), /authorises nothing until that identity has been bound/);
+    // Email is named as having NO decision path at all, rather than being left to inference.
+    assert.match(String(channel?.why), /Email never gains a decision path/);
+  });
+
+  test("an approval decision must name the exact payment, and the schema says so", () => {
+    const decide = serviceById("approval_decide");
+    const digest = decide?.input.properties?.approvalDigest;
+    assert.ok(decide?.input.required?.includes("approvalDigest"), "the digest cannot be optional");
+    assert.match(String(digest?.description), /re-quote changes the digest/);
+    assert.ok(
+      decide?.refusals.some((r) => r.code === "APPROVAL_DIGEST_MISMATCH"),
+      "the re-quote refusal must be published, not just implemented",
+    );
   });
 
   test("every listed entry carries a free schema URL and a schema version", () => {

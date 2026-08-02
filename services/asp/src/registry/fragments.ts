@@ -87,16 +87,70 @@ export const ERROR_ENVELOPE: JsonSchema = {
  * id. It is recorded here once so both dependent contracts state the same thing, and so the listing
  * generator can refuse to publish a service whose predecessor nobody can satisfy.
  */
+/**
+ * An account, which is where wallet authority comes from.
+ *
+ * FIRST in every predecessor list that mentions a policy, because it is genuinely first: a policy is
+ * owned by a wallet, and until a wallet has proven itself there is no "your policy" for a route to
+ * resolve. The audit's central finding was that two listed services were UNREACHABLE — they needed a
+ * policy no public route could create. This is the front half of that chain finally having a route.
+ */
+export const ACCOUNT_PREDECESSOR: Predecessor = {
+  what: "An Untch account, established by proving a wallet.",
+  why: "Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to.",
+  obtainableBy: "POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete",
+};
+
+/**
+ * `obtainableBy` was `null`, and that was the honest answer: no public route created a policy.
+ *
+ * It is no longer null, and the change is not cosmetic. The listing generator refuses to emit a
+ * submission entry for a service whose predecessors carry `obtainableBy: null`, so this field is the
+ * mechanical difference between "described accurately and uncallable" and "callable by a stranger".
+ * It flips only because `/consumer/policies/draft` and `/consumer/policies/sync` now exist, and the
+ * route it names is the one a caller actually walks.
+ */
 export const POLICY_PREDECESSOR: Predecessor = {
   what: "A registered spend policy, and its numeric policyId.",
   why: "Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged.",
-  obtainableBy: null,
+  obtainableBy:
+    "POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot.",
 };
 
 export const POLICY_HASH_PREDECESSOR: Predecessor = {
   what: "The policyHash of that policy — the exact hash the registry stored when it was registered.",
   why: "It binds the request to one VERSION of the rules, so a policy edited after the request was built cannot silently change the answer.",
-  obtainableBy: null,
+  obtainableBy:
+    "returned by POST /consumer/policies/draft before registration and by GET /consumer/policies/:policyId afterwards; the on-chain value is authoritative",
+};
+
+/**
+ * The default policy, which is what lets a caller omit `policyId` entirely.
+ *
+ * Recorded as a predecessor of its own rather than folded into POLICY_PREDECESSOR, because it is a
+ * different fact: having a policy and having chosen which one answers for you are separate steps, and
+ * a caller who did the first and not the second gets POLICY_REQUIRED rather than a policy nobody
+ * picked.
+ */
+export const DEFAULT_POLICY_PREDECESSOR: Predecessor = {
+  what: "A default policy on the account, if the request omits policyId.",
+  why: "A request that names no policy resolves to the account's default. An account with policies but no default is refused rather than given one it did not choose.",
+  obtainableBy:
+    "set automatically by the FIRST policy an account registers, or explicitly with PUT /consumer/account/default-policy",
+};
+
+/**
+ * A channel binding, which is what makes an approval answerable anywhere other than the dashboard.
+ *
+ * Present so the generated listing knows, mechanically, that Telegram and Discord cannot approve
+ * anything until a binding exists — the property §17 asks the registry to encode rather than to
+ * describe in prose somewhere a validator never reads.
+ */
+export const CHANNEL_BINDING_PREDECESSOR: Predecessor = {
+  what: "A verified channel binding, for any decision arriving from Telegram or Discord.",
+  why: "A callback carries a platform identity, which authorises nothing until that identity has been bound to an account. Email never gains a decision path at all: a sender address is forged trivially, so email carries a link to an authenticated session.",
+  obtainableBy:
+    "start the binding from an authenticated dashboard session; production sending stays disabled until the channel credential is rotated (see /internal/credential-state)",
 };
 
 

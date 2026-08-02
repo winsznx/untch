@@ -331,13 +331,21 @@ export {
   AccountAuthorityError,
   PgAccountStore,
   newAccountId,
+  newChannelBindingId,
   newDraftId,
+  newMarketplaceBindingId,
+  newWalletBindingId,
   normaliseAddress,
   resolveScope,
   type AccountStatus,
   type AccountStore,
+  type BindingScope,
+  type BindingStatus,
   type ChainKind,
+  type ChannelBinding,
+  type ChannelKind,
   type MarketplaceBinding,
+  type MarketplaceBindingStatus,
   type MarketplaceProof,
   type PolicyDraft,
   type PolicyDraftStatus,
@@ -349,3 +357,98 @@ export {
   type WalletProofKind,
   type WalletRole,
 } from "./accounts";
+
+/**
+ * Account linking (migration 016) — the one-time code that binds an identity and never a payment.
+ *
+ * Beside the account model for the same reason it is: same pool, same migration set, same vocabulary.
+ */
+export {
+  LINK_CODE_TTL_MS,
+  LINK_MAX_ATTEMPTS,
+  PgLinkRequestStore,
+  canonicaliseCode,
+  codeMatches,
+  hashCode,
+  newLinkCode,
+  newLinkRequestId,
+  returnUrlAllowed,
+  type CreatedLinkRequest,
+  type LinkRequest,
+  type LinkRequestContext,
+  type LinkRequestStatus,
+  type LinkRequestStore,
+  type RedeemFailure,
+  type RedeemOutcome,
+} from "./account-link";
+
+/**
+ * Approvals (migration 017) — a decision that names the exact payment it authorises.
+ *
+ * The digest is the whole point and it lives here rather than in the escalation package, because that
+ * package is the TRANSPORT half: it knows how to reach a person and how to check they were allowed to
+ * answer. What is being answered is a property of the intent and the quote, which is this package's
+ * vocabulary.
+ */
+export {
+  ApprovalError,
+  PgApprovalStore,
+  approvalDigest,
+  describeApprovalState,
+  digestMatches,
+  newApprovalNonce,
+  newApprovalRequestId,
+  newDecisionId,
+  type ApprovalDecision,
+  type ApprovalDelivery,
+  type ApprovalRequest,
+  type ApprovalState,
+  type ApprovalSubject,
+  type DecideFailure,
+  type DecideOutcome,
+  type DecisionChannel,
+  type DecisionKind,
+  type DeliveryOutcome,
+} from "./approvals";
+
+/**
+ * The rotation gate. A channel cannot become live on a credential the audit saw.
+ *
+ * Reports NAMES and states, never values — nothing here can leak a token into a log, a snapshot or a
+ * test fixture, because nothing here ever holds one.
+ */
+export {
+  AUDITED_CREDENTIALS,
+  channelSendAllowed,
+  credentialReport,
+  credentialState,
+  rotationPlan,
+  type CredentialReport,
+  type CredentialState,
+} from "./credential-state";
+
+/**
+ * The activity index (migration 018) — a case-first evidence store, not a block explorer.
+ *
+ * Organised by what happened rather than by which chain recorded it, because one decision produces
+ * evidence on three rails and in two databases, and a per-chain view shows five unrelated rows.
+ */
+export {
+  PgActivityIndex,
+  ZERO_ALLOCATION,
+  netRevenue,
+  newCaseId,
+  newEventId,
+  passThrough,
+  publicTimeline,
+  type ActivityCase,
+  type ActivityEvent,
+  type AllocationStatus,
+  type CaseKind,
+  type CaseState,
+  type EventSource,
+  type IndexedTransaction,
+  type RawChainEvent,
+  type Reconciliation,
+  type RevenueAllocation,
+} from "./activity-index";
