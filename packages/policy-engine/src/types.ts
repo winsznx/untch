@@ -180,6 +180,15 @@ export interface Policy {
   /** §8 `policies.status`. */
   readonly status: PolicyStatus;
   readonly rules: PolicyRules;
+  /**
+   * The canonical hash of `rules`, when the caller holds it. Optional.
+   *
+   * The engine does not compute it: `@untch/canon` hashes the ruleset and the store already records
+   * what the chain anchored, so recomputing here would create a second answer that could disagree
+   * with the registry. It is carried through onto the decision so a receipt names the exact bytes
+   * that were judged, rather than only the row they came from.
+   */
+  readonly policyHash?: Hex;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,4 +377,27 @@ export interface Decision {
   readonly evaluatedAt: string;
   readonly reasons: readonly string[];
   readonly rules: readonly RuleTraceEntry[];
+
+  /**
+   * The ruleset this decision was judged against, by hash.
+   *
+   * `policyId` plus `policyVersion` names a row; this names the BYTES. A policy row can be re-read
+   * later and a version number does not prove the rules were the ones anchored on chain at the time.
+   * Null only when the decision was taken with no active policy at all.
+   */
+  readonly policyHash: Hex | null;
+
+  /**
+   * Which evaluator honoured that ruleset.
+   *
+   * The policy hash commits to the rules; this commits to the code that read them. Today two rules
+   * began being enforced for a policy registered before either existed — same ruleset, same hash,
+   * different verdicts. Without this a decision from before and after that change are
+   * indistinguishable, and a dispute about a past decision has nothing to appeal to.
+   */
+  readonly evaluator: {
+    readonly engineVersion: string;
+    readonly ruleManifestHash: string;
+    readonly ruleCount: number;
+  };
 }

@@ -1,6 +1,7 @@
 import { canonAddress, canonTimestamp, canonUint256, canonUrl, hashSpendIntent } from "@untch/canon";
 import type { Hex } from "viem";
-import { evaluatePolicyActive, evaluateRuleChain } from "./rules";
+import { evaluatePolicyActive, evaluateRuleChain, IMPLEMENTED_RULES } from "./rules";
+import { ENGINE_VERSION, RULE_MANIFEST_HASH } from "./manifest";
 import type {
   Decision,
   DecisionOutcome,
@@ -44,7 +45,24 @@ export function evaluateIntent(
     intentHash: Hex,
     reasons: string[],
     rules: RuleTraceEntry[],
-  ): Decision => ({ decision, intentHash, policyId, policyVersion, evaluatedAt, reasons, rules });
+  ): Decision => ({
+    decision,
+    intentHash,
+    policyId,
+    policyVersion,
+    evaluatedAt,
+    reasons,
+    rules,
+    // The bytes the ruleset hashes to, not just the row it lives in. Null with no active policy,
+    // which is the only case where there is genuinely no ruleset to name.
+    policyHash: policy?.policyHash ?? null,
+    // Which code read those bytes. See manifest.ts for why the hash alone is not enough.
+    evaluator: {
+      engineVersion: ENGINE_VERSION,
+      ruleManifestHash: RULE_MANIFEST_HASH,
+      ruleCount: IMPLEMENTED_RULES.length,
+    },
+  });
 
   // 1. INTENT_CANONICAL — validate required fields; compute intentHash via @untch/canon.
   const { ok, reasons, intentHash } = validateIntent(intent);

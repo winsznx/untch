@@ -20,14 +20,19 @@ function rule(rules: readonly RuleTraceEntry[], name: string): RuleTraceEntry | 
 }
 
 describe("evaluateIntent · §8.2 decision-trace shape", () => {
-  test("Decision carries exactly the §8.2 top-level fields + reasons", () => {
+  test("Decision carries exactly the §8.2 top-level fields + reasons + provenance", () => {
     // #when
     const d = evaluateIntent(validIntent(), activePolicy(), emptyLedger(), opts);
     // #then
+    // `policyHash` and `evaluator` were added when it became possible for one anchored ruleset to be
+    // judged by two different evaluators. `policyId` + `policyVersion` names a row; the hash names the
+    // bytes, and the evaluator names the code that read them.
     assert.deepEqual(Object.keys(d).sort(), [
       "decision",
       "evaluatedAt",
+      "evaluator",
       "intentHash",
+      "policyHash",
       "policyId",
       "policyVersion",
       "reasons",

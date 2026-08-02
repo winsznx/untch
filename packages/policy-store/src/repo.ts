@@ -45,5 +45,9 @@ export function toEnginePolicy(stored: StoredPolicy): Policy {
     version: stored.version,
     status: stored.status,
     rules: stored.rules,
+    // Carried through so a decision names the exact ruleset bytes it judged, not only the row. This
+    // is the value the chain anchored; the engine never recomputes it, because a second answer could
+    // disagree with the registry and there would be no way to tell which was right.
+    policyHash: stored.policyHash,
   };
 }
