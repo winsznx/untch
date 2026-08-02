@@ -96,6 +96,7 @@ import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifie
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
+import { registerMarketplaceRoutes } from "./consumer/marketplace-continuity";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
@@ -628,8 +629,31 @@ export function createSellerApp(
           pool: consumerWiring.pool,
           accounts: accountRoutesDeps.accounts,
           secret: consumerAuthConfig.secret,
-          executionEnabled: consumerWiring.config.executionEnabled,
+          // Read from the FLAGS, which is where `CONSUMER_EXECUTION_ENABLED` actually lives.
+          // `wiring.config` is the execution POLICY (caps, rails, providers) and carries no such
+          // field — the root tsconfig cannot see this file, and the ASP's own tsconfig caught it.
+          executionEnabled: loadConsumerFlags().executionEnabled,
         })
+      : null,
+  );
+
+  /**
+   * Marketplace continuity.
+   *
+   * An agent id arriving from OKX is a claim in a request. This route turns "we do not know you" into
+   * a link the same person can complete with the wallet that actually carries authority — rather than
+   * trusting the claim, or refusing with no way forward.
+   */
+  registerMarketplaceRoutes(
+    app,
+    send,
+    accountRoutesDeps
+      ? {
+          accounts: accountRoutesDeps.accounts,
+          links: accountRoutesDeps.links,
+          publicBaseUrl: accountRoutesDeps.publicBaseUrl,
+          allowedReturnOrigins: accountRoutesDeps.allowedReturnOrigins,
+        }
       : null,
   );
 
