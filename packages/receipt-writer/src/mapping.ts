@@ -89,6 +89,18 @@ function vendorIdOf(endpoint: string): Hex {
 
 /** Hash of the (redacted) off-chain metadata this receipt stands for. On-chain carries hashes only
  *  (§10.3) — the redacted metadata object stays off-chain; this commits to it. */
+/**
+ * The off-chain commitment a receipt anchors alongside its on-chain fields.
+ *
+ * `evaluator` is included because the on-chain receipt names a `policyHash` and nothing else about
+ * how that ruleset was read. One anchored ruleset can be judged by two different evaluators — it
+ * already has been, when `hardCap.absolute` began being enforced for a policy registered before that
+ * rule existed. Without the evaluator in this commitment, two receipts for the same policy and the
+ * same amount could record different verdicts with nothing in either explaining why.
+ *
+ * Still deliberately absent: the task text, the parameters, the recipient and the endpoint PATH. The
+ * host is enough to identify a vendor; the rest is the caller's business and a receipt is public.
+ */
 function metadataHashOf(input: SpendIntentInput, decision: Decision): Hex {
   const redacted = JSON.stringify({
     intentHash: decision.intentHash,
@@ -102,6 +114,12 @@ function metadataHashOf(input: SpendIntentInput, decision: Decision): Hex {
         return null;
       }
     })(),
+    // Which rules ran, in what order, under which implementation.
+    evaluator: decision.evaluator,
+    // The ruleset bytes the engine actually judged, which may differ from `input.policyHash` if a
+    // caller ever bound an intent to one ruleset and the store held another. Recording both means a
+    // disagreement is visible rather than resolved silently in favour of one of them.
+    judgedPolicyHash: decision.policyHash,
   });
   return keccak256(toHex(redacted));
 }
