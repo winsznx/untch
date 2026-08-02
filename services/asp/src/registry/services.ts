@@ -1,8 +1,10 @@
 import {
+  ACCOUNT_PREDECESSOR,
   ADDRESS_PATTERN,
   BYTES32_PATTERN,
   ERROR_ENVELOPE,
   POLICY_HASH_PREDECESSOR,
+  CHANNEL_BINDING_PREDECESSOR,
   POLICY_PREDECESSOR,
   PUBLIC_PREFLIGHT_INPUT,
   PUBLIC_VERIFY_INPUT,
@@ -247,7 +249,18 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/preflight_payment",
     pricing: { kind: "paid", price: "$0.05", amountBaseUnits: "50000" },
-    maturity: "blocked",
+    /**
+     * `blocked` until PASS 2, and the word had a precise meaning: the contract is correct and a fresh
+     * caller cannot complete it, because something it requires has no public way to be created. That
+     * was true — a policy id came from nowhere a stranger could reach.
+     *
+     * It is no longer true. `/consumer/policies/draft` and `/consumer/policies/sync` let any caller
+     * register a policy from their own wallet, so the predecessor chain is complete and the honest
+     * value is `demo`: the path exists end to end and has not been walked against mainnet on this
+     * deployment, because doing so means broadcasting a real registration transaction — a separately
+     * approved action, not something a build does on its own.
+     */
+    maturity: "demo",
     summary:
       "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it.",
     intendedCaller: "an operator funding an autonomous agent who wants every payment checked before it moves",
@@ -325,7 +338,9 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/verify_delivery",
     pricing: { kind: "paid", price: "$0.10", amountBaseUnits: "100000" },
-    maturity: "blocked",
+    // Same reasoning as preflight_payment: the policy predecessor now has a public route, so the
+    // service is reachable. `demo` rather than `live` because it has not been proven end to end here.
+    maturity: "demo",
     summary:
       "Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict.",
     intendedCaller: "a buyer deciding whether work they commissioned has actually been delivered",
@@ -358,7 +373,8 @@ export const SERVICES: readonly ServiceDefinition[] = [
      * committed, so it loads it. What remains is the policy — an intent cannot exist without one.
      */
     predecessors: [
-      POLICY_PREDECESSOR,
+      CHANNEL_BINDING_PREDECESSOR,
+  POLICY_PREDECESSOR,
       {
         what: "An intent created on this host.",
         why: "Verification is about a specific commitment. Without one there is nothing to compare a delivery against.",
@@ -391,7 +407,8 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/create_spend_intent",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
-    maturity: "blocked",
+    // Reachable for the same reason: the policy it binds to can now be created by its own owner.
+    maturity: "demo",
     summary: "Canonicalises and hashes a proposed payment, binding it to a registered policy.",
     intendedCaller: "an agent that wants one stable hash to refer to a payment through preflight, verification and receipt",
     delivers: "the canonical form of the intent and its intentHash",
@@ -1163,6 +1180,445 @@ export const SERVICES: readonly ServiceDefinition[] = [
     refusals: [
       { code: "PAYMENT_REQUIRED", status: 402, when: "no valid payment accompanied the request" },
       { code: "IDEA_REQUIRED", status: 400, when: "idea is absent, empty, or longer than 280 characters" },
+    ],
+    schemaVersion: "1.0.0",
+  },
+
+  // ── the account, policy and approval journey ─────────────────────────────
+  //
+  // These are the routes PASS 1 recorded as missing, and their presence here is what makes the
+  // ordering MECHANICAL rather than described in prose a validator never reads. `preflight_payment`
+  // names POLICY_PREDECESSOR; POLICY_PREDECESSOR names `/consumer/policies/draft`; that route names
+  // ACCOUNT_PREDECESSOR; and ACCOUNT_PREDECESSOR names the link flow. A generator walking that graph
+  // can state the whole sequence without anyone having written it down twice.
+  {
+    toolId: "account_link_start",
+    publicName: "Account link — start",
+    protocol: "A2MCP",
+    method: "POST",
+    path: "/consumer/account/link/start",
+    pricing: { kind: "free", price: null, amountBaseUnits: null },
+    maturity: "live",
+    summary: "Opens a one-time request to bind a wallet — and optionally a marketplace identity — to an Untch account.",
+    intendedCaller:
+      "a marketplace caller whose agent id Untch has never seen, or a person signing in for the first time",
+    delivers:
+      "a link request id, a one-time code shown exactly once, the message the wallet must sign, and the URL to sign it at",
+    input: {
+      type: "object",
+      title: "AccountLinkStart",
+      properties: {
+        requestedScopes: {
+          type: "array",
+          description: "identity proves who you are. policy-authority additionally permits owning a policy.",
+          items: { type: "string", enum: ["identity", "policy-authority"] },
+        },
+        marketplace: { type: "string", description: "The marketplace this call arrived through, e.g. okx." },
+        marketplaceAgentId: {
+          type: "string",
+          description:
+            "UNPROVEN on arrival. Recorded as context and authorises nothing until a wallet signs for it.",
+        },
+        marketplaceBuyerId: { type: "string" },
+        taskRef: { type: "string", description: "The marketplace task or job this call belongs to." },
+        serviceOrderRef: { type: "string" },
+        returnUrl: {
+          type: "string",
+          description: "Where to return afterwards. Matched against an allowlist by exact ORIGIN, and must be https.",
+        },
+      },
+      additionalProperties: false,
+    },
+    output: OK_ENVELOPE(
+      "AccountLinkStarted",
+      {
+        linkRequestId: { type: "string", pattern: "^ulnk_[a-z0-9]{26}$" },
+        oneTimeCode: { type: "string", description: "Returned once. Stored hashed; no later read can produce it." },
+        expiresAt: isoTimestamp("When this link request stops being redeemable."),
+        proofMethod: { type: "string", const: "siwe-personal-sign" },
+        walletActionUrl: { type: "string" },
+        requestedScopes: { type: "array", items: { type: "string" } },
+      },
+      ["linkRequestId", "oneTimeCode", "expiresAt", "proofMethod"],
+    ),
+    validExample: {
+      title: "Link a marketplace caller",
+      request: { marketplace: "okx", marketplaceAgentId: "6047", taskRef: "task-42", requestedScopes: ["identity"] },
+    },
+    invalidExample: {
+      title: "Ask for a scope that does not exist",
+      request: { requestedScopes: ["spend-anything"] },
+      refusalCode: "UNKNOWN_SCOPE",
+    },
+    predecessors: [],
+    sideEffects: [
+      { what: "Creates a pending link request holding a hashed one-time code.", durable: true },
+      { what: "Approves no payment. No route reachable from this code takes an amount.", durable: false },
+    ],
+    idempotency: "not-idempotent",
+    refusals: [
+      { code: "UNKNOWN_SCOPE", status: 400, when: "requestedScopes contains a scope this host does not grant" },
+      { code: "RETURN_URL_NOT_ALLOWED", status: 400, when: "returnUrl is not an exact-origin match for an allowed origin, or is not https" },
+      { code: "ACCOUNT_LINK_UNAVAILABLE", status: 503, when: "this instance cannot mint sessions" },
+    ],
+    schemaVersion: "1.0.0",
+  },
+  {
+    toolId: "account_link_complete",
+    publicName: "Account link — complete",
+    protocol: "A2MCP",
+    method: "POST",
+    path: "/consumer/account/link/complete",
+    pricing: { kind: "free", price: null, amountBaseUnits: null },
+    maturity: "live",
+    summary: "Verifies a wallet signature and binds the wallet, and any marketplace identity, to an account.",
+    intendedCaller: "the same person who started the link, now holding a signature from their wallet",
+    delivers: "the account id, the wallet binding, any marketplace binding, and a session token",
+    input: {
+      type: "object",
+      title: "AccountLinkComplete",
+      properties: {
+        linkRequestId: { type: "string", pattern: "^ulnk_[a-z0-9]{26}$" },
+        code: { type: "string", description: "The one-time code. Case and hyphens are ignored." },
+        message: { type: "string", description: "The SIWE message, naming this domain and the nonce this request issued." },
+        signature: { type: "string", pattern: "^0x[0-9a-fA-F]+$" },
+        walletProvider: { type: "string", description: "e.g. okx-agentic-wallet. Recorded, never trusted." },
+      },
+      required: ["linkRequestId", "code", "message", "signature"],
+      additionalProperties: false,
+    },
+    output: OK_ENVELOPE(
+      "AccountLinked",
+      {
+        accountId: { type: "string", pattern: "^acct_[a-z0-9]{26}$" },
+        accountCreated: { type: "boolean", description: "False when the wallet restored an existing account." },
+        session: { type: "object" },
+        nextAction: { type: "object", description: "READY, or POLICY_REQUIRED when the account holds no policy yet." },
+      },
+      ["accountId", "accountCreated", "session"],
+    ),
+    validExample: {
+      title: "Complete a link",
+      request: {
+        linkRequestId: "ulnk_abcdefghijklmnopqrstuvwxyz",
+        code: "ABCD-EFGH-IJKL-MNOP-QRST",
+        message: "asp.untch.xyz wants you to sign in with your Ethereum account:\n0x…",
+        signature: "0xdeadbeef",
+      },
+    },
+    invalidExample: {
+      title: "Present a signature naming another request's nonce",
+      request: {
+        linkRequestId: "ulnk_abcdefghijklmnopqrstuvwxyz",
+        code: "ABCD-EFGH-IJKL-MNOP-QRST",
+        message: "asp.untch.xyz wants you to sign in…",
+        signature: "0xdeadbeef",
+      },
+      refusalCode: "SIWE_NONCE_MISMATCH",
+    },
+    predecessors: [
+      {
+        what: "A pending link request and its one-time code.",
+        why: "The request holds the nonce the signature must name, so a signature obtained for another purpose cannot complete this binding.",
+        obtainableBy: "POST /consumer/account/link/start",
+      },
+      {
+        what: "A wallet able to sign an EIP-191 personal_sign message on X Layer.",
+        why: "Authority here is a verified wallet and nothing else.",
+        obtainableBy: "the OKX Agentic Wallet (`wallet sign-message --type personal`), or any EVM wallet",
+      },
+    ],
+    sideEffects: [
+      { what: "Creates or restores an account and binds the wallet to it.", durable: true },
+      { what: "Binds a marketplace identity, when the request carried one.", durable: true },
+      { what: "Consumes the one-time code. It cannot be redeemed twice.", durable: true },
+    ],
+    idempotency: "not-idempotent",
+    refusals: [
+      { code: "SIWE_NONCE_MISMATCH", status: 401, when: "the message names a nonce this link request did not issue" },
+      { code: "SIWE_WRONG_DOMAIN", status: 401, when: "the message was signed for another site" },
+      { code: "SIWE_WRONG_CHAIN", status: 401, when: "the message names a chain that is not X Layer 196 or 1952" },
+      { code: "SIWE_BAD_SIGNATURE", status: 401, when: "the signature does not verify" },
+      { code: "LINK_CODE_MISMATCH", status: 401, when: "the one-time code does not match this request" },
+      { code: "LINK_REQUEST_NOT_PENDING", status: 409, when: "the request was already completed, cancelled or expired" },
+      { code: "WALLET_BOUND_ELSEWHERE", status: 409, when: "that address is already the authority of another account" },
+      { code: "MARKETPLACE_IDENTITY_BOUND_ELSEWHERE", status: 409, when: "that agent id is already bound to another account" },
+    ],
+    schemaVersion: "1.0.0",
+  },
+  {
+    toolId: "policy_draft",
+    publicName: "Policy draft",
+    protocol: "A2MCP",
+    method: "POST",
+    path: "/consumer/policies/draft",
+    pricing: { kind: "free", price: null, amountBaseUnits: null },
+    maturity: "live",
+    summary: "Turns human spending limits into the exact unsigned transaction that registers them on chain.",
+    intendedCaller: "an account owner setting the rules their agent will spend under",
+    delivers:
+      "the canonical ruleset, its policy hash, the unsigned registerPolicy transaction, and the addresses permitted to send it",
+    input: {
+      type: "object",
+      title: "PolicyDraft",
+      properties: {
+        name: { type: "string" },
+        currency: { type: "string", description: "Settlement token symbol these limits are denominated in." },
+        perActionLimit: { type: "string", pattern: "^\\d{1,12}(\\.\\d{1,6})?$", description: "DECIMAL STRING." },
+        dailyLimit: { type: "string", pattern: "^\\d{1,12}(\\.\\d{1,6})?$", description: "DECIMAL STRING." },
+        autoApproveAtOrBelow: { type: "string", pattern: "^\\d{1,12}(\\.\\d{1,6})?$", description: "At or below this, the decision is automatic. Above it, the owner is asked." },
+        hardCap: { type: "string", pattern: "^\\d{1,12}(\\.\\d{1,6})?$", description: "The line nothing crosses, approval or not." },
+        allowedCapabilities: { type: "array", items: { type: "string" }, minItems: 1 },
+        deniedCapabilities: { type: "array", items: { type: "string" } },
+        allowedRecipients: { type: "array", items: address("A permitted recipient.") },
+        deniedRecipients: { type: "array", items: address("A refused recipient.") },
+        expiry: { type: "string", description: "ISO-8601. After this the policy authorises nothing, with no transaction needed to stop it." },
+        duplicateWindowMinutes: { type: "integer", minimum: 0 },
+        cooldownMinutes: { type: "integer", minimum: 0 },
+        callsPerHour: { type: "integer", minimum: 0 },
+        agentId: address("The agent address this policy governs. Immutable on chain once registered."),
+      },
+      required: [
+        "name",
+        "currency",
+        "perActionLimit",
+        "dailyLimit",
+        "autoApproveAtOrBelow",
+        "hardCap",
+        "allowedCapabilities",
+        "expiry",
+      ],
+      additionalProperties: false,
+    },
+    output: OK_ENVELOPE(
+      "PolicyDrafted",
+      {
+        policyDraftId: { type: "string" },
+        policyHash: bytes32("The hash the registry will store."),
+        canonicalRules: { type: "object", description: "The full ruleset the hash covers. Shown, never hidden." },
+        derivedDefaults: { type: "array", items: { type: "object" }, description: "What the server decided that you did not state, with the reasoning." },
+        transaction: { type: "object", description: "The unsigned registerPolicy call, for YOUR wallet to send." },
+        mustBeSentBy: { type: "object", description: "Which addresses may send it, and why Untch cannot." },
+      },
+      ["policyDraftId", "policyHash", "canonicalRules", "transaction", "mustBeSentBy"],
+    ),
+    validExample: {
+      title: "Gifts and small errands",
+      request: {
+        name: "Gifts and small errands",
+        currency: "USDC",
+        perActionLimit: "8.00",
+        dailyLimit: "40.00",
+        autoApproveAtOrBelow: "5.00",
+        hardCap: "8.00",
+        allowedCapabilities: ["gifts.order"],
+        expiry: "2027-01-01T00:00:00.000Z",
+      },
+    },
+    invalidExample: {
+      title: "A threshold above the hard cap",
+      request: {
+        name: "Broken",
+        currency: "USDC",
+        perActionLimit: "8.00",
+        dailyLimit: "40.00",
+        autoApproveAtOrBelow: "20.00",
+        hardCap: "8.00",
+        allowedCapabilities: ["gifts.order"],
+        expiry: "2027-01-01T00:00:00.000Z",
+      },
+      refusalCode: "POLICY_THRESHOLD_ABOVE_CAP",
+    },
+    predecessors: [
+      ACCOUNT_PREDECESSOR,
+      {
+        what: "A wallet on the account carrying the policy-authority scope.",
+        why: "A wallet that proved identity has not thereby consented to hold spending rules.",
+        obtainableBy: "request `policy-authority` in requestedScopes at POST /consumer/account/link/start",
+      },
+    ],
+    sideEffects: [
+      { what: "Stores a draft. Nothing is registered and no transaction is sent.", durable: true },
+      { what: "Untch does NOT relay the registration: registerPolicy makes msg.sender the owner.", durable: false },
+    ],
+    idempotency: "not-idempotent",
+    refusals: [
+      { code: "ACCOUNT_SESSION_REQUIRED", status: 401, when: "no account session accompanied the request" },
+      { code: "POLICY_AUTHORITY_REQUIRED", status: 409, when: "no wallet on this account may own a policy" },
+      { code: "POLICY_THRESHOLD_ABOVE_CAP", status: 400, when: "autoApproveAtOrBelow is above hardCap, which would make the cap unreachable" },
+      { code: "POLICY_PER_ACTION_ABOVE_DAILY", status: 400, when: "perActionLimit is above dailyLimit, so one action would spend the day" },
+      { code: "POLICY_NO_CAPABILITIES", status: 400, when: "allowedCapabilities is empty" },
+      { code: "POLICY_EXPIRY_PAST", status: 400, when: "expiry has already passed; the registry would refuse it on chain" },
+      { code: "POLICY_AMOUNT_INVALID", status: 400, when: "an amount is not a decimal string" },
+    ],
+    schemaVersion: "1.0.0",
+  },
+  {
+    toolId: "policy_sync",
+    publicName: "Policy sync",
+    protocol: "A2MCP",
+    method: "POST",
+    path: "/consumer/policies/sync",
+    pricing: { kind: "free", price: null, amountBaseUnits: null },
+    maturity: "live",
+    summary: "Reads a confirmed registration from chain and links the policy to the account that can sign for it.",
+    intendedCaller: "an account owner who has just sent their own registerPolicy transaction",
+    delivers: "the numeric policyId, the on-chain owner, and whether the policy became this account's default",
+    input: {
+      type: "object",
+      title: "PolicySync",
+      properties: {
+        policyDraftId: { type: "string" },
+        txHash: bytes32("The confirmed registerPolicy transaction YOUR wallet sent."),
+      },
+      required: ["policyDraftId", "txHash"],
+      additionalProperties: false,
+    },
+    output: OK_ENVELOPE(
+      "PolicySynced",
+      {
+        policyId: { type: "string" },
+        owner: address("Read from the PolicyRegistered event, never from the caller."),
+        policyHash: bytes32("The anchored hash."),
+        becameDefault: { type: "boolean" },
+      },
+      ["policyId", "owner", "policyHash"],
+    ),
+    validExample: {
+      title: "Sync a confirmed registration",
+      request: { policyDraftId: "pdft_0a3d0588efcc785f367e9ee8", txHash: `0x${"11".repeat(32)}` },
+    },
+    invalidExample: {
+      title: "Sync a registration somebody else made",
+      request: { policyDraftId: "pdft_0a3d0588efcc785f367e9ee8", txHash: `0x${"22".repeat(32)}` },
+      refusalCode: "NOT_POLICY_OWNER",
+    },
+    predecessors: [
+      ACCOUNT_PREDECESSOR,
+      {
+        what: "A policy draft, and a confirmed registerPolicy transaction for it.",
+        why: "The draft holds the rules the anchored hash is checked against; the transaction is what made you the owner.",
+        obtainableBy: "POST /consumer/policies/draft, then send the returned transaction from your own wallet",
+      },
+    ],
+    sideEffects: [
+      { what: "Stores the policy and links it to this account.", durable: true },
+      { what: "Sets it as the default when the account has none.", durable: true },
+    ],
+    idempotency: "idempotent",
+    refusals: [
+      { code: "ACCOUNT_SESSION_REQUIRED", status: 401, when: "no account session accompanied the request" },
+      { code: "DRAFT_NOT_FOUND", status: 404, when: "no such draft, or it belongs to another account" },
+      { code: "NOT_POLICY_OWNER", status: 403, when: "the on-chain owner is not a policy-authority wallet of this account" },
+      { code: "RULES_HASH_MISMATCH", status: 409, when: "the draft's rules do not hash to what the transaction anchored" },
+      { code: "REGISTRATION_UNREADABLE", status: 502, when: "no PolicyRegistered event could be read from that transaction" },
+    ],
+    schemaVersion: "1.0.0",
+  },
+  {
+    toolId: "set_default_policy",
+    publicName: "Default policy",
+    protocol: "A2MCP",
+    method: "POST",
+    path: "/consumer/account/default-policy",
+    pricing: { kind: "free", price: null, amountBaseUnits: null },
+    maturity: "live",
+    summary: "Chooses which policy answers when a request names none.",
+    intendedCaller: "an account owner holding more than one policy",
+    delivers: "the chosen default, after checking the account can actually sign for it",
+    input: {
+      type: "object",
+      title: "SetDefaultPolicy",
+      properties: { policyId: { type: "string" } },
+      required: ["policyId"],
+      additionalProperties: false,
+    },
+    output: OK_ENVELOPE(
+      "DefaultPolicySet",
+      { accountId: { type: "string" }, defaultPolicyId: { type: "string" } },
+      ["accountId", "defaultPolicyId"],
+    ),
+    validExample: { title: "Choose a default", request: { policyId: "9001" } },
+    invalidExample: { title: "Choose an expired policy", request: { policyId: "9001" }, refusalCode: "POLICY_EXPIRED" },
+    predecessors: [ACCOUNT_PREDECESSOR, POLICY_PREDECESSOR],
+    sideEffects: [{ what: "Changes which policy an unqualified request resolves to.", durable: true }],
+    idempotency: "idempotent",
+    refusals: [
+      { code: "ACCOUNT_SESSION_REQUIRED", status: 401, when: "no account session accompanied the request" },
+      { code: "POLICY_NOT_FOUND", status: 404, when: "no such policy on this account" },
+      { code: "POLICY_NOT_ACTIVE", status: 409, when: "the policy is paused" },
+      { code: "POLICY_EXPIRED", status: 409, when: "the policy has expired" },
+      { code: "NOT_POLICY_OWNER", status: 403, when: "no wallet on this account owns it" },
+    ],
+    schemaVersion: "1.0.0",
+  },
+  {
+    toolId: "approval_decide",
+    publicName: "Approval decision",
+    protocol: "A2MCP",
+    method: "POST",
+    path: "/consumer/approvals/:approvalRequestId/decide",
+    pricing: { kind: "free", price: null, amountBaseUnits: null },
+    maturity: "live",
+    summary: "Approves or rejects one escalated action, naming the exact payment it authorises.",
+    intendedCaller: "the account owner, through a wallet-backed session",
+    delivers: "the resolved state, and an explicit statement of whether anything was paid",
+    input: {
+      type: "object",
+      title: "ApprovalDecision",
+      properties: {
+        decision: { type: "string", enum: ["APPROVE", "REJECT"] },
+        approvalDigest: {
+          type: "string",
+          pattern: "^apd_[0-9a-f]{64}$",
+          description:
+            "REQUIRED. The digest you were shown, covering intent, quote, amount, asset, provider, capability, recipient, policy, version, nonce and expiry. A decision without it is not a decision: a re-quote changes the digest, and approving the old one would agree to a number you were never shown.",
+        },
+      },
+      required: ["decision", "approvalDigest"],
+      additionalProperties: false,
+    },
+    output: OK_ENVELOPE(
+      "ApprovalDecided",
+      {
+        state: { type: "string", enum: ["PENDING", "APPROVED", "REJECTED", "EXPIRED", "SUPERSEDED", "EXECUTED"] },
+        outcome: { type: "string", description: "APPROVED_AWAITING_EXECUTION when provider execution is disabled." },
+        paid: { type: "boolean", description: "Whether money actually moved. Approving is not paying." },
+        repeat: { type: "boolean", description: "True when this repeated an identical earlier decision." },
+      },
+      ["state", "outcome", "paid"],
+    ),
+    validExample: {
+      title: "Approve the exact quote",
+      request: { decision: "APPROVE", approvalDigest: `apd_${"a".repeat(64)}` },
+    },
+    invalidExample: {
+      title: "Say yes without naming what",
+      request: { decision: "APPROVE" },
+      refusalCode: "APPROVAL_DIGEST_REQUIRED",
+    },
+    predecessors: [
+      ACCOUNT_PREDECESSOR,
+      {
+        what: "A pending approval request, raised because an action exceeded the policy's automatic-approval threshold.",
+        why: "There is nothing to decide until the policy engine asks.",
+        obtainableBy: "GET /consumer/approvals lists them; they are created by the decision path, never by a caller",
+      },
+      CHANNEL_BINDING_PREDECESSOR,
+    ],
+    sideEffects: [
+      { what: "Records a decision bound to the exact payment digest.", durable: true },
+      { what: "Resolves the approval request. It does NOT execute anything.", durable: true },
+    ],
+    idempotency: "idempotent",
+    refusals: [
+      { code: "ACCOUNT_SESSION_REQUIRED", status: 401, when: "no account session accompanied the request" },
+      { code: "APPROVAL_DIGEST_REQUIRED", status: 400, when: "approvalDigest was omitted" },
+      { code: "APPROVAL_NOT_FOUND", status: 404, when: "no such approval, or it belongs to another account" },
+      { code: "APPROVAL_DIGEST_MISMATCH", status: 409, when: "the digest no longer describes this payment — the quote changed" },
+      { code: "APPROVAL_NOT_PENDING", status: 409, when: "already resolved, or superseded by a re-quote" },
+      { code: "APPROVAL_ALREADY_DECIDED", status: 409, when: "this actor already answered, and differently" },
+      { code: "APPROVAL_EXPIRED", status: 410, when: "the approval expired before it was answered" },
     ],
     schemaVersion: "1.0.0",
   },

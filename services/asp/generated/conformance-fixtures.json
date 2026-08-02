@@ -499,6 +499,166 @@
       "path": "/builder/brand_pack",
       "request": {},
       "expectRefusalCode": "IDEA_REQUIRED"
+    },
+    {
+      "toolId": "account_link_start",
+      "kind": "valid",
+      "title": "Link a marketplace caller",
+      "method": "POST",
+      "path": "/consumer/account/link/start",
+      "request": {
+        "marketplace": "okx",
+        "marketplaceAgentId": "6047",
+        "taskRef": "task-42",
+        "requestedScopes": [
+          "identity"
+        ]
+      }
+    },
+    {
+      "toolId": "account_link_start",
+      "kind": "refused",
+      "title": "Ask for a scope that does not exist",
+      "method": "POST",
+      "path": "/consumer/account/link/start",
+      "request": {
+        "requestedScopes": [
+          "spend-anything"
+        ]
+      },
+      "expectRefusalCode": "UNKNOWN_SCOPE"
+    },
+    {
+      "toolId": "account_link_complete",
+      "kind": "valid",
+      "title": "Complete a link",
+      "method": "POST",
+      "path": "/consumer/account/link/complete",
+      "request": {
+        "linkRequestId": "ulnk_abcdefghijklmnopqrstuvwxyz",
+        "code": "ABCD-EFGH-IJKL-MNOP-QRST",
+        "message": "asp.untch.xyz wants you to sign in with your Ethereum account:\n0x…",
+        "signature": "0xdeadbeef"
+      }
+    },
+    {
+      "toolId": "account_link_complete",
+      "kind": "refused",
+      "title": "Present a signature naming another request's nonce",
+      "method": "POST",
+      "path": "/consumer/account/link/complete",
+      "request": {
+        "linkRequestId": "ulnk_abcdefghijklmnopqrstuvwxyz",
+        "code": "ABCD-EFGH-IJKL-MNOP-QRST",
+        "message": "asp.untch.xyz wants you to sign in…",
+        "signature": "0xdeadbeef"
+      },
+      "expectRefusalCode": "SIWE_NONCE_MISMATCH"
+    },
+    {
+      "toolId": "policy_draft",
+      "kind": "valid",
+      "title": "Gifts and small errands",
+      "method": "POST",
+      "path": "/consumer/policies/draft",
+      "request": {
+        "name": "Gifts and small errands",
+        "currency": "USDC",
+        "perActionLimit": "8.00",
+        "dailyLimit": "40.00",
+        "autoApproveAtOrBelow": "5.00",
+        "hardCap": "8.00",
+        "allowedCapabilities": [
+          "gifts.order"
+        ],
+        "expiry": "2027-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "toolId": "policy_draft",
+      "kind": "refused",
+      "title": "A threshold above the hard cap",
+      "method": "POST",
+      "path": "/consumer/policies/draft",
+      "request": {
+        "name": "Broken",
+        "currency": "USDC",
+        "perActionLimit": "8.00",
+        "dailyLimit": "40.00",
+        "autoApproveAtOrBelow": "20.00",
+        "hardCap": "8.00",
+        "allowedCapabilities": [
+          "gifts.order"
+        ],
+        "expiry": "2027-01-01T00:00:00.000Z"
+      },
+      "expectRefusalCode": "POLICY_THRESHOLD_ABOVE_CAP"
+    },
+    {
+      "toolId": "policy_sync",
+      "kind": "valid",
+      "title": "Sync a confirmed registration",
+      "method": "POST",
+      "path": "/consumer/policies/sync",
+      "request": {
+        "policyDraftId": "pdft_0a3d0588efcc785f367e9ee8",
+        "txHash": "0x1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    },
+    {
+      "toolId": "policy_sync",
+      "kind": "refused",
+      "title": "Sync a registration somebody else made",
+      "method": "POST",
+      "path": "/consumer/policies/sync",
+      "request": {
+        "policyDraftId": "pdft_0a3d0588efcc785f367e9ee8",
+        "txHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "expectRefusalCode": "NOT_POLICY_OWNER"
+    },
+    {
+      "toolId": "set_default_policy",
+      "kind": "valid",
+      "title": "Choose a default",
+      "method": "POST",
+      "path": "/consumer/account/default-policy",
+      "request": {
+        "policyId": "9001"
+      }
+    },
+    {
+      "toolId": "set_default_policy",
+      "kind": "refused",
+      "title": "Choose an expired policy",
+      "method": "POST",
+      "path": "/consumer/account/default-policy",
+      "request": {
+        "policyId": "9001"
+      },
+      "expectRefusalCode": "POLICY_EXPIRED"
+    },
+    {
+      "toolId": "approval_decide",
+      "kind": "valid",
+      "title": "Approve the exact quote",
+      "method": "POST",
+      "path": "/consumer/approvals/:approvalRequestId/decide",
+      "request": {
+        "decision": "APPROVE",
+        "approvalDigest": "apd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "toolId": "approval_decide",
+      "kind": "refused",
+      "title": "Say yes without naming what",
+      "method": "POST",
+      "path": "/consumer/approvals/:approvalRequestId/decide",
+      "request": {
+        "decision": "APPROVE"
+      },
+      "expectRefusalCode": "APPROVAL_DIGEST_REQUIRED"
     }
   ]
 }

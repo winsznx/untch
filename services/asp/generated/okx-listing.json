@@ -27,6 +27,50 @@
       "schemaVersion": "1.0.0"
     },
     {
+      "toolId": "preflight_payment",
+      "name": "Policy preflight",
+      "endpoint": "https://asp.untch.xyz/preflight_payment",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "$0.05 per call",
+      "description": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.\n\nYou provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).\n\nYou receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.",
+      "schemaUrl": "https://asp.untch.xyz/schema/preflight_payment",
+      "schemaVersion": "2.0.0"
+    },
+    {
+      "toolId": "verify_delivery",
+      "name": "Delivery verify",
+      "endpoint": "https://asp.untch.xyz/verify_delivery",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "$0.10 per call",
+      "description": "Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict. For a buyer deciding whether work they commissioned has actually been delivered.\n\nYou provide: intentId (string).\n\nYou receive: a pass or fail verdict against the committed criteria, and a durable receipt of that verdict.",
+      "schemaUrl": "https://asp.untch.xyz/schema/verify_delivery",
+      "schemaVersion": "2.0.0"
+    },
+    {
+      "toolId": "create_spend_intent",
+      "name": "Create spend intent",
+      "endpoint": "https://asp.untch.xyz/create_spend_intent",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Canonicalises and hashes a proposed payment, binding it to a registered policy. For an agent that wants one stable hash to refer to a payment through preflight, verification and receipt.\n\nYou provide: policyId (string); intent, containing all 16 of: owner, buyerAgentId, workerAgentId, token, maxAmount, taskHash, acceptanceHash, schemaHash, policyHash, deadline, nonce, endpoint, paramsHash, recipientAddress, category, amount.\n\nYou receive: the canonical form of the intent and its intentHash.",
+      "schemaUrl": "https://asp.untch.xyz/schema/create_spend_intent",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "get_ledger",
+      "name": "Spend window",
+      "endpoint": "https://asp.untch.xyz/get_ledger",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Returns the recent spend window this instance is holding for one policy. For an operator checking what a policy has spent recently.\n\nYou provide: policyId (string).\n\nYou receive: the spend-so-far, the call count in the last hour, and the most recent intents.",
+      "schemaUrl": "https://asp.untch.xyz/schema/get_ledger",
+      "schemaVersion": "1.0.0"
+    },
+    {
       "toolId": "detect_duplicate",
       "name": "Duplicate check",
       "endpoint": "https://asp.untch.xyz/detect_duplicate",
@@ -157,38 +201,75 @@
       "description": "Runs naming, domain checking, ranking and the launch checklist as one call. For a founder or an agent wanting a first pass at a brand in a single request.\n\nYou provide: idea (string).\n\nYou receive: candidate names, their domain verdicts, a ranking, and a launch checklist.",
       "schemaUrl": "https://asp.untch.xyz/schema/brand_pack",
       "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "account_link_start",
+      "name": "Account link — start",
+      "endpoint": "https://asp.untch.xyz/consumer/account/link/start",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Opens a one-time request to bind a wallet — and optionally a marketplace identity — to an Untch account. For a marketplace caller whose agent id Untch has never seen, or a person signing in for the first time.\n\nYou provide: Any one of: requestedScopes, marketplace, marketplaceAgentId, marketplaceBuyerId, taskRef, serviceOrderRef, returnUrl.\n\nYou receive: a link request id, a one-time code shown exactly once, the message the wallet must sign, and the URL to sign it at.",
+      "schemaUrl": "https://asp.untch.xyz/schema/account_link_start",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "account_link_complete",
+      "name": "Account link — complete",
+      "endpoint": "https://asp.untch.xyz/consumer/account/link/complete",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Verifies a wallet signature and binds the wallet, and any marketplace identity, to an account. For the same person who started the link, now holding a signature from their wallet.\n\nYou provide: linkRequestId (string); code (string); message (string); signature (string).\n\nYou receive: the account id, the wallet binding, any marketplace binding, and a session token.",
+      "schemaUrl": "https://asp.untch.xyz/schema/account_link_complete",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "policy_draft",
+      "name": "Policy draft",
+      "endpoint": "https://asp.untch.xyz/consumer/policies/draft",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Turns human spending limits into the exact unsigned transaction that registers them on chain. For an account owner setting the rules their agent will spend under.\n\nYou provide: name (string); currency (string); perActionLimit (string); dailyLimit (string); autoApproveAtOrBelow (string); hardCap (string); allowedCapabilities (array); expiry (string).\n\nYou receive: the canonical ruleset, its policy hash, the unsigned registerPolicy transaction, and the addresses permitted to send it.",
+      "schemaUrl": "https://asp.untch.xyz/schema/policy_draft",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "policy_sync",
+      "name": "Policy sync",
+      "endpoint": "https://asp.untch.xyz/consumer/policies/sync",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Reads a confirmed registration from chain and links the policy to the account that can sign for it. For an account owner who has just sent their own registerPolicy transaction.\n\nYou provide: policyDraftId (string); txHash (string).\n\nYou receive: the numeric policyId, the on-chain owner, and whether the policy became this account's default.",
+      "schemaUrl": "https://asp.untch.xyz/schema/policy_sync",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "set_default_policy",
+      "name": "Default policy",
+      "endpoint": "https://asp.untch.xyz/consumer/account/default-policy",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Chooses which policy answers when a request names none. For an account owner holding more than one policy.\n\nYou provide: policyId (string).\n\nYou receive: the chosen default, after checking the account can actually sign for it.",
+      "schemaUrl": "https://asp.untch.xyz/schema/set_default_policy",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "approval_decide",
+      "name": "Approval decision",
+      "endpoint": "https://asp.untch.xyz/consumer/approvals/:approvalRequestId/decide",
+      "method": "POST",
+      "protocol": "A2MCP",
+      "pricing": "free",
+      "description": "Approves or rejects one escalated action, naming the exact payment it authorises. For the account owner, through a wallet-backed session.\n\nYou provide: decision (string); approvalDigest (string).\n\nYou receive: the resolved state, and an explicit statement of whether anything was paid.",
+      "schemaUrl": "https://asp.untch.xyz/schema/approval_decide",
+      "schemaVersion": "1.0.0"
     }
   ],
   "withheld": [
-    {
-      "toolId": "preflight_payment",
-      "listable": false,
-      "blockedBy": [
-        "A registered spend policy, and its numeric policyId."
-      ]
-    },
-    {
-      "toolId": "verify_delivery",
-      "listable": false,
-      "blockedBy": [
-        "A registered spend policy, and its numeric policyId."
-      ]
-    },
-    {
-      "toolId": "create_spend_intent",
-      "listable": false,
-      "blockedBy": [
-        "A registered spend policy, and its numeric policyId.",
-        "The policyHash of that policy — the exact hash the registry stored when it was registered."
-      ]
-    },
-    {
-      "toolId": "get_ledger",
-      "listable": false,
-      "blockedBy": [
-        "A registered spend policy, and its numeric policyId."
-      ]
-    },
     {
       "toolId": "score_vendor",
       "listable": false,
