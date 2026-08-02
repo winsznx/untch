@@ -426,3 +426,29 @@ export {
   type CredentialReport,
   type CredentialState,
 } from "./credential-state";
+
+/**
+ * The activity index (migration 018) — a case-first evidence store, not a block explorer.
+ *
+ * Organised by what happened rather than by which chain recorded it, because one decision produces
+ * evidence on three rails and in two databases, and a per-chain view shows five unrelated rows.
+ */
+export {
+  PgActivityIndex,
+  ZERO_ALLOCATION,
+  netRevenue,
+  newCaseId,
+  newEventId,
+  passThrough,
+  publicTimeline,
+  type ActivityCase,
+  type ActivityEvent,
+  type AllocationStatus,
+  type CaseKind,
+  type CaseState,
+  type EventSource,
+  type IndexedTransaction,
+  type RawChainEvent,
+  type Reconciliation,
+  type RevenueAllocation,
+} from "./activity-index";

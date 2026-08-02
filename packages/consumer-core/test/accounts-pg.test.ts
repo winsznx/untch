@@ -60,6 +60,36 @@ function allMigrations(): { name: string; sql: string }[] {
  * The second half is the real check. If 015 had failed to apply, or had been recorded without running,
  * `runMigrations` would try it again and return a non-empty list.
  */
+
+/**
+ * This suite's OWN database.
+ *
+ * It and `migrate-upgrade.test.ts` both reset the public schema to build a known starting shape, and
+ * node runs test FILES in parallel — so on a machine that schedules them together they drop it from
+ * under each other and whichever loses fails with `relation "untch_accounts" does not exist`. That
+ * reads as flakiness and is a shared-resource collision; only isolation fixes the class. Same fix, and
+ * same reasoning, as the two-process controller suite.
+ */
+const OWN_DATABASE = "untch_test_accounts";
+
+function ownDatabaseUrl(): string {
+  const url = new URL(TEST_DB as string);
+  url.pathname = `/${OWN_DATABASE}`;
+  return url.toString();
+}
+
+async function createOwnDatabase(): Promise<void> {
+  const admin = createPool(TEST_DB as string);
+  try {
+    // CREATE DATABASE cannot run inside a transaction, and a duplicate is not worth failing on.
+    await admin.query(`CREATE DATABASE ${OWN_DATABASE}`).catch((err: unknown) => {
+      if ((err as { code?: string }).code !== "42P04") throw err;
+    });
+  } finally {
+    await admin.end();
+  }
+}
+
 async function applyWholeRepository(pool: Pool): Promise<void> {
   await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
   await pool.query("CREATE SCHEMA public");
@@ -93,7 +123,8 @@ describe("the account model", { skip: TEST_DB ? false : "TEST_DATABASE_URL is un
   let store: PgAccountStore;
 
   before(async () => {
-    pool = createPool(TEST_DB as string);
+    await createOwnDatabase();
+    pool = createPool(ownDatabaseUrl());
     await applyWholeRepository(pool);
     store = new PgAccountStore(pool);
   });
@@ -285,7 +316,8 @@ describe("policy drafts", { skip: TEST_DB ? false : "TEST_DATABASE_URL is unset"
   let accountId: string;
 
   before(async () => {
-    pool = createPool(TEST_DB as string);
+    await createOwnDatabase();
+    pool = createPool(ownDatabaseUrl());
     // Its own schema reset: node:test may run this file's suites in either order, and a draft suite
     // that inherited half a schema from a neighbour would fail for a reason that is not about drafts.
     await applyWholeRepository(pool);
