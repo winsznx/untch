@@ -216,9 +216,12 @@ describe("what may be listed", () => {
     assert.ok(setDefault, "choosing a default must be a described route");
     assert.equal(setDefault?.path, "/consumer/account/default-policy");
     // The refusal a caller hits when they have policies but chose no default, so the listing states
-    // that having a policy and having chosen one are separate steps.
+    // that having a policy and having chosen one are separate steps. Renamed from POLICY_NOT_SELECTED
+    // when the route learned to resolve a default: one code now covers "you named none and chose none"
+    // and "the one you named is not yours", because both mean the same thing to a caller — there is no
+    // policy here that may judge this — and both are fixed at the same route.
     assert.ok(
-      serviceById("preflight_payment")?.refusals.some((r) => r.code === "POLICY_NOT_SELECTED"),
+      serviceById("preflight_payment")?.refusals.some((r) => r.code === "POLICY_REQUIRED"),
       "preflight must name the refusal for a request that selected no policy",
     );
   });

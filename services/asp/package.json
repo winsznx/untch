@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Untch A2MCP ASP — x402 seller on X Layer via the OKX facilitator: ping_untch ($0.01 proof-of-rail), create_spend_intent (bundled canon hash), preflight_payment ($0.05, real §7.1 policy engine) + the local buyer driver.",
+  "description": "Untch A2MCP ASP \u2014 x402 seller on X Layer via the OKX facilitator: ping_untch ($0.01 proof-of-rail), create_spend_intent (bundled canon hash), preflight_payment ($0.05, real \u00a77.1 policy engine) + the local buyer driver.",
   "scripts": {
     "start": "tsx src/server.ts",
     "serve": "tsx --env-file=../../.env --env-file=.env src/server.ts",
@@ -29,7 +29,10 @@
     "@okxweb3/x402-express": "^0.1.1",
     "@okxweb3/x402-fetch": "^0.1.0",
     "@untch/canon": "workspace:*",
+    "@untch/consumer-core": "workspace:*",
+    "@untch/consumer-providers": "workspace:*",
     "@untch/escalation": "workspace:*",
+    "@untch/owned-work": "workspace:*",
     "@untch/policy-engine": "workspace:*",
     "@untch/policy-store": "workspace:*",
     "@untch/proof-engine": "workspace:*",
@@ -40,9 +43,7 @@
     "@untch/x402-guard": "workspace:*",
     "express": "^4.21.2",
     "tsx": "^4.19.2",
-    "viem": "^2.55.0",
-    "@untch/consumer-core": "workspace:*",
-    "@untch/consumer-providers": "workspace:*"
+    "viem": "^2.55.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

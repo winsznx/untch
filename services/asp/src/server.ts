@@ -69,6 +69,7 @@ import {
   handlePreflightPayment,
   handleVerifyDelivery,
   type HandlerResult,
+  type PreflightDeps,
 } from "./handlers";
 import {
   handleCreateSpendPolicy,
@@ -82,6 +83,7 @@ import { handleGenerateDisputePacket, handleReconcileAgentSpend } from "./report
 import { createLedgerState } from "./ledger-state";
 import { initReceiptWiring, type ReceiptWiring } from "./receipts";
 import { initPolicyWiring, type PolicyWiring } from "./policy-wiring";
+import type { PolicyProvider } from "@untch/policy-store";
 import { initEscalationWiring, type EscalationWiring } from "./escalation-wiring";
 import { initScoreWiring, type ScoreWiring } from "./score-wiring";
 import { initReportWiring, type ReportWiring } from "./report-wiring";
@@ -103,7 +105,14 @@ import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
 import { registerConsumerSettlementRoutes } from "./consumer/operator-settlement-routes";
 import { registerConsumerQuotePreviewRoute } from "./consumer/operator-quote-routes";
 import { registerConsumerVerifyRoutes } from "./consumer/operator-verify-routes";
-import { loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
+import { asset, loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
+import { findOwnedService } from "@untch/owned-work";
+import {
+  handlePublicPreflight,
+  looksPublic,
+  type PublicPreflightDeps,
+} from "./public-dto/preflight";
+import { handlePublicVerify, looksPublicVerify, type PublicVerifyDeps } from "./public-dto/verify";
 import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
 import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
 import { challengeDescription, registerRegistryRoutes } from "./registry/routes";
@@ -345,6 +354,18 @@ export function createSellerApp(
   // Body parsing AFTER the gate: only paid/unpriced requests that reach a handler get parsed.
   app.use(express.json({ limit: "64kb" }));
 
+  /**
+   * Assigned further down, once the account store exists; read by the preflight route above, which
+   * only runs per request. Declared here so the route can close over one binding rather than the
+   * account wiring having to be hoisted above every other registration to satisfy an ordering nobody
+   * would otherwise care about.
+   */
+  let publicPreflightDeps: PublicPreflightDeps | null = null;
+  let publicVerifyDeps: PublicVerifyDeps | null = null;
+
+  /** The settlement asset this deployment actually confirms. Refuses at import when it is unconfirmed. */
+  const settlementAsset = asset("xlayer.usdt0");
+
   // HEAD is accepted only as a paid compatibility probe. It must never execute a
   // business operation or settle a payment, so a verified HEAD remains 405.
   for (const route of [PING_ROUTE, PREFLIGHT_ROUTE, VERIFY_ROUTE, CAFE_LATTE_ROUTE, BRAND_PACK_ROUTE]) {
@@ -412,24 +433,52 @@ export function createSellerApp(
       .catch(next);
   });
 
+  /**
+   * One route, two request shapes, one engine.
+   *
+   * The PUBLIC shape — provider, capability, task, maxSpend, currency, deadline — is what the
+   * registered contract has published for two passes, and until now nothing served it. It is tried
+   * first, and only when the account plumbing it needs is actually wired: a deployment without a
+   * session secret or an account store cannot honestly resolve an account, and answering a public
+   * request by falling through to the protocol path would refuse it for the wrong reason (a missing
+   * `owner` field) instead of the right one.
+   *
+   * The PROTOCOL shape stays exactly as it was, for `create_spend_intent` callers who already hold a
+   * struct. The shapes are disjoint, so nothing has to choose between them.
+   */
+  const preflightEngineDeps = (provider: PolicyProvider): PreflightDeps => ({
+    policyProvider: provider,
+    ledger: ledgerState.ledger,
+    intentStore: ledgerState.intentStore,
+    ...(receiptWiring ? { receiptEnqueuer: receiptWiring.enqueuer } : {}),
+    ...(escalationWiring ? { escalationGateway: escalationWiring.gateway } : {}),
+    intentRegistry,
+    oracleSigner,
+    scoreDataSource: scoreWiring?.dataSource ?? null,
+  });
+
   app.post(PREFLIGHT_ROUTE, (req, res, next) => {
     if (!policyWiring) return send(res, policyStoreUnconfigured());
-    handlePreflightPayment(req.body, {
-      policyProvider: policyWiring.provider,
-      ledger: ledgerState.ledger,
-      intentStore: ledgerState.intentStore,
-      ...(receiptWiring ? { receiptEnqueuer: receiptWiring.enqueuer } : {}),
-      ...(escalationWiring ? { escalationGateway: escalationWiring.gateway } : {}),
-      intentRegistry,
-      oracleSigner,
-      scoreDataSource: scoreWiring?.dataSource ?? null,
-    })
+    const engineDeps = preflightEngineDeps(policyWiring.provider);
+    if (publicPreflightDeps && looksPublic(req.body)) {
+      handlePublicPreflight(req.body, req.header("authorization"), publicPreflightDeps, engineDeps)
+        .then((result) => send(res, result))
+        .catch(next);
+      return;
+    }
+    handlePreflightPayment(req.body, engineDeps)
       .then((result) => send(res, result))
       .catch(next);
   });
 
   app.post(VERIFY_ROUTE, (req, res, next) => {
     if (!policyWiring) return send(res, policyStoreUnconfigured());
+    if (publicVerifyDeps && looksPublicVerify(req.body)) {
+      handlePublicVerify(req.body, req.header("authorization"), publicVerifyDeps)
+        .then((result) => send(res, result))
+        .catch(next);
+      return;
+    }
     handleVerifyDelivery(req.body, {
       policyProvider: policyWiring.provider,
       intentStore: ledgerState.intentStore,
@@ -592,6 +641,48 @@ export function createSellerApp(
         })
       : null;
   registerAccountRoutes(app, send, accountRoutesDeps);
+
+  /**
+   * What the public preflight route needs to derive an account's authority.
+   *
+   * Declared here, after the account store exists, and read by a route registered earlier — safe
+   * because the route body runs per request, long after this line. Null when the account store or the
+   * session secret is missing, and the route then falls through to the protocol shape rather than
+   * pretending it resolved an account it could not read.
+   *
+   * `network` is the settlement asset this deployment actually confirms, not a symbol from a config
+   * string. A request naming any other currency is refused by name rather than judged against a token
+   * nobody verified.
+   */
+  publicPreflightDeps =
+    accountRoutesDeps && policyWiring && consumerAuthConfig.secret
+      ? {
+          accounts: accountRoutesDeps.accounts,
+          policies: policyWiring.provider,
+          ownedService: (provider: string, capability: string) => findOwnedService(provider, capability),
+          network: {
+            token: settlementAsset.address as `0x${string}`,
+            symbol: settlementAsset.symbol,
+            decimals: settlementAsset.decimals,
+          },
+          sessionSecret: consumerAuthConfig.secret,
+          executionEnabled: loadConsumerFlags().executionEnabled,
+        }
+      : null;
+
+  /**
+   * What the public verify route needs. It reads the CONSUMER store rather than the policy store,
+   * because a verification is about an execution and a settlement, not about a ruleset.
+   */
+  publicVerifyDeps =
+    accountRoutesDeps && consumerWiring && consumerAuthConfig.secret
+      ? {
+          store: consumerWiring.store,
+          accounts: accountRoutesDeps.accounts,
+          sessionSecret: consumerAuthConfig.secret,
+          executionEnabled: loadConsumerFlags().executionEnabled,
+        }
+      : null;
 
   /**
    * The public policy journey — draft here, register from your own wallet, sync back.

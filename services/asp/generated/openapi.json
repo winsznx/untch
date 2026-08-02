@@ -371,7 +371,7 @@
                   }
                 },
                 "refused": {
-                  "summary": "Name neither a policy nor the default one → POLICY_NOT_SELECTED",
+                  "summary": "Name neither a policy nor a default one the account has chosen → POLICY_REQUIRED",
                   "value": {
                     "provider": "stabledomains",
                     "capability": "domains.register",
@@ -450,7 +450,49 @@
             }
           },
           "400": {
-            "description": "POLICY_NOT_SELECTED — neither policyId nor useDefaultPolicy was given; REQUEST_SCHEMA_VIOLATION — a field is missing or has the wrong shape; the message names each one; CURRENCY_NOT_SETTLEABLE — this network has no confirmed contract for that currency; MAX_SPEND_INVALID — maxSpend is not a decimal amount the settlement token can express; DEADLINE_IN_THE_PAST — the deadline has already passed; RECIPIENT_INVALID — recipient was given but is not a 20-byte address",
+            "description": "REQUEST_SCHEMA_VIOLATION — a field is missing or has the wrong shape; the message names each one; CURRENCY_NOT_SETTLEABLE — this network has no confirmed contract for that currency; MAX_SPEND_INVALID — maxSpend is not a decimal amount the settlement token can express; DEADLINE_IN_THE_PAST — the deadline has already passed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ACCOUNT_LINK_REQUIRED — no wallet-backed session accompanied the request; the policy, the spending agent and the owning wallet are all properties of an account",
             "content": {
               "application/json": {
                 "schema": {
@@ -533,8 +575,8 @@
               }
             }
           },
-          "404": {
-            "description": "PROVIDER_NOT_REGISTERED — no provider or capability with those ids is registered here; POLICY_NOT_FOUND — no policy with that id is stored",
+          "409": {
+            "description": "POLICY_REQUIRED — no policyId was sent and the account has chosen no default, or the named policy is neither owned by nor delegated to this account; POLICY_INACTIVE — the policy is paused, revoked, or past its on-chain expiry; RECIPIENT_REQUIRED — no recipient was constrained and no registered service definition names a deterministic payment address for this capability; AUTHORITY_NOT_DERIVABLE — a protocol value cannot be derived without inventing it; the response names each one and what would supply it; QUOTE_REQUIRED — the capability is priced by live quote and none has been resolved",
             "content": {
               "application/json": {
                 "schema": {
@@ -575,8 +617,8 @@
               }
             }
           },
-          "409": {
-            "description": "AUTHORITY_NOT_DERIVABLE — a protocol value cannot be derived without inventing it; the response names each one and what would supply it",
+          "410": {
+            "description": "QUOTE_EXPIRED — the quote this request was built against has aged out and must be re-taken",
             "content": {
               "application/json": {
                 "schema": {
@@ -784,7 +826,49 @@
             }
           },
           "400": {
-            "description": "REQUEST_SCHEMA_VIOLATION — intentId is missing or is not a 32-byte hex string",
+            "description": "REQUEST_SCHEMA_VIOLATION — intentId is missing, or expectedResultHash is not a 32-byte hex string",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Refusal",
+                  "description": "The shape of every refusal this service returns, at every status code.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "A stable machine-readable reason. Safe to branch on."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "One sentence a caller can act on."
+                    },
+                    "retryable": {
+                      "type": "boolean",
+                      "description": "Whether repeating the identical request could succeed without changing it."
+                    },
+                    "docsUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Where the rule is written down, when it is."
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "description": "Present only on an unclassified internal failure. Quote it when reporting; it names the log line holding the cause."
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ACCOUNT_LINK_REQUIRED — no wallet-backed session accompanied the request; a verification is scoped to the account that commissioned the work",
             "content": {
               "application/json": {
                 "schema": {
@@ -868,7 +952,7 @@
             }
           },
           "404": {
-            "description": "INTENT_NOT_FOUND — no intent with that id is known here",
+            "description": "INTENT_NOT_FOUND — no intent with that id is known here, or it belongs to another account — the two answer alike, so an opaque id cannot be probed for existence",
             "content": {
               "application/json": {
                 "schema": {
@@ -910,7 +994,7 @@
             }
           },
           "409": {
-            "description": "EVIDENCE_INCOMPLETE — the record needed to judge this delivery is not all present; the response names which parts are missing rather than judging on less",
+            "description": "EXPECTED_RESULT_MISMATCH — expectedResultHash was sent and does not equal the recorded result hash; reported rather than judged, because an assertion about the answer never overrides the committed acceptance criteria; EVIDENCE_INCOMPLETE — the record needed to judge this delivery is not all present; the response names which parts are missing rather than judging on less",
             "content": {
               "application/json": {
                 "schema": {

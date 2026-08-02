@@ -1,0 +1,14 @@
+{
+  "name": "@untch/owned-work",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The runtime every Untch-owned service runs on: service definitions, orders, work intents, plans, nodes, checkpoints, evidence and delivery manifests. Separate from @untch/consumer-core because a work plan is not a spend — it proposes work, and only a child SpendIntent may authorise money for it.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@untch/canon": "workspace:*",
+    "@untch/consumer-core": "workspace:*",
+    "viem": "^2.55.0"
+  }
+}

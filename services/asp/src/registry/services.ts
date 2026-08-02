@@ -294,9 +294,9 @@ export const SERVICES: readonly ServiceDefinition[] = [
       request: EXAMPLE_PREFLIGHT_REQUEST,
     },
     invalidExample: {
-      title: "Name neither a policy nor the default one",
+      title: "Name neither a policy nor a default one the account has chosen",
       request: { ...EXAMPLE_PREFLIGHT_REQUEST, policyId: undefined },
-      refusalCode: "POLICY_NOT_SELECTED",
+      refusalCode: "POLICY_REQUIRED",
     },
     /**
      * One predecessor now, not two.
@@ -314,19 +314,33 @@ export const SERVICES: readonly ServiceDefinition[] = [
     idempotency: "not-idempotent",
     refusals: [
       { code: "PAYMENT_REQUIRED", status: 402, when: "no valid payment accompanied the request" },
-      { code: "POLICY_NOT_SELECTED", status: 400, when: "neither policyId nor useDefaultPolicy was given" },
       { code: "REQUEST_SCHEMA_VIOLATION", status: 400, when: "a field is missing or has the wrong shape; the message names each one" },
       { code: "CURRENCY_NOT_SETTLEABLE", status: 400, when: "this network has no confirmed contract for that currency" },
       { code: "MAX_SPEND_INVALID", status: 400, when: "maxSpend is not a decimal amount the settlement token can express" },
       { code: "DEADLINE_IN_THE_PAST", status: 400, when: "the deadline has already passed" },
-      { code: "RECIPIENT_INVALID", status: 400, when: "recipient was given but is not a 20-byte address" },
-      { code: "PROVIDER_NOT_REGISTERED", status: 404, when: "no provider or capability with those ids is registered here" },
-      { code: "POLICY_NOT_FOUND", status: 404, when: "no policy with that id is stored" },
+      {
+        code: "ACCOUNT_LINK_REQUIRED",
+        status: 401,
+        when: "no wallet-backed session accompanied the request; the policy, the spending agent and the owning wallet are all properties of an account",
+      },
+      {
+        code: "POLICY_REQUIRED",
+        status: 409,
+        when: "no policyId was sent and the account has chosen no default, or the named policy is neither owned by nor delegated to this account",
+      },
+      { code: "POLICY_INACTIVE", status: 409, when: "the policy is paused, revoked, or past its on-chain expiry" },
+      {
+        code: "RECIPIENT_REQUIRED",
+        status: 409,
+        when: "no recipient was constrained and no registered service definition names a deterministic payment address for this capability",
+      },
       {
         code: "AUTHORITY_NOT_DERIVABLE",
         status: 409,
         when: "a protocol value cannot be derived without inventing it; the response names each one and what would supply it",
       },
+      { code: "QUOTE_REQUIRED", status: 409, when: "the capability is priced by live quote and none has been resolved" },
+      { code: "QUOTE_EXPIRED", status: 410, when: "the quote this request was built against has aged out and must be re-taken" },
       { code: "POLICY_STORE_NOT_CONFIGURED", status: 503, when: "this instance has no policy store" },
     ],
     schemaVersion: "2.0.0",
@@ -390,8 +404,22 @@ export const SERVICES: readonly ServiceDefinition[] = [
     idempotency: "not-idempotent",
     refusals: [
       { code: "PAYMENT_REQUIRED", status: 402, when: "no valid payment accompanied the request" },
-      { code: "REQUEST_SCHEMA_VIOLATION", status: 400, when: "intentId is missing or is not a 32-byte hex string" },
-      { code: "INTENT_NOT_FOUND", status: 404, when: "no intent with that id is known here" },
+      { code: "REQUEST_SCHEMA_VIOLATION", status: 400, when: "intentId is missing, or expectedResultHash is not a 32-byte hex string" },
+      {
+        code: "ACCOUNT_LINK_REQUIRED",
+        status: 401,
+        when: "no wallet-backed session accompanied the request; a verification is scoped to the account that commissioned the work",
+      },
+      {
+        code: "INTENT_NOT_FOUND",
+        status: 404,
+        when: "no intent with that id is known here, or it belongs to another account — the two answer alike, so an opaque id cannot be probed for existence",
+      },
+      {
+        code: "EXPECTED_RESULT_MISMATCH",
+        status: 409,
+        when: "expectedResultHash was sent and does not equal the recorded result hash; reported rather than judged, because an assertion about the answer never overrides the committed acceptance criteria",
+      },
       {
         code: "EVIDENCE_INCOMPLETE",
         status: 409,
