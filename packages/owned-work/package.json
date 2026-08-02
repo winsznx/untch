@@ -3,12 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The runtime every Untch-owned service runs on: service definitions, orders, work intents, plans, nodes, checkpoints, evidence and delivery manifests. Separate from @untch/consumer-core because a work plan is not a spend — it proposes work, and only a child SpendIntent may authorise money for it.",
+  "description": "The runtime every Untch-owned service runs on: service definitions, orders, work intents, plans, nodes, checkpoints, evidence and delivery manifests. Separate from @untch/consumer-core because a work plan is not a spend \u2014 it proposes work, and only a child SpendIntent may authorise money for it.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
     "@untch/canon": "workspace:*",
     "@untch/consumer-core": "workspace:*",
     "viem": "^2.55.0"
+  },
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
   }
 }
