@@ -69,30 +69,47 @@ export interface CreatedLinkRequest {
 }
 
 /**
- * `ulnk_` + 26 base32 characters. Opaque, unordered, and not derived from anything the caller supplied,
- * so one request id cannot be guessed from another and none of them leaks how many exist.
+ * `ulnk_` + 26 base32 characters, one fresh random byte each — 130 bits. Opaque, unordered, and not
+ * derived from anything the caller supplied, so one request id cannot be guessed from another and none
+ * of them leaks how many exist.
  */
 export function newLinkRequestId(): string {
-  return `ulnk_${base32(randomBytes(17), 26)}`;
+  return `ulnk_${base32(26)}`;
 }
 
 /**
  * The code a human may retype: base32, hyphenated in groups of four, upper case in display.
  *
- * 20 base32 characters is 100 bits. Chosen over a shorter code because this one is sometimes read aloud
- * or pasted into a chat, and the attempt limit is a backstop rather than the defence — a code short
- * enough to need rate limiting to be safe is a code that is unsafe the moment the limiter is bypassed.
+ * 20 base32 characters, one fresh random byte each — 100 bits. Chosen over a shorter code because this
+ * one is sometimes read aloud or pasted into a chat, and the attempt limit is a backstop rather than
+ * the defence: a code short enough to need rate limiting to be safe is a code that is unsafe the moment
+ * the limiter is bypassed.
  */
 export function newLinkCode(): string {
-  const raw = base32(randomBytes(13), 20).toUpperCase();
+  const raw = base32(20).toUpperCase();
   return (raw.match(/.{1,4}/g) ?? [raw]).join("-");
 }
 
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 
-function base32(bytes: Buffer, length: number): string {
+/**
+ * ONE fresh byte per character. Never a byte reused by wrapping the index.
+ *
+ * The version this replaces did `bytes[i % bytes.length]`, which looks harmless and is not: asked for
+ * 26 characters from 17 bytes it emitted characters 0–16 and then REPEATED characters 0–8, so every
+ * id ended with a visible copy of its own beginning. A production id read back as
+ * `ulnk_5c43hxjwpbcn37y445c43hxjwp` — `5c43hxjwp` twice — which is how it was noticed.
+ *
+ * The damage is not cosmetic. Every id leaked its own suffix from its prefix, and the doc comments
+ * claimed randomness the strings did not carry: the tail characters were copies, so they added nothing
+ * to the space an attacker has to search. Drawing `length` bytes costs nothing and makes the claim true.
+ *
+ * `% 32` is bias-free here because 256 is an exact multiple of 32; every character is equally likely.
+ */
+function base32(length: number): string {
+  const bytes = randomBytes(length);
   let out = "";
-  for (let i = 0; i < length; i += 1) out += BASE32[(bytes[i % bytes.length] as number) % 32];
+  for (let i = 0; i < length; i += 1) out += BASE32[(bytes[i] as number) % 32];
   return out;
 }
 

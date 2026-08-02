@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, test } from "node:test";
 import { createPool, runMigrations, type Pool } from "../src/db";
-import { PgAccountStore, newWalletBindingId } from "../src/accounts";
+import { PgAccountStore, newAccountId, newWalletBindingId } from "../src/accounts";
 import {
   LINK_MAX_ATTEMPTS,
   PgLinkRequestStore,
@@ -12,6 +12,7 @@ import {
   codeMatches,
   hashCode,
   newLinkCode,
+  newLinkRequestId,
   returnUrlAllowed,
 } from "../src/account-link";
 
@@ -615,5 +616,37 @@ describe("link requests are consumed exactly once", { skip: TEST_DB ? false : "T
     await links.expire(now + 12 * 60_000);
     assert.equal((await links.get(stale.request.linkRequestId))?.status, "EXPIRED");
     assert.equal((await links.get(live.request.linkRequestId))?.status, "PENDING");
+  });
+});
+
+describe("identifiers carry the randomness their comments claim", () => {
+  test("no id repeats its own prefix in its suffix", () => {
+    // The defect this pins: `bytes[i % bytes.length]` over 17 bytes for 26 characters emitted
+    // characters 0–16 and then repeated 0–8, so every id ended with a copy of its own beginning. It
+    // was found by reading one back from production: ulnk_5c43hxjwpbcn37y445c43hxjwp.
+    for (let n = 0; n < 200; n += 1) {
+      const id = newLinkRequestId().slice("ulnk_".length);
+      assert.equal(id.length, 26);
+      const head = id.slice(0, 9);
+      assert.notEqual(id.slice(17, 26), head, `suffix repeats prefix: ${id}`);
+
+      const account = newAccountId().slice("acct_".length);
+      assert.notEqual(account.slice(17, 26), account.slice(0, 9), `suffix repeats prefix: ${account}`);
+    }
+  });
+
+  test("every character position varies across samples", () => {
+    // A position fed by a reused byte would be perfectly correlated with an earlier one. Sampling
+    // each position independently is what catches a wrap that happens to look plausible in one id.
+    const samples = Array.from({ length: 300 }, () => canonicaliseCode(newLinkCode()));
+    for (let pos = 0; pos < 20; pos += 1) {
+      const distinct = new Set(samples.map((s) => s[pos]));
+      assert.ok(distinct.size > 8, `position ${pos} took only ${distinct.size} distinct values`);
+    }
+  });
+
+  test("ids do not collide across a large sample", () => {
+    const ids = new Set(Array.from({ length: 5000 }, () => newLinkRequestId()));
+    assert.equal(ids.size, 5000);
   });
 });
