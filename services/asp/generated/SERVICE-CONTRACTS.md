@@ -127,15 +127,17 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
 **Refusals**
 
 - `PAYMENT_REQUIRED` (402) — no valid payment accompanied the request
-- `POLICY_NOT_SELECTED` (400) — neither policyId nor useDefaultPolicy was given
 - `REQUEST_SCHEMA_VIOLATION` (400) — a field is missing or has the wrong shape; the message names each one
 - `CURRENCY_NOT_SETTLEABLE` (400) — this network has no confirmed contract for that currency
 - `MAX_SPEND_INVALID` (400) — maxSpend is not a decimal amount the settlement token can express
 - `DEADLINE_IN_THE_PAST` (400) — the deadline has already passed
-- `RECIPIENT_INVALID` (400) — recipient was given but is not a 20-byte address
-- `PROVIDER_NOT_REGISTERED` (404) — no provider or capability with those ids is registered here
-- `POLICY_NOT_FOUND` (404) — no policy with that id is stored
+- `ACCOUNT_LINK_REQUIRED` (401) — no wallet-backed session accompanied the request; the policy, the spending agent and the owning wallet are all properties of an account
+- `POLICY_REQUIRED` (409) — no policyId was sent and the account has chosen no default, or the named policy is neither owned by nor delegated to this account
+- `POLICY_INACTIVE` (409) — the policy is paused, revoked, or past its on-chain expiry
+- `RECIPIENT_REQUIRED` (409) — no recipient was constrained and no registered service definition names a deterministic payment address for this capability
 - `AUTHORITY_NOT_DERIVABLE` (409) — a protocol value cannot be derived without inventing it; the response names each one and what would supply it
+- `QUOTE_REQUIRED` (409) — the capability is priced by live quote and none has been resolved
+- `QUOTE_EXPIRED` (410) — the quote this request was built against has aged out and must be re-taken
 - `POLICY_STORE_NOT_CONFIGURED` (503) — this instance has no policy store
 
 **A request that works**
@@ -159,7 +161,7 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
 }
 ```
 
-**A request that is refused** — `POLICY_NOT_SELECTED`
+**A request that is refused** — `POLICY_REQUIRED`
 
 ```json
 {
@@ -204,8 +206,10 @@ You receive: a pass or fail verdict against the committed criteria, and a durabl
 **Refusals**
 
 - `PAYMENT_REQUIRED` (402) — no valid payment accompanied the request
-- `REQUEST_SCHEMA_VIOLATION` (400) — intentId is missing or is not a 32-byte hex string
-- `INTENT_NOT_FOUND` (404) — no intent with that id is known here
+- `REQUEST_SCHEMA_VIOLATION` (400) — intentId is missing, or expectedResultHash is not a 32-byte hex string
+- `ACCOUNT_LINK_REQUIRED` (401) — no wallet-backed session accompanied the request; a verification is scoped to the account that commissioned the work
+- `INTENT_NOT_FOUND` (404) — no intent with that id is known here, or it belongs to another account — the two answer alike, so an opaque id cannot be probed for existence
+- `EXPECTED_RESULT_MISMATCH` (409) — expectedResultHash was sent and does not equal the recorded result hash; reported rather than judged, because an assertion about the answer never overrides the committed acceptance criteria
 - `EVIDENCE_INCOMPLETE` (409) — the record needed to judge this delivery is not all present; the response names which parts are missing rather than judging on less
 
 **A request that works**

@@ -321,6 +321,27 @@ export async function handlePreflightPayment(
       ),
     };
   }
+
+  return evaluatePreflight(resolved.input, policyId, stored, body, deps);
+}
+
+/**
+ * The decision itself, once an intent and a policy are in hand.
+ *
+ * Split out of `handlePreflightPayment` when the public, account-derived route arrived. The two routes
+ * differ entirely in how they OBTAIN the intent — one is handed a protocol struct, the other derives
+ * one from an account, a policy and a service definition — and not at all in how it is judged. Sharing
+ * this function is what makes that true rather than aspirational: there is one call to the engine, one
+ * receipt enqueue, one escalation gateway, and no second path where a rule could quietly differ.
+ */
+export async function evaluatePreflight(
+  input: SpendIntentInput,
+  policyId: string,
+  stored: StoredPolicy | null,
+  body: unknown,
+  deps: PreflightDeps,
+): Promise<HandlerResult> {
+  const resolved = { input };
   const policy = stored ? toEnginePolicy(stored) : null;
 
   const opts: { now?: () => number; lock?: PerAgentLock } = {};
