@@ -89,6 +89,44 @@ export interface WalletBinding {
   readonly status: BindingStatus;
   readonly verifiedAt: string | null;
   readonly revokedAt: string | null;
+
+  /**
+   * Which WALLET PRODUCT proved this binding.
+   *
+   * `agentic` is the OKX Onchain OS Agentic Wallet: TEE-held, reached through the onchainos CLI or
+   * skill, restored by email/Google/Apple login. `browser` is an injected EIP-1193 provider — the OKX
+   * extension or any other. Both can sign; only one is the wallet a user's agent already spends from.
+   *
+   * Kept distinct because the failure it prevents is specific: a browser extension silently becoming
+   * the owner of policies the agent cannot use.
+   */
+  readonly bindingKind: WalletBindingKind;
+  readonly agentic: AgenticWalletFacts | null;
+  /** The link request this binding came from, so the exact challenge is answerable from the row. */
+  readonly challengeRef: string | null;
+  /** How the challenge reached the wallet. Distinct from proofKind, which says what kind of proof. */
+  readonly challengeTransport: ChallengeTransport | null;
+}
+
+export type WalletBindingKind = "agentic" | "browser" | "declared";
+export type ChallengeTransport = "agent-cli" | "browser-provider" | "operator";
+
+/**
+ * What an Agentic Wallet reported about itself, and nothing more.
+ *
+ * No email, no OTP, no login session, no API secret, no key. Email authenticates access to the wallet
+ * at OKX; it is not spending authority here and there is nowhere to put it. `authMethod` records HOW
+ * the user reached their wallet as audit context, which is a different claim from who controls a key.
+ *
+ * `accountRef` is opaque and internal. The wallet skill's own rule is that the account NAME is
+ * displayable and the id is not, so nothing renders it.
+ */
+export interface AgenticWalletFacts {
+  readonly accountRef: string | null;
+  readonly selectedWallet: string | null;
+  readonly authMethod: "email" | "google" | "apple" | null;
+  readonly solanaAddress: string | null;
+  readonly toolVersion: string | null;
 }
 
 export interface MarketplaceBinding {
@@ -120,11 +158,28 @@ export interface MarketplaceBinding {
  * The id defaults too. A caller that wants to name the binding it is about to create may pass one;
  * one that does not care gets a fresh opaque id rather than an accidental collision.
  */
+export interface WalletBindingExtras {
+  readonly bindingKind?: WalletBindingKind;
+  readonly agentic?: AgenticWalletFacts | null;
+  readonly challengeRef?: string | null;
+  readonly challengeTransport?: ChallengeTransport | null;
+}
+
 export type WalletBindingInput = Omit<
   WalletBinding,
-  "bindingId" | "status" | "revokedAt" | "proofChainId" | "walletProvider" | "scopes"
+  | "bindingId"
+  | "status"
+  | "revokedAt"
+  | "proofChainId"
+  | "walletProvider"
+  | "scopes"
+  | "bindingKind"
+  | "agentic"
+  | "challengeRef"
+  | "challengeTransport"
 > &
-  Partial<Pick<WalletBinding, "bindingId" | "proofChainId" | "walletProvider" | "scopes">>;
+  Partial<Pick<WalletBinding, "bindingId" | "proofChainId" | "walletProvider" | "scopes">> &
+  WalletBindingExtras;
 
 export type MarketplaceBindingInput = Omit<
   MarketplaceBinding,
@@ -363,8 +418,10 @@ export class PgAccountStore implements AccountStore {
     const { rowCount } = await this.pool.query(
       `INSERT INTO untch_wallet_bindings
          (binding_id, account_id, chain_kind, address, role, proof_kind, proof_ref, proof_chain_id,
-          wallet_provider, scopes, status, verified_at, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ACTIVE',$11,$12,$12)
+          wallet_provider, scopes, status, verified_at, created_by, updated_by,
+          binding_kind, agentic_account_ref, agentic_selected_wallet, agentic_auth_method,
+          agentic_solana_address, agentic_tool_version, challenge_ref, challenge_transport)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ACTIVE',$11,$12,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        ON CONFLICT (chain_kind, address) DO UPDATE
          SET role = EXCLUDED.role,
              proof_kind = EXCLUDED.proof_kind,
@@ -373,6 +430,14 @@ export class PgAccountStore implements AccountStore {
              wallet_provider = EXCLUDED.wallet_provider,
              scopes = EXCLUDED.scopes,
              verified_at = EXCLUDED.verified_at,
+             binding_kind = EXCLUDED.binding_kind,
+             agentic_account_ref = EXCLUDED.agentic_account_ref,
+             agentic_selected_wallet = EXCLUDED.agentic_selected_wallet,
+             agentic_auth_method = EXCLUDED.agentic_auth_method,
+             agentic_solana_address = EXCLUDED.agentic_solana_address,
+             agentic_tool_version = EXCLUDED.agentic_tool_version,
+             challenge_ref = EXCLUDED.challenge_ref,
+             challenge_transport = EXCLUDED.challenge_transport,
              updated_at = now(),
              updated_by = EXCLUDED.updated_by
          WHERE untch_wallet_bindings.account_id = EXCLUDED.account_id
@@ -394,6 +459,16 @@ export class PgAccountStore implements AccountStore {
         [...(binding.scopes ?? (binding.role === "primary" ? ["identity", "policy-authority"] : ["identity"]))],
         binding.verifiedAt ?? null,
         binding.by,
+        binding.bindingKind ?? "browser",
+        // Agentic metadata is written only for an agentic binding. The database CHECK refuses the
+        // combination anyway; passing null here means the refusal never has to fire in normal use.
+        binding.bindingKind === "agentic" ? (binding.agentic?.accountRef ?? null) : null,
+        binding.bindingKind === "agentic" ? (binding.agentic?.selectedWallet ?? null) : null,
+        binding.bindingKind === "agentic" ? (binding.agentic?.authMethod ?? null) : null,
+        binding.bindingKind === "agentic" ? (binding.agentic?.solanaAddress ?? null) : null,
+        binding.agentic?.toolVersion ?? null,
+        binding.challengeRef ?? null,
+        binding.challengeTransport ?? null,
       ],
     );
     return { bound: (rowCount ?? 0) === 1 };
@@ -795,6 +870,14 @@ interface WalletRow {
   status: BindingStatus;
   verified_at: Date | null;
   revoked_at: Date | null;
+  binding_kind: string | null;
+  agentic_account_ref: string | null;
+  agentic_selected_wallet: string | null;
+  agentic_auth_method: string | null;
+  agentic_solana_address: string | null;
+  agentic_tool_version: string | null;
+  challenge_ref: string | null;
+  challenge_transport: string | null;
 }
 
 function toWalletBinding(row: WalletRow): WalletBinding {
@@ -812,6 +895,21 @@ function toWalletBinding(row: WalletRow): WalletBinding {
     status: row.status,
     verifiedAt: row.verified_at ? row.verified_at.toISOString() : null,
     revokedAt: row.revoked_at ? row.revoked_at.toISOString() : null,
+    bindingKind: (row.binding_kind ?? "browser") as WalletBindingKind,
+    // Null for a browser binding, and the database CHECK enforces that rather than trusting this
+    // mapper: a browser row carrying agentic metadata cannot be written in the first place.
+    agentic:
+      (row.binding_kind ?? "browser") === "agentic"
+        ? {
+            accountRef: row.agentic_account_ref ?? null,
+            selectedWallet: row.agentic_selected_wallet ?? null,
+            authMethod: (row.agentic_auth_method ?? null) as AgenticWalletFacts["authMethod"],
+            solanaAddress: row.agentic_solana_address ?? null,
+            toolVersion: row.agentic_tool_version ?? null,
+          }
+        : null,
+    challengeRef: row.challenge_ref ?? null,
+    challengeTransport: (row.challenge_transport ?? null) as ChallengeTransport | null,
   };
 }
 

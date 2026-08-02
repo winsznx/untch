@@ -49,6 +49,22 @@ export interface LinkRequestContext {
   readonly serviceOrderRef: string | null;
 }
 
+/**
+ * Which wallet product a link request is for.
+ *
+ * `browser` is completed by the same browser that started it. `agentic` is started in a browser and
+ * completed by an AGENT, possibly on another machine and minutes later, so the browser has to poll
+ * and the request needs progress states that mean something before a signature exists.
+ *
+ * They are separate kinds rather than one flexible request because completing an agentic request
+ * through the browser path would let an injected extension satisfy a flow the user started expressly
+ * to avoid one.
+ */
+export type LinkKind = "browser" | "agentic";
+
+/** Progress a polling page can render before there is any signature to report. */
+export type AgentStage = "WAITING_FOR_AGENT" | "WAITING_FOR_SIGNATURE";
+
 export interface LinkRequest {
   readonly linkRequestId: string;
   readonly accountId: string | null;
@@ -60,6 +76,11 @@ export interface LinkRequest {
   readonly expiresAt: string;
   readonly consumedAt: string | null;
   readonly attempts: number;
+  readonly linkKind: LinkKind;
+  readonly agentStage: AgentStage | null;
+  readonly challengeFetchedAt: string | null;
+  /** What the agent said it will sign with, recorded when it fetched the challenge. */
+  readonly expectedAddress: string | null;
 }
 
 /** A created request, with the code exposed EXACTLY ONCE — it is never readable again from anywhere. */
@@ -189,8 +210,22 @@ export interface LinkRequestStore {
     readonly sourceRequestId: string | null;
     readonly nowMs: number;
     readonly by: string;
+    readonly linkKind?: LinkKind;
   }): Promise<CreatedLinkRequest>;
   get(linkRequestId: string): Promise<LinkRequest | null>;
+  /**
+   * Record that an agent has read the challenge, and with which address it intends to sign.
+   *
+   * Idempotent: an agent that retries does not reset the first-read timestamp. The address is
+   * overwritten on each fetch, because a user who switches sub-wallet mid-flow and re-fetches has
+   * genuinely changed their answer, and completion compares against the LAST thing the browser was
+   * shown rather than the first.
+   */
+  markChallengeFetched(args: {
+    readonly linkRequestId: string;
+    readonly expectedAddress: string | null;
+    readonly nowMs: number;
+  }): Promise<void>;
   /**
    * Consume the request, atomically, and attach it to `accountId`.
    *
@@ -201,6 +236,27 @@ export interface LinkRequestStore {
   redeem(args: {
     readonly linkRequestId: string;
     readonly code: string;
+    readonly accountId: string;
+    readonly nowMs: number;
+    readonly by: string;
+  }): Promise<RedeemOutcome>;
+  /**
+   * Consume an AGENTIC request on the strength of a verified signature alone.
+   *
+   * The browser flow has a one-time code because the browser is what completes it and a code is what
+   * proves the completer is the same party that started it. An agentic request has no such code: it is
+   * completed by an agent that fetched the challenge from a URL, and a code travelling through a
+   * copy-pasted prompt would be a bearer secret sitting in a chat log.
+   *
+   * What replaces it is stronger, not weaker. The caller must ALREADY have verified a signature over
+   * THIS request's own single-use nonce, and must have checked the recovered address against the one
+   * the browser was shown. There is nothing a code would add to that: a code proves you saw a screen,
+   * a signature proves you hold the key.
+   *
+   * Atomic on `status = 'PENDING'`, so two agents racing produce one consumption and one refusal.
+   */
+  redeemVerified(args: {
+    readonly linkRequestId: string;
     readonly accountId: string;
     readonly nowMs: number;
     readonly by: string;
@@ -225,6 +281,10 @@ interface LinkRow {
   expires_at: Date;
   consumed_at: Date | null;
   attempts: number;
+  link_kind: LinkKind;
+  agent_stage: AgentStage | null;
+  challenge_fetched_at: Date | null;
+  expected_address: string | null;
 }
 
 function toRequest(row: LinkRow): LinkRequest {
@@ -245,6 +305,10 @@ function toRequest(row: LinkRow): LinkRequest {
     expiresAt: row.expires_at.toISOString(),
     consumedAt: row.consumed_at ? row.consumed_at.toISOString() : null,
     attempts: row.attempts,
+    linkKind: row.link_kind ?? "browser",
+    agentStage: row.agent_stage ?? null,
+    challengeFetchedAt: row.challenge_fetched_at ? row.challenge_fetched_at.toISOString() : null,
+    expectedAddress: row.expected_address ?? null,
   };
 }
 
@@ -259,15 +323,17 @@ export class PgLinkRequestStore implements LinkRequestStore {
     readonly sourceRequestId: string | null;
     readonly nowMs: number;
     readonly by: string;
+    readonly linkKind?: LinkKind;
   }): Promise<CreatedLinkRequest> {
     const linkRequestId = newLinkRequestId();
     const code = newLinkCode();
+    const linkKind = args.linkKind ?? "browser";
     const { rows } = await this.pool.query<LinkRow>(
       `INSERT INTO untch_account_link_requests
          (link_request_id, code_hash, siwe_nonce, requested_scopes, marketplace, marketplace_agent_id,
           marketplace_buyer_id, task_ref, service_order_ref, return_url, expires_at, source_request_id,
-          created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
+          created_by, updated_by, link_kind, agent_stage)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$14,$15)
        RETURNING *`,
       [
         linkRequestId,
@@ -283,9 +349,32 @@ export class PgLinkRequestStore implements LinkRequestStore {
         new Date(args.nowMs + LINK_CODE_TTL_MS).toISOString(),
         args.sourceRequestId,
         args.by,
+        linkKind,
+        // An agentic request begins waiting for an agent. A browser request has no agent stage: the
+        // browser that started it is the one that will finish it.
+        linkKind === "agentic" ? "WAITING_FOR_AGENT" : null,
       ],
     );
     return { request: toRequest(rows[0] as LinkRow), code };
+  }
+
+  async markChallengeFetched(args: {
+    readonly linkRequestId: string;
+    readonly expectedAddress: string | null;
+    readonly nowMs: number;
+  }): Promise<void> {
+    await this.pool.query(
+      `UPDATE untch_account_link_requests
+          SET agent_stage = 'WAITING_FOR_SIGNATURE',
+              -- COALESCE keeps the FIRST read time. A retrying agent has not restarted the flow, and
+              -- resetting it would erase how long the user has actually been waiting.
+              challenge_fetched_at = COALESCE(challenge_fetched_at, $2),
+              expected_address = $3,
+              updated_at = now(),
+              updated_by = 'agentic-challenge'
+        WHERE link_request_id = $1 AND status = 'PENDING'`,
+      [args.linkRequestId, new Date(args.nowMs).toISOString(), args.expectedAddress],
+    );
   }
 
   async get(linkRequestId: string): Promise<LinkRequest | null> {
@@ -343,6 +432,40 @@ export class PgLinkRequestStore implements LinkRequestStore {
     const done = completed.rows[0];
     if (!done) return { ok: false, reason: "ALREADY_COMPLETED" };
     return { ok: true, request: toRequest(done) };
+  }
+
+  async redeemVerified(args: {
+    readonly linkRequestId: string;
+    readonly accountId: string;
+    readonly nowMs: number;
+    readonly by: string;
+  }): Promise<RedeemOutcome> {
+    const nowIso = new Date(args.nowMs).toISOString();
+    const { rows } = await this.pool.query<LinkRow>(
+      `UPDATE untch_account_link_requests
+          SET status = 'COMPLETED',
+              account_id = $2,
+              consumed_at = $3,
+              agent_stage = NULL,
+              updated_at = now(),
+              updated_by = $4
+        WHERE link_request_id = $1
+          AND link_kind = 'agentic'
+          AND status = 'PENDING'
+          AND expires_at > $3
+        RETURNING *`,
+      [args.linkRequestId, args.accountId, nowIso, args.by],
+    );
+    if (rows[0]) return { ok: true, request: toRequest(rows[0]) };
+
+    // Nothing was updated. Say WHICH of the three reasons it was, because "already used", "expired"
+    // and "no such request" are different things to tell a user and only one of them is worth retrying.
+    const current = await this.get(args.linkRequestId);
+    if (!current) return { ok: false, reason: "NOT_FOUND" };
+    if (current.linkKind !== "agentic") return { ok: false, reason: "NOT_FOUND" };
+    if (current.status === "COMPLETED") return { ok: false, reason: "ALREADY_COMPLETED" };
+    if (current.status === "CANCELLED") return { ok: false, reason: "CANCELLED" };
+    return { ok: false, reason: "EXPIRED" };
   }
 
   async cancel(args: { readonly linkRequestId: string; readonly by: string }): Promise<void> {

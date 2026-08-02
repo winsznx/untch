@@ -354,6 +354,10 @@ export {
   type ResolvedScope,
   type UntchAccount,
   type WalletBinding,
+  type WalletBindingKind,
+  type AgenticWalletFacts,
+  type ChallengeTransport,
+  type WalletBindingExtras,
   type WalletProofKind,
   type WalletRole,
 } from "./accounts";
@@ -378,6 +382,8 @@ export {
   type LinkRequestContext,
   type LinkRequestStatus,
   type LinkRequestStore,
+  type LinkKind,
+  type AgentStage,
   type RedeemFailure,
   type RedeemOutcome,
 } from "./account-link";
