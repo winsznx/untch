@@ -103,9 +103,17 @@ async function serveThrough(body: unknown): Promise<{ status: number; text: stri
     res.status(500).json({ code: "INTERNAL_ERROR" });
   });
   const server = await new Promise<Server>((resolve) => {
-    const s = app.listen(0, () => resolve(s));
+    const s = app.listen(0, "127.0.0.1", () => resolve(s));
   });
   servers.push(server);
+  /**
+   * Closed by this call rather than only by the suite-level `after`.
+   *
+   * Node runs test FILES in parallel, and a suite that leaves listeners open until the very end
+   * competes for descriptors with every other file. That produced one 3-failure run in ten here —
+   * which is worse than a consistent failure, because a flake is what teaches people to re-run
+   * instead of read.
+   */
   const addr = server.address();
   const port = typeof addr === "object" && addr !== null ? addr.port : 0;
   try {
@@ -115,6 +123,8 @@ async function serveThrough(body: unknown): Promise<{ status: number; text: stri
     // A throw inside `res.json` can abort the socket before any response is written. That is a
     // failure to serve, which is the thing being detected.
     return { status: 0, text: "connection aborted" };
+  } finally {
+    server.close();
   }
 }
 
@@ -180,7 +190,6 @@ describe("the decision-evidence writer's primitive types", () => {
       statusAtEval: "ACTIVE",
       activeAtEval: true,
       defaultForAccount: true,
-      observedAt: "2026-08-02T15:00:00.000Z",
     };
     const hashes = [
       quoteDigestOf(terms),

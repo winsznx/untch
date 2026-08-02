@@ -11,6 +11,17 @@
  * A validation route with its own cheaper path would validate that path. This one cannot, because
  * there is no code here that the paid route does not also run.
  *
+ * WHAT WENT WRONG THE FIRST TIME, AND WHY THE FIX IS SHAPED THIS WAY
+ *
+ * The first version passed `preflightEngineDeps()` unchanged. Those deps carry the escalation gateway
+ * and the receipt enqueuer, and BOTH act on the pool rather than on the caller's transaction. So a
+ * validation call that rolled back its own writes perfectly still created a real escalation row,
+ * wrote three real receipt rows, and sent real Telegram, Discord and Slack messages to a human.
+ *
+ * Rolling back a transaction cannot un-send a message. The only defence is not performing the effect,
+ * so `suppressExternalEffects` REMOVES those dependencies rather than asking them to behave. A flag
+ * they check would be a flag somebody forgets to check; an absent dependency cannot fire.
+ *
  * WHY IT IS NOT AN x402 BYPASS
  *
  * It sits behind the operator token, on `/internal`, and it rolls back. It returns a decision that is
@@ -25,6 +36,37 @@ import { handlePublicPreflight, type PublicPreflightDeps } from "../public-dto/p
 import type { PreflightDeps } from "../handlers";
 import { mintAccountSession } from "./account-auth";
 import type { AccountStore, BindingScope, Pool } from "@untch/consumer-core";
+
+/**
+ * The dependencies that reach outside this process, removed.
+ *
+ * Every one of these performs an effect a rollback cannot undo:
+ *
+ *   escalationGateway — creates an escalation row on the POOL and fans out to Telegram, Discord,
+ *                       Slack and iMessage. This is the one that messaged a human during a run that
+ *                       claimed to be non-billable and non-persistent.
+ *   receiptEnqueuer   — writes a receipt row on the POOL and queues it for on-chain anchoring.
+ *   intentRegistry    — broadcasts `setStatus` to SpendIntentRegistry on X Layer.
+ *   oracleSigner      — signs a Mode C spend authorisation, which is a credential once it exists.
+ *
+ * Returned as a type that cannot carry them, so a future edit that adds one back fails to compile
+ * rather than failing in somebody's notifications.
+ */
+export type SuppressedPreflightDeps = Omit<
+  PreflightDeps,
+  "escalationGateway" | "receiptEnqueuer" | "intentRegistry" | "oracleSigner"
+>;
+
+export function suppressExternalEffects(deps: PreflightDeps): SuppressedPreflightDeps {
+  const {
+    escalationGateway: _gateway,
+    receiptEnqueuer: _receipts,
+    intentRegistry: _registry,
+    oracleSigner: _signer,
+    ...rest
+  } = deps;
+  return rest;
+}
 
 export const OPERATOR_PREFLIGHT_VALIDATE_ROUTE = "/internal/consumer/preflight-validate" as const;
 
@@ -118,11 +160,18 @@ export function registerPreflightValidateRoute(app: Express, deps: PreflightVali
         }
       };
 
+      /**
+       * Every outbound effect removed BEFORE the handler runs.
+       *
+       * Not disabled by a flag the gateway checks — removed, so there is nothing present to fire.
+       */
+      const suppressed = suppressExternalEffects(deps.engineDeps());
+
       const result = await handlePublicPreflight(
         b.request ?? {},
         `Bearer ${token}`,
         { ...deps.publicDeps, evidenceTx: rollingBack },
-        deps.engineDeps(),
+        suppressed as PreflightDeps,
       );
 
       res.status(result.status).json({
@@ -133,9 +182,21 @@ export function registerPreflightValidateRoute(app: Express, deps: PreflightVali
           // True when the INSERTs ran against the real constraints before being discarded. False
           // means the decision never reached the write, which is a different kind of pass.
           writesExecutedThenRolledBack: wrote,
+          // Stated per effect rather than as one reassuring sentence, because the first version of
+          // this route said "nothing was persisted" while sending three channel messages.
+          suppressed: {
+            channelDelivery: true,
+            escalationCreation: true,
+            receiptWrite: true,
+            receiptAnchoring: true,
+            intentRegistryBroadcast: true,
+            oracleSignature: true,
+            payment: true,
+          },
           note:
-            "This ran handlePublicPreflight with the production deps and a transaction that always " +
-            "rolls back. No x402 payment was taken and nothing was persisted.",
+            "handlePublicPreflight ran with the production request path and a transaction that always " +
+            "rolls back. Every dependency that acts outside this process was REMOVED before the call, " +
+            "so no message, receipt, anchor or signature could be produced.",
         },
       });
     })().catch((err: unknown) => {

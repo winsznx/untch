@@ -301,10 +301,15 @@ export async function resolveAuthority(
           why: unproven
             ? `this account's ${unproven.marketplace} binding is ${unproven.provenBy}, which is audit context and not authority`
             : "this account has no marketplace binding at all",
-          resolvedFrom: "prove your marketplace agent id at POST /consumer/account/marketplace/prove, or send buyerAgentId",
+          // Pointed at a route nobody built. An "obtainable by" that names a 404 is the exact defect
+          // the service registry's `predecessors` field exists to prevent, reproduced in a refusal.
+          resolvedFrom:
+            "send buyerAgentId with the request. A wallet-proven marketplace binding is not yet " +
+            "obtainable through any public route, so an id sent here is recorded as a claim rather " +
+            "than as proof.",
         },
       ],
-      "/consumer/account/marketplace/prove",
+      null,
     );
   }
 
