@@ -33,7 +33,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findDrift, describeDrift } from "./lint/lockfile-sync";
 
-const SERVICE = "untch-asp";
+/**
+ * Which service this invocation ships.
+ *
+ * Two services deploy from this one repository: the ASP and the web app. They must ship from the same
+ * committed ref, because the web app calls the ASP's routes and a half-deployed pair is a surface
+ * whose two halves disagree about what exists. Making the target a flag rather than a second script
+ * is what keeps the attestation, the lockfile check and the git-archive export identical for both.
+ */
+const DEFAULT_SERVICE = "untch-asp";
+const KNOWN_SERVICES = new Set(["untch-asp", "untch-web"]);
+const SERVICE = (() => {
+  const flag = process.argv.find((a) => a.startsWith("--service="))?.split("=")[1]?.trim();
+  if (!flag) return DEFAULT_SERVICE;
+  if (!KNOWN_SERVICES.has(flag)) {
+    throw new Error(`--service must be one of ${[...KNOWN_SERVICES].join(", ")}, received ${flag}`);
+  }
+  return flag;
+})();
+/** The Railway PROJECT is named after the ASP and holds every service, so the link check is fixed. */
+const PROJECT_NAME = DEFAULT_SERVICE;
 const ENVIRONMENT = "production";
 const ATTESTATION_FILENAME = ".untch-build-attestation.json";
 
@@ -52,10 +71,10 @@ function linkedProjectId(): string {
   });
   const parsed = JSON.parse(raw) as { id?: string; name?: string };
   if (!parsed.id) throw new Error("railway status returned no project id");
-  if (parsed.name !== SERVICE) {
+  if (parsed.name !== PROJECT_NAME) {
     // The project and the service share a name here. A mismatch means this repo is linked somewhere
     // unexpected, and uploading production code to a project nobody intended is worth refusing over.
-    throw new Error(`this repo is linked to project '${parsed.name}', expected '${SERVICE}'`);
+    throw new Error(`this repo is linked to project '${parsed.name}', expected '${PROJECT_NAME}'`);
   }
   return parsed.id;
 }
