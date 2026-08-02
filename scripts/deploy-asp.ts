@@ -32,8 +32,8 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findDrift, describeDrift } from "./lint/lockfile-sync";
+import { PROJECT_NAME, buildAttestation, resolveService, type KnownService } from "./lib/deploy-target";
 
-const SERVICE = "untch-asp";
 const ENVIRONMENT = "production";
 const ATTESTATION_FILENAME = ".untch-build-attestation.json";
 
@@ -52,10 +52,10 @@ function linkedProjectId(): string {
   });
   const parsed = JSON.parse(raw) as { id?: string; name?: string };
   if (!parsed.id) throw new Error("railway status returned no project id");
-  if (parsed.name !== SERVICE) {
+  if (parsed.name !== PROJECT_NAME) {
     // The project and the service share a name here. A mismatch means this repo is linked somewhere
     // unexpected, and uploading production code to a project nobody intended is worth refusing over.
-    throw new Error(`this repo is linked to project '${parsed.name}', expected '${SERVICE}'`);
+    throw new Error(`this repo is linked to project '${parsed.name}', expected '${PROJECT_NAME}'`);
   }
   return parsed.id;
 }
@@ -75,7 +75,17 @@ function main(): void {
   const refArg = args.find((a) => a.startsWith("--ref="));
   const ref = refArg ? refArg.slice("--ref=".length) : "HEAD";
 
-  console.log("\n\x1b[1mUntch ASP deploy\x1b[0m");
+  /**
+   * Resolved through the script's own refusal path, not by throwing at import.
+   *
+   * Everything else in this file that can go wrong prints DEPLOY REFUSED and says what to do; a
+   * mistyped service name should not be the one case that produces a raw stack trace instead.
+   */
+  const target = resolveService(args);
+  if (!target.ok) return fail(target.message);
+  const SERVICE: KnownService = target.service;
+
+  console.log(`\n\x1b[1mUntch deploy → ${SERVICE}\x1b[0m`);
 
   // ── 1. Resolve the commit, and require that it is a real one ──────────────────────────────────
   let commit: string;
@@ -201,12 +211,12 @@ function main(): void {
      * Nothing personal goes in here. It is readable by anyone who can reach the ops endpoint, and the
      * commit, branch and timestamp are all that is needed to answer "is the expected code serving".
      */
-    const attestation = {
+    const attestation = buildAttestation({
       commit,
       branch,
       builtAt: new Date().toISOString(),
-      source: "git-archive-export",
-    };
+      service: SERVICE,
+    });
     writeFileSync(join(exportDir, ATTESTATION_FILENAME), `${JSON.stringify(attestation, null, 2)}\n`);
     console.log(`  attestation        ${ATTESTATION_FILENAME} (commit ${commit.slice(0, 7)})`);
 
