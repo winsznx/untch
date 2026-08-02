@@ -46,7 +46,6 @@ async function main(): Promise<void> {
     const p = rows[0];
     if (!p) throw new Error(`no default policy for ${ACCOUNT}`);
 
-    const observedAt = new Date().toISOString();
     const snapshot: PolicySnapshot = {
       policyId: p.id,
       policyHash: p.policy_hash as Hex,
@@ -61,7 +60,6 @@ async function main(): Promise<void> {
       statusAtEval: p.status,
       activeAtEval: p.status === "ACTIVE" && Number(p.expiry) * 1000 > Date.now(),
       defaultForAccount: true,
-      observedAt,
     };
     const snapshotHash = policySnapshotHashOf(snapshot);
 

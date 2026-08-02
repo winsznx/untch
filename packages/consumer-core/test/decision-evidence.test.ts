@@ -50,7 +50,6 @@ const SNAPSHOT: PolicySnapshot = {
   statusAtEval: "ACTIVE",
   activeAtEval: true,
   defaultForAccount: true,
-  observedAt: "2026-08-02T15:00:00.000Z",
 };
 
 function evidence(over: Partial<DecisionEvidenceV2> = {}): DecisionEvidenceV2 {
@@ -153,7 +152,6 @@ describe("the policy snapshot is immutable content", () => {
       { statusAtEval: "PAUSED" },
       { activeAtEval: false },
       { defaultForAccount: false },
-      { observedAt: "2026-08-02T16:00:00.000Z" },
     ];
     for (const v of variants) {
       assert.notEqual(policySnapshotHashOf({ ...SNAPSHOT, ...v }), base, `${Object.keys(v)[0]} did not change the hash`);

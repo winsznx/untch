@@ -287,7 +287,6 @@ export async function handlePublicPreflight(
     // was live look like it was taken against a dead one.
     activeAtEval: a.policy.status === "ACTIVE" && a.policy.expiry * 1000 > now(),
     defaultForAccount: a.account.defaultPolicyId === a.policy.id,
-    observedAt: new Date(now()).toISOString(),
   };
 
   const quoteTerms: CanonicalQuoteTerms = {

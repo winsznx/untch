@@ -180,7 +180,6 @@ describe("the decision-evidence writer's primitive types", () => {
       statusAtEval: "ACTIVE",
       activeAtEval: true,
       defaultForAccount: true,
-      observedAt: "2026-08-02T15:00:00.000Z",
     };
     const hashes = [
       quoteDigestOf(terms),

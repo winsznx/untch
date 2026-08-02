@@ -124,10 +124,20 @@ export interface PolicySnapshot {
   readonly statusAtEval: string;
   readonly activeAtEval: boolean;
   readonly defaultForAccount: boolean;
-  /** When this state was read from the store. Distinct from the decision timestamp. */
-  readonly observedAt: string;
 }
 
+/**
+ * The hash covers the policy STATE, and deliberately not the moment it was read.
+ *
+ * The first version put `observedAt` inside the hashed content. That made every read of an unchanged
+ * policy a distinct "state": three validation calls against one policy produced three different
+ * snapshot hashes and would have written three rows, which defeats the content-addressing entirely
+ * and contradicts the claim that one policy evaluated a hundred times writes one snapshot.
+ *
+ * When a state was observed belongs to the OBSERVATION, not to the state. The decision already
+ * records `evaluatedAt`, and the snapshot row records `first_seen_at` — so nothing is lost, and a
+ * policy that has not changed now hashes the same way every time it is read.
+ */
 export function policySnapshotHashOf(snapshot: PolicySnapshot): Hex {
   return hashCanonicalJson(snapshot as unknown as Record<string, unknown>);
 }

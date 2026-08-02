@@ -289,7 +289,11 @@ describe("the buyer agent id comes from a signature or from nowhere", () => {
     if (result.ok) return;
     assert.equal(result.code, "AUTHORITY_NOT_DERIVABLE");
     assert.match(result.missing[0]?.why ?? "", /unproven/);
-    assert.ok(result.resolveBy?.includes("marketplace/prove"));
+    // `resolveBy` is null: proving a marketplace binding has no public route yet, and pointing at
+    // one that returns 404 is the "unobtainable predecessor" defect reproduced inside a refusal.
+    assert.equal(result.resolveBy, null);
+    assert.match(result.missing[0]?.resolvedFrom ?? "", /send buyerAgentId/);
+    assert.match(result.missing[0]?.resolvedFrom ?? "", /recorded as a claim/);
   });
 
   test("a caller-supplied id is accepted only when no proven binding contradicts it, and is labelled a claim", async () => {
