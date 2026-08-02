@@ -8,3 +8,4 @@
  */
 export * from "./chains";
 export * from "./chain-registry";
+export * from "./role-addresses";
