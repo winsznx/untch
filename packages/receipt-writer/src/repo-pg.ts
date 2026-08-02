@@ -123,10 +123,23 @@ export class PgReceiptsRepo implements ReceiptsRepo {
     try {
       await client.query("BEGIN");
       const claimed = await client.query<ReceiptDbRow>(
+        /*
+         * A receipt annotated ineligible for anchoring is never claimed into a batch.
+         *
+         * Migration 022 also refuses the anchor at the table, so this clause is not the guarantee —
+         * it is the difference between never batching the row and batching it, submitting, and
+         * having the whole batch rejected because one member cannot be anchored. The predicate is
+         * written out rather than reading `receipts_business` because this SELECT takes row locks,
+         * and a view with a subquery is not lockable.
+         */
         `SELECT receipt_id, policy_id, policy_hash, agent_id, vendor_id, amount, token, category,
                 pay_type, intent_hash, task_hash, decision, verify_result, proof_tier, metadata_hash
-           FROM receipts
+           FROM receipts r
           WHERE status = 'QUEUED'
+            AND NOT EXISTS (
+              SELECT 1 FROM untch_artifact_annotations a
+               WHERE a.artifact_kind = 'RECEIPT' AND a.artifact_ref = r.receipt_id
+                 AND a.eligible_for_anchoring = false)
           ORDER BY created_at
           LIMIT $1
           FOR UPDATE SKIP LOCKED`,
@@ -339,7 +352,10 @@ export class PgReceiptsRepo implements ReceiptsRepo {
 
   async countReceiptsByStatus(status: ReceiptStatus): Promise<number> {
     const res = await this.pool.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM receipts WHERE status = $1`,
+      // A count is a business metric, so it reads the business view. `statusOf` above deliberately
+      // does not: a receipt looked up by its own id is an explicit reference, and hiding it there
+      // would answer "no such receipt" about a row that exists.
+      `SELECT count(*)::text AS count FROM receipts_business WHERE status = $1`,
       [status],
     );
     return Number(res.rows[0]!.count);

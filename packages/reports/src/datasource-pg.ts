@@ -28,7 +28,7 @@ export class PgReportDataSource implements ReportDataSource {
   async ledgerForIntent(intentHash: Hex): Promise<readonly LedgerRow[]> {
     const res = await this.pool.query<LedgerSqlRow>(
       `${LEDGER_SELECT}
-         WHERE l.receipt_id IN (SELECT receipt_id FROM receipts WHERE intent_hash = $1)
+         WHERE l.receipt_id IN (SELECT receipt_id FROM receipts_business WHERE intent_hash = $1)
          ORDER BY l.created_at, l.id`,
       [intentHash.toLowerCase()],
     );
@@ -38,7 +38,7 @@ export class PgReportDataSource implements ReportDataSource {
   async escalationsForIntent(intentHash: Hex): Promise<readonly EscalationRow[]> {
     const res = await this.pool.query<EscalationSqlRow>(
       `SELECT intent_id, status, created_at, resolved_at, code_expires_at
-         FROM escalations WHERE intent_id = $1 ORDER BY created_at`,
+         FROM escalations_business WHERE intent_id = $1 ORDER BY created_at`,
       [intentHash.toLowerCase()],
     );
     return res.rows.map(mapEscalation);
@@ -79,9 +79,9 @@ export class PgReportDataSource implements ReportDataSource {
   ): Promise<readonly EscalationRow[]> {
     const res = await this.pool.query<EscalationSqlRow>(
       `SELECT e.intent_id, e.status, e.created_at, e.resolved_at, e.code_expires_at
-         FROM escalations e
+         FROM escalations_business e
         WHERE e.created_at >= $2 AND e.created_at < $3
-          AND EXISTS (SELECT 1 FROM receipts r WHERE r.intent_hash = e.intent_id AND r.agent_id = $1)
+          AND EXISTS (SELECT 1 FROM receipts_business r WHERE r.intent_hash = e.intent_id AND r.agent_id = $1)
         ORDER BY e.created_at`,
       [agentId.toLowerCase(), fromIso, toIso],
     );
@@ -89,16 +89,28 @@ export class PgReportDataSource implements ReportDataSource {
   }
 }
 
+/*
+ * Reports read `receipts_business`, not `receipts`.
+ *
+ * A dispute packet and a reconciliation are the accounting surface: what they list is what somebody
+ * treats as having happened. Migration 022 annotates rows that exist but did not happen — the three
+ * receipts a rolled-back validation enqueued on 2026-08-02 — and the view applies that annotation.
+ *
+ * The view is the mechanism rather than a NOT EXISTS clause added to each query below, because the
+ * next query added to this file would not have one. The unfiltered table is still reachable through
+ * `receipts_audit`, which carries the annotation alongside the row.
+ */
 const RECEIPT_SELECT = `
   SELECT receipt_id, kind, status, intent_hash, policy_id, policy_hash, agent_id, vendor_id,
          amount, token, category, pay_type, task_hash, decision, verify_result, proof_tier,
          metadata_hash, provenance, batch_id, tx_hash, block_number, created_at
-    FROM receipts`;
+    FROM receipts_business`;
 
+/** Same rule as `RECEIPT_SELECT`: a SPEND nobody funded must not reach a total somebody reads. */
 const LEDGER_SELECT = `
   SELECT l.receipt_id, l.agent_id, l.type, l.amount, l.token, l.counterparty, l.day_key,
          l.category_key, l.vendor_key, l.created_at
-    FROM ledger_entries l`;
+    FROM ledger_entries_business l`;
 
 interface ReceiptSqlRow {
   receipt_id: string;

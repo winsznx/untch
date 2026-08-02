@@ -33,9 +33,15 @@ export class PgScoreDataSource implements ScoreDataSource {
       counterparty: string | null;
       created_at: Date;
     }>(
+      /*
+       * `receipts_business`, not `receipts`. A score is a claim about how a party behaves, and the
+       * three receipts a rolled-back validation left behind on 2026-08-02 describe behaviour by
+       * nobody: no quote was paid and no provider ran. Counting them would move a real party's score
+       * on the strength of a defect. Migration 022 annotates them; this view applies it.
+       */
       `SELECT r.intent_hash, r.vendor_id, r.agent_id, r.decision, l.counterparty, r.created_at
-         FROM receipts r
-         LEFT JOIN ledger_entries l ON l.receipt_id = r.receipt_id
+         FROM receipts_business r
+         LEFT JOIN ledger_entries_business l ON l.receipt_id = r.receipt_id
         WHERE r.kind = 'DECISION' AND r.${col} = $1
         ORDER BY r.created_at`,
       [id],
@@ -66,7 +72,7 @@ export class PgScoreDataSource implements ScoreDataSource {
       created_at: Date;
     }>(
       `SELECT intent_hash, vendor_id, agent_id, verify_result, provenance, created_at
-         FROM receipts
+         FROM receipts_business
         WHERE kind = 'VERIFY' AND ${col} = $1
         ORDER BY created_at`,
       [id],
@@ -99,9 +105,9 @@ export class PgScoreDataSource implements ScoreDataSource {
       code_expires_at: Date;
     }>(
       `SELECT e.intent_id, e.status, e.created_at, e.resolved_at, e.code_expires_at
-         FROM escalations e
+         FROM escalations_business e
         WHERE EXISTS (
-          SELECT 1 FROM receipts r WHERE r.intent_hash = e.intent_id AND r.${col} = $1
+          SELECT 1 FROM receipts_business r WHERE r.intent_hash = e.intent_id AND r.${col} = $1
         )
         ORDER BY e.created_at`,
       [id],
