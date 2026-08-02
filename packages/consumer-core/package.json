@@ -5,12 +5,13 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "description": "Untch Consumer Pack domain core — safe money, the Consumer Intent state machine, the double-entry ledger, the routed treasury, the provider registry + adapter contract, and the transactional outbox.",
+  "description": "Untch Consumer Pack domain core \u2014 safe money, the Consumer Intent state machine, the double-entry ledger, the routed treasury, the provider registry + adapter contract, and the transactional outbox.",
   "scripts": {
     "migrate": "tsx src/migrate.ts",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@untch/canon": "workspace:*",
     "@untch/shared": "workspace:*",
     "pg": "^8.13.1",
     "viem": "^2.55.0"

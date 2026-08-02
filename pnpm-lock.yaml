@@ -162,6 +162,9 @@ importers:
 
   packages/consumer-core:
     dependencies:
+      '@untch/canon':
+        specifier: workspace:*
+        version: link:../canon
       '@untch/shared':
         specifier: workspace:*
         version: link:../shared
