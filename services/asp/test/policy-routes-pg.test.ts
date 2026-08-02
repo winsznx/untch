@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import express from "express";
 import type { Server } from "node:http";
 import { privateKeyToAccount } from "viem/accounts";
-import { encodeFunctionData, verifyMessage, type Address, type Hex } from "viem";
+import { encodeFunctionData, getAddress, verifyMessage, type Address, type Hex } from "viem";
 import { hashCanonicalJson } from "@untch/canon";
 import { PgAccountStore, createPool, runMigrations, type Pool } from "@untch/consumer-core";
 import {
@@ -176,7 +176,6 @@ async function boot(): Promise<void> {
     registration: new PolicyRegistrationService(repo, registry),
     policies: new PolicyProvider(repo),
     secret: SECRET,
-    defaultAgent: AGENT,
   });
 
   baseUrl = await new Promise<string>((resolve) => {
@@ -292,20 +291,46 @@ describe("the policy journey", { skip: TEST_DB ? false : "TEST_DATABASE_URL is u
     assert.equal(tx.to, REGISTRY);
     assert.equal(tx.chainId, CHAIN_ID);
     assert.equal(tx.functionName, "registerPolicy");
-    // Byte-identical to what the real encoder produces for these arguments.
+    /**
+     * The governed agent now defaults to the ACCOUNT'S OWN authority, not to a server address.
+     *
+     * It used to default to `MAINNET_WRITER_ADDRESS` — the receipt writer. A user drafting without
+     * naming an agent would have registered, immutably, a declaration that their spending rules govern
+     * Untch's receipt-anchoring key. Nothing enforces `policy.agent` on chain, so no money would have
+     * moved wrongly; it would simply have been permanently false.
+     */
     assert.equal(
       tx.data,
       encodeFunctionData({
         abi: POLICY_REGISTRY_ABI,
         functionName: "registerPolicy",
-        args: [AGENT, draft.body.policyHash as Hex, BigInt(Math.floor(Date.parse(YEAR_AWAY) / 1000))],
+        args: [
+          getAddress(OWNER.address) as Address,
+          draft.body.policyHash as Hex,
+          BigInt(Math.floor(Date.parse(YEAR_AWAY) / 1000)),
+        ],
       }),
     );
+    const roles = draft.body.roles as { governedAgent: { is: string } };
+    assert.equal(roles.governedAgent.is.toLowerCase(), OWNER.address.toLowerCase());
 
     // And it says whose key must send it, which is the property the server structurally cannot supply.
     const mustBeSentBy = draft.body.mustBeSentBy as { addresses: string[]; reason: string };
     assert.deepEqual(mustBeSentBy.addresses, [OWNER.address.toLowerCase()]);
     assert.match(mustBeSentBy.reason, /Untch does not relay it/);
+  });
+
+  test("an Untch operational address is refused as the governed agent, even when asked for", async () => {
+    const token = await signIn(OWNER);
+    // The receipt writer: the exact address the route used to default to.
+    const draft = await post(
+      "/consumer/policies/draft",
+      { ...(draftBody() as Record<string, unknown>), agentId: "0xeeDda7D18A34A93F3A722eb4446A526Af515457A" },
+      token,
+    );
+    assert.equal(draft.status, 409, JSON.stringify(draft.body));
+    assert.equal(draft.body.code, "OPERATOR_ADDRESS_REFUSED");
+    assert.match(String(draft.body.message), /receipt-writer/);
   });
 
   test("the derived defaults are shown rather than hidden", async () => {
