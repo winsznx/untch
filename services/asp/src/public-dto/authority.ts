@@ -61,6 +61,15 @@ export type PreflightOutcomeCode =
   | "POLICY_INACTIVE"
   | "RECIPIENT_REQUIRED"
   | "AUTHORITY_NOT_DERIVABLE"
+  /**
+   * The requester itself could not be established, as distinct from a field it failed to supply.
+   * `AUTHORITY_NOT_DERIVABLE` means "you did not give me X"; these mean "who you are does not hold
+   * together", which is a different thing to tell somebody and a different thing to fix.
+   */
+  | "REQUESTER_AUTHORITY_NOT_DERIVABLE"
+  | "REQUESTER_BUYER_SEMANTICS_MISMATCH"
+  | "MARKETPLACE_BUYER_REQUIRED"
+  | "DIRECT_ACCOUNT_V3_REQUIRED"
   | "QUOTE_REQUIRED"
   | "QUOTE_EXPIRED";
 
@@ -74,6 +83,10 @@ export const OUTCOME_STATUS: Readonly<Record<PreflightOutcomeCode, number>> = Ob
   POLICY_INACTIVE: 409,
   RECIPIENT_REQUIRED: 409,
   AUTHORITY_NOT_DERIVABLE: 409,
+  REQUESTER_AUTHORITY_NOT_DERIVABLE: 409,
+  REQUESTER_BUYER_SEMANTICS_MISMATCH: 409,
+  MARKETPLACE_BUYER_REQUIRED: 409,
+  DIRECT_ACCOUNT_V3_REQUIRED: 409,
   QUOTE_REQUIRED: 409,
   QUOTE_EXPIRED: 410,
 });
@@ -221,6 +234,17 @@ export type AuthorityOutcome =
       readonly resolveBy: string | null;
     };
 
+/**
+ * The reserved on-chain null for `SpendIntent.buyerAgentId` on a direct Untch-account request.
+ *
+ * Exported as a named constant so no call site writes a bare `"0"` whose meaning has to be inferred,
+ * and so `buyerAgentIdSemantics` in the V3 evidence and this value can never drift apart.
+ */
+export const DIRECT_ACCOUNT_ONCHAIN_BUYER_AGENT_ID = "0" as const;
+
+/** What a `buyerAgentId` of 0 means in a given decision. Recorded, never inferred by a reader. */
+export type BuyerAgentIdSemantics = "no_marketplace_buyer" | "marketplace_agent";
+
 const UINT = /^[0-9]+$/;
 
 const refuse = (
@@ -361,6 +385,47 @@ export async function resolveAuthority(
           },
         ],
         "/consumer/account/link/start",
+      );
+    }
+
+    /**
+     * ── THE RESTRICTION THE SUBSTITUTION ANALYSIS FORCED ──────────────────
+     *
+     * A direct request must be on a policy this account OWNS, never one merely delegated to it.
+     *
+     * The reason is the on-chain hash. `SpendIntent` has eleven fields and not one of them names an
+     * account; the only field that can identify a requester is `owner`, which `mapping.ts` sets to the
+     * policy's on-chain owner. `untch_wallet_bindings` has PRIMARY KEY (chain_kind, address), so an
+     * address belongs to at most one account — which means that when the policy owner IS this
+     * account's proven wallet, `owner` transitively and uniquely names this account, and no second
+     * account can produce the same intent hash.
+     *
+     * Delegation breaks precisely that. A delegated policy is owned by SOMEBODY ELSE'S wallet, so
+     * `owner` would name an address that is not the requester, and two accounts holding the same
+     * delegated policy would produce byte-identical intent hashes for an identical request. Before
+     * this change `buyerAgentId` carried the distinguishing entropy; with it reserved as 0 for every
+     * direct request, that entropy is gone and the delegated case becomes genuinely ambiguous
+     * on chain.
+     *
+     * So delegation keeps working — through the marketplace path, where a buyer agent id identifies
+     * the requester — and is refused here rather than silently producing an unattributable receipt.
+     */
+    if (!selected.ownedByThisAccount) {
+      return refuse(
+        "REQUESTER_AUTHORITY_NOT_DERIVABLE",
+        `policy ${policy.id} is delegated to this account rather than owned by it, and a direct account ` +
+          "request is identified on chain only by the policy owner's address. A decision made this way " +
+          "could not be told apart from the same decision by any other account holding the delegation",
+        [
+          {
+            field: "policy.owner",
+            why: `the policy is owned on chain by ${policy.owner}, which is not a wallet this account proved`,
+            resolvedFrom:
+              "use a policy your own wallet registered, or send a verified marketplace identity so the " +
+              "request carries a requester the receipt can name",
+          },
+        ],
+        null,
       );
     }
 
@@ -515,7 +580,20 @@ export async function resolveAuthority(
 }
 
 type PolicySelection =
-  | { readonly ok: true; readonly policy: StoredPolicy; readonly derivedFrom: string }
+  | {
+      readonly ok: true;
+      readonly policy: StoredPolicy;
+      readonly derivedFrom: string;
+      /**
+       * True when the policy's ON-CHAIN owner is a wallet this account proved with SIWE, false when
+       * the account reaches it only by delegation.
+       *
+       * A flag rather than a substring of `derivedFrom`, because the direct-account path depends on
+       * this answer and a security decision read out of prose is a security decision waiting to be
+       * broken by a copy edit.
+       */
+      readonly ownedByThisAccount: boolean;
+    }
   | (AuthorityOutcome & { readonly ok: false });
 
 /**
@@ -615,10 +693,10 @@ async function selectPolicy(
         "/consumer/policies",
       ) as PolicySelection;
     }
-    return { ok: true, policy, derivedFrom: `${derivedFrom} (delegated to this account)` };
+    return { ok: true, policy, derivedFrom: `${derivedFrom} (delegated to this account)`, ownedByThisAccount: false };
   }
 
-  return { ok: true, policy, derivedFrom };
+  return { ok: true, policy, derivedFrom, ownedByThisAccount: true };
 }
 
 type RecipientResolution =
