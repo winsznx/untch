@@ -33,31 +33,59 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, code: "CROSS_ORIGIN", reason: origin.reason }, { status: 403 });
   }
 
-  const body = (await req.json().catch(() => null)) as { message?: string; signature?: string } | null;
+  const body = (await req.json().catch(() => null)) as
+    | { message?: string; signature?: string; address?: string; chainId?: number }
+    | null;
 
   if (!body?.message || !body?.signature) {
+    /**
+     * The address is sent to START, so the ASP composes the message it will later verify.
+     *
+     * The first version of this route expected a `message` field the ASP has never returned: link/start
+     * hands back a nonce and a domain and leaves the caller to reproduce `buildLinkMessage` exactly.
+     * Any client that formatted one line differently would produce a signature over a message the
+     * server never authored, and it would surface as an opaque signature rejection rather than as the
+     * drift it is. The server composes it now, and the browser signs what it was given.
+     */
+    if (typeof body?.address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(body.address)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "ADDRESS_REQUIRED",
+          message: "connect a wallet first: the message names the address that will sign it",
+        },
+        { status: 400 },
+      );
+    }
+
     const started = await aspFetch<Record<string, unknown>>("/consumer/account/link/start", null, {
       method: "POST",
-      body: JSON.stringify({ requestedScopes: ["identity", "policy-authority"] }),
+      body: JSON.stringify({
+        requestedScopes: ["identity", "policy-authority"],
+        address: body.address,
+        ...(typeof body.chainId === "number" ? { chainId: body.chainId } : {}),
+      }),
     });
     if (!started.ok) {
       return NextResponse.json({ ok: false, ...started.body }, { status: started.status });
     }
     const linkRequestId = String(started.body.linkRequestId ?? "");
-    const code = String(started.body.code ?? started.body.oneTimeCode ?? "");
-    if (!linkRequestId || !code) {
+    const code = String(started.body.oneTimeCode ?? started.body.code ?? "");
+    const siweMessage = typeof started.body.siweMessage === "string" ? started.body.siweMessage : "";
+    if (!linkRequestId || !code || !siweMessage) {
       return NextResponse.json(
-        { ok: false, code: "LINK_START_INCOMPLETE", message: "the ASP did not return a link request and code" },
+        { ok: false, code: "LINK_START_INCOMPLETE", message: "the ASP did not return a link request, a code and a message" },
         { status: 502 },
       );
     }
     const res = NextResponse.json({
       ok: true,
       step: "sign",
-      // Only the message is returned. The code stays in the cookie.
-      instruction: started.body.instruction ?? started.body.next ?? null,
-      message: started.body.message ?? started.body.siweMessage ?? null,
-      request: started.body.request ?? null,
+      // The message and what it establishes. The one-time code is NOT here: it goes to the cookie, so
+      // completing a link needs the browser session rather than merely what was on screen.
+      message: siweMessage,
+      authorityRequested: started.body.authorityRequested ?? null,
+      expiresAt: started.body.expiresAt ?? null,
     });
     res.cookies.set(
       LINK_COOKIE_NAME,
