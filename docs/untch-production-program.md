@@ -417,3 +417,48 @@ service registry and withheld from the listing.
   needs an approved maintenance window.
 - **Enabling a disabled provider or Solana execution.** Both are off, deliberately, and turning either
   on is a decision with money attached.
+
+---
+
+## 6. The pass plan
+
+Phases (§3) say what must become TRUE. Passes say what gets BUILT, and in what order, by whoever picks
+this up next. They are not two plans — a pass ends when the phase gate it was aimed at is provable.
+
+### PASS 3 — the visible slice
+
+Core completion, a wallet-owned mainnet policy, web approvals, the Explorer, the owned-work runtime,
+artifact delivery, and one owned service shipped through all of it.
+
+- account-derived preflight and delivery verify, served rather than only published
+- a policy the user's own wallet registered on chain 196, synced and selected as their default
+- the approval centre as a web surface, not only an API
+- the activity Explorer as a case-first evidence plane over migration 018
+- `@untch/owned-work`: service definitions, orders, work intents, plans, nodes, checkpoints,
+  evidence claims, delivery manifests
+- Untch-owned artifact storage and static-site releases
+- Battle Card, end to end, producing files that exist
+
+### PASS 4 — the rest of the owned services
+
+`brand-naming` and `brand-design` as versioned skills behind the execution boundary of §4.3, then
+Builder Package, GTM Package, Find Contacts, Harden, Edge, and scheduling and reruns. Each one runs on
+the PASS 3 runtime; none of them gets its own private idea of what a plan, a checkpoint or a delivery
+is.
+
+### PASS 5 — the paid rails and the commercial record
+
+Gifts, shopping, domains, mail, and travel where the access is real. Provider execution. The
+accounting proof that separates fee from principal. ERC-8004 onboarding. Sentinel, observe-only. The
+receipt archive. Final marketplace conformance and the regenerated listing.
+
+### Excluded from every pass
+
+**Cordon.** It is a separate product — an inbound payment compliance firewall on Monad testnet,
+dependent on Cleanverse A-Pass and A-Token — and the V2 addendum's description of it as an integrated
+payload firewall was wrong. See [ADR-cordon-is-not-an-untch-module](./adr/ADR-cordon-is-not-an-untch-module.md).
+The module slot it occupied is now the owned-work runtime.
+
+**Swarm governance, bonds, negotiation and guardian consensus.** Later V2 work, and only once the
+earlier product is complete and proven. Each of them is a mechanism for coordinating agents that
+already work; none of them makes an agent work.
