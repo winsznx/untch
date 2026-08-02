@@ -45,6 +45,7 @@ import {
 import { randomBytes } from "node:crypto";
 import type { HandlerResult } from "../handlers";
 import { openAccountSession, mintAccountSession, verifyWalletProof, buildLinkMessage } from "./account-auth";
+import { rolesOf, SIGNIN_CHAIN_IDS } from "@untch/shared";
 import type { SiweVerifier } from "./auth";
 
 export const ACCOUNT_LINK_START_ROUTE = "/consumer/account/link/start" as const;
@@ -95,9 +96,15 @@ export function makeAccountRoutesDeps(args: {
   };
 }
 
-const refuse = (status: number, code: string, message: string): HandlerResult => ({
+const refuse = (
+  status: number,
+  code: string,
+  message: string,
+  /** Structured detail a caller can branch on. Never carries key material or an environment name. */
+  extra: Record<string, unknown> = {},
+): HandlerResult => ({
   status,
-  body: { code, message, retryable: false, docsUrl: null },
+  body: { code, message, retryable: false, docsUrl: null, ...extra },
 });
 
 // ── redaction ────────────────────────────────────────────────────────────────
@@ -241,6 +248,47 @@ export function registerAccountRoutes(
     });
   };
 
+
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+/** The chains this deployment will verify a sign-in against, in preference order. */
+const SIGNABLE_CHAINS: readonly number[] = SIGNIN_CHAIN_IDS;
+
+/**
+ * Refuse an Untch operational address from becoming a user's wallet binding.
+ *
+ * `policy-authority` is refused outright: a policy owned by a deployer, treasury, oracle, writer or
+ * operator key is owned by Untch forever, because `registerPolicy` makes `msg.sender` the owner with
+ * no relayer and no transfer. Binding one with that scope is the step immediately before the mistake.
+ *
+ * `identity` alone is refused too, and the reason is narrower than it looks. Any identity binding can
+ * later be granted policy authority, and an operational address sitting in the account table as a
+ * legitimate wallet is exactly the state in which somebody grants it. If an operator ever genuinely
+ * needs one bound, that is a deliberate act with a human in it, not something a sign-in does.
+ *
+ * The roles come from `@untch/shared`, which is the same registry the policy draft and the deploy
+ * scripts read. A second hardcoded copy here would be a list that drifts, and a drifted guard is one
+ * that stops firing on precisely the address someone added last.
+ */
+function roleCollision(address: string, scopes: readonly BindingScope[]): HandlerResult | null {
+  const roles = rolesOf(address);
+  if (roles.length === 0) return null;
+  return refuse(
+    409,
+    "ROLE_COLLISION",
+    `${address} is an Untch operational address (${roles.map((r) => r.role).join(" and ")}) and cannot be ` +
+      `bound as a user wallet. ${roles[0]?.what ?? ""}`,
+    {
+      // Named, never described vaguely: an operator debugging this needs to know WHICH role. No key
+      // material, no environment variable name and no secret is involved — these addresses are public.
+      conflictingRoles: roles.map((r) => ({ role: r.role, what: r.what })),
+      requestedScopes: scopes,
+      resolution:
+        "Sign in with a wallet that has no operational role here. Binding an operational key is a " +
+        "deliberate administrative act, not something a sign-in performs.",
+    },
+  );
+}
+
   // ── start ──────────────────────────────────────────────────────────────────
 
   post(ACCOUNT_LINK_START_ROUTE, async (req) => {
@@ -288,6 +336,48 @@ export function registerAccountRoutes(
       by: marketplace ? `marketplace:${marketplace}` : "web",
     });
 
+    /**
+     * The message the server will verify, composed by the server.
+     *
+     * `buildLinkMessage` was exported and every caller was expected to reproduce it: the domain, the
+     * scope Resources lines, the issued/expiry stamps, the exact wording. A client that formats one
+     * line differently produces a signature over a message this server never authored, and the
+     * failure surfaces as an opaque signature rejection rather than as the drift it is.
+     *
+     * So when the caller names the address it is about to sign with, the server returns the finished
+     * message. `address` stays optional, because a caller may legitimately not know it yet (a
+     * marketplace starting a link for a wallet that will open the page later), and that path still
+     * gets the nonce and the domain to build one with.
+     */
+    const addressForMessage = typeof b.address === "string" && ADDRESS_RE.test(b.address) ? b.address : null;
+    const chainForMessage =
+      typeof b.chainId === "number" && SIGNABLE_CHAINS.includes(b.chainId) ? b.chainId : SIGNABLE_CHAINS[0];
+
+    /**
+     * An operational address is refused at START when it is named, so the user is told before their
+     * wallet ever opens a prompt rather than after they have signed. The authoritative check is at
+     * COMPLETE, against the address recovered from the signature, because that is the only address
+     * this server did not take somebody's word for.
+     */
+    if (addressForMessage !== null) {
+      const collision = roleCollision(addressForMessage, scopes);
+      if (collision) return collision;
+    }
+
+    const siweMessage =
+      addressForMessage === null
+        ? null
+        : buildLinkMessage({
+            domain: d.domain,
+            uri: d.publicBaseUrl,
+            address: addressForMessage,
+            chainId: chainForMessage as number,
+            nonce: request.siweNonce,
+            issuedAt: new Date(now()).toISOString(),
+            expiresAt: request.expiresAt,
+            scopes: request.requestedScopes,
+          });
+
     return {
       status: 200,
       body: {
@@ -296,6 +386,31 @@ export function registerAccountRoutes(
         oneTimeCode: code,
         expiresAt: request.expiresAt,
         proofMethod: "siwe-personal-sign",
+        // Null when no address was named. Never a template with a placeholder in it: a message that
+        // looks signable and is not is worse than an absent one.
+        siweMessage,
+        /** Exactly what this one signature will establish, for a UI to show before prompting. */
+        authorityRequested: {
+          signatures: 1,
+          format: "SIWE (EIP-4361) over personal_sign (EIP-191)",
+          address: addressForMessage,
+          chainId: chainForMessage,
+          domain: d.domain,
+          scopes: request.requestedScopes,
+          expiresAt: request.expiresAt,
+          creates: [
+            "an UntchAccount, or resolves the one this wallet already is",
+            "an ACTIVE WalletBinding with proofKind=siwe and role=primary",
+            ...(request.requestedScopes.includes("policy-authority" as BindingScope)
+              ? ["permission for this wallet to own and register spend policies"]
+              : []),
+          ],
+          doesNotCreate: [
+            "any payment, approval or spending authority",
+            "any on-chain transaction",
+            "any marketplace binding that is proven rather than claimed",
+          ],
+        },
         // What the wallet is asked for, named precisely. `wallet sign-message --type personal` is the
         // documented Agentic Wallet capability this consumes; no transaction and no new contract.
         walletAction: {
@@ -366,6 +481,17 @@ export function registerAccountRoutes(
       d.verifier,
     );
     if (!proof.ok) return refuse(401, proof.code, proof.reason);
+
+    /**
+     * The authoritative refusal, on the address the SIGNATURE produced.
+     *
+     * A start-time check reads an address the caller typed. This one reads the address that actually
+     * signed, which is the only address this server has not taken somebody's word for. It runs after
+     * verification and before any account or binding is created, so a refused operational key leaves
+     * nothing behind.
+     */
+    const collision = roleCollision(proof.proof.address, request.requestedScopes as readonly BindingScope[]);
+    if (collision) return collision;
 
     // The account this wallet ALREADY is, if any. This is what makes the flow a restoration rather
     // than an account factory: signing in twice with the same wallet reaches the same account.

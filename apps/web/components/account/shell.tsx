@@ -46,9 +46,8 @@ export function NotLinked() {
           wallet signature over a nonce the ASP itself minted.
         </p>
         <p className="text-caption" style={{ color: "var(--color-inverse-muted)" }}>
-          Signing in to this dashboard proved your wallet to <em>this</em> app. The ASP has no reason to
-          take our word for that, so it asks for its own signature. Nothing you sign here approves a
-          payment.
+          One signature, and you will see the exact message first. Connecting a wallet opens no prompt.
+          Nothing you sign here approves a payment.
         </p>
         <LinkWallet linked={false} />
       </div>

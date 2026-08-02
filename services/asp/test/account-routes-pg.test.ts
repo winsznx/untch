@@ -347,6 +347,137 @@ describe("the account surface", { skip: TEST_DB ? false : "TEST_DATABASE_URL is 
     assert.equal(stolen.complete.body.code, "MARKETPLACE_IDENTITY_BOUND_ELSEWHERE");
   });
 
+  /**
+   * The five roles, defended at the door.
+   *
+   * `registerPolicy` makes `msg.sender` the owner permanently. A policy owned by a deployer, treasury,
+   * oracle, writer or operator key is owned by Untch forever, and binding one of those addresses as a
+   * user wallet is the step immediately before that mistake. These assert the refusal at both points
+   * it can happen: when the address is NAMED at start, and when it is RECOVERED from the signature.
+   */
+  describe("an Untch operational address cannot become a user wallet", () => {
+    const OPERATIONAL: readonly { readonly role: string; readonly address: string }[] = [
+      { role: "deployer and marketplace payTo", address: "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba" },
+      { role: "receipt writer", address: "0xeedda7d18a34a93f3a722eb4446a526af515457a" },
+      { role: "oracle", address: "0xb29516c8c5dfc29a9e3f68f6e92fd1b6c7612d61" },
+      { role: "admin", address: "0x4de912b84c54f6855114519795a1afca82dd2d19" },
+      { role: "contract owner", address: "0x37b1a5ce095c33519553b32e15955bd0647c45f2" },
+      { role: "operator demo wallet", address: "0x98f43eabcad380f4f1f0587ae945bc8c79e43c0b" },
+      { role: "server-held consumer policy owner", address: "0xaba5506df60d40436e002aee705c07dff99cb582" },
+      { role: "Base treasury", address: "0x0e79371813e88f31c2b60c80bad391a952039095" },
+    ];
+
+    for (const op of OPERATIONAL) {
+      test(`${op.role} is refused with policy-authority, before any wallet prompt`, async () => {
+        // #given a start naming an operational address
+        const start = await post("/consumer/account/link/start", {
+          requestedScopes: ["identity", "policy-authority"],
+          address: op.address,
+        });
+        // #then it is refused by name, with the role, and no message is offered to sign
+        assert.equal(start.status, 409, JSON.stringify(start.body));
+        assert.equal(start.body.code, "ROLE_COLLISION");
+        assert.equal(start.body.siweMessage, undefined);
+        const roles = start.body.conflictingRoles as { role: string; what: string }[];
+        assert.ok(roles.length > 0, "the conflicting role must be named");
+        assert.ok(roles.every((r) => r.what.length > 10), "each role says what it is for");
+      });
+
+      test(`${op.role} is refused with identity alone as well`, async () => {
+        // An identity binding can later be granted policy authority. An operational address sitting in
+        // the account table as a legitimate wallet is exactly the state in which somebody grants it.
+        const start = await post("/consumer/account/link/start", {
+          requestedScopes: ["identity"],
+          address: op.address,
+        });
+        assert.equal(start.status, 409, JSON.stringify(start.body));
+        assert.equal(start.body.code, "ROLE_COLLISION");
+      });
+    }
+
+    test("the refusal names the role and carries no secret", async () => {
+      const start = await post("/consumer/account/link/start", {
+        requestedScopes: ["identity", "policy-authority"],
+        address: "0xeedda7d18a34a93f3a722eb4446a526af515457a",
+      });
+      const serialised = JSON.stringify(start.body);
+      assert.match(serialised, /receipt-writer/);
+      // No environment variable name, no key material, no nonce. These addresses are public; nothing
+      // else about them is disclosed.
+      assert.equal(/PRIVATE_KEY|SECRET|0x[0-9a-fA-F]{64}/.test(serialised), false);
+    });
+
+    test("a wallet with no operational role is unaffected", async () => {
+      const start = await post("/consumer/account/link/start", {
+        requestedScopes: ["identity", "policy-authority"],
+        address: OWNER.address,
+      });
+      assert.equal(start.status, 200, JSON.stringify(start.body));
+      assert.equal(typeof start.body.siweMessage, "string");
+    });
+  });
+
+  describe("the server composes the message it will verify", () => {
+    test("naming the address returns a finished SIWE message, not a template", async () => {
+      const start = await post("/consumer/account/link/start", {
+        requestedScopes: ["identity", "policy-authority"],
+        address: OWNER.address,
+      });
+      const message = start.body.siweMessage as string;
+      // Every field a verifier checks is present and is the server's own value.
+      assert.match(message, new RegExp(`^${DOMAIN} wants you to sign in`));
+      assert.ok(message.includes(OWNER.address), "the message names the address that will sign it");
+      assert.match(message, /It does not approve any payment\./);
+      assert.match(message, /- untch:scope:policy-authority/);
+      const nonce = (start.body.walletAction as { nonce: string }).nonce;
+      assert.ok(message.includes(`Nonce: ${nonce}`), "the message carries the nonce the server issued");
+      assert.equal(message.includes("{"), false, "no placeholder survives into a signable message");
+    });
+
+    test("the composed message actually verifies, end to end", async () => {
+      const start = await post("/consumer/account/link/start", {
+        requestedScopes: ["identity", "policy-authority"],
+        address: OWNER.address,
+      });
+      const message = start.body.siweMessage as string;
+      const complete = await post("/consumer/account/link/complete", {
+        linkRequestId: start.body.linkRequestId,
+        code: start.body.oneTimeCode,
+        message,
+        signature: await OWNER.signMessage({ message }),
+      });
+      assert.equal(complete.status, 200, JSON.stringify(complete.body));
+      assert.equal(typeof complete.body.accountId, "string");
+    });
+
+    test("omitting the address still works, and returns no message rather than a broken one", async () => {
+      const start = await post("/consumer/account/link/start", { requestedScopes: ["identity"] });
+      assert.equal(start.status, 200);
+      assert.equal(start.body.siweMessage, null);
+      assert.ok((start.body.walletAction as { nonce: string }).nonce.length > 0);
+    });
+
+    test("the authority requested is stated in full, so a UI can show it before prompting", async () => {
+      const start = await post("/consumer/account/link/start", {
+        requestedScopes: ["identity", "policy-authority"],
+        address: OWNER.address,
+      });
+      const a = start.body.authorityRequested as {
+        signatures: number;
+        format: string;
+        scopes: string[];
+        creates: string[];
+        doesNotCreate: string[];
+      };
+      assert.equal(a.signatures, 1, "one signature, and the surface must be able to say so");
+      assert.match(a.format, /EIP-4361|SIWE/);
+      assert.ok(a.creates.some((c) => /WalletBinding/.test(c)));
+      assert.ok(a.creates.some((c) => /own and register spend policies/.test(c)));
+      assert.ok(a.doesNotCreate.some((c) => /payment|approval|spending/.test(c)));
+      assert.ok(a.doesNotCreate.some((c) => /on-chain transaction/.test(c)));
+    });
+  });
+
   test("an unknown scope is refused rather than silently dropped", async () => {
     const refused = await post("/consumer/account/link/start", { requestedScopes: ["spend-anything"] });
     assert.equal(refused.status, 400);
