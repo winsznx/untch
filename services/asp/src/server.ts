@@ -94,6 +94,7 @@ import {
 import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes";
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
+import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
@@ -589,6 +590,27 @@ export function createSellerApp(
         })
       : null;
   registerAccountRoutes(app, send, accountRoutesDeps);
+
+  /**
+   * The public policy journey — draft here, register from your own wallet, sync back.
+   *
+   * It needs both wirings: the account store to know whose wallet is asking, and the policy store to
+   * canonicalise, hash and read the confirmed registration. Either missing means the journey answers
+   * a named 503 rather than a route that half-works.
+   */
+  registerPolicyRoutes(
+    app,
+    send,
+    accountRoutesDeps && policyWiring && consumerWiring && consumerAuthConfig.secret
+      ? {
+          accounts: accountRoutesDeps.accounts,
+          registration: policyWiring.registration,
+          policies: policyWiring.provider,
+          secret: consumerAuthConfig.secret,
+          defaultAgent: (process.env.MAINNET_WRITER_ADDRESS?.trim() as `0x${string}` | undefined) ?? null,
+        }
+      : null,
+  );
 
   /**
    * The authenticated operator control surface.

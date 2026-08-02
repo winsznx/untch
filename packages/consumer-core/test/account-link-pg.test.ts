@@ -49,6 +49,39 @@ function allMigrations(): { name: string; sql: string }[] {
   return files.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * This suite's OWN database, for the reason the two-process controller suite established.
+ *
+ * Node's test runner runs FILES in parallel. Three suites in this directory reset the public schema
+ * to build a known starting shape, and run together they drop it from under each other — which shows
+ * up as `relation "untch_accounts" does not exist` in whichever one lost, and looks exactly like
+ * flakiness. It is not: it is a shared-resource collision, and only isolation fixes the class rather
+ * than the instance.
+ *
+ * The name is stable rather than randomised. `runMigrations` is idempotent and every test creates its
+ * own account, so reuse costs nothing and a fresh database per run would leave a pile of them behind
+ * on a developer machine.
+ */
+const OWN_DATABASE = "untch_test_account_link";
+
+function ownDatabaseUrl(): string {
+  const url = new URL(TEST_DB as string);
+  url.pathname = `/${OWN_DATABASE}`;
+  return url.toString();
+}
+
+async function createOwnDatabase(): Promise<void> {
+  const admin = createPool(TEST_DB as string);
+  try {
+    // CREATE DATABASE cannot run inside a transaction, and a duplicate is not worth failing on.
+    await admin.query(`CREATE DATABASE ${OWN_DATABASE}`).catch((err: unknown) => {
+      if ((err as { code?: string }).code !== "42P04") throw err;
+    });
+  } finally {
+    await admin.end();
+  }
+}
+
 async function applyWholeRepository(pool: Pool): Promise<void> {
   await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
   await pool.query("CREATE SCHEMA public");
@@ -112,7 +145,8 @@ describe("bindings that can be revoked", { skip: TEST_DB ? false : "TEST_DATABAS
   let store: PgAccountStore;
 
   before(async () => {
-    pool = createPool(TEST_DB as string);
+    await createOwnDatabase();
+    pool = createPool(ownDatabaseUrl());
     await applyWholeRepository(pool);
     store = new PgAccountStore(pool);
   });
@@ -331,7 +365,9 @@ describe("channel bindings decide, or they do not", { skip: TEST_DB ? false : "T
   let store: PgAccountStore;
 
   before(async () => {
-    pool = createPool(TEST_DB as string);
+    await createOwnDatabase();
+    pool = createPool(ownDatabaseUrl());
+    await runMigrations(pool);
     store = new PgAccountStore(pool);
   });
 
@@ -423,7 +459,9 @@ describe("link requests are consumed exactly once", { skip: TEST_DB ? false : "T
   let links: PgLinkRequestStore;
 
   before(async () => {
-    pool = createPool(TEST_DB as string);
+    await createOwnDatabase();
+    pool = createPool(ownDatabaseUrl());
+    await runMigrations(pool);
     store = new PgAccountStore(pool);
     links = new PgLinkRequestStore(pool);
   });

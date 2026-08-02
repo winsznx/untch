@@ -53,8 +53,37 @@ function send(res: express.Response, r: HandlerResult): void {
   res.status(r.status).json(r.body);
 }
 
+
+/**
+ * This suite's OWN database, for the reason the two-process controller suite established.
+ *
+ * Node's test runner runs FILES in parallel, and several suites here reset the public schema to build
+ * a known starting shape. Sharing one database means they drop it from under each other, which reads
+ * as flakiness and is a shared-resource collision. Isolation fixes the class rather than the instance.
+ */
+const OWN_DATABASE = "untch_test_account_routes";
+
+function ownDatabaseUrl(): string {
+  const url = new URL(TEST_DB as string);
+  url.pathname = `/${OWN_DATABASE}`;
+  return url.toString();
+}
+
+async function createOwnDatabase(): Promise<void> {
+  const admin = createPool(TEST_DB as string);
+  try {
+    // CREATE DATABASE cannot run inside a transaction, and a duplicate is not worth failing on.
+    await admin.query(`CREATE DATABASE ${OWN_DATABASE}`).catch((err: unknown) => {
+      if ((err as { code?: string }).code !== "42P04") throw err;
+    });
+  } finally {
+    await admin.end();
+  }
+}
+
 async function boot(): Promise<void> {
-  pool = createPool(TEST_DB as string);
+  await createOwnDatabase();
+  pool = createPool(ownDatabaseUrl());
   await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
   await pool.query("CREATE SCHEMA public");
   await runMigrations(pool);
