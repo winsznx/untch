@@ -188,9 +188,13 @@ const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
  * the opaque id exists to survive.
  */
 export function newAccountId(): string {
-  const bytes = randomBytes(17);
+  // ONE fresh byte per character. The version this replaces indexed `bytes[i % bytes.length]` into 17
+  // bytes for 26 characters, so every account id ended with a visible copy of its own first nine
+  // characters — and the 130 bits this comment claims were really the 17 bytes actually drawn, spread
+  // over a string whose tail carried no new information.
+  const bytes = randomBytes(26);
   let out = "";
-  for (let i = 0; i < 26; i += 1) out += BASE32[(bytes[i % bytes.length] as number) % 32];
+  for (let i = 0; i < 26; i += 1) out += BASE32[(bytes[i] as number) % 32];
   return `acct_${out}`;
 }
 
