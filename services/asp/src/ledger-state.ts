@@ -102,6 +102,12 @@ export class InMemoryLedger implements Ledger {
       endpoint: intent.endpoint,
       paramsHash: intent.paramsHash,
       createdAtMs: nowMs,
+      // The fields a configured `duplicates.keys` tuple may name. Recorded because the rule now
+      // evaluates the tuple the policy hash commits to, and a prior row missing them is a row that
+      // rule cannot compare — which it treats as "not a duplicate" rather than judging on less.
+      maxAmount: intent.maxAmount.toString(),
+      recipientAddress: intent.recipientAddress,
+      category: intent.category,
     });
     b.lastCallByService[serviceHost(intent.endpoint)] = nowMs;
     b.callTimestamps.push(nowMs);

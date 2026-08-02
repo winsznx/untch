@@ -31,6 +31,7 @@ export const IMPLEMENTED_RULES = [
   "category.allow",
   "vendor.lcbFloor",
   "intent.maxAmountBound",
+  "hardCap.absolute",
   "perCall.cap",
   "budget.daily",
   "rate.limit",
@@ -139,31 +140,112 @@ export function duplicateRuleName(policy: Policy): string {
   return `duplicate.${policy.rules.duplicates.keys.join("_")}`;
 }
 
-// duplicate (§7.1: taskHash+endpoint+paramsHash within TTL) → BLOCKED_DUPLICATE
+/**
+ * Resolve one configured duplicate key to a comparable string, or null when it cannot be resolved.
+ *
+ * Null is the load-bearing return. A key the engine cannot evaluate must stop the decision, because
+ * the alternative — skipping it — silently evaluates a narrower rule than the policy hash commits to.
+ */
+function duplicateKeyValue(
+  key: string,
+  from: {
+    readonly taskHash: string;
+    readonly endpoint: string;
+    readonly paramsHash: string;
+    readonly maxAmount?: string;
+    readonly recipientAddress?: string;
+    readonly category?: string;
+  },
+): string | null {
+  switch (key) {
+    case "taskHash":
+      return from.taskHash.toLowerCase();
+    case "endpoint":
+    case "provider":
+      // A provider IS its endpoint's canonical service identity here. There is no separate provider
+      // id on the protocol struct, and inventing one would be a second name for the same thing.
+      return canonUrl(from.endpoint);
+    case "paramsHash":
+      return from.paramsHash.toLowerCase();
+    case "capability":
+      return from.category ?? null;
+    case "amount":
+      return from.maxAmount ?? null;
+    case "recipient":
+      return from.recipientAddress?.toLowerCase() ?? null;
+    default:
+      return null;
+  }
+}
+
+// duplicate (§7.1) → BLOCKED_DUPLICATE, keyed on the tuple the POLICY configures
 const ruleDuplicate: RuleFn = ({ intent, policy, state, nowMs }) => {
   const rule = duplicateRuleName(policy);
   const ttlMs = policy.rules.duplicates.ttlMin * 60_000;
-  const endpoint = canonUrl(intent.endpoint);
-  const taskHash = intent.taskHash.toLowerCase();
-  const paramsHash = intent.paramsHash.toLowerCase();
+  const keys = policy.rules.duplicates.keys;
+
+  const current = {
+    taskHash: intent.taskHash,
+    endpoint: intent.endpoint,
+    paramsHash: intent.paramsHash,
+    maxAmount: intent.maxAmount.toString(),
+    recipientAddress: intent.recipientAddress,
+    category: intent.category,
+  };
+
+  /**
+   * The rule is built from `duplicates.keys`, which is what the policy hash commits to.
+   *
+   * It used to compare a hardcoded `taskHash + endpoint + paramsHash` while REPORTING the configured
+   * tuple in its trace label. An auditor reading the trace saw `duplicate.provider_capability_amount_
+   * recipient` and concluded that tuple had been applied. It had not, and two payments differing only
+   * in amount blocked each other.
+   */
+  const currentTuple: string[] = [];
+  for (const key of keys) {
+    const value = duplicateKeyValue(key, current);
+    if (value === null) {
+      return halt(
+        rule,
+        "BLOCKED_FAIL_CLOSED",
+        `duplicate key '${key}' cannot be evaluated for this intent, and the policy hash commits to it. ` +
+          "Refusing rather than judging on a narrower tuple than the one that was registered.",
+        { unresolvableKey: key, configuredKeys: [...keys] },
+      );
+    }
+    currentTuple.push(value);
+  }
 
   for (const prior of state.recentIntents) {
     const ageMs = nowMs - prior.createdAtMs;
     const withinTtl = ageMs >= 0 && ageMs < ttlMs;
     if (!withinTtl) continue;
-    const sameTuple =
-      prior.taskHash.toLowerCase() === taskHash &&
-      canonUrl(prior.endpoint) === endpoint &&
-      prior.paramsHash.toLowerCase() === paramsHash;
-    if (sameTuple) {
-      const ttlRemainingSec = Math.max(0, Math.ceil((prior.createdAtMs + ttlMs - nowMs) / 1000));
-      return halt(
-        rule,
-        "BLOCKED_DUPLICATE",
-        `duplicate of ${prior.intentId} within ${policy.rules.duplicates.ttlMin}m TTL (${ttlRemainingSec}s remaining)`,
-        { priorIntentId: prior.intentId, ttlRemainingSec },
-      );
+
+    let comparable = true;
+    let same = true;
+    for (const [i, key] of keys.entries()) {
+      const priorValue = duplicateKeyValue(key, prior);
+      if (priorValue === null) {
+        // A prior row written before this field existed cannot be compared on it. Skipping the ROW is
+        // correct and skipping the KEY would not be: the first narrows what counts as a duplicate for
+        // one historical record, the second narrows the rule itself for every record.
+        comparable = false;
+        break;
+      }
+      if (priorValue !== currentTuple[i]) {
+        same = false;
+        break;
+      }
     }
+    if (!comparable || !same) continue;
+
+    const ttlRemainingSec = Math.max(0, Math.ceil((prior.createdAtMs + ttlMs - nowMs) / 1000));
+    return halt(
+      rule,
+      "BLOCKED_DUPLICATE",
+      `duplicate of ${prior.intentId} within ${policy.rules.duplicates.ttlMin}m TTL (${ttlRemainingSec}s remaining)`,
+      { priorIntentId: prior.intentId, ttlRemainingSec, matchedOn: [...keys] },
+    );
   }
   return pass(rule);
 };
@@ -271,6 +353,39 @@ const ruleIntentBound: RuleFn = ({ intent, policy }) => {
     );
   }
   return pass(rule, { observed, limit: maxDisplay, token });
+};
+
+/**
+ * hard cap — the line nothing crosses, approved or not.
+ *
+ * `hardCap` was collected from the user, validated against the other limits, written into the
+ * canonical ruleset, committed to by `policyHash`, ANCHORED ON CHAIN, and rendered to the user as
+ * "Nothing above N, approved or not". No rule read it. A policy registered on mainnet promised an
+ * absolute ceiling that nothing enforced.
+ *
+ * It runs BEFORE `perCall.cap` and therefore before `escalate.aboveThreshold`, which is the whole
+ * point: a per-call breach may escalate to a human, and a hard-cap breach must not be reachable by
+ * approval. Ordering it after would let the exact thing the field promises to prevent be approved.
+ *
+ * Optional in the ruleset, so a policy that configured no hard cap passes. Absent means "no ceiling
+ * beyond the per-call cap", never "a ceiling of zero".
+ */
+const ruleHardCap: RuleFn = ({ intent, policy }) => {
+  const rule = "hardCap.absolute";
+  const cap = (policy.rules as { hardCap?: number }).hardCap;
+  if (cap === undefined || cap === null) return pass(rule);
+  const token = policy.rules.budgets.token;
+  const observed = money(intent.amount);
+  if (minorUnits(intent.amount) > minorUnits(cap)) {
+    return halt(
+      rule,
+      "BLOCKED_PER_CALL_CAP",
+      `hard cap exceeded: ${observed} > ${money(cap)} ${token}. This is the ceiling nothing crosses, ` +
+        "so it blocks rather than routing to approval.",
+      { observed, limit: money(cap), token },
+    );
+  }
+  return pass(rule);
 };
 
 // per-call cap (§7.1: per-call cap exceeded → ESCALATED or BLOCKED, per policy)
@@ -551,6 +666,7 @@ const RULE_EVAL_CHAIN: readonly ChainStep[] = [
   { kind: "rule", fn: ruleCategory },
   { kind: "rule", fn: ruleVendorLcbFloor },
   { kind: "rule", fn: ruleIntentBound },
+  { kind: "rule", fn: ruleHardCap },
   { kind: "rule", fn: rulePerCallCap },
   { kind: "rule", fn: ruleBudgetDaily },
   { kind: "rule", fn: ruleRateLimit },

@@ -91,6 +91,15 @@ export interface PolicyRules {
   };
   /** §8 `perCallCap` — max spend per single call, DISPLAY units of `budgets.token`. */
   readonly perCallCap: number;
+  /**
+   * The ceiling nothing crosses, approved or not. DISPLAY units. Optional.
+   *
+   * Declared here because it was already being written into every ruleset by the policy-shape
+   * derivation, committed to by `policyHash`, and shown to users as an absolute limit — while being
+   * absent from this type and from every rule. `hardCap.absolute` enforces it now, ahead of the
+   * escalation rule, so a breach cannot be routed to a human for approval.
+   */
+  readonly hardCap?: number;
   /** ADDED (see interface note). Per-policy resolution of a per-call-cap breach. Default `BLOCK`. */
   readonly onPerCallCapExceeded?: OnPerCallCapExceeded;
   /** §8 `escalateAbove` — spends strictly above this route to approval, DISPLAY units. */
@@ -234,6 +243,24 @@ export interface RecentIntent {
   readonly paramsHash: Hex;
   /** epoch milliseconds the prior intent was created; the TTL is measured from here. */
   readonly createdAtMs: number;
+
+  /**
+   * The fields a configured `duplicates.keys` tuple may name, beyond the three above.
+   *
+   * They are here because the duplicate rule used to ignore `duplicates.keys` entirely and compare a
+   * hardcoded `taskHash + endpoint + paramsHash`, while the trace label reported the CONFIGURED tuple.
+   * A policy committing on chain to `provider+capability+amount+recipient` was therefore anchoring a
+   * rule the engine did not implement, and two requests differing only in amount were blocked as
+   * duplicates of each other.
+   *
+   * Optional, because a ledger written before this change has no value to supply. The rule fails
+   * CLOSED when a configured key resolves to nothing on either side, rather than silently falling
+   * back to the old tuple: evaluating a different rule than the one the hash commits to is the defect,
+   * not the fix.
+   */
+  readonly maxAmount?: string;
+  readonly recipientAddress?: string;
+  readonly category?: string;
 }
 
 /**
@@ -313,6 +340,17 @@ export interface RuleTraceEntry {
   readonly cooldownRemainingSec?: number;
   /** allow/deny rules (recipient/agent/category) — which list matched on a FAIL. */
   readonly matchedList?: "allow" | "deny";
+  /**
+   * duplicate rule — the tuple that was ACTUALLY compared.
+   *
+   * Present so a trace cannot claim a tuple it did not apply. The rule's own label is derived from
+   * `duplicates.keys`, and for a long time the comparison ignored those keys entirely; a reader had
+   * no field that would have exposed the difference.
+   */
+  readonly matchedOn?: readonly string[];
+  /** duplicate rule — a configured key the engine could not evaluate, on a fail-closed halt. */
+  readonly unresolvableKey?: string;
+  readonly configuredKeys?: readonly string[];
   readonly note?: string;
 }
 
