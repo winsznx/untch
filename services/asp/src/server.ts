@@ -95,6 +95,7 @@ import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes"
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
 import { registerPolicyRoutes } from "./consumer/policy-routes";
+import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
 import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
@@ -609,6 +610,26 @@ export function createSellerApp(
           secret: consumerAuthConfig.secret,
           defaultAgent: (process.env.MAINNET_WRITER_ADDRESS?.trim() as `0x${string}` | undefined) ?? null,
         }
+      : null,
+  );
+
+  /**
+   * The web approval centre.
+   *
+   * `executionEnabled` is passed in rather than read at render time, and it decides what an APPROVED
+   * request is CALLED. With providers disabled the surface says APPROVED_AWAITING_EXECUTION and states
+   * that nothing was paid — the difference between an honest demo and a claim that a purchase happened.
+   */
+  registerApprovalRoutes(
+    app,
+    send,
+    accountRoutesDeps && consumerWiring && consumerAuthConfig.secret
+      ? makeApprovalRoutesDeps({
+          pool: consumerWiring.pool,
+          accounts: accountRoutesDeps.accounts,
+          secret: consumerAuthConfig.secret,
+          executionEnabled: consumerWiring.config.executionEnabled,
+        })
       : null,
   );
 

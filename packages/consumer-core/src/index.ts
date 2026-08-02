@@ -381,3 +381,48 @@ export {
   type RedeemFailure,
   type RedeemOutcome,
 } from "./account-link";
+
+/**
+ * Approvals (migration 017) — a decision that names the exact payment it authorises.
+ *
+ * The digest is the whole point and it lives here rather than in the escalation package, because that
+ * package is the TRANSPORT half: it knows how to reach a person and how to check they were allowed to
+ * answer. What is being answered is a property of the intent and the quote, which is this package's
+ * vocabulary.
+ */
+export {
+  ApprovalError,
+  PgApprovalStore,
+  approvalDigest,
+  describeApprovalState,
+  digestMatches,
+  newApprovalNonce,
+  newApprovalRequestId,
+  newDecisionId,
+  type ApprovalDecision,
+  type ApprovalDelivery,
+  type ApprovalRequest,
+  type ApprovalState,
+  type ApprovalSubject,
+  type DecideFailure,
+  type DecideOutcome,
+  type DecisionChannel,
+  type DecisionKind,
+  type DeliveryOutcome,
+} from "./approvals";
+
+/**
+ * The rotation gate. A channel cannot become live on a credential the audit saw.
+ *
+ * Reports NAMES and states, never values — nothing here can leak a token into a log, a snapshot or a
+ * test fixture, because nothing here ever holds one.
+ */
+export {
+  AUDITED_CREDENTIALS,
+  channelSendAllowed,
+  credentialReport,
+  credentialState,
+  rotationPlan,
+  type CredentialReport,
+  type CredentialState,
+} from "./credential-state";
