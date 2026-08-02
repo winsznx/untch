@@ -32,27 +32,8 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findDrift, describeDrift } from "./lint/lockfile-sync";
+import { PROJECT_NAME, buildAttestation, resolveService, type KnownService } from "./lib/deploy-target";
 
-/**
- * Which service this invocation ships.
- *
- * Two services deploy from this one repository: the ASP and the web app. They must ship from the same
- * committed ref, because the web app calls the ASP's routes and a half-deployed pair is a surface
- * whose two halves disagree about what exists. Making the target a flag rather than a second script
- * is what keeps the attestation, the lockfile check and the git-archive export identical for both.
- */
-const DEFAULT_SERVICE = "untch-asp";
-const KNOWN_SERVICES = new Set(["untch-asp", "untch-web"]);
-const SERVICE = (() => {
-  const flag = process.argv.find((a) => a.startsWith("--service="))?.split("=")[1]?.trim();
-  if (!flag) return DEFAULT_SERVICE;
-  if (!KNOWN_SERVICES.has(flag)) {
-    throw new Error(`--service must be one of ${[...KNOWN_SERVICES].join(", ")}, received ${flag}`);
-  }
-  return flag;
-})();
-/** The Railway PROJECT is named after the ASP and holds every service, so the link check is fixed. */
-const PROJECT_NAME = DEFAULT_SERVICE;
 const ENVIRONMENT = "production";
 const ATTESTATION_FILENAME = ".untch-build-attestation.json";
 
@@ -94,7 +75,17 @@ function main(): void {
   const refArg = args.find((a) => a.startsWith("--ref="));
   const ref = refArg ? refArg.slice("--ref=".length) : "HEAD";
 
-  console.log("\n\x1b[1mUntch ASP deploy\x1b[0m");
+  /**
+   * Resolved through the script's own refusal path, not by throwing at import.
+   *
+   * Everything else in this file that can go wrong prints DEPLOY REFUSED and says what to do; a
+   * mistyped service name should not be the one case that produces a raw stack trace instead.
+   */
+  const target = resolveService(args);
+  if (!target.ok) return fail(target.message);
+  const SERVICE: KnownService = target.service;
+
+  console.log(`\n\x1b[1mUntch deploy → ${SERVICE}\x1b[0m`);
 
   // ── 1. Resolve the commit, and require that it is a real one ──────────────────────────────────
   let commit: string;
@@ -220,12 +211,12 @@ function main(): void {
      * Nothing personal goes in here. It is readable by anyone who can reach the ops endpoint, and the
      * commit, branch and timestamp are all that is needed to answer "is the expected code serving".
      */
-    const attestation = {
+    const attestation = buildAttestation({
       commit,
       branch,
       builtAt: new Date().toISOString(),
-      source: "git-archive-export",
-    };
+      service: SERVICE,
+    });
     writeFileSync(join(exportDir, ATTESTATION_FILENAME), `${JSON.stringify(attestation, null, 2)}\n`);
     console.log(`  attestation        ${ATTESTATION_FILENAME} (commit ${commit.slice(0, 7)})`);
 

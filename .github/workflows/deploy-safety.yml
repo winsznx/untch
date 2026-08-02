@@ -1,0 +1,72 @@
+# The deployment script's own guarantees, tested.
+#
+# `railway up` tarballs the working directory. On 2026-07-29 that shipped a root manifest carrying an
+# uncommitted dependency the lockfile did not have; the remote builder ran
+# `pnpm install --frozen-lockfile`, refused it, and spending authority had already been granted against
+# code that never ran. `scripts/deploy-asp.ts` exists to make that impossible by uploading a
+# `git archive` export of a named commit instead.
+#
+# Two services now ship from this repository through that one script, so "which service" became an
+# input — and an input to a deployment tool is a thing that can be wrong. This job proves the target
+# resolution, and proves the property the whole script exists for: a file that is untracked, or a
+# modification that is uncommitted, cannot reach a build.
+#
+# It also runs the destructive-git guard suite, which had no CI job at all despite being a safety
+# mechanism. A guard nobody tests is a guard that can quietly stop guarding.
+name: deploy-safety
+
+on:
+  push:
+    paths:
+      - "scripts/deploy-asp.ts"
+      - "scripts/lib/**"
+      - "scripts/test/deploy-target.test.ts"
+      - "scripts/test/git-destructive.test.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/deploy-safety.yml"
+  pull_request:
+    paths:
+      - "scripts/deploy-asp.ts"
+      - "scripts/lib/**"
+      - "scripts/test/deploy-target.test.ts"
+      - "scripts/test/git-destructive.test.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.json"
+      - ".github/workflows/deploy-safety.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-safety:
+    name: deploy target + committed-ref artefact + destructive-git guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # The archive tests build real git repositories with real untracked and uncommitted files, so
+      # git must be able to commit here.
+      - name: Deploy safety suite (service selection + what reaches the build + attestation)
+        run: pnpm test:deploy-safety
+
+      - name: Destructive-git guard suite
+        run: pnpm test:guard
