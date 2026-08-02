@@ -24,7 +24,18 @@
 
 
 
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
+import { keccak256, toHex } from "viem";
+import {
+  assembleDecisionEvidenceV2,
+  persistDecisionEvidenceV2,
+  projectionReport,
+  type AssembledEvidence,
+  type CanonicalQuoteTerms,
+  type EvidenceTx,
+  type PolicySnapshot,
+} from "@untch/consumer-core";
+import { ENGINE_VERSION, RULE_MANIFEST_HASH } from "@untch/policy-engine";
 import type { HandlerResult, PreflightDeps } from "../handlers";
 import { evaluatePreflight } from "../handlers";
 import { openAccountSession } from "../consumer/account-auth";
@@ -60,6 +71,14 @@ export interface PublicPreflightDeps {
    * demo would otherwise turn into a claim that money moved.
    */
   readonly executionEnabled: boolean;
+  /**
+   * Where V2 evidence is written. Null on an instance with no database, and a paid decision then
+   * refuses rather than returning success with nothing recorded.
+   */
+  readonly evidenceTx?: (<T>(fn: (tx: EvidenceTx) => Promise<T>) => Promise<T>) | null;
+  /** The chain and registry the policy lives on, for the snapshot. */
+  readonly chainId: number;
+  readonly registry: string;
   readonly now?: () => number;
 }
 
@@ -244,6 +263,123 @@ export async function handlePublicPreflight(
   const outcome = publicOutcomeFor(engineDecision);
 
   /**
+   * V2 evidence, assembled and persisted BEFORE a paid response is returned.
+   *
+   * The order is the point. A caller who paid $0.05 and received a decision has bought a record; if
+   * the record cannot be written, they have bought nothing and must be told so rather than handed a
+   * success whose evidence does not exist. So an assembly or write failure refuses with
+   * DECISION_EVIDENCE_INCOMPLETE and never silently downgrades to a V1 row.
+   */
+  const evaluatedAt = String(decision.body.evaluatedAt ?? new Date(now()).toISOString());
+  const snapshot: PolicySnapshot = {
+    policyId: a.policy.id,
+    policyHash: a.policy.policyHash,
+    owner: a.policy.owner.toLowerCase(),
+    governedAgent: a.policy.agentId.toLowerCase(),
+    chainId: publicDeps.chainId,
+    registry: publicDeps.registry.toLowerCase(),
+    currency: publicDeps.network.symbol,
+    rules: a.policy.rules as unknown as Record<string, unknown>,
+    version: a.policy.version,
+    expiryAtEval: new Date(a.policy.expiry * 1000).toISOString(),
+    statusAtEval: a.policy.status,
+    // Observed, not re-derived. A policy that expires later must not make a decision taken while it
+    // was live look like it was taken against a dead one.
+    activeAtEval: a.policy.status === "ACTIVE" && a.policy.expiry * 1000 > now(),
+    defaultForAccount: a.account.defaultPolicyId === a.policy.id,
+    observedAt: new Date(now()).toISOString(),
+  };
+
+  const quoteTerms: CanonicalQuoteTerms = {
+    // The lineage is the caller's idempotency key when they gave one, because that is the value they
+    // chose to identify this logical request. Without one it is the intent hash, which is unique per
+    // request and therefore correctly makes every call its own lineage.
+    lineage: request.idempotencyKey ?? String(decision.body.intentHash ?? ""),
+    version: 1,
+    amount: request.maxSpend,
+    asset: request.currency,
+    chain: `eip155:${publicDeps.chainId}`,
+    provider: request.provider,
+    capability: request.capability,
+    recipient: a.recipient,
+    paramsHash: mapped.intent.paramsHash,
+    acceptanceHash: mapped.intent.acceptanceHash,
+    expiry: request.deadline,
+    nonce: mapped.intent.nonce.toString(),
+  };
+
+  let assembled: AssembledEvidence;
+  try {
+    assembled = assembleDecisionEvidenceV2({
+      decisionId: `dec_${keccak256(toHex(`${String(decision.body.intentHash)}:${evaluatedAt}`)).slice(2, 34)}`,
+      intentId: String(decision.body.intentHash ?? ""),
+      intentHash: decision.body.intentHash as Hex,
+      accountId: a.account.accountId,
+      policyId: a.policy.id,
+      policyHash: a.policy.policyHash,
+      snapshot,
+      quoteTerms,
+      engineVersion: ENGINE_VERSION,
+      ruleManifestHash: RULE_MANIFEST_HASH as Hex,
+      decision: engineDecision,
+      ruleTrace: (decision.body.ruleTrace as Record<string, unknown>[]) ?? [],
+      evaluatedAt,
+    });
+  } catch (err) {
+    return {
+      status: 500,
+      body: {
+        outcome: "DECISION_EVIDENCE_INCOMPLETE",
+        code: "DECISION_EVIDENCE_INCOMPLETE",
+        message:
+          "the decision was reached but its evidence could not be assembled, so no result is returned. " +
+          `A paid call must produce a record. ${(err as Error).message}`,
+        retryable: false,
+        docsUrl: null,
+        // Enough to reconcile a payment that already settled without charging again.
+        reconciliation: { intentHash: decision.body.intentHash ?? null, evaluatedAt },
+      },
+    };
+  }
+
+  if (!publicDeps.evidenceTx) {
+    return {
+      status: 503,
+      body: {
+        outcome: "DECISION_EVIDENCE_INCOMPLETE",
+        code: "DECISION_EVIDENCE_INCOMPLETE",
+        message: "this instance has no evidence store, so a paid decision cannot be recorded",
+        retryable: true,
+        docsUrl: null,
+      },
+    };
+  }
+
+  try {
+    await publicDeps.evidenceTx((tx) => persistDecisionEvidenceV2(tx, assembled));
+  } catch (err) {
+    return {
+      status: 500,
+      body: {
+        outcome: "DECISION_EVIDENCE_INCOMPLETE",
+        code: "DECISION_EVIDENCE_INCOMPLETE",
+        message:
+          "the decision was reached but could not be persisted. The payment is reconcilable from the " +
+          `intent hash below; retry with the same idempotencyKey rather than paying again. ${(err as Error).message}`,
+        retryable: true,
+        docsUrl: null,
+        reconciliation: {
+          intentHash: assembled.evidence.intentHash,
+          decisionId: assembled.evidence.decisionId,
+          quoteDigest: assembled.evidence.quoteDigest,
+        },
+      },
+    };
+  }
+
+  const projection = projectionReport(assembled.evidence);
+
+  /**
    * The account's use of the policy is recorded AFTER the decision, and a failure to record it does
    * not fail the request. It is provenance, not authority: losing it costs a "last used" timestamp,
    * and letting it fail a decision the engine already made would be trading a real answer for a
@@ -287,6 +423,19 @@ export async function handlePublicPreflight(
             },
       recipient: { address: a.recipient, derivedFrom: a.recipientDerivedFrom },
       derived: [...a.derived, ...mapped.derived],
+      /**
+       * The evidence this decision was recorded with.
+       *
+       * The PUBLIC projection is returned, and the two booleans state what it contains rather than
+       * describing it in prose that cannot be asserted on.
+       */
+      evidence: {
+        ...projection.publicProjection,
+        metadataSchemaVersion: 2,
+        metadataCommitment: assembled.metadataHash,
+        rawAccountIdPresent: projection.rawAccountIdPresentInPublic,
+        accountRefHashPresent: projection.accountRefHashPresentInPublic,
+      },
       executionPosture: {
         enabled: publicDeps.executionEnabled,
         note: publicDeps.executionEnabled

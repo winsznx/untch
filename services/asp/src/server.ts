@@ -97,6 +97,7 @@ import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes"
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
 import { registerAgenticLinkRoutes } from "./consumer/agentic-link-routes";
+import { registerPreflightValidateRoute } from "./consumer/preflight-validate-route";
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
 import { registerMarketplaceRoutes } from "./consumer/marketplace-continuity";
@@ -117,7 +118,7 @@ import { handlePublicVerify, looksPublicVerify, type PublicVerifyDeps } from "./
 import { DeploymentLifecycle, describeDeployment } from "./deployment-info";
 import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from "./deployment-routes";
 import { challengeDescription, registerRegistryRoutes } from "./registry/routes";
-import { SETTLEMENT_TOKEN } from "./config";
+import { CHAIN, SETTLEMENT_TOKEN } from "./config";
 import { installUnhandledRejectionGuard, registerJsonErrorBoundary } from "./http-errors";
 
 /**
@@ -690,8 +691,48 @@ export function createSellerApp(
           },
           sessionSecret: consumerAuthConfig.secret,
           executionEnabled: loadConsumerFlags().executionEnabled,
+          chainId: CHAIN.id,
+          registry: policyWiring.registration.registry,
+          /**
+           * One transaction per decision, on the same pool the rest of the service writes through.
+           *
+           * A paid decision that cannot record its evidence must fail rather than return success, so
+           * this is not optional and not best-effort. Null when there is no database, and the handler
+           * then refuses with DECISION_EVIDENCE_INCOMPLETE instead of returning a decision nothing
+           * remembers.
+           */
+          evidenceTx: consumerWiring
+            ? async <T,>(fn: (tx: { query(sql: string, params?: readonly unknown[]): Promise<{ rows: unknown[] }> }) => Promise<T>): Promise<T> => {
+                const client = await consumerWiring.pool.connect();
+                try {
+                  await client.query("BEGIN");
+                  const out = await fn(client as unknown as { query(sql: string, params?: readonly unknown[]): Promise<{ rows: unknown[] }> });
+                  await client.query("COMMIT");
+                  return out;
+                } catch (err) {
+                  await client.query("ROLLBACK").catch(() => undefined);
+                  throw err;
+                } finally {
+                  client.release();
+                }
+              }
+            : null,
         }
       : null;
+
+  /**
+   * The non-billable proof that the PAID path produces complete V2 evidence.
+   *
+   * Handed the same `publicPreflightDeps` the priced route uses, so there is no code here the paid
+   * route does not also run. The only difference is a transaction that always rolls back.
+   */
+  registerPreflightValidateRoute(app, {
+    pool: consumerWiring?.pool as never,
+    accounts: accountRoutesDeps?.accounts as never,
+    publicDeps: publicPreflightDeps,
+    engineDeps: policyWiring ? () => preflightEngineDeps(policyWiring.provider) : null,
+    secret: consumerAuthConfig.secret ?? "",
+  });
 
   /**
    * What the public verify route needs. It reads the CONSUMER store rather than the policy store,

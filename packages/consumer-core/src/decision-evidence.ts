@@ -468,3 +468,162 @@ export function publicDecisionProjection(e: DecisionEvidenceV2): Record<string, 
 export function privateDecisionProjection(e: DecisionEvidenceV2): Record<string, unknown> {
   return { ...publicDecisionProjection(e), accountId: e.accountId, intentId: e.intentId, ruleTrace: e.ruleTrace };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The assembler
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The one function that turns a served decision into V2 evidence.
+ *
+ * WHY IT COMPUTES THE HASHES RATHER THAN ACCEPTING THEM
+ *
+ * Every hash here is derived from content this function is handed. Accepting `quoteDigest` or
+ * `policySnapshotHash` as parameters would let a caller pass a value computed from something else —
+ * which is precisely the failure V2 exists to close, and it would be invisible because a hash is a
+ * hash. The caller supplies the CONTENT; the commitment is this module's answer about it.
+ *
+ * WHY THERE IS EXACTLY ONE OF THESE
+ *
+ * A second assembler written for a demo would be a second definition of what a decision means, and
+ * the demo would prove that definition rather than the product's. The paid route, the automatic path,
+ * the escalation path, the blocked path and the operator validation all call this.
+ */
+export interface AssembleEvidenceInput {
+  readonly decisionId: string;
+  readonly intentId: string;
+  readonly intentHash: Hex;
+  readonly accountId: string;
+  readonly policyId: string;
+  readonly policyHash: Hex;
+  /** The content, not its hash. */
+  readonly snapshot: PolicySnapshot;
+  /** The content, not its digest. */
+  readonly quoteTerms: CanonicalQuoteTerms;
+  readonly engineVersion: string;
+  readonly ruleManifestHash: Hex;
+  readonly decision: string;
+  readonly ruleTrace: readonly Record<string, unknown>[];
+  readonly evaluatedAt: string;
+}
+
+export interface AssembledEvidence {
+  readonly evidence: DecisionEvidenceV2;
+  readonly snapshot: PolicySnapshot;
+  readonly metadata: MetadataV2;
+  readonly metadataHash: Hex;
+}
+
+export function assembleDecisionEvidenceV2(input: AssembleEvidenceInput): AssembledEvidence {
+  const policySnapshotHash = policySnapshotHashOf(input.snapshot);
+  const quoteDigest = quoteDigestOf(input.quoteTerms);
+
+  /**
+   * The snapshot must be about the policy the decision names.
+   *
+   * A snapshot of a different policy would hash cleanly and commit to the wrong thing. Checked here
+   * because this is the only place that sees both, and a mismatch is a programming error rather than
+   * a user error — it fails loudly rather than being stored.
+   */
+  if (input.snapshot.policyId !== input.policyId) {
+    throw new IncompleteEvidenceError(
+      ["policySnapshot"],
+      `the snapshot is of policy ${input.snapshot.policyId} but the decision names ${input.policyId}. ` +
+        "A snapshot of a different policy would hash cleanly and commit to the wrong ruleset.",
+    );
+  }
+  if (input.snapshot.policyHash.toLowerCase() !== input.policyHash.toLowerCase()) {
+    throw new IncompleteEvidenceError(
+      ["policySnapshot"],
+      `the snapshot's policyHash ${input.snapshot.policyHash} does not equal the decision's ${input.policyHash}`,
+    );
+  }
+
+  const evidence: DecisionEvidenceV2 = {
+    decisionId: input.decisionId,
+    intentId: input.intentId,
+    intentHash: input.intentHash,
+    accountId: input.accountId,
+    accountRefHash: accountRefHash(input.accountId),
+    policyId: input.policyId,
+    policyHash: input.policyHash,
+    policySnapshotHash,
+    quoteDigest,
+    engineVersion: input.engineVersion,
+    ruleManifestHash: input.ruleManifestHash,
+    decision: input.decision,
+    ruleTrace: input.ruleTrace,
+    evaluatedAt: input.evaluatedAt,
+    metadataSchemaVersion: METADATA_SCHEMA_VERSION_V2,
+    completeness: "V2_COMPLETE",
+  };
+
+  // Throws before anything is returned, so a caller cannot persist a half-assembled object.
+  assertCompleteV2(evidence);
+
+  const metadata = metadataV2Of(evidence);
+  return { evidence, snapshot: input.snapshot, metadata, metadataHash: metadataHashV2(metadata) };
+}
+
+/**
+ * Write the snapshot and the decision in ONE transaction, on a caller-supplied client.
+ *
+ * The client is a parameter rather than a pool so the same function serves two callers with opposite
+ * intentions: the paid route commits, and the operator validation rolls back. A validation path with
+ * its own writer would be validating a writer nobody uses.
+ */
+export interface EvidenceTx {
+  query(sql: string, params?: readonly unknown[]): Promise<{ readonly rows: unknown[] }>;
+}
+
+export async function persistDecisionEvidenceV2(tx: EvidenceTx, assembled: AssembledEvidence): Promise<void> {
+  const s = assembled.snapshot;
+  await tx.query(
+    `INSERT INTO untch_policy_snapshots (snapshot_hash, policy_id, policy_hash, owner, chain_id, snapshot)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (snapshot_hash) DO NOTHING`,
+    [assembled.evidence.policySnapshotHash, s.policyId, s.policyHash, s.owner, s.chainId, JSON.stringify(s)],
+  );
+
+  const e = assembled.evidence;
+  await tx.query(
+    `INSERT INTO untch_decision_evidence
+       (decision_id, intent_id, intent_hash, account_id, account_ref_hash, policy_id, policy_hash,
+        policy_snapshot_hash, quote_digest, engine_version, rule_manifest_hash, decision, rule_trace,
+        evaluated_at, metadata_schema_version, completeness)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,2,'V2_COMPLETE')
+     ON CONFLICT (decision_id) DO NOTHING`,
+    [
+      e.decisionId, e.intentId, e.intentHash, e.accountId, e.accountRefHash, e.policyId, e.policyHash,
+      e.policySnapshotHash, e.quoteDigest, e.engineVersion, e.ruleManifestHash, e.decision,
+      JSON.stringify(e.ruleTrace), e.evaluatedAt,
+    ],
+  );
+}
+
+/**
+ * The projection report the deployment gate asks for.
+ *
+ * Two booleans rather than prose, because "no raw accountId" was previously reported as a sentence
+ * and a sentence cannot be asserted on.
+ */
+export function projectionReport(e: DecisionEvidenceV2): {
+  readonly publicProjection: Record<string, unknown>;
+  readonly privateProjection: Record<string, unknown>;
+  readonly rawAccountIdPresentInPublic: boolean;
+  readonly accountRefHashPresentInPublic: boolean;
+  readonly rawAccountIdPresentInPrivate: boolean;
+} {
+  const pub = publicDecisionProjection(e);
+  const priv = privateDecisionProjection(e);
+  // Checked against the SERIALISED form, not against key presence. A nested field carrying the id
+  // would satisfy a key check and still publish it.
+  const publicJson = JSON.stringify(pub);
+  return {
+    publicProjection: pub,
+    privateProjection: priv,
+    rawAccountIdPresentInPublic: publicJson.includes(e.accountId),
+    accountRefHashPresentInPublic: publicJson.includes(e.accountRefHash),
+    rawAccountIdPresentInPrivate: JSON.stringify(priv).includes(e.accountId),
+  };
+}
