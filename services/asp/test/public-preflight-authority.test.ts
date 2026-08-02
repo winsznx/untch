@@ -319,7 +319,10 @@ describe("the recipient is derived from a definition or refused", () => {
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.ok(result.authority.recipient, "an owned service has a deterministic recipient");
-    assert.match(result.authority.recipientDerivedFrom ?? "", /service definition|x402 challenge/);
+    assert.match(result.authority.recipientDerivedFrom ?? "", /own definition/);
+    // The provenance must say it is not a host-config fallback, because that is the failure the
+    // resolver's structure prevents and the sentence a reviewer checks it against.
+    assert.match(result.authority.recipientDerivedFrom ?? "", /not a fallback to host config/);
   });
 
   test("a caller's own constraint wins over the definition", async () => {

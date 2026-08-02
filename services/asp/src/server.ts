@@ -700,7 +700,6 @@ export function createSellerApp(
           registration: policyWiring.registration,
           policies: policyWiring.provider,
           secret: consumerAuthConfig.secret,
-          defaultAgent: (process.env.MAINNET_WRITER_ADDRESS?.trim() as `0x${string}` | undefined) ?? null,
         }
       : null,
   );

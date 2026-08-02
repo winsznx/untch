@@ -92,15 +92,28 @@ export interface ServiceDefinition {
 /**
  * The X Layer address Untch's own services are paid at.
  *
- * This is the same address the x402 challenge publishes as `payTo`, and writing it out here rather
- * than importing the host's config is deliberate. Config is what a deployment sets; this is what the
- * SERVICE is. If they ever diverge, the receipt should say what the service published, and a reviewer
- * should be able to see the value being committed to without reading an environment.
+ * TWO ROLES THAT CURRENTLY SHARE AN ADDRESS, DELIBERATELY AND ON THE RECORD
+ *
+ * This value equals the marketplace `payTo` today, and those are different roles:
+ *
+ *   • MARKETPLACE PAY-TO is where callers settle THIS ASP's own x402 invoices — the bill for using
+ *     Untch's API. It is a property of the host.
+ *   • SERVICE RECIPIENT is who receives the money for one specific service. It is a property of the
+ *     SERVICE, and for a third-party provider it is somebody else's address entirely.
+ *
+ * They coincide because Untch performs these two services itself and is paid for them at the same
+ * place. That is a deliberate, declared decision recorded here — not the far more common failure of
+ * an address filling a second role because it was the one already in scope.
+ *
+ * The separation is enforced structurally rather than by this comment: the resolver in
+ * `public-dto/authority.ts` is handed this table and is handed no host config, so a capability with
+ * no definition here cannot reach the payTo even though it is numerically the same address. If the
+ * two ever need to diverge, this constant changes and nothing else does.
  */
-const UNTCH_XLAYER_RECEIVER: Address = "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba";
+const UNTCH_OWNED_SERVICE_RECIPIENT: Address = "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba";
 
 const RECEIVER_PROVENANCE =
-  "the X Layer receiving address published in this deployment's own x402 challenge, named by the service definition rather than borrowed from host config";
+  "the service recipient named by this owned service's own definition. It currently equals this deployment's marketplace payTo because Untch performs the service and is paid for it at the same address — a declared coincidence of two roles, not a fallback to host config, which this resolver cannot read.";
 
 /**
  * The ERC-8004 identity Untch acts under on the marketplace.
@@ -143,7 +156,7 @@ const OWNED_WORK_DEMO: ServiceDefinition = {
     },
   ],
   checkpointContract: [],
-  recipient: UNTCH_XLAYER_RECEIVER,
+  recipient: UNTCH_OWNED_SERVICE_RECIPIENT,
   recipientDerivedFrom: RECEIVER_PROVENANCE,
   workerAgentId: UNTCH_MARKETPLACE_ASP_AGENT_ID,
   endpoint: "https://asp.untch.xyz/owned/demo",
@@ -192,7 +205,7 @@ const BATTLE_CARD: ServiceDefinition = {
       blocking: false,
     },
   ],
-  recipient: UNTCH_XLAYER_RECEIVER,
+  recipient: UNTCH_OWNED_SERVICE_RECIPIENT,
   recipientDerivedFrom: RECEIVER_PROVENANCE,
   workerAgentId: UNTCH_MARKETPLACE_ASP_AGENT_ID,
   endpoint: "https://asp.untch.xyz/owned/battle-card",

@@ -40,6 +40,7 @@ import {
 } from "@untch/consumer-core";
 import { PolicyValidationError, type PolicyProvider, type PolicyRegistrationService, type StoredPolicy } from "@untch/policy-store";
 import { hashCanonicalJson } from "@untch/canon";
+import { assertNotOperatorRole, ROLE_DISTINCTIONS, RoleCollisionError } from "@untch/shared";
 import type { HandlerResult } from "../handlers";
 import { openAccountSession } from "./account-auth";
 import { derivePolicyRules, summarisePolicyRules, PolicyShapeError, type PolicyIntentInput } from "./policy-shape";
@@ -55,8 +56,6 @@ export interface PolicyRoutesDeps {
   readonly registration: PolicyRegistrationService;
   readonly policies: PolicyProvider;
   readonly secret: string;
-  /** The agent address a policy governs, when the caller does not name one. */
-  readonly defaultAgent: Address | null;
   readonly now?: () => number;
 }
 
@@ -189,7 +188,20 @@ export function registerPolicyRoutes(
         );
       }
 
-      const agent = typeof b.agentId === "string" ? (b.agentId as Address) : d.defaultAgent;
+      /**
+       * The governed agent, defaulted to the ACCOUNT'S OWN authority — never to a server address.
+       *
+       * This defaulted to `MAINNET_WRITER_ADDRESS`, which is the RECEIPT WRITER: the key that anchors
+       * receipts. A user drafting a policy without naming an agent would have registered, immutably
+       * and on chain, a declaration that their spending rules govern Untch's receipt writer. Nothing
+       * enforces `policy.agent` — no contract reads it — so it would not have MOVED any money wrongly.
+       * It would have been permanently, publicly false, in a record whose entire value is being true.
+       *
+       * The honest default is the wallet that will send the transaction: the policy governs the
+       * spending of the account that owns it, until its owner deliberately points it somewhere else.
+       */
+      const requestedAgent = typeof b.agentId === "string" ? (b.agentId as Address) : null;
+      const agent = requestedAgent ?? (authorities[0] as Address | undefined) ?? null;
       if (!agent) {
         return refuse(
           400,
@@ -197,6 +209,16 @@ export function registerPolicyRoutes(
           "agentId is required: a policy governs one agent address, and it is immutable on chain once " +
             "registered, so it cannot be chosen later",
         );
+      }
+      try {
+        // A user policy may not name an Untch operational key as the party it governs, even when the
+        // caller asked for one explicitly. The refusal names the role so the fix is obvious.
+        assertNotOperatorRole(agent, "the agent a user's policy governs");
+      } catch (err) {
+        if (err instanceof RoleCollisionError) {
+          return refuse(409, err.code, err.message, { address: err.address, roles: err.roles });
+        }
+        throw err;
       }
 
       let built: ReturnType<PolicyRegistrationService["buildCreate"]>;
@@ -235,6 +257,17 @@ export function registerPolicyRoutes(
             args: built.unsignedTx.args,
             data: built.unsignedTx.calldata,
             value: "0x0",
+          },
+          roles: {
+            // Named on the response because the whole class of defect this route can produce is a
+            // role filled by an address that already had a different job.
+            policyOwner: { willBe: authorities, why: ROLE_DISTINCTIONS.policyOwner },
+            governedAgent: { is: agent, why: ROLE_DISTINCTIONS.governedAgent },
+            notInvolved: {
+              marketplacePayTo: ROLE_DISTINCTIONS.marketplacePayTo,
+              serviceRecipient: ROLE_DISTINCTIONS.serviceRecipient,
+              operatorOrDeployer: ROLE_DISTINCTIONS.operatorOrDeployer,
+            },
           },
           mustBeSentBy: {
             // Named explicitly, because the property that makes the policy YOURS is which key sends

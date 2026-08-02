@@ -24,6 +24,7 @@ import { hashCanonicalJson } from "../packages/canon/src/index";
 import { parsePolicyRules, ViemRegistryReader } from "../packages/policy-store/src/index";
 import { derivePolicyRules, summarisePolicyRules } from "../services/asp/src/consumer/policy-shape";
 import { CHAIN_REGISTRY } from "../packages/shared/src/chain-registry";
+import { assertNotOperatorRole, ROLE_DISTINCTIONS } from "../packages/shared/src/role-addresses";
 import { getAddress, type Address, type Chain, type Hex } from "viem";
 
 function arg(name: string): string | null {
@@ -44,6 +45,15 @@ function main(): void {
   }
   const owner = getAddress(ownerRaw) as Address;
   /**
+   * Refuse an Untch operational key outright, before anything is computed.
+   *
+   * `registerPolicy` makes `msg.sender` the owner permanently, with no relayer and no transfer. A
+   * policy registered from a deployer, treasury, oracle, receipt-writer or operator key is owned by
+   * Untch forever, and every later screen calling it "your policy" is wrong. Refusing costs one
+   * round trip; discovering it after the transaction costs the policy.
+   */
+  assertNotOperatorRole(owner, "the owner of a user's policy (msg.sender at registration)");
+  /**
    * The agent a policy governs is immutable on chain once registered.
    *
    * Defaulted to the owner rather than to an Untch-held address, because a policy whose agent is a
@@ -51,6 +61,7 @@ function main(): void {
    * the user's own wallet until they deliberately point it elsewhere.
    */
   const agent = getAddress(arg("agent") ?? ownerRaw) as Address;
+  assertNotOperatorRole(agent, "the agent a user's policy governs");
 
   const chain = CHAIN_REGISTRY.find((c) => c.chainId === X_LAYER_MAINNET);
   if (!chain?.contracts?.policyRegistry) {
@@ -108,6 +119,20 @@ function main(): void {
 
   const out = {
     checkpoint: "MAINNET_POLICY_BROADCAST_APPROVAL_REQUIRED",
+    /**
+     * The five roles, restated on the artefact itself.
+     *
+     * Not documentation for its own sake: the defect this script now refuses was one address filling
+     * three of these at once, and a reader checking the calldata before signing is the last person
+     * who can catch the next one.
+     */
+    roles: {
+      policyOwner: { willBe: owner, why: ROLE_DISTINCTIONS.policyOwner },
+      governedAgent: { is: agent, why: ROLE_DISTINCTIONS.governedAgent },
+      serviceRecipient: { is: "not set here", why: ROLE_DISTINCTIONS.serviceRecipient },
+      marketplacePayTo: { is: "not set here", why: ROLE_DISTINCTIONS.marketplacePayTo },
+      operatorOrDeployer: { is: "not involved", why: ROLE_DISTINCTIONS.operatorOrDeployer },
+    },
     network: { chainId: X_LAYER_MAINNET, name: chain.name, explorer: chain.explorerUrl },
     policyRegistry: registry,
     owner,
@@ -146,7 +171,8 @@ function main(): void {
       "not computed here: an estimate from any sender but yours is a different number. Your wallet " +
       "estimates against live state at signing time.",
     doNot: [
-      "Do not send this from an Untch operator key. The sender becomes the owner, and a policy Untch owns is not yours.",
+      "Do not send this from an Untch operator key. The sender becomes the owner, and a policy Untch owns is not yours. This script now refuses to build one, but the wallet is the last check.",
+      "Do not send it before the same wallet has signed in at /consumer/account/link/start with the `policy-authority` scope. Without an ACTIVE binding for this address, the sync will refuse the registration and the gas is spent for nothing.",
       "Do not edit the rules after reading the hash. The hash commits to these exact bytes and the sync will refuse a mismatch.",
     ],
   };
