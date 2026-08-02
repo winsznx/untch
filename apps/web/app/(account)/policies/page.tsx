@@ -26,7 +26,7 @@ export default async function Policies() {
   return (
     <Panel
       title="Policies"
-      sub="PolicyRegistry.registerPolicy makes msg.sender the owner. Untch does not relay it and cannot — a relayed policy would be owned by us, not by you."
+      sub="PolicyRegistry.registerPolicy makes msg.sender the owner. Untch does not relay it and cannot. A relayed policy would be owned by us, not by you."
     >
       {view.policies.length === 0 ? (
         <Empty

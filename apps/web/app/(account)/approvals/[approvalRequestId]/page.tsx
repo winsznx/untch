@@ -89,7 +89,7 @@ export default async function ApprovalDetail({
             {d.state !== "PENDING"
               ? `Already ${String(d.state).toLowerCase()}. A resolved approval cannot be decided again, and a second press would be a replay rather than a change of mind.`
               : quote.expired === true
-                ? "The quote this approval names has expired. Approving it would authorise a price that is no longer on offer; a fresh quote must be requested."
+                ? "The quote this approval names has expired. Approving it would authorise a price that is no longer on offer. Ask for a fresh quote."
                 : "No decision is available on this request."}
           </span>
         </Card>

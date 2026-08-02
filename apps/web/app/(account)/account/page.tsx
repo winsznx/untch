@@ -75,7 +75,7 @@ export default async function AccountPage() {
         )}
       </Panel>
 
-      <Panel title="Channels" sub="A channel delivers a request. No channel proves control — only a signature does.">
+      <Panel title="Channels" sub="A channel delivers a request. No channel proves control. Only a signature does.">
         {channels.length === 0 ? (
           <Card><span className="text-caption">No channel bindings. The web is the channel.</span></Card>
         ) : (
