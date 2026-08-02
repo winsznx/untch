@@ -76,14 +76,50 @@ CREATE TABLE IF NOT EXISTS untch_artifact_annotations (
     'VALIDATION_EXTERNAL_SIDE_EFFECT_LEAK', 'TEST_PROBE_ORPHAN', 'SUPERSEDED', 'IMPORTED'
   )),
 
-  -- An artifact that was not paid for and executed no provider cannot be eligible for anchoring,
-  -- accounting, public proof or business metrics. Stated as a constraint so a future annotation
-  -- cannot quietly assert a combination that has no meaning.
-  CONSTRAINT untch_artifact_annotation_coherent CHECK (
-    (paid OR provider_executed)
-    OR NOT (eligible_for_anchoring OR eligible_for_accounting
-            OR eligible_for_public_proof OR eligible_for_business_metrics)
+  /*
+   * EVERY RULE IS SCOPED TO A CLASSIFICATION. THERE IS NO GLOBAL ONE.
+   *
+   * The first version of this table asserted, for all rows, that an artifact which was not paid for
+   * and executed no provider is eligible for nothing. That is true of a leak and false in general.
+   * A free dry-run proof, a BLOCKED policy decision, a refused request, an unpaid audit record and a
+   * published security proof are all unpaid and unexecuted, and every one of them is legitimately
+   * eligible for public proof — several are the whole point of publishing. A global rule would have
+   * made this table unusable for the next honest thing anybody wanted to classify, and it would have
+   * been discovered as a constraint violation at 3am rather than as a design question now.
+   *
+   * So each classification declares what it means, and a classification with no rule constrains
+   * nothing. Adding a classification to the CHECK above without adding its rule here is the mistake
+   * to look for in review.
+   */
+
+  -- A leak is inert in every direction: it was not paid for, ran nothing, and may not be anchored,
+  -- accounted, published or counted. This is the strict case, and it is strict because the artifact
+  -- describes work that never happened at all.
+  CONSTRAINT untch_artifact_annotation_leak_is_inert CHECK (
+    classification <> 'VALIDATION_EXTERNAL_SIDE_EFFECT_LEAK'
+    OR (paid = false AND provider_executed = false
+        AND eligible_for_anchoring = false AND eligible_for_accounting = false
+        AND eligible_for_public_proof = false AND eligible_for_business_metrics = false)
+  ),
+
+  -- A probe row proves a mechanism, not a fact about the business. It says nothing about payment —
+  -- a probe could in principle be produced by any path — so `paid` and `provider_executed` are left
+  -- to the annotator, and only the four reading eligibilities are forced false.
+  CONSTRAINT untch_artifact_annotation_probe_is_not_truth CHECK (
+    classification <> 'TEST_PROBE_ORPHAN'
+    OR (eligible_for_anchoring = false AND eligible_for_accounting = false
+        AND eligible_for_public_proof = false AND eligible_for_business_metrics = false)
   )
+
+  /*
+   * SUPERSEDED and IMPORTED are deliberately unconstrained.
+   *
+   * Both describe artifacts of REAL work. A superseded receipt still belongs in the period it was
+   * written in — removing it from accounting to reflect that a later one replaced it would silently
+   * restate history. An imported record's eligibility depends on what it was imported from. Forcing
+   * either to a fixed answer here would encode a guess as a constraint, which is how the rule this
+   * comment replaces got written.
+   */
 );
 
 CREATE INDEX IF NOT EXISTS untch_artifact_annotations_class

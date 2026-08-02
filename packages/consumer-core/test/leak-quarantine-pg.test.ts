@@ -244,16 +244,87 @@ describe(
       await refuses(pool, "DELETE FROM untch_artifact_annotations", /append-only/);
     });
 
-    test("an annotation cannot claim unpaid, unexecuted work is eligible for anything", async () => {
+    test("a LEAK annotation cannot claim eligibility for anything, one flag at a time", async () => {
+      // Each flag separately, because a single combined case would pass if only one of the six were
+      // actually enforced.
+      const flags = [
+        "paid",
+        "provider_executed",
+        "eligible_for_anchoring",
+        "eligible_for_accounting",
+        "eligible_for_public_proof",
+        "eligible_for_business_metrics",
+      ] as const;
+
+      for (const flag of flags) {
+        const cols = flags.map((f) => (f === flag ? "true" : "false")).join(",");
+        await refuses(
+          pool,
+          `INSERT INTO untch_artifact_annotations
+             (artifact_kind, artifact_ref, classification, source, paid, provider_executed,
+              eligible_for_anchoring, eligible_for_accounting, eligible_for_public_proof,
+              eligible_for_business_metrics, note)
+           VALUES ('RECEIPT','0xleak_${flag}','VALIDATION_EXTERNAL_SIDE_EFFECT_LEAK','t',${cols},'n')`,
+          /untch_artifact_annotation_leak_is_inert/,
+        );
+      }
+    });
+
+    /**
+     * The rule this suite originally got wrong.
+     *
+     * The first constraint said, for every row, that unpaid and unexecuted implies eligible for
+     * nothing. That is a fact about leaks stated as a fact about the world. Each artifact below is
+     * unpaid, ran no provider, and is legitimately publishable — a security proof nobody paid for is
+     * still a proof, and a BLOCKED decision is evidence that the policy worked. The global rule would
+     * have refused all five.
+     */
+    test("a legitimate unpaid, unexecuted artifact is still publishable", async () => {
+      const legitimate = [
+        ["free dry-run evidence", "DECISION_EVIDENCE", "dryrun-1"],
+        ["a BLOCKED policy decision", "DECISION_EVIDENCE", "blocked-1"],
+        ["a rejected request", "APPROVAL_REQUEST", "rejected-1"],
+        ["an unpaid audit record", "ACTIVITY_CASE", "audit-1"],
+        ["a public security proof", "DECISION_EVIDENCE", "secproof-1"],
+      ] as const;
+
+      for (const [what, kind, ref] of legitimate) {
+        await pool.query(
+          `INSERT INTO untch_artifact_annotations
+             (artifact_kind, artifact_ref, classification, source, paid, provider_executed,
+              eligible_for_anchoring, eligible_for_accounting, eligible_for_public_proof,
+              eligible_for_business_metrics, note)
+           VALUES ($1,$2,'IMPORTED',$3,false,false,false,false,true,false,$4)`,
+          [kind, ref, what, `${what} — unpaid, unexecuted, and publishable`],
+        );
+      }
+
+      const published = await count(
+        pool,
+        "SELECT count(*) n FROM untch_artifact_annotations WHERE eligible_for_public_proof = true",
+      );
+      assert.equal(published, legitimate.length, "all five are publishable and none was refused");
+    });
+
+    test("a TEST_PROBE_ORPHAN can never be read as truth, but says nothing about payment", async () => {
       await refuses(
         pool,
         `INSERT INTO untch_artifact_annotations
            (artifact_kind, artifact_ref, classification, source, paid, provider_executed,
             eligible_for_anchoring, eligible_for_accounting, eligible_for_public_proof,
             eligible_for_business_metrics, note)
-         VALUES ('RECEIPT','0xincoherent','VALIDATION_EXTERNAL_SIDE_EFFECT_LEAK','t',
-                 false,false,false,true,false,false,'n')`,
-        /untch_artifact_annotation_coherent/,
+         VALUES ('RECEIPT','0xprobe_bad','TEST_PROBE_ORPHAN','t',false,false,false,false,true,false,'n')`,
+        /untch_artifact_annotation_probe_is_not_truth/,
+      );
+
+      // paid/provider_executed are NOT forced for a probe: the classification is about readability,
+      // not about money, and forcing them would be the same over-reach in a smaller place.
+      await pool.query(
+        `INSERT INTO untch_artifact_annotations
+           (artifact_kind, artifact_ref, classification, source, paid, provider_executed,
+            eligible_for_anchoring, eligible_for_accounting, eligible_for_public_proof,
+            eligible_for_business_metrics, note)
+         VALUES ('RECEIPT','0xprobe_ok','TEST_PROBE_ORPHAN','t',true,true,false,false,false,false,'n')`,
       );
     });
 
@@ -317,6 +388,92 @@ describe(
       assert.equal(raw, 4_050_000, "the raw row is still there — it was not deleted");
       assert.equal(await count(pool, "SELECT count(*) n FROM ledger_entries_business"), 1);
       assert.equal(await count(pool, "SELECT count(*) n FROM revenue_allocations"), 0);
+    });
+
+    test("SURFACE 7b: no leaked BLOCK_SAVED reaches a report", async () => {
+      // BLOCK_SAVED is the "we stopped you spending this" line. Two of the three leaked entries are
+      // that type, totalling 15.00 USDT0 of savings that were never saved from anything. Counted, they
+      // would make the policy engine look like it prevented five times the spend it actually saw.
+      const businessSaved = await count(
+        pool,
+        "SELECT coalesce(sum(amount),0) n FROM ledger_entries_business WHERE type = 'BLOCK_SAVED'",
+      );
+      const rawSaved = await count(
+        pool,
+        "SELECT coalesce(sum(amount),0) n FROM ledger_entries WHERE type = 'BLOCK_SAVED'",
+      );
+      assert.equal(businessSaved, 0, "no savings are claimed from the leak");
+      assert.equal(rawSaved, 15_000_000, "6.00 + 9.00 still on disk, still not a report");
+
+      assert.equal(
+        await count(pool, "SELECT count(*) n FROM ledger_entries_business WHERE type = 'BLOCK_SAVED'"),
+        0,
+      );
+    });
+
+    test("SURFACE 7c: no leaked receipt reaches a trust score", async () => {
+      // The trust bureau scores a party by its DECISION and VERIFY receipts. All four seeded rows are
+      // DECISION receipts against the same agent, so an unfiltered scorer would read four; the shipped
+      // query reads receipts_business and must see one.
+      const scored = await pool.query<{ receipt_id: string; decision: number }>(
+        `SELECT r.receipt_id, r.decision FROM receipts_business r
+           LEFT JOIN ledger_entries_business l ON l.receipt_id = r.receipt_id
+          WHERE r.kind = 'DECISION' AND r.agent_id = $1
+          ORDER BY r.created_at`,
+        [AGENT],
+      );
+      assert.equal(scored.rowCount, 1, "one scoreable decision, not four");
+      assert.equal(scored.rows[0]!.receipt_id, CLEAN);
+
+      // Decision 14 is the ESCALATED outcome and 10 is BLOCKED. Neither may reach a score: they would
+      // describe how a real party behaves using a decision nobody requested.
+      assert.ok(
+        !scored.rows.some((r) => r.decision === 14 || r.decision === 10),
+        "no leaked escalation or block enters the score",
+      );
+    });
+
+    test("SURFACE 5b: the leaked escalation cannot read as a legitimate account approval", async () => {
+      // An account approval means: this account's owner authorised this payment. The leaked row has
+      // none of that. It is absent from the account-scoped approval model entirely, and excluded from
+      // the business escalation view, so neither surface can present it as one.
+      assert.equal(await count(pool, "SELECT count(*) n FROM untch_approval_requests"), 0);
+      assert.equal(await count(pool, "SELECT count(*) n FROM untch_approval_decisions"), 0);
+      assert.equal(await count(pool, "SELECT count(*) n FROM untch_approval_deliveries"), 0);
+      assert.equal(await count(pool, "SELECT count(*) n FROM escalations_business"), 0);
+
+      // It also carries no account id of its own, so no join can attach it to one.
+      const cols = await pool.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='escalations' AND column_name = 'account_id'`,
+      );
+      assert.equal(cols.rowCount, 0, "the legacy escalation model has no account_id to be mistaken for one");
+    });
+
+    test("SURFACE 5c: the leaked operator and dashboard binding cannot satisfy account authority", async () => {
+      // Account authority is an ACTIVE row in untch_wallet_bindings with a policy-authority scope.
+      // The leaked rows live in the legacy escalation_operator tables, which have no account_id, no
+      // scopes and no proof — they cannot satisfy that predicate because they cannot even express it.
+      assert.equal(await count(pool, "SELECT count(*) n FROM untch_wallet_bindings"), 0);
+      assert.equal(await count(pool, "SELECT count(*) n FROM untch_channel_bindings"), 0);
+
+      for (const table of ["escalation_operators", "escalation_operator_bindings"]) {
+        const cols = await pool.query<{ column_name: string }>(
+          `SELECT column_name FROM information_schema.columns
+            WHERE table_schema='public' AND table_name=$1 AND column_name IN ('account_id','scopes','proof_kind')`,
+          [table],
+        );
+        assert.equal(cols.rowCount, 0, `${table} carries no account, scope or proof column`);
+      }
+
+      // And both are classified, so an operator surface that does join them shows the warning.
+      const annotated = await count(
+        pool,
+        `SELECT count(*) n FROM untch_artifact_annotations
+          WHERE artifact_kind IN ('ESCALATION_OPERATOR','ESCALATION_OPERATOR_BINDING')
+            AND eligible_for_public_proof = false`,
+      );
+      assert.equal(annotated, 2);
     });
 
     test("SURFACE 8: they are not public Explorer success cases", async () => {
