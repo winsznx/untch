@@ -96,6 +96,7 @@ import {
 import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes";
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
+import { registerAgenticLinkRoutes } from "./consumer/agentic-link-routes";
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
 import { registerMarketplaceRoutes } from "./consumer/marketplace-continuity";
@@ -641,6 +642,28 @@ export function createSellerApp(
         })
       : null;
   registerAccountRoutes(app, send, accountRoutesDeps);
+
+  /**
+   * The PRIMARY wallet path: OKX Onchain OS Agentic Wallet, linked through an agent rather than a
+   * browser provider. Registered beside the browser routes rather than replacing them, because a user
+   * who deliberately wants an extension wallet to own their policies may still have one — it is just
+   * no longer the default, and it can no longer present itself as the agentic wallet.
+   */
+  registerAgenticLinkRoutes(
+    app,
+    send,
+    accountRoutesDeps && consumerWiring && consumerAuthConfig.secret
+      ? {
+          accounts: accountRoutesDeps.accounts,
+          links: accountRoutesDeps.links,
+          verifier: accountRoutesDeps.verifier,
+          domain: consumerAuthConfig.domain,
+          publicBaseUrl: consumerWiring.publicBaseUrl,
+          webBaseUrl: process.env.UNTCH_WEB_BASE_URL?.trim() || "https://untch-web-production.up.railway.app",
+          secret: consumerAuthConfig.secret,
+        }
+      : null,
+  );
 
   /**
    * What the public preflight route needs to derive an account's authority.

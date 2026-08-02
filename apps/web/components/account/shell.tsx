@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { LinkWallet } from "./link-wallet";
+import { ConnectAgenticWallet } from "./connect-agentic";
 
 /** A titled block. Kept local to the approval surface so it can carry a subtitle that is a warning. */
 export function Panel({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
@@ -39,19 +40,36 @@ export function KV({ k, v }: { k: string; v: ReactNode }) {
  */
 export function NotLinked() {
   return (
-    <Card>
-      <div className="flex flex-col gap-4">
-        <p className="text-body" style={{ color: "var(--color-text)" }}>
-          This surface is scoped to an Untch account, and an account is created by one thing only: a
-          wallet signature over a nonce the ASP itself minted.
-        </p>
-        <p className="text-caption" style={{ color: "var(--color-inverse-muted)" }}>
-          One signature, and you will see the exact message first. Connecting a wallet opens no prompt.
-          Nothing you sign here approves a payment.
-        </p>
-        <LinkWallet linked={false} />
-      </div>
-    </Card>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <div className="flex flex-col gap-4">
+          <p className="text-body" style={{ color: "var(--color-text)" }}>
+            This surface is scoped to an Untch account, and an account is created by one thing only: a
+            signature from the wallet that will own your policies.
+          </p>
+          <ConnectAgenticWallet />
+        </div>
+      </Card>
+
+      {/*
+        Secondary, and labelled as a different product rather than a different button. The failure this
+        ordering prevents is a user reaching for an extension because it was the obvious control, and
+        ending up with policies owned by a wallet their agent cannot spend from.
+      */}
+      <details className="rounded-lg border p-4" style={{ borderColor: "var(--color-hairline, #e4e6ea)" }}>
+        <summary className="text-caption" style={{ color: "var(--color-inverse-muted)" }}>
+          Other wallet methods
+        </summary>
+        <div className="mt-4 flex flex-col gap-3">
+          <p className="text-caption" style={{ color: "var(--color-inverse-muted)" }}>
+            A browser wallet is a separate product from the Onchain OS Agentic Wallet, with different
+            keys and a different recovery story. Linking one records a browser binding. Your agent
+            cannot spend from it, so a policy it owns is a policy your agent cannot use.
+          </p>
+          <LinkWallet linked={false} />
+        </div>
+      </details>
+    </div>
   );
 }
 
