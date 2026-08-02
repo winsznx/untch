@@ -41,6 +41,7 @@ import { evaluatePreflight } from "../handlers";
 import { openAccountSession } from "../consumer/account-auth";
 import { mapPreflightRequest, type NetworkFacts } from "./mapping";
 import {
+  DIRECT_ACCOUNT_ONCHAIN_BUYER_AGENT_ID,
   OUTCOME_STATUS,
   publicOutcomeFor,
   resolveAuthority,
@@ -225,7 +226,24 @@ export async function handlePublicPreflight(
     {
       ...request,
       ...(a.recipient !== null ? { recipient: a.recipient } : {}),
-      buyerAgentId: a.buyerAgentId,
+      /**
+       * The reserved on-chain null for a direct account request.
+       *
+       * `SpendIntent.buyerAgentId` is a `uint256` in a deployed EIP-712 struct, so the field cannot be
+       * omitted — only given a value. `0` is that value and it means exactly one thing:
+       * NO MARKETPLACE BUYER EXISTS FOR THIS REQUEST.
+       *
+       * It is NOT ERC-8004 agent 0, and it is not a placeholder for an agent nobody looked up. ERC-8004
+       * identifies an agent by a registry coordinate AND a token id, so a bare uint256 could never carry
+       * a globally unambiguous agent identity anyway — which is why registering an agent purely to fill
+       * this field would be ceremony rather than a fix. The real requester is committed off chain, in the
+       * V3 evidence and in every digest derived from it; `buyerAgentIdSemantics` is what makes the 0
+       * readable rather than ambiguous.
+       *
+       * Replacing this field with a genuine requester commitment is a planned protocol version —
+       * docs/adr/0002-requester-principal-commitment.md — not something to patch in tonight.
+       */
+      buyerAgentId: a.buyerAgentId ?? DIRECT_ACCOUNT_ONCHAIN_BUYER_AGENT_ID,
       workerAgentId: a.workerAgentId,
     },
     {
