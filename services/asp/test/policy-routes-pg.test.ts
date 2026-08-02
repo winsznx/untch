@@ -72,11 +72,19 @@ class FakeRegistry implements RegistryReader {
   private readonly confirmed = new Map<string, OnchainRegistration>();
   private nextId = 9000n;
 
+  /**
+   * `expiry` stays a BigInt here, exactly as `ViemRegistryReader` returns it.
+   *
+   * It used to be `expiry.toString()`. That one difference made this double serialisable where the
+   * real reader is not, so `/consumer/policies/draft` returned a 500 for every request it ever served
+   * in production while this suite reported it green. A double that is easier to serialise than the
+   * thing it stands in for is a double that hides the bug it exists to catch.
+   */
   buildRegister(agent: Address, policyHash: Hex, expiry: bigint): RegisterCall {
     return {
       to: REGISTRY,
       functionName: "registerPolicy",
-      args: [agent, policyHash, expiry.toString()],
+      args: [agent, policyHash, expiry],
       calldata: encodeFunctionData({
         abi: POLICY_REGISTRY_ABI,
         functionName: "registerPolicy",
@@ -331,6 +339,19 @@ describe("the policy journey", { skip: TEST_DB ? false : "TEST_DATABASE_URL is u
     assert.equal(draft.status, 409, JSON.stringify(draft.body));
     assert.equal(draft.body.code, "OPERATOR_ADDRESS_REFUSED");
     assert.match(String(draft.body.message), /receipt-writer/);
+  });
+
+  test("the draft response survives JSON, because express is what serialises it", async () => {
+    const token = await signIn(OWNER);
+    const draft = await post("/consumer/policies/draft", draftBody(), token);
+    assert.equal(draft.status, 200, JSON.stringify(draft.body));
+    // The failure this catches is a BigInt reaching `res.json`. `post` already round-tripped the body
+    // through the wire, so reaching here at all is the assertion; stringifying again states it.
+    assert.doesNotThrow(() => JSON.stringify(draft.body));
+    const tx = draft.body.transaction as { args: unknown[] };
+    for (const a of tx.args) {
+      assert.notEqual(typeof a, "bigint", "a BigInt in the response cannot be serialised by express");
+    }
   });
 
   test("the derived defaults are shown rather than hidden", async () => {

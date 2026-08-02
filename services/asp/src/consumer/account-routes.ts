@@ -318,24 +318,6 @@ function roleCollision(address: string, scopes: readonly BindingScope[]): Handle
       );
     }
 
-    const marketplace = typeof b.marketplace === "string" ? b.marketplace : b.marketplaceAgentId ? "okx" : null;
-    const nonce = randomBytes(16).toString("hex");
-    const { request, code } = await d.links.create({
-      requestedScopes: scopes,
-      context: {
-        marketplace,
-        marketplaceAgentId: typeof b.marketplaceAgentId === "string" ? b.marketplaceAgentId : null,
-        marketplaceBuyerId: typeof b.marketplaceBuyerId === "string" ? b.marketplaceBuyerId : null,
-        taskRef: typeof b.taskRef === "string" ? b.taskRef : null,
-        serviceOrderRef: typeof b.serviceOrderRef === "string" ? b.serviceOrderRef : null,
-      },
-      returnUrl,
-      siweNonce: nonce,
-      sourceRequestId: req.header("x-request-id") ?? null,
-      nowMs: now(),
-      by: marketplace ? `marketplace:${marketplace}` : "web",
-    });
-
     /**
      * The message the server will verify, composed by the server.
      *
@@ -358,11 +340,35 @@ function roleCollision(address: string, scopes: readonly BindingScope[]): Handle
      * wallet ever opens a prompt rather than after they have signed. The authoritative check is at
      * COMPLETE, against the address recovered from the signature, because that is the only address
      * this server did not take somebody's word for.
+     *
+     * It runs BEFORE the link request is created. The first version checked after `links.create`, so
+     * every refused probe left a PENDING row that expired unused. Harmless — the one-time code is never
+     * disclosed on the refusal path — but a refusal that still writes a row is a refusal that can be
+     * used to fill a table.
      */
     if (addressForMessage !== null) {
       const collision = roleCollision(addressForMessage, scopes);
       if (collision) return collision;
     }
+
+
+    const marketplace = typeof b.marketplace === "string" ? b.marketplace : b.marketplaceAgentId ? "okx" : null;
+    const nonce = randomBytes(16).toString("hex");
+    const { request, code } = await d.links.create({
+      requestedScopes: scopes,
+      context: {
+        marketplace,
+        marketplaceAgentId: typeof b.marketplaceAgentId === "string" ? b.marketplaceAgentId : null,
+        marketplaceBuyerId: typeof b.marketplaceBuyerId === "string" ? b.marketplaceBuyerId : null,
+        taskRef: typeof b.taskRef === "string" ? b.taskRef : null,
+        serviceOrderRef: typeof b.serviceOrderRef === "string" ? b.serviceOrderRef : null,
+      },
+      returnUrl,
+      siweNonce: nonce,
+      sourceRequestId: req.header("x-request-id") ?? null,
+      nowMs: now(),
+      by: marketplace ? `marketplace:${marketplace}` : "web",
+    });
 
     const siweMessage =
       addressForMessage === null

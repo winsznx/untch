@@ -25,7 +25,7 @@ import { parsePolicyRules, ViemRegistryReader } from "../packages/policy-store/s
 import { derivePolicyRules, summarisePolicyRules } from "../services/asp/src/consumer/policy-shape";
 import { CHAIN_REGISTRY } from "../packages/shared/src/chain-registry";
 import { assertNotOperatorRole, ROLE_DISTINCTIONS } from "../packages/shared/src/role-addresses";
-import { getAddress, type Address, type Chain, type Hex } from "viem";
+import { createPublicClient, formatEther, getAddress, http, type Address, type Chain, type Hex } from "viem";
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -34,7 +34,7 @@ function arg(name: string): string | null {
 
 const X_LAYER_MAINNET = 196;
 
-function main(): void {
+async function main(): Promise<void> {
   const ownerRaw = arg("owner");
   if (!ownerRaw) {
     console.error(
@@ -117,6 +117,41 @@ function main(): void {
   });
   const call = reader.buildRegister(agent, policyHash, BigInt(expiryUnix));
 
+  /**
+   * Gas, estimated from the ACTUAL sender against the live registry.
+   *
+   * `eth_estimateGas` is sender-dependent: `registerPolicy` reads and writes `ownerNonce[msg.sender]`,
+   * so a first registration from a fresh address pays a cold SSTORE that a repeat registration does
+   * not. An estimate produced from a different address would look authoritative and be the wrong
+   * number, which is why the earlier version returned null rather than guess.
+   *
+   * A failure here is reported as null and never as zero. Zero would read as "free".
+   */
+  let gasEstimate: Record<string, unknown> | null = null;
+  try {
+    const pub = createPublicClient({ chain: viemChain, transport: http(chain.rpcUrls[0] ?? "https://rpc.xlayer.tech") });
+    const [units, price, balance] = await Promise.all([
+      pub.estimateGas({ account: owner, to: call.to, data: call.calldata, value: 0n }),
+      pub.getGasPrice().catch(() => null),
+      pub.getBalance({ address: owner }),
+    ]);
+    gasEstimate = {
+      units: units.toString(),
+      gasPriceWei: price === null ? null : price.toString(),
+      estimatedCostWei: price === null ? null : (units * price).toString(),
+      estimatedCostNative: price === null ? null : formatEther(units * price),
+      senderBalanceWei: balance.toString(),
+      senderBalanceNative: formatEther(balance),
+      // Reported from the chain rather than asserted from a doc. X Layer is documented as gas-free,
+      // and a zero price is the chain saying so rather than this script repeating it.
+      sufficient: price === null ? null : balance >= units * price,
+      estimatedFrom: owner,
+    };
+  } catch (err) {
+    gasEstimate = null;
+    console.error(`[gas] estimate failed from ${owner}: ${(err as Error).message}`);
+  }
+
   const out = {
     checkpoint: "MAINNET_POLICY_BROADCAST_APPROVAL_REQUIRED",
     /**
@@ -158,18 +193,11 @@ function main(): void {
       // from the server side.
       fields: { policyId: "uint256 (assigned on chain)", owner: `must equal ${owner}`, agent, policyHash, expiry: expiryUnix },
     },
-    /**
-     * Not estimated here, and the reason is worth stating rather than leaving as an omission.
-     *
-     * A gas estimate is an `eth_estimateGas` against the live registry from the sending address. This
-     * script holds no key, makes no RPC call, and an estimate produced from a different sender is a
-     * number that looks authoritative and is not the one the wallet will use. The wallet estimates it
-     * at signing time, against the real state, from the real sender.
-     */
-    gasEstimate: null,
+    gasEstimate,
     gasEstimateNote:
-      "not computed here: an estimate from any sender but yours is a different number. Your wallet " +
-      "estimates against live state at signing time.",
+      gasEstimate === null
+        ? "eth_estimateGas failed from this sender. Your wallet will estimate against live state at signing time."
+        : "eth_estimateGas from YOUR address against the live registry. An estimate from any other sender is a different number.",
     doNot: [
       "Do not send this from an Untch operator key. The sender becomes the owner, and a policy Untch owns is not yours. This script now refuses to build one, but the wallet is the last check.",
       "Do not send it before the same wallet has signed in at /consumer/account/link/start with the `policy-authority` scope. Without an ACTIVE binding for this address, the sync will refuse the registration and the gas is spent for nothing.",
@@ -180,4 +208,7 @@ function main(): void {
   console.log(JSON.stringify(out, null, 2));
 }
 
-main();
+main().catch((err) => {
+  console.error("draft failed:", (err as Error).message);
+  process.exit(1);
+});

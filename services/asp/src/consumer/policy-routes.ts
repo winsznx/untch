@@ -254,7 +254,15 @@ export function registerPolicyRoutes(
             chainId: built.chainId,
             to: built.registry,
             functionName: built.unsignedTx.functionName,
-            args: built.unsignedTx.args,
+            /**
+             * Stringified, because `expiry` is a `uint64` and viem hands it back as a BigInt.
+             *
+             * `res.json` calls `JSON.stringify`, which throws on a BigInt, so this route returned a
+             * 500 for every request it ever served in production. The pg test never caught it: it
+             * asserts on the decoded `data` and its harness serialises through a path that tolerates
+             * one. A response field that only works in a test is a field that does not work.
+             */
+            args: built.unsignedTx.args.map((a) => (typeof a === "bigint" ? a.toString() : a)),
             data: built.unsignedTx.calldata,
             value: "0x0",
           },

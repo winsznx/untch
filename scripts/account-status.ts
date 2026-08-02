@@ -47,6 +47,13 @@ interface WalletRow {
   role: string;
   proof_kind: string;
   scopes: string[] | null;
+  binding_kind: string | null;
+  agentic_selected_wallet: string | null;
+  agentic_auth_method: string | null;
+  agentic_solana_address: string | null;
+  agentic_tool_version: string | null;
+  challenge_ref: string | null;
+  challenge_transport: string | null;
   status: string;
   verified_at: Date | null;
   revoked_at: Date | null;
@@ -114,7 +121,9 @@ async function main(): Promise<void> {
       console.log(`wallets (${active.length} active of ${mine.length})`);
       for (const w of mine) {
         const roles = rolesOf(w.address);
+        const kind = w.binding_kind ?? "browser";
         console.log(`  bindingId            ${w.binding_id}`);
+        console.log(`  bindingKind          ${kind}${kind === "agentic" ? " (OKX Onchain OS Agentic Wallet, TEE-held)" : " (injected browser provider)"}`);
         console.log(`  address              ${w.address}`);
         console.log(`  chain                ${w.chain_kind}`);
         console.log(`  role                 ${w.role}`);
@@ -123,6 +132,16 @@ async function main(): Promise<void> {
         console.log(`  scopes               ${(w.scopes ?? []).join(", ") || "(none)"}`);
         console.log(`  verifiedAt           ${w.verified_at?.toISOString() ?? "(not recorded)"}`);
         console.log(`  status               ${w.status}${w.revoked_at ? ` (revoked ${w.revoked_at.toISOString()})` : ""}`);
+        if (kind === "agentic") {
+          // The Onchain OS account id is deliberately absent. The wallet skill's own rule is that the
+          // account NAME is displayable and the id is not, and this surface has no reason to differ.
+          console.log(`  agenticWallet        ${w.agentic_selected_wallet ?? "(unnamed)"}`);
+          console.log(`  authMethod           ${w.agentic_auth_method ?? "(unrecorded)"} — access to the wallet, never spending authority`);
+          console.log(`  solanaAddress        ${w.agentic_solana_address ?? "(none reported)"}`);
+          console.log(`  toolVersion          ${w.agentic_tool_version ?? "(unrecorded)"}`);
+        }
+        console.log(`  challengeRef         ${w.challenge_ref ?? "(none)"}`);
+        console.log(`  challengeTransport   ${w.challenge_transport ?? "(unrecorded)"}`);
         if (roles.length > 0) {
           // Should be impossible after the link guard. Printed loudly if it ever is not, because a
           // binding that predates the guard would be invisible otherwise.
