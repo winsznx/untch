@@ -40,6 +40,8 @@ const decision: Decision = {
   evaluatedAt: "2026-07-10T20:44:00Z",
   reasons: [],
   rules: [],
+    policyHash: null,
+    evaluator: { engineVersion: "2", ruleManifestHash: "0x00", ruleCount: 14 },
 };
 
 test("APPROVED maps to on-chain decision code 1 (frozen — already on-chain)", () => {

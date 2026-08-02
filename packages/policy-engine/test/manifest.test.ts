@@ -1,6 +1,13 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { IMPLEMENTED_RULES, STUBBED_RULES, evaluateIntent } from "../src/index";
+import { createHash } from "node:crypto";
+import {
+  ENGINE_VERSION,
+  IMPLEMENTED_RULES,
+  RULE_MANIFEST_HASH,
+  STUBBED_RULES,
+  evaluateIntent,
+} from "../src/index";
 import { activePolicy, emptyLedger, now, validIntent } from "./helpers";
 
 /**
@@ -129,5 +136,46 @@ describe("a policy hash commits to rules that are actually applied", () => {
     // Judging on a narrower tuple than the hash committed to is the defect. Refusing is the fix.
     assert.equal(d.decision, "BLOCKED_FAIL_CLOSED");
     assert.equal(d.rules.find((r) => r.result === "FAIL")?.unresolvableKey, "somethingNobodyImplemented");
+  });
+});
+
+/**
+ * A decision names the rules AND the code that read them.
+ *
+ * The policy hash commits to a ruleset. It says nothing about the evaluator, and today two rules
+ * began being enforced for a policy anchored before either existed: same ruleset, same hash,
+ * different verdicts. Without an evaluator identity those two evaluations are indistinguishable in
+ * the record, and a dispute about a past decision has nothing to appeal to.
+ */
+describe("a decision identifies its evaluator", () => {
+  test("every decision carries the engine version, manifest hash and rule count", () => {
+    const d = evaluateIntent(validIntent(), activePolicy(), emptyLedger(), { now });
+    assert.equal(d.evaluator.engineVersion, ENGINE_VERSION);
+    assert.equal(d.evaluator.ruleManifestHash, RULE_MANIFEST_HASH);
+    assert.equal(d.evaluator.ruleCount, IMPLEMENTED_RULES.length);
+    assert.match(d.evaluator.ruleManifestHash, /^0x[0-9a-f]{64}$/);
+  });
+
+  test("the manifest hash changes when the rule list changes, and not otherwise", () => {
+    // Recomputed here from the exported list, so a reordering or an added rule moves it.
+    const recomputed = `0x${createHash("sha256").update(IMPLEMENTED_RULES.join("\n")).digest("hex")}`;
+    assert.equal(RULE_MANIFEST_HASH, recomputed);
+    const different = `0x${createHash("sha256").update([...IMPLEMENTED_RULES].reverse().join("\n")).digest("hex")}`;
+    assert.notEqual(RULE_MANIFEST_HASH, different, "order is part of the identity");
+  });
+
+  test("a decision names the ruleset bytes, not only the policy row", () => {
+    const policy = activePolicy();
+    const withHash = { ...policy, policyHash: `0x${"ab".repeat(32)}` as const };
+    const d = evaluateIntent(validIntent(), withHash, emptyLedger(), { now });
+    assert.equal(d.policyHash, `0x${"ab".repeat(32)}`);
+  });
+
+  test("with no active policy the hash is null rather than a placeholder", () => {
+    const d = evaluateIntent(validIntent(), null, emptyLedger(), { now });
+    assert.equal(d.decision, "BLOCKED_NO_ACTIVE_POLICY");
+    assert.equal(d.policyHash, null);
+    // The evaluator is still named: which code decided to block is still worth knowing.
+    assert.equal(d.evaluator.engineVersion, ENGINE_VERSION);
   });
 });

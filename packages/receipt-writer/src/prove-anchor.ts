@@ -49,6 +49,8 @@ function syntheticDecision(): { input: SpendIntentInput; decision: Decision } {
     evaluatedAt: new Date().toISOString(),
     reasons: ["prove-anchor synthetic APPROVED"],
     rules: [],
+    policyHash: null,
+    evaluator: { engineVersion: "2", ruleManifestHash: "0x00", ruleCount: 14 },
   };
   return { input, decision };
 }

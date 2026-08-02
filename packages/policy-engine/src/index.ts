@@ -38,3 +38,4 @@ export type {
   LedgerWindowState,
   RecentIntent,
 } from "./types";
+export * from "./manifest";
