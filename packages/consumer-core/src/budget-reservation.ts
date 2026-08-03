@@ -369,13 +369,67 @@ export async function reservationForIntent(
 }
 
 /**
+ * Whether a hold is still executable, computed rather than read off the status column.
+ *
+ * WHY THE STORED STATUS IS NOT THE ANSWER
+ *
+ * A hold past `expires_at` stops counting toward exposure immediately — `budgetExposure` filters on
+ * the date, so correctness never waits for a sweeper. But the ROW still says `ACTIVE` until one runs.
+ * Correct for the budget, misleading for everybody else: an API, the Explorer or a person reading
+ * that row would conclude 4.00 of authority is still live when none is.
+ *
+ * So the stored status is preserved exactly — it is immutable history — and the derived answer is
+ * published beside it. Nothing mutates a historical row to make a projection look tidier.
+ */
+export type EffectiveReservationStatus = ReservationStatus;
+
+export interface ReservationEffectiveState {
+  /** Exactly what the row says. Never rewritten to match the projection. */
+  readonly storedStatus: ReservationStatus;
+  /** What is true right now. `ACTIVE` only when stored ACTIVE and not past its own deadline. */
+  readonly effectiveStatus: EffectiveReservationStatus;
+  /** The single question the budget rule asks. True for exactly one case. */
+  readonly countsTowardExposure: boolean;
+  readonly expiresAt: string;
+  /** Why it is terminal, when it is. Null while genuinely ACTIVE. */
+  readonly terminalReason: string | null;
+}
+
+export function reservationEffectiveState(
+  r: { readonly status: ReservationStatus; readonly expiresAt: string; readonly releaseReason?: ReleaseReason | null },
+  nowIso: string,
+): ReservationEffectiveState {
+  if (r.status !== "ACTIVE") {
+    return {
+      storedStatus: r.status,
+      effectiveStatus: r.status,
+      countsTowardExposure: false,
+      expiresAt: r.expiresAt,
+      terminalReason: r.releaseReason ?? (r.status === "CONSUMED" ? "CONSUMED_AT_SETTLEMENT" : r.status),
+    };
+  }
+  const expired = Date.parse(r.expiresAt) <= Date.parse(nowIso);
+  return {
+    storedStatus: "ACTIVE",
+    effectiveStatus: expired ? "EXPIRED" : "ACTIVE",
+    countsTowardExposure: !expired,
+    expiresAt: r.expiresAt,
+    // Named even though no sweeper has written it, because "why is this not counting" needs an answer
+    // at the moment somebody asks, not at the moment a background job gets round to it.
+    terminalReason: expired ? "AUTHORIZATION_EXPIRED" : null,
+  };
+}
+
+/**
  * The public view of a hold.
  *
  * An ALLOW-LIST. `accountId` is absent by construction: a reservation is public evidence that
  * authority was granted, and the durable account identifier is not part of what that has to disclose.
  */
-export function publicReservationProjection(r: BudgetReservation): Record<string, unknown> {
+export function publicReservationProjection(r: BudgetReservation, nowIso = new Date().toISOString()): Record<string, unknown> {
+  const eff = reservationEffectiveState(r, nowIso);
   return {
+    ...eff,
     reservationId: r.reservationId,
     policyId: r.policyId,
     decisionId: r.decisionId,
@@ -389,6 +443,11 @@ export function publicReservationProjection(r: BudgetReservation): Record<string
     recipient: r.recipient,
     provider: r.provider,
     capability: r.capability,
+    /**
+     * `status` is kept as the STORED value for anyone already reading it, and is now accompanied by
+     * `storedStatus`, `effectiveStatus` and `countsTowardExposure`. A reader who wants the truth about
+     * executability reads `effectiveStatus`; a reader auditing the row reads `storedStatus`.
+     */
     status: r.status,
     /**
      * The classification, carried on the record rather than left to a reader.
@@ -397,7 +456,11 @@ export function publicReservationProjection(r: BudgetReservation): Record<string
      * itself what the amount means — which is how "approved" became "spent" four times over.
      */
     economicClassification:
-      r.status === "CONSUMED" ? "SETTLED_GOVERNED_SPEND" : "RESERVED_AUTHORITY_NOT_SPEND",
+      r.status === "CONSUMED"
+        ? "SETTLED_GOVERNED_SPEND"
+        : eff.countsTowardExposure
+          ? "RESERVED_AUTHORITY_NOT_SPEND"
+          : "AUTHORITY_NO_LONGER_EXECUTABLE",
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
     consumedAt: r.consumedAt,
