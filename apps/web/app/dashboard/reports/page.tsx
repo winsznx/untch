@@ -34,7 +34,8 @@ export default async function Reports() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Spent" value={total(r.spend.totals)} sub={`${r.spend.approvedCount} approved`} accent="text" />
+        <StatTile label="Settled spend" value={total(r.spend.totals)} sub={`${r.spend.settledCount} settled`} accent="text" />
+        <StatTile label="Reserved authority" value={total(r.reservedAuthority.totals)} sub={`${r.reservedAuthority.approvedCount} approved · not spent`} accent="text" />
         <StatTile label="Waste blocked" value={total(r.blockedWaste.totals)} sub={`${r.blockedWaste.blockedCount} blocked`} accent="signal" />
         <StatTile label="Escalated exposure" value={total(r.escalatedExposure.totals)} sub={`${r.escalatedExposure.escalatedCount} held`} accent="data" />
         <StatTile label="Receipts" value={`${r.receipts.anchored}/${r.receipts.total}`} sub="anchored on-chain" accent="positive" />

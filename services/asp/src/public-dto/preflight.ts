@@ -49,6 +49,7 @@ import {
   ledgerPartitionKey,
   proposeDecision,
   utcDayKey,
+  type DecisionOutcome,
 } from "@untch/policy-engine";
 import { toEnginePolicy } from "@untch/policy-store";
 import { canonTimestamp } from "@untch/canon";
@@ -425,14 +426,14 @@ export async function handlePublicPreflight(
    */
   interface Committed {
     readonly assembled: AssembledEvidenceV3;
-    readonly engineDecision: string;
+    readonly engineDecision: DecisionOutcome;
     readonly ruleTrace: readonly Record<string, unknown>[];
     readonly reasons: readonly string[];
     readonly intentHash: Hex;
     readonly effectsApplied: boolean;
     readonly reservationId: string | null;
     readonly budgetUsage: { readonly settledToday: number; readonly reservedActiveToday: number; readonly effectiveToday: number };
-    readonly stateBefore: { readonly recentIntents: number; readonly callsInLastHour: number; readonly spentToday: number };
+    readonly stateBefore: { readonly recentIntents: number; readonly callsInLastHour: number };
   }
 
   let committed: Committed;

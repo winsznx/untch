@@ -180,9 +180,10 @@ async function main(): Promise<void> {
   const decA = decisionOf(resA);
   const decB = decisionOf(resB);
 
-  // Read the committed spend back from each partition (public read on the real ledger).
+  // Read the reserved authority back from each partition (public read on the real ledger).
+  // It is authority, not spend: this route decides and settles nothing.
   const spentA = ledger.read(keyA).budgetUsage.effectiveToday;
-  const spentB = ledger.read(keyB).spentTodayByAgent;
+  const spentB = ledger.read(keyB).budgetUsage.effectiveToday;
 
   // #then each policy's OWN budget is still independently enforced — a second 20 overspends 25.
   const resAover = await handlePreflightPayment(
