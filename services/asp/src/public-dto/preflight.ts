@@ -27,11 +27,13 @@
 import type { Address, Hex } from "viem";
 import { keccak256, toHex } from "viem";
 import {
-  assembleDecisionEvidenceV2,
-  persistDecisionEvidenceV2,
-  projectionReport,
-  type AssembledEvidence,
-  type CanonicalQuoteTerms,
+  assembleDecisionEvidenceV3,
+  persistDecisionEvidenceV3,
+  presentRequester,
+  projectionReportV3,
+  rawLegacyAgentProjection,
+  type AssembledEvidenceV3,
+  type CanonicalQuoteTermsV3,
   type EvidenceTx,
   type PolicySnapshot,
 } from "@untch/consumer-core";
@@ -307,12 +309,38 @@ export async function handlePublicPreflight(
     defaultForAccount: a.account.defaultPolicyId === a.policy.id,
   };
 
-  const quoteTerms: CanonicalQuoteTerms = {
+  /**
+   * The V3 quote terms — the obligation AND the obligor.
+   *
+   * The requester fields are what stop an approval obtained by one account matching another account's
+   * identical request. `policyId` is here for the same reason `policySelectionSemantics` exists: the
+   * on-chain hash commits the ruleset and cannot tell two same-ruleset policies apart, so the digest
+   * is the only place the exact policy is bound to the exact quote.
+   */
+  const r = a.requesterEvidence;
+  const quoteTerms: CanonicalQuoteTermsV3 = {
+    quoteSchemaVersion: 3,
     // The lineage is the caller's idempotency key when they gave one, because that is the value they
     // chose to identify this logical request. Without one it is the intent hash, which is unique per
     // request and therefore correctly makes every call its own lineage.
     lineage: request.idempotencyKey ?? String(decision.body.intentHash ?? ""),
     version: 1,
+    requesterPrincipalKind: r.requesterPrincipalKind,
+    requesterPrincipalNamespace: r.requesterPrincipalNamespace,
+    requesterPrincipalRef: r.requesterPrincipalRef,
+    accountRefHash: r.accountRefHash,
+    walletAuthorityRef: r.walletAuthorityRef,
+    marketplace:
+      r.marketplace !== null && r.buyerAgentId !== null && r.marketplaceBindingId !== null
+        ? { marketplace: r.marketplace, buyerAgentId: r.buyerAgentId, marketplaceBindingId: r.marketplaceBindingId }
+        : null,
+    sellerAspId: r.sellerAspId,
+    workerAgentId: r.workerAgentId,
+    serviceId: r.serviceId,
+    policyId: a.policy.id,
+    policyHash: a.policy.policyHash,
+    policyOwner: a.policy.owner.toLowerCase(),
+    governedAgent: a.policy.agentId.toLowerCase(),
     amount: request.maxSpend,
     asset: request.currency,
     chain: `eip155:${publicDeps.chainId}`,
@@ -325,15 +353,19 @@ export async function handlePublicPreflight(
     nonce: mapped.intent.nonce.toString(),
   };
 
-  let assembled: AssembledEvidence;
+  let assembled: AssembledEvidenceV3;
   try {
-    assembled = assembleDecisionEvidenceV2({
+    assembled = assembleDecisionEvidenceV3({
       decisionId: `dec_${keccak256(toHex(`${String(decision.body.intentHash)}:${evaluatedAt}`)).slice(2, 34)}`,
       intentId: String(decision.body.intentHash ?? ""),
       intentHash: decision.body.intentHash as Hex,
       accountId: a.account.accountId,
+      walletBindingId: a.wallet.bindingId,
+      requester: r,
       policyId: a.policy.id,
       policyHash: a.policy.policyHash,
+      policyOwner: a.policy.owner,
+      governedAgent: a.policy.agentId,
       snapshot,
       quoteTerms,
       engineVersion: ENGINE_VERSION,
@@ -373,7 +405,7 @@ export async function handlePublicPreflight(
   }
 
   try {
-    await publicDeps.evidenceTx((tx) => persistDecisionEvidenceV2(tx, assembled));
+    await publicDeps.evidenceTx((tx) => persistDecisionEvidenceV3(tx, assembled));
   } catch (err) {
     return {
       status: 500,
@@ -394,7 +426,7 @@ export async function handlePublicPreflight(
     };
   }
 
-  const projection = projectionReport(assembled.evidence);
+  const projection = projectionReportV3(assembled.evidence);
 
   /**
    * The account's use of the policy is recorded AFTER the decision, and a failure to record it does
@@ -438,20 +470,44 @@ export async function handlePublicPreflight(
               // header, and a reader deciding how much to trust this decision needs to see that word.
               provenBy: a.marketplace.provenBy,
             },
+      /**
+       * WHO ASKED, IN WORDS, AND THE RAW VALUE SEPARATELY.
+       *
+       * `presentRequester` never emits the zero. A direct request reads `Marketplace buyer: None`,
+       * because that is the true statement — `Buyer agent 0` would name an agent that does not exist
+       * and `Unknown agent` would claim ignorance this record does not have.
+       *
+       * The raw projection is here too, and only here, for whoever is reconciling against the chain.
+       * Offering the words without the bytes would send that person back to reading the zero unaided,
+       * which is where every misreading of it starts.
+       */
+      requester: {
+        ...presentRequester(a.requesterEvidence),
+        principalKind: a.requesterEvidence.requesterPrincipalKind,
+        principalNamespace: a.requesterEvidence.requesterPrincipalNamespace,
+        principalRef: a.requesterEvidence.requesterPrincipalRef,
+        accountRefHash: a.requesterEvidence.accountRefHash,
+        walletAuthorityRef: a.requesterEvidence.walletAuthorityRef,
+        raw: rawLegacyAgentProjection(a.requesterEvidence),
+      },
       recipient: { address: a.recipient, derivedFrom: a.recipientDerivedFrom },
       derived: [...a.derived, ...mapped.derived],
       /**
        * The evidence this decision was recorded with.
        *
-       * The PUBLIC projection is returned, and the two booleans state what it contains rather than
-       * describing it in prose that cannot be asserted on.
+       * The PUBLIC projection is returned, and the booleans state what it contains rather than
+       * describing it in prose that cannot be asserted on. `walletBindingIdPresent` is new in V3 and
+       * is checked for the same reason `rawAccountIdPresent` is: it names a specific row on a specific
+       * account, and the public surface is not the place for it.
        */
       evidence: {
         ...projection.publicProjection,
-        metadataSchemaVersion: 2,
         metadataCommitment: assembled.metadataHash,
+        requesterCommitment: assembled.requesterCommitment,
         rawAccountIdPresent: projection.rawAccountIdPresentInPublic,
+        walletBindingIdPresent: projection.walletBindingIdPresentInPublic,
         accountRefHashPresent: projection.accountRefHashPresentInPublic,
+        walletAuthorityRefPresent: projection.walletAuthorityRefPresentInPublic,
       },
       executionPosture: {
         enabled: publicDeps.executionEnabled,
