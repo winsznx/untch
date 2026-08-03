@@ -1,4 +1,6 @@
+import { canonUrl } from "@untch/canon";
 import { evaluateIntent, type EvaluateOptions } from "./evaluate";
+import { proposeDecisionEffects, type DecisionEffects } from "./effects";
 import type { Decision, LedgerWindowState, Policy, SpendIntentInput } from "./types";
 
 /**
@@ -101,6 +103,50 @@ export interface SerializeOptions extends EvaluateOptions {
 
 const defaultLock = new PerAgentLock();
 
+/** The service identity the cooldown rule keys on — an endpoint's canonical host. */
+function serviceHostOf(endpoint: string): string {
+  try {
+    return new URL(canonUrl(endpoint)).host;
+  } catch {
+    // A non-URL endpoint has no host to key a cooldown on. The rule treats an absent key as "no
+    // prior call", which is the same answer it would give for a service never called — correct, and
+    // better than inventing a key two different endpoints could share.
+    return endpoint;
+  }
+}
+
+/**
+ * Judge an intent and PROPOSE what committing it would change. Writes nothing.
+ *
+ * This is the function every caller should reach for. `evaluateIntentSerialized` below is kept for
+ * the callers that still hand it a mutable ledger, and is now implemented in terms of this one, so
+ * there is a single definition of what a decision is and what it would change.
+ *
+ * WHY THE SNAPSHOT IS A PARAMETER
+ *
+ * The state is read by the caller, inside whatever transaction the caller controls, and handed here
+ * as an immutable value. That is what makes the validation path safe: it can read a snapshot, get a
+ * real decision, and discard the proposal — with no code path through which a mutation could occur,
+ * rather than a flag saying one should not.
+ */
+export function proposeDecision(
+  intent: SpendIntentInput,
+  policy: Policy | null | undefined,
+  state: LedgerWindowState,
+  opts?: EvaluateOptions & { readonly nowMs?: number },
+): { readonly decision: Decision; readonly effects: DecisionEffects | null } {
+  const decision = evaluateIntent(intent, policy, state, opts);
+  const nowMs = opts?.nowMs ?? opts?.now?.() ?? Date.now();
+  const effects = proposeDecisionEffects({
+    partitionKey: ledgerPartitionKey(policy?.id),
+    intent,
+    decision,
+    nowMs,
+    serviceHost: serviceHostOf(intent.endpoint),
+  });
+  return { decision, effects };
+}
+
 /**
  * The outer entry point (§7.1): acquire the per-partition (policyId) lock, read ledger state,
  * `evaluateIntent`, commit the effect if APPROVED, release. Serializing the read→evaluate→commit
@@ -117,7 +163,9 @@ export async function evaluateIntentSerialized(
   const partitionKey = ledgerPartitionKey(policy?.id);
   return lock.runExclusive(partitionKey, async () => {
     const state = await ledger.read(partitionKey);
-    const decision = evaluateIntent(intent, policy, state, opts);
+    // Implemented through `proposeDecision` so there is ONE definition of what a decision is and what
+    // committing it would change. This path then applies the proposal; the decision-only path does not.
+    const { decision } = proposeDecision(intent, policy, state, opts);
     if (decision.decision === "APPROVED") {
       await ledger.commitApproved(partitionKey, intent, decision);
     }

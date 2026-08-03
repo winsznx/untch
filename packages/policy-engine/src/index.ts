@@ -13,9 +13,21 @@ export {
   PerAgentLock,
   evaluateIntentSerialized,
   ledgerPartitionKey,
+  proposeDecision,
   type Ledger,
   type SerializeOptions,
 } from "./concurrency";
+export {
+  proposeDecisionEffects,
+  utcDayKey,
+  type ActivitySeed,
+  type BudgetConsumption,
+  type CooldownTouch,
+  type DecisionEffects,
+  type DuplicateMarker,
+  type RateConsumption,
+  type ReplayMarker,
+} from "./effects";
 export {
   IMPLEMENTED_RULES,
   STUBBED_RULES,

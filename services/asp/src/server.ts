@@ -98,6 +98,12 @@ import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifie
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
 import { registerAgenticLinkRoutes } from "./consumer/agentic-link-routes";
 import { registerPreflightValidateRoute } from "./consumer/preflight-validate-route";
+import {
+  EXECUTION_MANIFEST_ROUTE,
+  executionManifest,
+  narrowToDecisionOnly,
+  type DecisionOnlyDeps,
+} from "./route-profiles";
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
 import { registerMarketplaceRoutes } from "./consumer/marketplace-continuity";
@@ -402,6 +408,18 @@ export function createSellerApp(
 
   // ── Consumer catalog + lifestyle + Launch Pack ─────────────────────────────
   app.get(CATALOG_ROUTE, (_req, res) => send(res, handleCatalog()));
+
+  /**
+   * What each route can reach, published unpriced and unauthenticated.
+   *
+   * Public because it is a claim anybody relying on this service should be able to check without
+   * asking. It names no secret: it reports which routes may execute a provider, settle a payment or
+   * deliver — and reports the global execution flag BESIDE those answers rather than instead of them,
+   * so a reader can see that the flag is true and the decision route is still inert.
+   */
+  app.get(EXECUTION_MANIFEST_ROUTE, (_req, res) => {
+    res.json(executionManifest(loadConsumerFlags().executionEnabled));
+  });
   app.get(CAFE_MENU_ROUTE, (_req, res) => send(res, handleCafeMenu()));
   app.post(CAFE_LATTE_ROUTE, (req, res) => send(res, handleCafeOrderLatte(req.body)));
   app.post(SUGGEST_NAMES_ROUTE, (req, res, next) => {
@@ -459,11 +477,31 @@ export function createSellerApp(
     scoreDataSource: scoreWiring?.dataSource ?? null,
   });
 
+  /**
+   * The decision-only bundle, built by NAMING the three things a decision needs.
+   *
+   * Not `preflightEngineDeps` with the executors dropped — built from scratch, so a dependency added
+   * to the engine bundle for the protocol route cannot arrive here by inheritance. `narrowToDecisionOnly`
+   * then refuses at runtime if an execution key is present anyway, which is the check that survives a
+   * future edit written by somebody who has not read this comment.
+   */
+  const preflightDecisionDeps = (provider: PolicyProvider): DecisionOnlyDeps =>
+    narrowToDecisionOnly({
+      policyProvider: provider,
+      intentStore: ledgerState.intentStore,
+      scoreDataSource: scoreWiring?.dataSource ?? null,
+    });
+
   app.post(PREFLIGHT_ROUTE, (req, res, next) => {
     if (!policyWiring) return send(res, policyStoreUnconfigured());
     const engineDeps = preflightEngineDeps(policyWiring.provider);
     if (publicPreflightDeps && looksPublic(req.body)) {
-      handlePublicPreflight(req.body, req.header("authorization"), publicPreflightDeps, engineDeps)
+      handlePublicPreflight(
+        req.body,
+        req.header("authorization"),
+        publicPreflightDeps,
+        preflightDecisionDeps(policyWiring.provider),
+      )
         .then((result) => send(res, result))
         .catch(next);
       return;
@@ -730,7 +768,7 @@ export function createSellerApp(
     pool: consumerWiring?.pool as never,
     accounts: accountRoutesDeps?.accounts as never,
     publicDeps: publicPreflightDeps,
-    engineDeps: policyWiring ? () => preflightEngineDeps(policyWiring.provider) : null,
+    decisionDeps: policyWiring ? () => preflightDecisionDeps(policyWiring.provider) : null,
     secret: consumerAuthConfig.secret ?? "",
   });
 

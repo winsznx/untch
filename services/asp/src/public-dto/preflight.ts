@@ -28,18 +28,31 @@ import type { Address, Hex } from "viem";
 import { keccak256, toHex } from "viem";
 import {
   assembleDecisionEvidenceV3,
+  commitDecisionEffects,
+  lockPartition,
   persistDecisionEvidenceV3,
   presentRequester,
   projectionReportV3,
   rawLegacyAgentProjection,
+  snapshotDecisionState,
   type AssembledEvidenceV3,
   type CanonicalQuoteTermsV3,
+  type DecisionStateTx,
   type EvidenceTx,
   type PolicySnapshot,
 } from "@untch/consumer-core";
-import { ENGINE_VERSION, RULE_MANIFEST_HASH } from "@untch/policy-engine";
-import type { HandlerResult, PreflightDeps } from "../handlers";
-import { evaluatePreflight } from "../handlers";
+import {
+  ENGINE_VERSION,
+  RULE_MANIFEST_HASH,
+  ledgerPartitionKey,
+  proposeDecision,
+  utcDayKey,
+} from "@untch/policy-engine";
+import { toEnginePolicy } from "@untch/policy-store";
+import { canonTimestamp } from "@untch/canon";
+import type { HandlerResult } from "../handlers";
+import { assemblePreflightInjects } from "../preflight-state";
+import { routeReachability, type DecisionOnlyDeps } from "../route-profiles";
 import { openAccountSession } from "../consumer/account-auth";
 import { mapPreflightRequest, type NetworkFacts } from "./mapping";
 import {
@@ -156,7 +169,19 @@ export async function handlePublicPreflight(
   body: unknown,
   bearer: string | undefined,
   publicDeps: PublicPreflightDeps,
-  engineDeps: PreflightDeps,
+  /**
+   * DECISION-ONLY, enforced by the type and by a compile-time assertion in `route-profiles.ts`.
+   *
+   * It previously took `PreflightDeps`, which carries the escalation gateway, the receipt enqueuer,
+   * the intent registry and the oracle signer. Whether this route could reach an executor was then a
+   * question about wiring, answerable only by reading the call site — and the answer changed with a
+   * global environment flag that exists for a completely different route.
+   *
+   * `DecisionOnlyDeps` cannot NAME an executor. The guarantee is checked by `tsc`, holds regardless of
+   * `CONSUMER_EXECUTION_ENABLED`, and does not weaken because some other route may legitimately
+   * execute a provider.
+   */
+  decisionDeps: DecisionOnlyDeps,
 ): Promise<HandlerResult> {
   const now = publicDeps.now ?? Date.now;
   const parsed = readRequest(body);
@@ -192,6 +217,7 @@ export async function handlePublicPreflight(
     ownedService: publicDeps.ownedService,
     now,
   };
+  void decisionDeps.intentStore;
 
   const authority = await resolveAuthority(
     {
@@ -276,21 +302,44 @@ export async function handlePublicPreflight(
     };
   }
 
-  const decision = await evaluatePreflight(mapped.intent, a.policy.id, a.policy, body, engineDeps);
-  if (decision.status !== 200) return decision;
-
-  const engineDecision = String(decision.body.decision ?? "");
-  const outcome = publicOutcomeFor(engineDecision);
+  if (!publicDeps.evidenceTx) {
+    return {
+      status: 503,
+      body: {
+        outcome: "DECISION_EVIDENCE_INCOMPLETE",
+        code: "DECISION_EVIDENCE_INCOMPLETE",
+        message: "this instance has no evidence store, so a decision cannot be reached or recorded",
+        retryable: true,
+        docsUrl: null,
+      },
+    };
+  }
 
   /**
-   * V3 evidence, assembled and persisted BEFORE a paid response is returned.
+   * ── THE DECISION, ITS EVIDENCE AND ITS EFFECTS ARE ONE TRANSACTION ────────
    *
-   * The order is the point. A caller who paid $0.05 and received a decision has bought a record; if
-   * the record cannot be written, they have bought nothing and must be told so rather than handed a
-   * success whose evidence does not exist. So an assembly or write failure refuses with
-   * DECISION_EVIDENCE_INCOMPLETE and never silently downgrades to a V1 row.
+   * WHAT THIS REPLACES, AND WHY IT HAD TO CHANGE
+   *
+   * The engine used to read its window from a process singleton and write an APPROVED intent's
+   * duplicate marker, spend, rate tick and cooldown straight back into it — outside any transaction.
+   * The always-rollback validation route could therefore roll back every database write perfectly and
+   * still change the next real decision. On 2026-08-03 it did: a non-billable 4.00 validation made a
+   * genuine 4.00 return BLOCKED_DUPLICATE minutes later.
+   *
+   * Now the window is read from Postgres inside the caller's transaction, the evaluation is pure and
+   * returns a PROPOSAL, and the proposal is applied — if at all — through the same transaction that
+   * writes the evidence. A rollback removes the decision, its evidence and every state change that
+   * could alter a later decision, because they are the same rollback.
+   *
+   * The advisory lock is taken on the policy partition and released by COMMIT or ROLLBACK. It
+   * serialises two replicas, which the in-process mutex never could.
    */
-  const evaluatedAt = String(decision.body.evaluatedAt ?? new Date(now()).toISOString());
+  const nowMs = now();
+  const dayKey = utcDayKey(nowMs);
+  const partitionKey = ledgerPartitionKey(a.policy.id);
+  const enginePolicy = toEnginePolicy(a.policy);
+
+  const evaluatedAt = new Date(Math.floor(nowMs / 1000) * 1000).toISOString();
   const snapshot: PolicySnapshot = {
     policyId: a.policy.id,
     policyHash: a.policy.policyHash,
@@ -318,12 +367,12 @@ export async function handlePublicPreflight(
    * is the only place the exact policy is bound to the exact quote.
    */
   const r = a.requesterEvidence;
-  const quoteTerms: CanonicalQuoteTermsV3 = {
+  const quoteTermsFor = (intentHash: string): CanonicalQuoteTermsV3 => ({
     quoteSchemaVersion: 3,
     // The lineage is the caller's idempotency key when they gave one, because that is the value they
     // chose to identify this logical request. Without one it is the intent hash, which is unique per
     // request and therefore correctly makes every call its own lineage.
-    lineage: request.idempotencyKey ?? String(decision.body.intentHash ?? ""),
+    lineage: request.idempotencyKey ?? intentHash,
     version: 1,
     requesterPrincipalKind: r.requesterPrincipalKind,
     requesterPrincipalNamespace: r.requesterPrincipalNamespace,
@@ -349,30 +398,104 @@ export async function handlePublicPreflight(
     recipient: a.recipient,
     paramsHash: mapped.intent.paramsHash,
     acceptanceHash: mapped.intent.acceptanceHash,
-    expiry: request.deadline,
+    /**
+     * The deadline at SECOND resolution, the same normalisation the intent hash uses.
+     *
+     * Found by a test: two requests carrying the same idempotency key produced the same intentHash
+     * and DIFFERENT quote digests. The intent floors the deadline to unix seconds; the quote was
+     * committing the caller's raw ISO string, milliseconds and all. So a retry after a timeout — the
+     * exact case an idempotency key exists for — produced a second digest, and an approval raised
+     * against the first would have matched nothing.
+     *
+     * `canonTimestamp` is the repository's §9 normaliser and is what the intent path already agrees
+     * with, so this makes one logical request have one digest rather than inventing a second rule.
+     */
+    expiry: canonTimestamp(request.deadline),
     nonce: mapped.intent.nonce.toString(),
-  };
+  });
 
-  let assembled: AssembledEvidenceV3;
+  /**
+   * One transaction: read the window, judge, record the evidence, apply the effects.
+   *
+   * `evidenceTx` is supplied by the ROUTE. The paid route commits it; the validation route rolls it
+   * back. Because everything that could change a later decision happens inside it, those two routes
+   * differ in exactly one thing — whether the transaction commits — and in nothing else.
+   */
+  interface Committed {
+    readonly assembled: AssembledEvidenceV3;
+    readonly engineDecision: string;
+    readonly ruleTrace: readonly Record<string, unknown>[];
+    readonly reasons: readonly string[];
+    readonly intentHash: Hex;
+    readonly effectsApplied: boolean;
+    readonly stateBefore: { readonly recentIntents: number; readonly callsInLastHour: number; readonly spentToday: number };
+  }
+
+  let committed: Committed;
   try {
-    assembled = assembleDecisionEvidenceV3({
-      decisionId: `dec_${keccak256(toHex(`${String(decision.body.intentHash)}:${evaluatedAt}`)).slice(2, 34)}`,
-      intentId: String(decision.body.intentHash ?? ""),
-      intentHash: decision.body.intentHash as Hex,
-      accountId: a.account.accountId,
-      walletBindingId: a.wallet.bindingId,
-      requester: r,
-      policyId: a.policy.id,
-      policyHash: a.policy.policyHash,
-      policyOwner: a.policy.owner,
-      governedAgent: a.policy.agentId,
-      snapshot,
-      quoteTerms,
-      engineVersion: ENGINE_VERSION,
-      ruleManifestHash: RULE_MANIFEST_HASH as Hex,
-      decision: engineDecision,
-      ruleTrace: (decision.body.ruleTrace as Record<string, unknown>[]) ?? [],
-      evaluatedAt,
+    committed = await publicDeps.evidenceTx(async (tx) => {
+      // Serialises this policy's read→judge→commit against every other instance. Released by COMMIT
+      // or ROLLBACK, by Postgres — not by a `finally` this process has to reach.
+      await lockPartition(tx as DecisionStateTx, partitionKey);
+
+      const windowState = await snapshotDecisionState(tx as DecisionStateTx, partitionKey, nowMs, dayKey);
+      const injects = await assemblePreflightInjects(mapped.intent, body, decisionDeps.scoreDataSource ?? null);
+      const stateWithInjects = { ...windowState, ...injects };
+
+      // PURE. Returns a decision and a PROPOSAL; mutates nothing anywhere.
+      const { decision: engineResult, effects } = proposeDecision(
+        mapped.intent,
+        enginePolicy,
+        stateWithInjects,
+        { nowMs, ...(decisionDeps.now ? { now: decisionDeps.now } : {}) },
+      );
+
+      const intentHash = engineResult.intentHash;
+      const quoteTerms = quoteTermsFor(intentHash);
+      const assembledEvidence = assembleDecisionEvidenceV3({
+        decisionId: `dec_${keccak256(toHex(`${intentHash}:${evaluatedAt}`)).slice(2, 34)}`,
+        intentId: intentHash,
+        intentHash,
+        accountId: a.account.accountId,
+        walletBindingId: a.wallet.bindingId,
+        requester: r,
+        policyId: a.policy.id,
+        policyHash: a.policy.policyHash,
+        policyOwner: a.policy.owner,
+        governedAgent: a.policy.agentId,
+        snapshot,
+        quoteTerms,
+        engineVersion: ENGINE_VERSION,
+        ruleManifestHash: RULE_MANIFEST_HASH as Hex,
+        decision: engineResult.decision,
+        ruleTrace: engineResult.rules as unknown as Record<string, unknown>[],
+        evaluatedAt,
+      });
+
+      await persistDecisionEvidenceV3(tx, assembledEvidence);
+
+      /**
+       * The proposal is applied HERE and only here.
+       *
+       * A non-APPROVED decision proposes nothing: it consumed no budget and is not a duplicate that
+       * later requests should be measured against. So `effects` is null and nothing is written —
+       * which is why three blocked validations in a row leave the window exactly as they found it.
+       */
+      if (effects) await commitDecisionEffects(tx as DecisionStateTx, effects);
+
+      return {
+        assembled: assembledEvidence,
+        engineDecision: engineResult.decision,
+        ruleTrace: engineResult.rules as unknown as Record<string, unknown>[],
+        reasons: engineResult.reasons,
+        intentHash,
+        effectsApplied: effects !== null,
+        stateBefore: {
+          recentIntents: windowState.recentIntents.length,
+          callsInLastHour: windowState.callsInLastHour,
+          spentToday: windowState.spentTodayByAgent,
+        },
+      };
     });
   } catch (err) {
     return {
@@ -381,51 +504,17 @@ export async function handlePublicPreflight(
         outcome: "DECISION_EVIDENCE_INCOMPLETE",
         code: "DECISION_EVIDENCE_INCOMPLETE",
         message:
-          "the decision was reached but its evidence could not be assembled, so no result is returned. " +
-          `A paid call must produce a record. ${(err as Error).message}`,
-        retryable: false,
-        docsUrl: null,
-        // Enough to reconcile a payment that already settled without charging again.
-        reconciliation: { intentHash: decision.body.intentHash ?? null, evaluatedAt },
-      },
-    };
-  }
-
-  if (!publicDeps.evidenceTx) {
-    return {
-      status: 503,
-      body: {
-        outcome: "DECISION_EVIDENCE_INCOMPLETE",
-        code: "DECISION_EVIDENCE_INCOMPLETE",
-        message: "this instance has no evidence store, so a paid decision cannot be recorded",
+          "the decision could not be reached and recorded as one atomic unit, so nothing was recorded " +
+          `and nothing was changed. Retry with the same idempotencyKey rather than paying again. ${(err as Error).message}`,
         retryable: true,
         docsUrl: null,
       },
     };
   }
 
-  try {
-    await publicDeps.evidenceTx((tx) => persistDecisionEvidenceV3(tx, assembled));
-  } catch (err) {
-    return {
-      status: 500,
-      body: {
-        outcome: "DECISION_EVIDENCE_INCOMPLETE",
-        code: "DECISION_EVIDENCE_INCOMPLETE",
-        message:
-          "the decision was reached but could not be persisted. The payment is reconcilable from the " +
-          `intent hash below; retry with the same idempotencyKey rather than paying again. ${(err as Error).message}`,
-        retryable: true,
-        docsUrl: null,
-        reconciliation: {
-          intentHash: assembled.evidence.intentHash,
-          decisionId: assembled.evidence.decisionId,
-          quoteDigest: assembled.evidence.quoteDigest,
-        },
-      },
-    };
-  }
-
+  const assembled = committed.assembled;
+  const engineDecision = committed.engineDecision;
+  const outcome = publicOutcomeFor(engineDecision);
   const projection = projectionReportV3(assembled.evidence);
 
   /**
@@ -447,8 +536,32 @@ export async function handlePublicPreflight(
   return {
     status: 200,
     body: {
-      ...decision.body,
+      decision: engineDecision,
+      intentHash: committed.intentHash,
+      policyId: a.policy.id,
+      reasons: committed.reasons,
+      ruleTrace: committed.ruleTrace,
+      evaluatedAt,
       outcome,
+      /**
+       * What this ROUTE can reach, stated in its own response.
+       *
+       * Not a claim about the deployment — a claim about this route, derived from the dependency type
+       * it is wired with. `globalProviderExecutionEnabled` may be true beside it, and the three
+       * reachability booleans are still false, because they are answers to a different question.
+       */
+      routeExecution: routeReachability("/preflight_payment"),
+      /**
+       * What the decision changed, and what it read before deciding.
+       *
+       * `effectsApplied` is false for every non-APPROVED outcome, which is how a caller can see that
+       * three blocked evaluations in a row leave the duplicate window exactly as they found it.
+       */
+      decisionState: {
+        partitionKey,
+        effectsApplied: committed.effectsApplied,
+        observedBeforeDecision: committed.stateBefore,
+      },
       // The engine's own word stays beside the public one. `ESCALATED_OVER_THRESHOLD` says which rule
       // fired; `ESCALATED` is what a caller branches on. Collapsing them would lose the reason.
       engineDecision,

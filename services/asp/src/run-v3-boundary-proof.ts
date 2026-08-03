@@ -17,9 +17,10 @@
  *
  * Deploy, pay, sign, message anybody, or touch production. It creates its own throwaway database from
  * TEST_DATABASE_URL, applies every migration, and seeds one account, one wallet binding and one
- * policy. `suppressExternalEffects` removes the escalation gateway, the receipt enqueuer, the intent
- * registry and the oracle signer BEFORE the handler runs — removed, not disabled, because a rollback
- * cannot un-send a Telegram message and a flag is something a future edit forgets to check.
+ * policy. The route is wired with `DecisionOnlyDeps`, which cannot NAME an escalation gateway, a
+ * receipt enqueuer, an intent registry or an oracle signer — so there is nothing to disable and
+ * nothing to forget to disable. A rollback cannot un-send a Telegram message; the fix is that no
+ * gateway is reachable, not that one is asked to stay quiet.
  *
  * THE COUNT ASSERTION
  *
@@ -54,8 +55,10 @@ import { findOwnedService } from "@untch/owned-work";
 import { hashCanonicalJson } from "@untch/canon";
 import { registerPreflightValidateRoute, OPERATOR_PREFLIGHT_VALIDATE_ROUTE } from "./consumer/preflight-validate-route";
 import type { PublicPreflightDeps } from "./public-dto/preflight";
-import type { PreflightDeps } from "./handlers";
-import { InMemoryIntentStore, InMemoryLedger } from "./ledger-state";
+import { InMemoryIntentStore } from "./ledger-state";
+import { narrowToDecisionOnly } from "./route-profiles";
+import { decisionStateCounts } from "@untch/consumer-core";
+import { ledgerPartitionKey } from "@untch/policy-engine";
 
 const TEST_DB = process.env.TEST_DATABASE_URL?.trim();
 const OWN_DATABASE = "untch_proof_v3_boundary";
@@ -65,6 +68,15 @@ const REGISTRY = "0x0000000000000000000000000000000000000000";
 
 /** The wallet that owns the policy. A fixed, meaningless address: nothing here signs anything. */
 const WALLET: Address = "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba";
+
+/**
+ * One deadline for the whole run.
+ *
+ * A fresh `Date.now() + 1h` per request would give the two passes different quote digests for the
+ * same logical request, and the point of the second pass is that it is IDENTICAL. The deadline is an
+ * input the caller controls, so holding it fixed is what makes "identical request" mean something.
+ */
+const DEADLINE = new Date(Date.now() + 3_600_000).toISOString();
 
 function fail(message: string): never {
   console.error(`\nRESULT: FAIL — ${message}`);
@@ -245,18 +257,6 @@ async function main(): Promise<void> {
       evidenceTx: null,
     };
 
-    const ledgerState = { ledger: new InMemoryLedger(), intentStore: new InMemoryIntentStore() };
-    const engineDeps = (): PreflightDeps => ({
-      policyProvider: provider,
-      ledger: ledgerState.ledger,
-      intentStore: ledgerState.intentStore,
-      // The four outbound dependencies are ABSENT from the start here, and `suppressExternalEffects`
-      // removes them again inside the route. Both, so this proof does not depend on either alone.
-      intentRegistry: null,
-      oracleSigner: null,
-      scoreDataSource: null,
-    });
-
     const app = express();
     app.use(express.json());
     process.env.INTERNAL_OPS_TOKEN = OPS_TOKEN;
@@ -264,7 +264,12 @@ async function main(): Promise<void> {
       pool,
       accounts,
       publicDeps,
-      engineDeps,
+      decisionDeps: () =>
+        narrowToDecisionOnly({
+          policyProvider: provider,
+          intentStore: new InMemoryIntentStore(),
+          scoreDataSource: null,
+        }),
       secret: publicDeps.sessionSecret,
     });
 
@@ -279,12 +284,30 @@ async function main(): Promise<void> {
 
     const before = await tableCounts(pool);
 
-    // ── the three decisions ─────────────────────────────────────────────────
-    console.log("\n[4/6] three decisions, over real HTTP, each rolled back\n");
-    const results: Record<string, unknown>[] = [];
-    let allOk = true;
+    /**
+     * The decision-state counts, which are the numbers that mattered on 2026-08-03.
+     *
+     * A rolled-back validation used to leave the duplicate window, the daily spend and the rate
+     * counter changed — in process memory, where the rollback could not reach. These four numbers are
+     * what "the validation changed nothing that could change a later decision" means concretely.
+     */
+    const decisionCounts = async (): Promise<Record<string, string>> => {
+      const client = await pool.connect();
+      try {
+        const c = await decisionStateCounts(client as never, ledgerPartitionKey(policyId));
+        return {
+          recentIntents: String(c.recentIntents),
+          rateTicks: String(c.rateTicks),
+          replayMarkers: String(c.replayMarkers),
+          serviceCalls: String(c.serviceCalls),
+          dailySpend: c.dailySpend,
+        };
+      } finally {
+        client.release();
+      }
+    };
 
-    for (const c of CASES) {
+    const post = async (amount: string, idempotencyKey: string): Promise<Record<string, unknown>> => {
       const response = await fetch(`http://127.0.0.1:${port}${OPERATOR_PREFLIGHT_VALIDATE_ROUTE}`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${OPS_TOKEN}` },
@@ -293,16 +316,27 @@ async function main(): Promise<void> {
           request: {
             provider: "untch",
             capability: "owned_work.demo",
-            task: `V3 boundary proof at ${c.amount}`,
-            maxSpend: c.amount,
+            task: `V3 boundary proof at ${amount}`,
+            maxSpend: amount,
             currency: settlementAsset.symbol,
-            deadline: new Date(Date.now() + 3_600_000).toISOString(),
+            deadline: DEADLINE,
             // NO buyerAgentId. That absence IS the direct account path.
-            idempotencyKey: `v3-boundary-${c.amount}`,
+            idempotencyKey,
           },
         }),
       });
-      const body = (await response.json()) as Record<string, unknown>;
+      const parsed = (await response.json()) as Record<string, unknown>;
+      return { ...parsed, __status: response.status };
+    };
+
+    // ── the three decisions ─────────────────────────────────────────────────
+    console.log("\n[4/6] three decisions, over real HTTP, each rolled back\n");
+    const results: Record<string, unknown>[] = [];
+    let allOk = true;
+
+    for (const c of CASES) {
+      const body = await post(c.amount, `v3-boundary-${c.amount}`);
+      const response = { status: body.__status as number };
       const requester = (body.requester ?? {}) as Record<string, unknown>;
       const evidence = (body.evidence ?? {}) as Record<string, unknown>;
       const validation = (body.validation ?? {}) as Record<string, unknown>;
@@ -403,6 +437,55 @@ async function main(): Promise<void> {
         check(authorities.size === 1, "one wallet authority across all three"),
       ].every(Boolean) && allOk;
 
+    /**
+     * ── THE SECOND PASS ───────────────────────────────────────────────────
+     *
+     * The same three requests again. Before this pass existed, the first run's APPROVED 4.00 committed
+     * a duplicate marker into process memory that the rollback could not remove, so the second run's
+     * 4.00 came back BLOCKED_DUPLICATE. Identical results across two passes is the property that was
+     * missing, and running it twice is the only way to observe it.
+     */
+    console.log("\n[5b/6] the same three decisions again — identical, or the isolation is not real\n");
+    const decisionStateAfterFirstPass = await decisionCounts();
+    const secondPass: string[] = [];
+    for (const c of CASES) {
+      const body = await post(c.amount, `v3-boundary-${c.amount}`);
+      secondPass.push(String(body.engineDecision));
+      console.log(`  ${c.amount} → ${String(body.outcome)} / ${String(body.engineDecision)}`);
+    }
+    const firstPass = results.map((r) => String(r.engineDecision));
+    allOk =
+      [
+        check(JSON.stringify(secondPass) === JSON.stringify(firstPass),
+          `second pass identical to the first (${firstPass.join(", ")})`),
+        check(secondPass[0] !== "BLOCKED_DUPLICATE",
+          "the 4.00 second pass is NOT BLOCKED_DUPLICATE — the 2026-08-03 defect, reproduced as a test"),
+      ].every(Boolean) && allOk;
+
+    /**
+     * An IMMEDIATE readiness capture, which is exactly the request that failed in production.
+     */
+    console.log("\n[5c/6] immediate readiness capture at 4.00\n");
+    const readiness = await post("4.00", `v3-readiness-${DEADLINE}`);
+    allOk =
+      [
+        check(readiness.outcome === "APPROVED_AUTOMATIC",
+          `readiness 4.00 → ${String(readiness.outcome)} / ${String(readiness.engineDecision)}`),
+        check(readiness.engineDecision !== "BLOCKED_DUPLICATE",
+          "readiness is not blocked by the validations that preceded it"),
+      ].every(Boolean) && allOk;
+
+    const decisionStateAfterAll = await decisionCounts();
+    allOk =
+      check(
+        JSON.stringify(decisionStateAfterAll) === JSON.stringify(decisionStateAfterFirstPass) &&
+          decisionStateAfterAll.recentIntents === "0" &&
+          decisionStateAfterAll.rateTicks === "0" &&
+          decisionStateAfterAll.replayMarkers === "0" &&
+          decisionStateAfterAll.dailySpend === "0",
+        `decision state unchanged and empty after seven rolled-back evaluations (${JSON.stringify(decisionStateAfterAll)})`,
+      ) && allOk;
+
     // ── nothing was written ─────────────────────────────────────────────────
     console.log("\n[6/6] the database, before and after\n");
     const after = await tableCounts(pool);
@@ -425,6 +508,10 @@ async function main(): Promise<void> {
       policyId,
       policyHash: policy.policyHash,
       cases: results,
+      secondPass,
+      readiness: { outcome: readiness.outcome, engineDecision: readiness.engineDecision },
+      decisionStateAfterFirstPass,
+      decisionStateAfterAll,
       tablesChecked: Object.keys(after).length,
       tablesWithDrift: drifted,
     };
