@@ -1,6 +1,7 @@
 # ADR: Replace legacy `buyerAgentId` with a RequesterPrincipal commitment
 
-**Status:** Accepted, scheduled. Not implemented in PASS 3.
+**Status:** Accepted. Off-chain half **implemented** as metadata schema V3; the on-chain half
+remains scheduled.
 **Date:** 2026-08-03
 **Supersedes nothing. Superseded by:** the future SpendIntent version described below.
 
@@ -66,11 +67,40 @@ distinguishing entropy; with it reserved, that entropy is gone. Delegation there
 to work through the marketplace path, where a buyer agent id identifies the requester, and is
 refused on the direct path with `REQUESTER_AUTHORITY_NOT_DERIVABLE`.
 
-One residual imprecision, stated rather than hidden: `(owner, policyHash)` does not pin a
-`policyId`. Production currently holds four groups of policies sharing an owner and a ruleset
-hash, one of them with five members. Two policies with the same owner and identical rules confer
-identical authority, so this does not affect who may spend or under what rules — but the on-chain
-hash cannot say *which* of them was evaluated. Only the off-chain evidence can.
+## The policy-identity limitation, stated as a published contract term
+
+`(owner, policyHash)` does not pin a `policyId`. Production currently holds four groups of
+policies sharing an owner and a ruleset hash, one of them with five members. Two policies with
+the same owner and identical rules confer identical authority, so this does not affect **who may
+spend** or **under what rules** — but the deployed contract cannot say *which* of them was
+evaluated.
+
+Precisely:
+
+- The legacy on-chain `SpendIntent` commits `policyHash` — the **ruleset bytes**.
+- V3 metadata commits `policyId` — the **exact policy selected** — in the quote digest, the
+  approval digest, the decision evidence, the metadata commitment, the receipt metadata and the
+  activity case.
+- The existing contract **cannot independently distinguish two policies that share the same owner
+  and the same `policyHash`**. Only the off-chain evidence can.
+
+Every V3 record carries this as a stored field rather than as documentation:
+
+```
+policySelectionSemantics: exact_offchain_policy_id_legacy_onchain_policy_hash
+```
+
+It is a column on `untch_decision_evidence`, a member of the V3 metadata commitment, and a member
+of the V3 quote digest — so a reader holding only the record is told the on-chain side is the
+weaker one, and cannot infer a policy identity the chain does not actually provide.
+
+What this does **not** mean: it is not a spend-authority gap. An attacker who substituted policy
+B for policy A would be substituting a policy with the same owner and byte-identical rules, which
+authorises exactly the same spending. What is lost is *attribution between indistinguishable
+twins*, and V3 recovers it off chain rather than claiming the chain does it.
+
+The upgrade below removes the limitation by committing the requester and the policy identity in
+the struct itself.
 
 ## The upgrade
 
@@ -88,6 +118,33 @@ A future `SpendIntent` version should commit the requester directly, removing th
 This is a new struct hash, a new EIP-712 domain, and a redeployment of the intent and receipt
 registries. It invalidates nothing retroactively: V1 and V2 evidence keep verifying under their
 own rules, and V3 evidence keeps verifying under the reserved-null interpretation.
+
+## What was implemented, and where
+
+Metadata schema **V3**, entirely off chain:
+
+| Concern | Where it lives |
+| --- | --- |
+| Requester principal, wallet authority, commitments | `packages/consumer-core/src/requester-principal.ts` |
+| V3 evidence, quote digest, metadata commitment, receipt verifier | `packages/consumer-core/src/decision-evidence.ts` |
+| Requester binding in the approval digest (`v=2`) | `packages/consumer-core/src/approvals.ts` |
+| Public/private projections and the never-render list | `packages/consumer-core/src/requester-presentation.ts` |
+| Columns and CHECK constraints | `packages/consumer-core/migrations/025_decision_evidence_v3_requester.sql` |
+| Resolution of who is asking | `services/asp/src/public-dto/authority.ts` |
+
+`walletAuthorityRef` is the piece worth naming here. It hashes the wallet authority **state**,
+including `verifiedAt`, so a binding that is revoked and later reactivated on the same account —
+the only way back, since migration 024 never frees the address — produces a *different* authority.
+An approval created before the revocation therefore matches nothing after it, and reactivation
+cannot revive it, while decisions already taken keep their original reference and still read
+correctly.
+
+One behaviour became **stricter** than the ADR originally implied: an unverified, caller-supplied
+`buyerAgentId` is now refused (`MARKETPLACE_BUYER_REQUIRED`) rather than recorded as a labelled
+claim. Under V2 the `verified: false` label was sufficient, because nothing downstream read it as
+authority. Under V3, `buyerAgentIdSemantics` is a committed field that a stranger reads off a
+receipt with no way to see a label that lived in a response body months earlier. A caller with no
+marketplace identity is not blocked: omitting the field *is* the direct account path.
 
 ## What this ADR explicitly does not authorise
 

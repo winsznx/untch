@@ -75,7 +75,7 @@ export interface PublicPreflightDeps {
    */
   readonly executionEnabled: boolean;
   /**
-   * Where V2 evidence is written. Null on an instance with no database, and a paid decision then
+   * Where V3 evidence is written. Null on an instance with no database, and a paid decision then
    * refuses rather than returning success with nothing recorded.
    */
   readonly evidenceTx?: (<T>(fn: (tx: EvidenceTx) => Promise<T>) => Promise<T>) | null;
@@ -283,7 +283,7 @@ export async function handlePublicPreflight(
   const outcome = publicOutcomeFor(engineDecision);
 
   /**
-   * V2 evidence, assembled and persisted BEFORE a paid response is returned.
+   * V3 evidence, assembled and persisted BEFORE a paid response is returned.
    *
    * The order is the point. A caller who paid $0.05 and received a decision has bought a record; if
    * the record cannot be written, they have bought nothing and must be told so rather than handed a

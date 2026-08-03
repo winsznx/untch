@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createPool, type Pool } from "../src/db";
 import { PgAccountStore } from "../src/accounts";
 import { AccountAuthorityError, WALLET_PERMANENTLY_BOUND_TO_DIFFERENT_ACCOUNT, newWalletBindingId } from "../src/accounts";
+import { walletAuthorityRef } from "../src/requester-principal";
 
 /**
  * One EVM address belongs to one UntchAccount, for its lifetime.
@@ -178,6 +179,58 @@ describe(
 
       const resolved = await store.accountForWallet("evm", EVM_A);
       assert.equal(resolved?.accountId, owner, "it comes back to the account that always held it");
+    });
+
+    /**
+     * Reactivation restores the ACCOUNT and deliberately does not restore the AUTHORITY.
+     *
+     * The two are different things and the difference is load-bearing. If reactivating produced the
+     * same `walletAuthorityRef` the binding had before it was revoked, then an approval a person was
+     * shown before the revocation would still match afterwards — and revoking a compromised wallet
+     * would leave everything it had already been shown still spendable.
+     *
+     * So a fresh proof at a fresh time is a different authority, by construction, and the old digest
+     * matches nothing. Decisions already taken keep their original ref and still read correctly; only
+     * what has NOT yet been acted on is invalidated.
+     */
+    test("reactivation returns the same account and a NEW wallet authority", async () => {
+      const { rows } = await pool.query<{
+        binding_id: string;
+        account_id: string;
+        chain_kind: string;
+        address: string;
+        proof_kind: string;
+        verified_at: Date | null;
+        status: string;
+      }>(
+        `SELECT binding_id, account_id, chain_kind, address, proof_kind, verified_at, status
+           FROM untch_wallet_bindings
+          WHERE chain_kind = 'evm' AND address = $1`,
+        [EVM_A],
+      );
+      const row = rows[0]!;
+      assert.equal(row.status, "ACTIVE", "the previous test reactivated it");
+
+      const current = walletAuthorityRef({
+        chainKind: row.chain_kind,
+        address: row.address,
+        walletBindingId: row.binding_id,
+        proofKind: row.proof_kind,
+        verifiedAt: row.verified_at ? row.verified_at.toISOString() : null,
+      });
+
+      // The authority as it stood BEFORE the revocation, from the proof recorded then.
+      const beforeRevocation = walletAuthorityRef({
+        chainKind: row.chain_kind,
+        address: row.address,
+        walletBindingId: row.binding_id,
+        proofKind: row.proof_kind,
+        verifiedAt: NOW,
+      });
+
+      assert.notEqual(current, beforeRevocation, "a revoked-then-reproven wallet is a new authority");
+      // And the account is unchanged, which is the other half of the property.
+      assert.equal((await store.accountForWallet("evm", EVM_A))?.accountId, row.account_id);
     });
 
     // ── The guards migration 024 added, each attempted directly ───────────────────────────────────
