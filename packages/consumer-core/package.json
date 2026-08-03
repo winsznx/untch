@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@untch/canon": "workspace:*",
+    "@untch/policy-engine": "workspace:*",
     "@untch/shared": "workspace:*",
     "pg": "^8.13.1",
     "viem": "^2.55.0"

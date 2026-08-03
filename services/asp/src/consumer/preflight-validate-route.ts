@@ -34,6 +34,7 @@ import type { Express, Request, Response } from "express";
 import { authenticateOperator } from "../internal-auth";
 import { handlePublicPreflight, type PublicPreflightDeps } from "../public-dto/preflight";
 import type { PreflightDeps } from "../handlers";
+import { narrowToDecisionOnly, routeReachability, type DecisionOnlyDeps } from "../route-profiles";
 import { mintAccountSession } from "./account-auth";
 import type { AccountStore, BindingScope, Pool } from "@untch/consumer-core";
 
@@ -74,7 +75,16 @@ export interface PreflightValidateDeps {
   readonly pool: Pool;
   readonly accounts: AccountStore;
   readonly publicDeps: PublicPreflightDeps | null;
-  readonly engineDeps: (() => PreflightDeps) | null;
+  /**
+   * The DECISION-ONLY bundle, the same one the paid route builds.
+   *
+   * It used to be `() => PreflightDeps`, and the route then removed four executors from it. That
+   * removal was correct and was also the wrong shape: it meant the route received something dangerous
+   * and made it safe, so the safety lived in one function somebody could edit. Now nothing dangerous
+   * arrives — `DecisionOnlyDeps` cannot name an executor, and `narrowToDecisionOnly` refuses at
+   * runtime if a wider object is passed anyway.
+   */
+  readonly decisionDeps: (() => DecisionOnlyDeps) | null;
   readonly secret: string;
   readonly env?: NodeJS.ProcessEnv;
 }
@@ -89,7 +99,7 @@ export function registerPreflightValidateRoute(app: Express, deps: PreflightVali
         res.status(auth.status).json({ code: auth.code, message: auth.message, retryable: false, docsUrl: null });
         return;
       }
-      if (!deps.publicDeps || !deps.engineDeps) {
+      if (!deps.publicDeps || !deps.decisionDeps) {
         res.status(503).json({
           code: "PREFLIGHT_NOT_CONFIGURED",
           message: "the public preflight path is not wired on this instance",
@@ -161,17 +171,20 @@ export function registerPreflightValidateRoute(app: Express, deps: PreflightVali
       };
 
       /**
-       * Every outbound effect removed BEFORE the handler runs.
+       * Nothing outbound to remove, because nothing outbound arrives.
        *
-       * Not disabled by a flag the gateway checks — removed, so there is nothing present to fire.
+       * The earlier version took the full engine bundle and stripped four executors out of it. That
+       * worked and put the safety in a function: the route received something dangerous and made it
+       * safe. `DecisionOnlyDeps` cannot name an executor at all, so there is nothing to strip — and
+       * `narrowToDecisionOnly` throws if a wider object is passed anyway.
        */
-      const suppressed = suppressExternalEffects(deps.engineDeps());
+      const decisionDeps = narrowToDecisionOnly(deps.decisionDeps());
 
       const result = await handlePublicPreflight(
         b.request ?? {},
         `Bearer ${token}`,
         { ...deps.publicDeps, evidenceTx: rollingBack },
-        suppressed as PreflightDeps,
+        decisionDeps,
       );
 
       res.status(result.status).json({
@@ -193,10 +206,23 @@ export function registerPreflightValidateRoute(app: Express, deps: PreflightVali
             oracleSignature: true,
             payment: true,
           },
+          /**
+           * The property that was MISSING until now, stated as a field.
+           *
+           * A rollback used to undo every database write and leave the engine's in-process duplicate
+           * window, daily spend and rate counter changed — so a non-billable 4.00 validation made a
+           * genuine 4.00 return BLOCKED_DUPLICATE minutes later. The decision window now lives in
+           * Postgres and is written through THIS transaction, so the rollback removes it too.
+           */
+          decisionStateIsolated: true,
+          routeExecution: routeReachability(OPERATOR_PREFLIGHT_VALIDATE_ROUTE),
           note:
             "handlePublicPreflight ran with the production request path and a transaction that always " +
-            "rolls back. Every dependency that acts outside this process was REMOVED before the call, " +
-            "so no message, receipt, anchor or signature could be produced.",
+            "rolls back. The handler is wired with DecisionOnlyDeps, which cannot name a provider, a " +
+            "settlement sender, a receipt anchorer or a channel gateway — so there was nothing present " +
+            "to fire. Every state change that could alter a later decision was written through the " +
+            "rolled-back transaction, so an identical evaluation immediately afterwards sees the world " +
+            "exactly as this one found it.",
         },
       });
     })().catch((err: unknown) => {
