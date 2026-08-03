@@ -56,6 +56,16 @@ const PACKAGES = join(HERE, "..", "..", "..", "packages");
 const WALLET: Address = "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba";
 const SECRET = "decision-state-isolation-test-secret";
 const POLICY_ID = "778001";
+/**
+ * ONE deadline for the whole suite, not `Date.now() + 1h` per request.
+ *
+ * The intent hash commits the deadline at second resolution. A per-call deadline meant two requests
+ * with the same idempotency key were identical only when they happened to land inside one second —
+ * true on a fast local machine, false on CI, where the "same key, same identity" assertion failed on
+ * a boundary crossing. The deadline is an input the caller controls, so holding it fixed is what
+ * makes "the same request" mean the same bytes.
+ */
+const FIXED_DEADLINE = new Date(Date.now() + 6 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, ".000Z");
 
 function ownDatabaseUrl(): string {
   const url = new URL(TEST_DB as string);
@@ -229,7 +239,7 @@ describe(
       task: `isolation test ${amount}`,
       maxSpend: amount,
       currency: "USDT0",
-      deadline: new Date(Date.now() + 3_600_000).toISOString(),
+      deadline: FIXED_DEADLINE,
       idempotencyKey: `iso-${amount}-${++seq}`,
       ...over,
     });
