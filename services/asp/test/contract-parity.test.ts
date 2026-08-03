@@ -229,13 +229,13 @@ describe("the decision-evidence writer's primitive types", () => {
 /**
  * The ledger double that produced a false finding.
  *
- * `LedgerWindowState` has `spentTodayByAgent`, `recentIntents`, `lastCallByService` and
+ * `LedgerWindowState` has `budgetUsage`, `recentIntents`, `lastCallByService` and
  * `callsInLastHour`. A double returning `{daySpend, windowCalls, duplicates, lastCallAt}` type-checks
  * through an `as unknown as` cast and makes every decision BLOCKED_FAIL_CLOSED — which reads as a
  * discovery about the policy rather than a bug in the test.
  */
 describe("the ledger window shape", () => {
-  const REQUIRED_KEYS = ["spentTodayByAgent", "recentIntents", "lastCallByService", "callsInLastHour"] as const;
+  const REQUIRED_KEYS = ["budgetUsage", "recentIntents", "lastCallByService", "callsInLastHour"] as const;
 
   test("the production empty-ledger shape has exactly the keys the engine reads", async () => {
     const { createLedgerState } = await import("../src/ledger-state");
@@ -243,7 +243,9 @@ describe("the ledger window shape", () => {
     for (const key of REQUIRED_KEYS) {
       assert.ok(key in state, `a real ledger window must carry ${key}`);
     }
-    assert.equal(typeof state.spentTodayByAgent, "number");
+    assert.equal(typeof state.budgetUsage.settledToday, "number");
+    assert.equal(typeof state.budgetUsage.reservedActiveToday, "number");
+    assert.equal(typeof state.budgetUsage.effectiveToday, "number");
     assert.ok(Array.isArray(state.recentIntents));
     assert.equal(typeof state.callsInLastHour, "number");
   });

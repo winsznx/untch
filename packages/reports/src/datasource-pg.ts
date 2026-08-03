@@ -190,7 +190,7 @@ function mapLedger(r: LedgerSqlRow): LedgerRow {
   return {
     receiptId: r.receipt_id as Hex,
     agentId: r.agent_id as Hex,
-    type: r.type === "SPEND" || r.type === "BLOCK_SAVED" || r.type === "FEE_UNTCH" || r.type === "REFUND"
+    type: r.type === "SPEND" || r.type === "AUTHORITY_RESERVED" || r.type === "BLOCK_SAVED" || r.type === "FEE_UNTCH" || r.type === "REFUND"
       ? r.type
       : "SPEND",
     amount: r.amount,

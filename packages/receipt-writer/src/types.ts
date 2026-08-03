@@ -46,7 +46,18 @@ export type ReceiptKind = "DECISION" | "VERIFY";
 /** A ledger entry written at decision time — authoritative regardless of chain state (§8). */
 export interface LedgerEntryInput {
   readonly agentId: Hex;
-  readonly type: "SPEND" | "BLOCK_SAVED" | "FEE_UNTCH" | "REFUND";
+  /**
+   * WHAT KIND OF FACT THIS ROW IS.
+   *
+   * `SPEND` used to be written for an APPROVED preflight DECISION, carrying the governed amount. That
+   * was wrong and it propagated: the reconcile report described SPEND rows as "money that actually
+   * moved", and the dashboard rendered their sum under a tile reading "Spent". Nothing had been paid —
+   * `/preflight_payment` is decision_only.
+   *
+   * `AUTHORITY_RESERVED` is what an approved decision actually produces. `SPEND` is now reserved for
+   * money that moved, written when a reservation is CONSUMED at the settlement point.
+   */
+  readonly type: "SPEND" | "AUTHORITY_RESERVED" | "BLOCK_SAVED" | "FEE_UNTCH" | "REFUND";
   /** base units, as a decimal string (NUMERIC in Postgres; avoids bigint/JSON friction). */
   readonly amount: string;
   readonly token: Address;

@@ -134,3 +134,17 @@ export function proposeDecisionEffects(args: {
     },
   };
 }
+
+/**
+ * Build a `BudgetUsage` from its parts, so `effectiveToday` is never computed by hand.
+ *
+ * It is a derived value — settled plus reserved — and a caller that computed it independently could
+ * disagree with the rule that enforces on it. One function, one answer.
+ */
+export function budgetUsage(settledToday: number, reservedActiveToday: number): {
+  readonly settledToday: number;
+  readonly reservedActiveToday: number;
+  readonly effectiveToday: number;
+} {
+  return { settledToday, reservedActiveToday, effectiveToday: settledToday + reservedActiveToday };
+}

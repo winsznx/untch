@@ -279,7 +279,7 @@ describe("RULE_EVAL order · short-circuit picks the earlier §7.1 rule", () => 
     // #given a call inside its service cooldown AND far over the daily budget
     const ledger = emptyLedger({
       lastCallByService: { [SERVICE_HOST]: NOW_MS - 60_000 }, // 1 min ago < 5 min cooldown
-      spentTodayByAgent: 100, // ≫ daily 25
+      budgetUsage: { settledToday: 0, reservedActiveToday: 100, effectiveToday: 100 }, // ≫ daily 25
     });
     const intent = validIntent({ amount: 20, maxAmount: 1_000_000_000n });
     // #when
@@ -294,7 +294,7 @@ describe("RULE_EVAL order · short-circuit picks the earlier §7.1 rule", () => 
   test("intent-bound (earlier) beats per-call cap and budget (later) ⇒ BLOCKED_INTENT_BOUND", () => {
     // #given amount over the intent's own max AND over per-call cap AND over budget
     const intent = validIntent({ amount: 50, maxAmount: 1_000_000n }); // 50.00 ≫ 1.00 max
-    const ledger = emptyLedger({ spentTodayByAgent: 100 });
+    const ledger = emptyLedger({ budgetUsage: { settledToday: 0, reservedActiveToday: 100, effectiveToday: 100 }});
     const d = evaluateIntent(intent, policyWith({ perCallCap: 1.0 }), ledger, opts);
     // #then intent-bound (§7.1 #8) wins; per-call cap (#9) and budget (#10) never evaluated
     assert.equal(d.decision, "BLOCKED_INTENT_BOUND");
@@ -304,7 +304,7 @@ describe("RULE_EVAL order · short-circuit picks the earlier §7.1 rule", () => 
 
   test("budget (earlier) beats rate and escalate-above (later) ⇒ BLOCKED_BUDGET", () => {
     // #given over budget AND over the rate limit AND above the escalate threshold
-    const ledger = emptyLedger({ spentTodayByAgent: 100, callsInLastHour: 999 });
+    const ledger = emptyLedger({ budgetUsage: { settledToday: 0, reservedActiveToday: 100, effectiveToday: 100 }, callsInLastHour: 999 });
     const intent = validIntent({ amount: 20, maxAmount: 1_000_000_000n });
     const d = evaluateIntent(intent, policyWith({ escalateAbove: 5.0 }), ledger, opts);
     // #then budget (§7.1 #10) wins over rate (#11) and escalate-above (#13)

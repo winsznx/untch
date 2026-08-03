@@ -278,9 +278,45 @@ export interface RecentIntent {
  * this package never touches a database. The serialized entry point (`concurrency.ts`) re-reads
  * this INSIDE the per-agent lock so a second concurrent intent sees the first's committed effect.
  */
+/**
+ * The daily budget window, as three numbers that cannot be mistaken for one another.
+ *
+ * DISPLAY units of `budgets.token` throughout, matching the rest of the engine's money handling.
+ */
+export interface BudgetUsage {
+  /** Money that actually moved, or is irreversibly committed to a provider. */
+  readonly settledToday: number;
+  /** Approved, still-executable authority that has not settled. Released on expiry or failure. */
+  readonly reservedActiveToday: number;
+  /** `settledToday + reservedActiveToday`. What the budget rule enforces against. */
+  readonly effectiveToday: number;
+}
+
 export interface LedgerWindowState {
-  /** Sum of this agent's spend in the current daily window, DISPLAY units of `budgets.token`. */
-  readonly spentTodayByAgent: number;
+  /**
+   * WHAT THE DAILY BUDGET HAS ALREADY COMMITTED, SPLIT BY WHETHER MONEY MOVED.
+   *
+   * This replaces `spentTodayByAgent`, which was a single number meaning "the sum of governed amounts
+   * of APPROVED preflight DECISIONS" while being named, traced, reported and rendered as money spent.
+   * Nothing had been paid. `/preflight_payment` is decision-only: it judges a proposed spend and
+   * executes nothing, so an approved 4.00 was authority granted, not 4.00 gone.
+   *
+   * The conflation was not confined to a label. The ledger wrote an APPROVED decision as a `SPEND`
+   * row (`receipt-writer` mapping), the reconcile report described those rows as "money that actually
+   * moved", and the dashboard rendered them under a tile reading "Spent" against a budget meter. One
+   * wrong noun, four surfaces deep.
+   *
+   * Three values now, because they answer three different questions:
+   *
+   *   settledToday        — money actually paid, or irreversibly committed to provider execution.
+   *   reservedActiveToday — approved authority that remains executable and has NOT settled.
+   *   effectiveToday      — settled + reservedActive. What the budget rule must enforce against, so
+   *                         two agents cannot each be approved against the same remaining capacity.
+   *
+   * Enforcing on `effectiveToday` and REPORTING `settledToday` is the whole point: over-authorising is
+   * prevented without claiming money moved.
+   */
+  readonly budgetUsage: BudgetUsage;
   /** Prior intents within their duplicate TTL. May be empty; must be an array (fail-closed if not). */
   readonly recentIntents: readonly RecentIntent[];
   /**

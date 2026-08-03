@@ -112,7 +112,10 @@ export function handleGetLedger(body: unknown, ledger: InMemoryLedger): HandlerR
     status: 200,
     body: {
       policyId,
-      spentToday: state.spentTodayByAgent,
+      // Authority reserved, not money spent. The route is decision-only.
+      reservedAuthorityToday: state.budgetUsage.reservedActiveToday,
+      settledSpendToday: state.budgetUsage.settledToday,
+      effectiveBudgetUsageToday: state.budgetUsage.effectiveToday,
       callsInLastHour: state.callsInLastHour,
       recentIntents: state.recentIntents.slice(0, 50),
       note: "Ephemeral process-local ledger window. Durable get_ledger over Postgres receipts is the full §11 path when DATABASE_URL + receipt-writer are wired.",

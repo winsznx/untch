@@ -110,7 +110,7 @@ const EXPLODING_RAIL = new Proxy({} as RailClient, {
 
 class MemoryLedger implements Ledger {
   async read(): Promise<LedgerWindowState> {
-    return { spentTodayByAgent: 0, recentIntents: [], lastCallByService: {}, callsInLastHour: 0 };
+    return { budgetUsage: { settledToday: 0, reservedActiveToday: 0, effectiveToday: 0 }, recentIntents: [], lastCallByService: {}, callsInLastHour: 0 };
   }
   async commitApproved(_k: string, _i: SpendIntentInput): Promise<void> {}
 }

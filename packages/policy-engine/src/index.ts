@@ -18,6 +18,7 @@ export {
   type SerializeOptions,
 } from "./concurrency";
 export {
+  budgetUsage,
   proposeDecisionEffects,
   utcDayKey,
   type ActivitySeed,
@@ -49,5 +50,6 @@ export type {
   SpendIntentInput,
   LedgerWindowState,
   RecentIntent,
+  BudgetUsage,
 } from "./types";
 export * from "./manifest";

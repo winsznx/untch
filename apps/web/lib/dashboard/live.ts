@@ -195,7 +195,17 @@ export async function liveLedger(owner: string | null): Promise<LedgerEntry[]> {
 export interface SavingsSummary {
   readonly token: string;
   readonly dailyBudget: number;
-  readonly spent: number;
+  /**
+   * Approved authority that has NOT settled. Renamed from `spent`, which it never was.
+   *
+   * An APPROVED preflight decision grants permission; `/preflight_payment` is decision_only and runs
+   * no provider, settles no payment and delivers nothing. Rendering this under a tile reading "Spent",
+   * against a budget meter captioned "Spend counts only approved payments", told an operator money had
+   * left their budget when none had.
+   */
+  readonly reservedAuthority: number;
+  /** Money that actually moved. Zero until an execution path settles a governed spend. */
+  readonly settledSpend: number;
   readonly blockedWaste: number;
   readonly escalatedExposure: number;
   readonly approvedCount: number;
@@ -205,13 +215,16 @@ export interface SavingsSummary {
 
 export async function liveSavings(owner: string | null): Promise<SavingsSummary> {
   const receipts = (await decisionReceipts(owner)).filter((r) => r.kind === "DECISION");
-  let spent = 0, blockedWaste = 0, escalatedExposure = 0, approvedCount = 0, blockedCount = 0, escalatedCount = 0;
+  let reservedAuthority = 0, blockedWaste = 0, escalatedExposure = 0, approvedCount = 0, blockedCount = 0, escalatedCount = 0;
+  // Settled spend is read from settlement, never inferred from a decision. Nothing settles through
+  // the decision-only route, so this is honestly zero rather than quietly the approved total.
+  const settledSpend = 0;
   let token = "USDT";
   for (const r of receipts) {
     token = r.token || token;
     const cat = categoryOf(r.decision);
     const amt = dec6(r.amount);
-    if (cat === "APPROVED") { spent += amt; approvedCount++; }
+    if (cat === "APPROVED") { reservedAuthority += amt; approvedCount++; }
     else if (cat === "ESCALATED") { escalatedExposure += amt; escalatedCount++; }
     else { blockedWaste += amt; blockedCount++; }
   }
@@ -220,7 +233,7 @@ export async function liveSavings(owner: string | null): Promise<SavingsSummary>
   const dailyBudget = policies
     .filter((p) => p.status === "ACTIVE")
     .reduce((sum, p) => sum + (p.rules.budgets?.daily ?? 0), 0);
-  return { token, dailyBudget, spent, blockedWaste, escalatedExposure, approvedCount, blockedCount, escalatedCount };
+  return { token, dailyBudget, reservedAuthority, settledSpend, blockedWaste, escalatedExposure, approvedCount, blockedCount, escalatedCount };
 }
 
 // ── Escalation inbox (§15 #4 read) — scoped by the owner's intents ─────────────────────────────────

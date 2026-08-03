@@ -162,7 +162,7 @@ async function main(): Promise<void> {
     // 4) contrast against the OLD fixture rules — the SAME intent would have been BLOCKED_CATEGORY.
     const { input } = parseFullIntent(intent);
     const contrast = evaluateIntent(input, fixtureContrastPolicy(), {
-      spentTodayByAgent: 0,
+      budgetUsage: { settledToday: 0, reservedActiveToday: 0, effectiveToday: 0 },
       recentIntents: [],
       lastCallByService: {},
       callsInLastHour: 0,

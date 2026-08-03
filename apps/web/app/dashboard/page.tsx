@@ -71,7 +71,7 @@ export default async function Overview() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Waste blocked" value={`${usd(s.blockedWaste)} ${s.token}`} sub={`${s.blockedCount} payments stopped`} accent="signal" />
-        <StatTile label="Spent" value={`${usd(s.spent)} ${s.token}`} sub={`${s.approvedCount} approved`} accent="text" />
+        <StatTile label="Reserved authority" value={`${usd(s.reservedAuthority)} ${s.token}`} sub={`${s.approvedCount} approved · not yet spent`} accent="text" />
         <StatTile label="Escalated" value={`${usd(s.escalatedExposure)} ${s.token}`} sub={`${s.escalatedCount} held for approval`} accent="data" />
         <StatTile label="Verified deliveries" value={`${proof.finals.find((f) => f.label === "Passed")?.count ?? 0}`} sub="T0 schema proof" accent="positive" />
       </div>
@@ -81,11 +81,13 @@ export default async function Overview() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <span className="text-title-sm" style={{ color: "var(--color-text)" }}>Daily budget</span>
-              <span className="text-body-sm" style={{ color: "var(--color-inverse-canvas)" }}>{usd(s.spent)} / {usd(s.dailyBudget)} {s.token}</span>
+              <span className="text-body-sm" style={{ color: "var(--color-inverse-canvas)" }}>{usd(s.reservedAuthority)} / {usd(s.dailyBudget)} {s.token}</span>
             </div>
-            <Meter value={s.spent} max={s.dailyBudget} color="var(--color-data)" />
+            <Meter value={s.reservedAuthority} max={s.dailyBudget} color="var(--color-data)" />
             <p className="text-body-sm" style={{ color: "var(--color-inverse-muted)" }}>
-              Spend counts only approved payments. Blocked and escalated amounts never left the budget.
+              This meter shows authority reserved, not money spent. An approved decision grants permission
+              to spend up to that amount; nothing has been paid. Settled spend so far: {usd(s.settledSpend)} {s.token}.
+              Blocked and escalated amounts reserve nothing.
             </p>
           </div>
         </DashCard>

@@ -53,7 +53,7 @@ test("amountBaseUnits uses the §9 6-decimal convention", () => {
   assert.equal(amountBaseUnits(1), 1_000_000n);
 });
 
-test("draftFromDecision builds a §10.3-shaped receipt + a SPEND ledger entry", () => {
+test("draftFromDecision builds a §10.3-shaped receipt + an AUTHORITY_RESERVED ledger entry", () => {
   const draft = draftFromDecision(input, decision);
 
   assert.match(draft.onchain.receiptId, /^0x[0-9a-f]{64}$/, "caller-supplied bytes32 receiptId");
@@ -67,7 +67,7 @@ test("draftFromDecision builds a §10.3-shaped receipt + a SPEND ledger entry", 
 
   assert.equal(draft.kind, "DECISION");
   assert.ok(draft.ledger, "a decision receipt carries a ledger entry");
-  assert.equal(draft.ledger?.type, "SPEND", "APPROVED → SPEND");
+  assert.equal(draft.ledger?.type, "AUTHORITY_RESERVED", "APPROVED → AUTHORITY_RESERVED: a decision grants authority and settles nothing");
   assert.equal(draft.ledger?.amount, "500000");
   assert.equal(draft.ledger?.dayKey, "2026-07-10");
 });

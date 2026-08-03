@@ -300,7 +300,8 @@ async function main(): Promise<void> {
           rateTicks: String(c.rateTicks),
           replayMarkers: String(c.replayMarkers),
           serviceCalls: String(c.serviceCalls),
-          dailySpend: c.dailySpend,
+          activeReserved: c.activeReserved,
+          settledSpend: c.settledSpend,
         };
       } finally {
         client.release();
@@ -354,6 +355,15 @@ async function main(): Promise<void> {
         check(body.outcome === c.expectedOutcome, `outcome ${c.expectedOutcome}`),
         check(body.engineDecision === c.expectedEngineDecision, `engine ${c.expectedEngineDecision}`),
         check(evidence.metadataSchemaVersion === 3, "metadataSchemaVersion 3"),
+        // The distinction the whole reservation model exists to hold: an approved decision reserves
+        // authority and settles nothing. A 4.00 approval is not 4.00 gone.
+        check(
+          (body.budget as Record<string, unknown> | undefined)?.economicClassification ===
+            (c.expectedEngineDecision === "APPROVED" ? "RESERVED_AUTHORITY_NOT_SPEND" : "NO_AUTHORITY_GRANTED"),
+          `budget classified as ${c.expectedEngineDecision === "APPROVED" ? "RESERVED_AUTHORITY_NOT_SPEND" : "NO_AUTHORITY_GRANTED"}`,
+        ),
+        check((body.budget as Record<string, unknown> | undefined)?.settledGovernedSpend === 0,
+          "settled governed spend is 0 — no provider ran and nothing was paid"),
         check(evidence.completeness === "V3_COMPLETE", "completeness V3_COMPLETE"),
         check(evidence.requesterPrincipalKind === "untch_account", "requesterPrincipalKind untch_account"),
         check(evidence.requesterPrincipalNamespace === "untch-account", "requesterPrincipalNamespace untch-account"),
@@ -482,7 +492,8 @@ async function main(): Promise<void> {
           decisionStateAfterAll.recentIntents === "0" &&
           decisionStateAfterAll.rateTicks === "0" &&
           decisionStateAfterAll.replayMarkers === "0" &&
-          decisionStateAfterAll.dailySpend === "0",
+          decisionStateAfterAll.activeReserved === "0" &&
+          decisionStateAfterAll.settledSpend === "0",
         `decision state unchanged and empty after seven rolled-back evaluations (${JSON.stringify(decisionStateAfterAll)})`,
       ) && allOk;
 

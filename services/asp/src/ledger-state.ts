@@ -44,7 +44,8 @@ function utcDay(nowMs: number): string {
 }
 
 interface PartitionBucket {
-  spendByDay: Map<string, number>;
+  /** Authority RESERVED per UTC day. An approved decision grants permission; it settles nothing. */
+  reservedByDay: Map<string, number>;
   recentIntents: RecentIntent[];
   lastCallByService: Record<string, number>;
   callTimestamps: number[];
@@ -53,8 +54,8 @@ interface PartitionBucket {
 /**
  * A real, correct in-memory implementation of `@untch/policy-engine`'s `Ledger`. `read` assembles the
  * exact `LedgerWindowState` the engine expects; `commitApproved` (called by the engine ONLY on an
- * APPROVED decision, inside the per-partition lock) records the spend so the next intent for that
- * partition observes it. Buckets are keyed by the policyId partition key the engine passes (never the
+ * APPROVED decision, inside the per-partition lock) records the RESERVED AUTHORITY so the next intent
+ * for that partition observes it. It is not spend: this route decides and settles nothing. Buckets are keyed by the policyId partition key the engine passes (never the
  * raw `buyerAgentId`), so colliding agent ids across owners stay isolated. Correct window math (daily
  * reset, rolling hour, duplicate/cooldown clocks) — ephemeral storage only. Injectable clock so unit
  * tests are deterministic.
@@ -67,7 +68,7 @@ export class InMemoryLedger implements Ledger {
   private bucket(partitionKey: string): PartitionBucket {
     let b = this.partitions.get(partitionKey);
     if (!b) {
-      b = { spendByDay: new Map(), recentIntents: [], lastCallByService: {}, callTimestamps: [] };
+      b = { reservedByDay: new Map(), recentIntents: [], lastCallByService: {}, callTimestamps: [] };
       this.partitions.set(partitionKey, b);
     }
     return b;
@@ -83,7 +84,18 @@ export class InMemoryLedger implements Ledger {
     b.callTimestamps = b.callTimestamps.filter((t) => nowMs - t < HOUR_MS);
 
     return {
-      spentTodayByAgent: b.spendByDay.get(today) ?? 0,
+      /**
+       * `settledToday` is 0 here, and honestly so.
+       *
+       * This in-memory ledger backs the PROTOCOL preflight route, which decides and settles nothing.
+       * Approved decisions accumulate as reserved authority. The durable Postgres model
+       * (`@untch/consumer-core` decision-state) is what the account route uses.
+       */
+      budgetUsage: {
+        settledToday: 0,
+        reservedActiveToday: b.reservedByDay.get(today) ?? 0,
+        effectiveToday: b.reservedByDay.get(today) ?? 0,
+      },
       recentIntents: [...b.recentIntents],
       lastCallByService: { ...b.lastCallByService },
       callsInLastHour: b.callTimestamps.length,
@@ -95,7 +107,7 @@ export class InMemoryLedger implements Ledger {
     const b = this.bucket(partitionKey);
     const today = utcDay(nowMs);
 
-    b.spendByDay.set(today, (b.spendByDay.get(today) ?? 0) + intent.amount);
+    b.reservedByDay.set(today, (b.reservedByDay.get(today) ?? 0) + intent.amount);
     b.recentIntents.push({
       intentId: `pi_${decision.intentHash.slice(2, 10)}`,
       taskHash: intent.taskHash,
@@ -117,7 +129,7 @@ export class InMemoryLedger implements Ledger {
    *  `partitionKey` must be the `ledgerPartitionKey` (policyId), matching what the engine reads. */
   seed(partitionKey: string, partial: Partial<PartitionBucket>): void {
     const b = this.bucket(partitionKey);
-    if (partial.spendByDay) b.spendByDay = partial.spendByDay;
+    if (partial.reservedByDay) b.reservedByDay = partial.reservedByDay;
     if (partial.recentIntents) b.recentIntents = partial.recentIntents;
     if (partial.lastCallByService) b.lastCallByService = partial.lastCallByService;
     if (partial.callTimestamps) b.callTimestamps = partial.callTimestamps;

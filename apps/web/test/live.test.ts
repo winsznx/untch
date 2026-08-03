@@ -33,7 +33,7 @@ test("no DATABASE_URL ⇒ every scoped read is empty and never throws", async ()
   assert.equal(await liveReconcile(OWNER), null);
   assert.equal(await liveDispute(OWNER), null);
   const s = await liveSavings(OWNER);
-  assert.equal(s.spent, 0);
+  assert.equal(s.reservedAuthority, 0);
   assert.equal(s.dailyBudget, 0);
 });
 

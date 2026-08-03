@@ -83,7 +83,14 @@ test("get_ledger returns window for policy partition", () => {
   ledger.commitApproved("policy:42", intent, decision);
   const r = handleGetLedger({ policyId: "42" }, ledger);
   assert.equal(r.status, 200);
-  const body = r.body as { spentToday: number; recentIntents: unknown[] };
-  assert.equal(body.spentToday, 1);
+  const body = r.body as {
+    reservedAuthorityToday: number; settledSpendToday: number; effectiveBudgetUsageToday: number;
+    recentIntents: unknown[];
+  };
+  // An approved decision RESERVES authority. It settles nothing, so the two numbers differ and the
+  // window says so rather than collapsing both into one field called spend.
+  assert.equal(body.reservedAuthorityToday, 1);
+  assert.equal(body.settledSpendToday, 0);
+  assert.equal(body.effectiveBudgetUsageToday, 1);
   assert.equal(body.recentIntents.length, 1);
 });

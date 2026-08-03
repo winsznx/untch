@@ -149,7 +149,7 @@ describe("evaluateIntent · BLOCKED_DUPLICATE (§7.1 RULE_EVAL)", () => {
 describe("evaluateIntent · BLOCKED_BUDGET (§7.1 RULE_EVAL)", () => {
   test("spentToday + amount over daily ⇒ BLOCKED_BUDGET; trace shows observed vs limit (§8.2 shape)", () => {
     // #given 24.98 already spent, this call 0.05 ⇒ projected 25.03 > 25.00
-    const ledger = emptyLedger({ spentTodayByAgent: 24.98 });
+    const ledger = emptyLedger({ budgetUsage: { settledToday: 0, reservedActiveToday: 24.98, effectiveToday: 24.98 }});
     // #when
     const d = evaluateIntent(validIntent(), activePolicy(), ledger, opts);
     // #then
@@ -163,7 +163,7 @@ describe("evaluateIntent · BLOCKED_BUDGET (§7.1 RULE_EVAL)", () => {
 
   test("projected total exactly equal to the limit is allowed (boundary) ⇒ APPROVED", () => {
     // 24.95 + 0.05 = 25.00, not > 25.00
-    const d = evaluateIntent(validIntent(), activePolicy(), emptyLedger({ spentTodayByAgent: 24.95 }), opts);
+    const d = evaluateIntent(validIntent(), activePolicy(), emptyLedger({ budgetUsage: { settledToday: 0, reservedActiveToday: 24.95, effectiveToday: 24.95 }}), opts);
     assert.equal(d.decision, "APPROVED");
     assert.equal(rule(d.rules, "budget.daily")?.observed, "25.00");
   });
@@ -171,13 +171,13 @@ describe("evaluateIntent · BLOCKED_BUDGET (§7.1 RULE_EVAL)", () => {
 
 describe("evaluateIntent · BLOCKED_FAIL_CLOSED (§7.1 STATE_ASSEMBLY, I2)", () => {
   test("malformed ledger state (recentIntents not an array) ⇒ BLOCKED_FAIL_CLOSED", () => {
-    const bad = { spentTodayByAgent: 0, recentIntents: undefined } as unknown as ReturnType<typeof emptyLedger>;
+    const bad = { budgetUsage: { settledToday: 0, reservedActiveToday: 0, effectiveToday: 0 }, recentIntents: undefined } as unknown as ReturnType<typeof emptyLedger>;
     const d = evaluateIntent(validIntent(), activePolicy(), bad, opts);
     assert.equal(d.decision, "BLOCKED_FAIL_CLOSED");
   });
 
   test("negative spentTodayByAgent ⇒ BLOCKED_FAIL_CLOSED", () => {
-    const d = evaluateIntent(validIntent(), activePolicy(), emptyLedger({ spentTodayByAgent: -5 }), opts);
+    const d = evaluateIntent(validIntent(), activePolicy(), emptyLedger({ budgetUsage: { settledToday: 0, reservedActiveToday: -5, effectiveToday: -5 }}), opts);
     assert.equal(d.decision, "BLOCKED_FAIL_CLOSED");
   });
 });

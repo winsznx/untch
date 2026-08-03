@@ -408,22 +408,45 @@ const rulePerCallCap: RuleFn = ({ intent, policy }) => {
   return pass(rule, { observed, limit, token });
 };
 
-// budget.daily (§7.1: spentToday + amount vs budgets.daily) → BLOCKED_BUDGET
+/**
+ * budget.daily — enforced against EFFECTIVE usage, reported with the parts separated.
+ *
+ * `effectiveToday` is settled money plus still-executable reserved authority. Enforcing on it is what
+ * stops two agents each being approved against the same remaining capacity: the first approval
+ * reserves, and the second sees the reservation even though nothing has been paid.
+ *
+ * The trace carries all five numbers rather than one, because "projected 4.00 of 100.00" was the
+ * sentence that let an authorisation be read as a payment. A reader now sees that 0.00 settled and
+ * 4.00 is reserved, and cannot conclude money moved.
+ */
 const ruleBudgetDaily: RuleFn = ({ intent, policy, state }) => {
   const rule = "budget.daily";
   const daily = policy.rules.budgets.daily;
   const token = policy.rules.budgets.token;
-  const projected = state.spentTodayByAgent + intent.amount;
+  const { settledToday, reservedActiveToday, effectiveToday } = state.budgetUsage;
+  const projected = effectiveToday + intent.amount;
   const observed = money(projected);
   const limit = money(daily);
+  const detail = {
+    observed,
+    limit,
+    token,
+    settled: money(settledToday),
+    reservedActive: money(reservedActiveToday),
+    effectiveBefore: money(effectiveToday),
+    proposedReservation: money(intent.amount),
+    effectiveAfter: observed,
+  };
   if (minorUnits(projected) > minorUnits(daily)) {
-    return halt(rule, "BLOCKED_BUDGET", `daily budget exceeded: projected ${observed} > ${limit} ${token}`, {
-      observed,
-      limit,
-      token,
-    });
+    return halt(
+      rule,
+      "BLOCKED_BUDGET",
+      `daily budget exceeded: effective usage would be ${observed} > ${limit} ${token} ` +
+        `(${detail.settled} settled + ${detail.reservedActive} reserved + ${detail.proposedReservation} proposed)`,
+      detail,
+    );
   }
-  return pass(rule, { observed, limit, token });
+  return pass(rule, detail);
 };
 
 // rate limit (§7.1: rate limit exceeded) → BLOCKED_RATE

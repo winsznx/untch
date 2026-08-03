@@ -29,7 +29,9 @@ import { keccak256, toHex } from "viem";
 import {
   assembleDecisionEvidenceV3,
   commitDecisionEffects,
+  createReservation,
   lockPartition,
+  newReservationId,
   persistDecisionEvidenceV3,
   presentRequester,
   projectionReportV3,
@@ -47,6 +49,7 @@ import {
   ledgerPartitionKey,
   proposeDecision,
   utcDayKey,
+  type DecisionOutcome,
 } from "@untch/policy-engine";
 import { toEnginePolicy } from "@untch/policy-store";
 import { canonTimestamp } from "@untch/canon";
@@ -423,12 +426,14 @@ export async function handlePublicPreflight(
    */
   interface Committed {
     readonly assembled: AssembledEvidenceV3;
-    readonly engineDecision: string;
+    readonly engineDecision: DecisionOutcome;
     readonly ruleTrace: readonly Record<string, unknown>[];
     readonly reasons: readonly string[];
     readonly intentHash: Hex;
     readonly effectsApplied: boolean;
-    readonly stateBefore: { readonly recentIntents: number; readonly callsInLastHour: number; readonly spentToday: number };
+    readonly reservationId: string | null;
+    readonly budgetUsage: { readonly settledToday: number; readonly reservedActiveToday: number; readonly effectiveToday: number };
+    readonly stateBefore: { readonly recentIntents: number; readonly callsInLastHour: number };
   }
 
   let committed: Committed;
@@ -481,7 +486,45 @@ export async function handlePublicPreflight(
        * later requests should be measured against. So `effects` is null and nothing is written —
        * which is why three blocked validations in a row leave the window exactly as they found it.
        */
-      if (effects) await commitDecisionEffects(tx as DecisionStateTx, effects);
+      let reservationId: string | null = null;
+      if (effects) {
+        await commitDecisionEffects(tx as DecisionStateTx, effects);
+
+        /**
+         * THE APPROVAL RESERVES BUDGET. IT DOES NOT SPEND IT.
+         *
+         * `/preflight_payment` is decision-only: no provider runs, no payment settles, no delivery
+         * occurs. The governed amount is authority granted, and recording it as spend is what made an
+         * authorisation look like a completed payment in the ledger, the reports and the dashboard.
+         *
+         * It still has to be VISIBLE to the next decision, or two agents could each be approved
+         * against the same remaining capacity. So it becomes an ACTIVE reservation, written in this
+         * same transaction — which means a rolled-back validation leaves no hold either.
+         *
+         * The hold expires with the caller's own deadline. Authority that outlived the request that
+         * asked for it would shrink a user's budget with permission nobody can still use.
+         */
+        reservationId = await createReservation(tx as DecisionStateTx, {
+          reservationId: newReservationId(),
+          accountId: a.account.accountId,
+          policyId: a.policy.id,
+          partitionKey,
+          decisionId: assembledEvidence.evidence.decisionId,
+          intentId: intentHash,
+          intentHash,
+          quoteDigest: assembledEvidence.evidence.quoteDigest,
+          requesterPrincipalRef: r.requesterPrincipalRef,
+          walletAuthorityRef: r.walletAuthorityRef,
+          amount: request.maxSpend,
+          asset: request.currency,
+          chain: `eip155:${publicDeps.chainId}`,
+          recipient: a.recipient,
+          provider: request.provider,
+          capability: request.capability,
+          dayKey,
+          expiresAt: canonTimestamp(request.deadline),
+        });
+      }
 
       return {
         assembled: assembledEvidence,
@@ -490,10 +533,11 @@ export async function handlePublicPreflight(
         reasons: engineResult.reasons,
         intentHash,
         effectsApplied: effects !== null,
+        reservationId,
+        budgetUsage: windowState.budgetUsage,
         stateBefore: {
           recentIntents: windowState.recentIntents.length,
           callsInLastHour: windowState.callsInLastHour,
-          spentToday: windowState.spentTodayByAgent,
         },
       };
     });
@@ -561,6 +605,28 @@ export async function handlePublicPreflight(
         partitionKey,
         effectsApplied: committed.effectsApplied,
         observedBeforeDecision: committed.stateBefore,
+      },
+      /**
+       * WHAT WAS RESERVED, AND WHAT WAS SPENT. NEVER ONE NUMBER.
+       *
+       * `0.05 USDT0` is the x402 fee for this preflight — real money, Untch revenue, and not part of
+       * the governed budget at all. The amount below is the governed authority: no provider ran, no
+       * payment settled, no delivery happened, and there is no provider liability. A surface that
+       * merged the two would be describing a payment that did not occur.
+       */
+      budget: {
+        settledGovernedSpend: committed.budgetUsage.settledToday,
+        activeReservedExposureBefore: committed.budgetUsage.reservedActiveToday,
+        effectiveUsageBefore: committed.budgetUsage.effectiveToday,
+        proposedReservation: committed.effectsApplied ? request.maxSpend : null,
+        reservationId: committed.reservationId,
+        economicClassification: committed.effectsApplied
+          ? "RESERVED_AUTHORITY_NOT_SPEND"
+          : "NO_AUTHORITY_GRANTED",
+        note:
+          "The governed amount is authority reserved, not money spent. This route is decision_only: " +
+          "no provider execution, no settlement and no delivery occurred. The only money moving in " +
+          "this call is the x402 service fee, which is Untch revenue and is not governed spend.",
       },
       // The engine's own word stays beside the public one. `ESCALATED_OVER_THRESHOLD` says which rule
       // fired; `ESCALATED` is what a caller branches on. Collapsing them would lose the reason.

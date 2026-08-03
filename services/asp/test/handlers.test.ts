@@ -253,7 +253,7 @@ test("preflight_payment: paused stored policy → BLOCKED_NO_ACTIVE_POLICY", asy
 
 test("preflight_payment: over-daily-budget → BLOCKED_BUDGET", async () => {
   const ledger = new InMemoryLedger(now);
-  ledger.seed(ledgerPartitionKey(POLICY_ID), { spendByDay: new Map([[TODAY, 25]]) });
+  ledger.seed(ledgerPartitionKey(POLICY_ID), { reservedByDay: new Map([[TODAY, 25]]) });
   const res = await handlePreflightPayment(
     { intent: wireIntent(), policyId: POLICY_ID },
     freshPreflightDeps({ ledger }),

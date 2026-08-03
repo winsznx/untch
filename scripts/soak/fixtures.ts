@@ -113,7 +113,7 @@ export function buildIntent(seed: number, o: IntentOverrides = {}): SpendIntentI
 
 export function freshLedger(overrides: Partial<LedgerWindowState> = {}): LedgerWindowState {
   return {
-    spentTodayByAgent: 0,
+    budgetUsage: { settledToday: 0, reservedActiveToday: 0, effectiveToday: 0 },
     recentIntents: [],
     lastCallByService: {},
     callsInLastHour: 0,
