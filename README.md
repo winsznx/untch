@@ -64,14 +64,20 @@ The model proposes. The policy engine decides. **The model never touches the mon
 
 | Layer | What it does | Status |
 |---|---|---|
-| **Policy engine** | 14 deterministic rules over a bounded SpendIntent. No LLM on the money path. | 🟢 **LIVE** |
-| **Exact approvals** | An approval binds to a hash. Mutate the intent and it stops being approved. | 🟢 **LIVE** |
-| **Escalation** | Human-in-the-loop over Telegram, Discord, Slack, or the dashboard. | 🟢 **LIVE** |
+| **Policy engine** | 15 deterministic rules over a bounded SpendIntent. No LLM on the money path. | 🟢 **LIVE**, proven by a paid mainnet decision |
+| **Direct-account requester (V3)** | A user's own agent spends under the user's policy with no marketplace identity. Payment proves who paid; a SIWE session proves which account is asking. | 🟢 **LIVE** |
+| **Reserved authority vs settled spend** | An approved decision reserves budget. It does not move money, and no surface reports it as spend. | 🟢 **LIVE** |
+| **Exact approvals** | The approval digest binds one exact request — amount, recipient, quote, requester and wallet authority. | 🟡 **PARTIAL**: the digest and stores exist and are tested, but the production escalated path still writes the legacy `escalations` table. The account-scoped approval writer is being completed |
+| **Escalation** | Human-in-the-loop over Telegram, Discord, Slack, or the dashboard. | 🟡 **PARTIAL**: Telegram and Discord delivery have historical proof, and the production source path is still legacy. Account-scoped `ApprovalRequest` / `ApprovalDelivery` / `ApprovalDecision` are **not yet live** |
 | **Delivery verification** | Independent proof that the thing was delivered, not the vendor's word. | 🟢 **LIVE** |
-| **Receipts** | Every decision receipted and publicly checkable. Anchored on X Layer **testnet** today. | 🟡 **BETA**, mainnet anchoring pending a 3-day writer timelock |
+| **Receipts** | Four distinct things, deliberately not collapsed: **decision evidence** (🟢 live, V3, on the paid mainnet path) · **service-payment evidence** (🟢 live, the x402 charge) · **provider-settlement receipt** (🟡 partial, Consumer Pack only) · **on-chain anchored receipt** (🟡 X Layer **testnet**; mainnet anchoring pending a 3-day writer timelock) | 🟡 **PARTIAL** |
+| **Explorer** | Case-first view joining decision, approval, reservation and settlement. | 🟡 **PARTIAL**: ingestion is not built end to end; `activity_cases` is empty |
 | **Trust Bureau** | Receipt-backed vendor and buyer scores with a lower-confidence bound. | 🟢 **LIVE** |
 | **Consumer Pack** | Governed real-world purchasing across merchant rails. | 🟡 **BETA**, three verified capabilities |
 | **UntchVault** | On-chain fund-holding with oracle-signed spend, deployed via VaultFactory. | 🟡 **BETA**, on mainnet but not yet on the production money path |
+| **Owned work** (`owned_work.demo`) | A service Untch performs itself. | 🔵 **DECISION_ONLY**: the decision path is live and paid; no owned work has executed in production |
+| **A2A** — negotiated, stateful commercial work | — | ⚪ **NOT_BUILT** |
+| **Broker Guard** | — | ⚪ **NOT_BUILT** |
 
 ---
 
@@ -135,9 +141,19 @@ sequenceDiagram
 
 ## 7. Deterministic policy engine 🟢 LIVE
 
-Fourteen rules, evaluated in a fixed order, over a bounded `SpendIntent`. **No LLM call appears
-anywhere on the money decision path.** The engine is a pure function of `(intent, policy, ledger
-window)`.
+Fifteen rules, evaluated in a fixed order, over a bounded `SpendIntent`. **No LLM call appears
+anywhere on the money decision path.** The engine is a pure function of `(intent, policy, decision
+window)` — it returns a decision and a PROPOSAL of what committing it would change, and writes
+nothing itself.
+
+All fifteen passed on the first paid mainnet decision (2026-08-03):
+`policy.active · duplicate.provider_capability_amount_recipient · cooldown.sameService ·
+replay.contextBinding · recipient.allowDeny · agent.workerAllowDeny · category.allow ·
+vendor.lcbFloor · intent.maxAmountBound · hardCap.absolute · perCall.cap · budget.daily ·
+rate.limit · proof.tierRequired · escalate.aboveThreshold`.
+
+`budget.daily` enforces against **effective** usage — settled money plus still-executable reserved
+authority — and reports the two separately, so an approved decision is never counted as spend.
 
 | Rule family | Enforces |
 |---|---|
@@ -155,7 +171,14 @@ Every decision returns the rules evaluated and the reason, verbatim, into the re
 
 ---
 
-## 8. Exact approvals and mutation rejection 🟢 LIVE
+## 8. Exact approvals and mutation rejection 🟡 PARTIAL
+
+> **Status, stated precisely.** The approval digest below is real, implemented and tested: it binds
+> the amount, recipient, quote digest, policy id, requester principal and wallet authority, and a
+> changed field matches nothing. What is **not** yet live is the production *writer*: an escalated
+> decision on the paid route still creates a row in the legacy `escalations` table rather than an
+> account-scoped `ApprovalRequest`. `untch_approval_requests` is empty in production. The
+> account-scoped writer, delivery and terminal decision are the phase in progress.
 
 An approval does not authorise "a domain purchase". It authorises **one hash**.
 ```
@@ -342,7 +365,13 @@ operator step, recorded as a `TREASURY_TRANSFER` group pair.
 
 ---
 
-## 16. Public receipts 🟢 LIVE
+## 16. Public receipts 🟡 PARTIAL
+
+> **Four different things, and they are not interchangeable.** *Decision evidence* is live: the V3
+> record of what was judged and why, on the paid mainnet path. *Service-payment evidence* is live:
+> the x402 charge for using Untch. *Provider-settlement receipts* exist for Consumer Pack only.
+> *On-chain anchoring* is X Layer **testnet**; mainnet anchoring waits on a 3-day writer timelock.
+> A page that showed one and implied the others would be the same defect this section is correcting.
 
 Every completed action has a receipt anyone can open, with no account:
 
@@ -387,7 +416,7 @@ than against this document.
 contracts/               Solidity — PolicyRegistry, SpendIntentRegistry, UntchReceipts, UntchVault
 packages/
   canon/                 RFC 8785 canonical JSON + hashing
-  policy-engine/         the 14 deterministic rules — pure, no I/O
+  policy-engine/         the 15 deterministic rules — pure, no I/O, returns a proposal
   policy-store/          policies, on-chain owner binding
   receipt-writer/        durable receipts → batching → X Layer anchoring
   escalation/            §7.2 approvals across 4 channels + the §27 authority boundary

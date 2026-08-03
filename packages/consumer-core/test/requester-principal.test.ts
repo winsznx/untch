@@ -26,6 +26,7 @@ import {
   quoteDigestOfV3,
   rawLegacyAgentProjection,
   requesterCommitment,
+  reservationEffectiveState,
   verifyMetadataCommitment,
   verifyReceiptRequester,
   walletAuthorityRef,
@@ -802,4 +803,58 @@ describe("projections publish commitments and never identifiers", () => {
     assert.equal(JSON.stringify(out).includes(ACCOUNT), false);
     assert.equal(out.accountRefHash, accountRefHash(ACCOUNT));
   });
+});
+
+describe("a reservation reports what is true now, not only what the row says", () => {
+  const base = { status: "ACTIVE" as const, expiresAt: "2026-08-03T22:51:25.000Z", releaseReason: null };
+
+  test("ACTIVE and unexpired counts toward exposure", () => {
+    const s = reservationEffectiveState(base, "2026-08-03T22:30:00.000Z");
+    assert.equal(s.storedStatus, "ACTIVE");
+    assert.equal(s.effectiveStatus, "ACTIVE");
+    assert.equal(s.countsTowardExposure, true);
+    assert.equal(s.terminalReason, null);
+  });
+
+  /**
+   * THE CASE THIS EXISTS FOR.
+   *
+   * The first production reservation sat at stored `ACTIVE` past its own deadline because no sweeper
+   * had run. Correct for the budget — exposure filters on the date — and misleading to every reader
+   * of the row, who would conclude 4.00 of authority was still live.
+   */
+  test("ACTIVE but past its deadline reads EXPIRED and counts nothing", () => {
+    const s = reservationEffectiveState(base, "2026-08-03T22:58:39.000Z");
+    assert.equal(s.storedStatus, "ACTIVE", "the historical row is never rewritten");
+    assert.equal(s.effectiveStatus, "EXPIRED");
+    assert.equal(s.countsTowardExposure, false);
+    assert.equal(s.terminalReason, "AUTHORIZATION_EXPIRED");
+  });
+
+  test("correctness does not depend on a sweeper having run", () => {
+    // Same row, same instant, whether or not anything swept it: the answer is derived, not stored.
+    const unswept = reservationEffectiveState(base, "2026-08-04T00:00:00.000Z");
+    const swept = reservationEffectiveState(
+      { status: "EXPIRED", expiresAt: base.expiresAt, releaseReason: "AUTHORIZATION_EXPIRED" },
+      "2026-08-04T00:00:00.000Z",
+    );
+    assert.equal(unswept.effectiveStatus, swept.effectiveStatus);
+    assert.equal(unswept.countsTowardExposure, swept.countsTowardExposure);
+  });
+
+  for (const [status, reason] of [
+    ["CONSUMED", "CONSUMED_AT_SETTLEMENT"],
+    ["RELEASED", "EXECUTION_FAILED_BEFORE_PAYMENT"],
+    ["SUPERSEDED", "QUOTE_SUPERSEDED"],
+  ] as const) {
+    test(`${status} counts nothing and names why`, () => {
+      const s = reservationEffectiveState(
+        { status, expiresAt: "2027-01-01T00:00:00.000Z", releaseReason: status === "CONSUMED" ? null : reason },
+        "2026-08-03T22:30:00.000Z",
+      );
+      assert.equal(s.effectiveStatus, status);
+      assert.equal(s.countsTowardExposure, false);
+      assert.equal(s.terminalReason, reason);
+    });
+  }
 });

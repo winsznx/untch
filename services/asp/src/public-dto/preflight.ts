@@ -620,6 +620,22 @@ export async function handlePublicPreflight(
         effectiveUsageBefore: committed.budgetUsage.effectiveToday,
         proposedReservation: committed.effectsApplied ? request.maxSpend : null,
         reservationId: committed.reservationId,
+        /**
+         * The hold's effective state, not merely its stored one.
+         *
+         * A reservation past `expires_at` stops counting toward exposure immediately, but the row
+         * still reads ACTIVE until a sweeper runs. Publishing only the stored status would tell an
+         * API, the Explorer or a person that authority is live when none is.
+         */
+        reservation: committed.reservationId
+          ? {
+              storedStatus: "ACTIVE",
+              effectiveStatus: "ACTIVE",
+              countsTowardExposure: true,
+              expiresAt: canonTimestamp(request.deadline),
+              terminalReason: null,
+            }
+          : null,
         economicClassification: committed.effectsApplied
           ? "RESERVED_AUTHORITY_NOT_SPEND"
           : "NO_AUTHORITY_GRANTED",
