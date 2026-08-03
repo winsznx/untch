@@ -1,5 +1,5 @@
 /**
- * The non-billable proof that the PAID path produces complete V2 evidence.
+ * The non-billable proof that the PAID path produces complete V3 evidence.
  *
  * WHY THIS IS NOT A SECOND IMPLEMENTATION
  *

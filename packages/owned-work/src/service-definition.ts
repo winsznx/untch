@@ -83,6 +83,15 @@ export interface ServiceDefinition {
   readonly recipientDerivedFrom: string | null;
   /** The ERC-8004 agent id Untch performs this capability as, when one is registered. */
   readonly workerAgentId: string | null;
+  /**
+   * The ASP a caller is transacting WITH for this service. A separate field from `workerAgentId`.
+   *
+   * Both are `6086` today and they are still two fields, because they are two ROLES: the seller a
+   * buyer has a relationship with, and the agent that performs the work. They diverge the moment Untch
+   * brokers a service somebody else performs — and merging them now, on the grounds that the numbers
+   * match, is exactly how the second role would then be filled by whichever value was already in scope.
+   */
+  readonly sellerAspId: string;
   readonly endpoint: string;
   readonly enabled: boolean;
   /** Maximum this service may spend on external evidence for ONE order, in display units. */
@@ -124,6 +133,16 @@ const RECEIVER_PROVENANCE =
 const UNTCH_MARKETPLACE_ASP_AGENT_ID = "6086";
 
 /**
+ * The ASP identity a buyer is transacting with.
+ *
+ * Numerically equal to `UNTCH_MARKETPLACE_ASP_AGENT_ID` and declared separately on purpose. Untch is
+ * currently both the seller and the worker for everything it performs itself, which is a coincidence
+ * of this deployment rather than a property of the protocol. Two constants means the day they differ
+ * is a one-line change here instead of an archaeology exercise across every record ever written.
+ */
+export const UNTCH_SELLER_ASP_ID = "6086";
+
+/**
  * `owned_work.demo` — the smallest real thing this runtime can be proven with.
  *
  * It exists so the policy journey can be walked end to end without buying anything from anybody: a
@@ -159,6 +178,7 @@ const OWNED_WORK_DEMO: ServiceDefinition = {
   recipient: UNTCH_OWNED_SERVICE_RECIPIENT,
   recipientDerivedFrom: RECEIVER_PROVENANCE,
   workerAgentId: UNTCH_MARKETPLACE_ASP_AGENT_ID,
+  sellerAspId: UNTCH_SELLER_ASP_ID,
   endpoint: "https://asp.untch.xyz/owned/demo",
   enabled: true,
   maxExternalCost: "0.00",
@@ -208,6 +228,7 @@ const BATTLE_CARD: ServiceDefinition = {
   recipient: UNTCH_OWNED_SERVICE_RECIPIENT,
   recipientDerivedFrom: RECEIVER_PROVENANCE,
   workerAgentId: UNTCH_MARKETPLACE_ASP_AGENT_ID,
+  sellerAspId: UNTCH_SELLER_ASP_ID,
   endpoint: "https://asp.untch.xyz/owned/battle-card",
   enabled: true,
   maxExternalCost: "0.50",

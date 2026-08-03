@@ -156,7 +156,11 @@ describe("bindings that can be revoked", { skip: TEST_DB ? false : "TEST_DATABAS
     await pool.end();
   });
 
-  test("a revoked wallet keeps its row, stops resolving, and frees the address for a replacement", async () => {
+  // The title used to say this "frees the address for a replacement". It never did, and the body
+  // never checked it: what it binds below is a DIFFERENT address (EVM_B) to the SAME account. The
+  // address EVM_A stays claimed forever — see the permanence suite — and the wrong title was the
+  // only thing in the repository suggesting otherwise.
+  test("a revoked wallet keeps its row and stops resolving, and a different address may replace it", async () => {
     // #given an account whose authority is a proven wallet
     const account = await store.createAccount({ by: "test" });
     const bindingId = newWalletBindingId();

@@ -721,7 +721,7 @@ export function createSellerApp(
       : null;
 
   /**
-   * The non-billable proof that the PAID path produces complete V2 evidence.
+   * The non-billable proof that the PAID path produces complete V3 evidence.
    *
    * Handed the same `publicPreflightDeps` the priced route uses, so there is no code here the paid
    * route does not also run. The only difference is a transaction that always rolls back.

@@ -458,4 +458,6 @@ export {
   type Reconciliation,
   type RevenueAllocation,
 } from "./activity-index";
+export * from "./requester-principal";
 export * from "./decision-evidence";
+export * from "./requester-presentation";

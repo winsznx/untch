@@ -4,7 +4,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, test } from "node:test";
 import { createPool, runMigrations, type Pool } from "../src/db";
-import { AccountAuthorityError, PgAccountStore, newAccountId, newDraftId } from "../src/accounts";
+import {
+  AccountAuthorityError,
+  PgAccountStore,
+  WALLET_PERMANENTLY_BOUND_TO_DIFFERENT_ACCOUNT,
+  newAccountId,
+  newDraftId,
+} from "../src/accounts";
 
 /**
  * The account model against real Postgres, because everything worth testing about it is a constraint.
@@ -221,18 +227,35 @@ describe("the account model", { skip: TEST_DB ? false : "TEST_DATABASE_URL is un
       verifiedAt: NOW,
       by: "siwe",
     });
-    // The upsert's WHERE clause refuses it silently rather than throwing; what matters is that the
-    // owner did not change. Recovery is a deliberate operation, not an idempotent write.
-    await store.linkWallet({
-      accountId: second.accountId,
-      chainKind: "evm",
-      address,
-      role: "primary",
-      proofKind: "siwe",
-      proofRef: "n2",
-      verifiedAt: NOW,
-      by: "siwe",
-    });
+    /*
+     * It is refused BY NAME now, not silently.
+     *
+     * The upsert's WHERE clause already declined to move the row, but a silent decline is
+     * indistinguishable from a harmless duplicate link — both were `bound: false`. A caller that
+     * cannot tell "nothing needed doing" from "you tried to move an identity between accounts" will
+     * eventually report the wrong one to a person. The invariant is also load-bearing for the direct
+     * account path: the on-chain SpendIntent commits the owner ADDRESS and no account reference, so
+     * an address that could change hands would make past decisions ambiguous.
+     */
+    await assert.rejects(
+      () =>
+        store.linkWallet({
+          accountId: second.accountId,
+          chainKind: "evm",
+          address,
+          role: "primary",
+          proofKind: "siwe",
+          proofRef: "n2",
+          verifiedAt: NOW,
+          by: "siwe",
+        }),
+      (err: Error) => {
+        assert.equal((err as AccountAuthorityError).code, WALLET_PERMANENTLY_BOUND_TO_DIFFERENT_ACCOUNT);
+        assert.match(err.message, /permanently bound to a different Untch account/);
+        return true;
+      },
+    );
+    // And what matters most: the owner did not change.
     assert.equal((await store.accountForWallet("evm", address))?.accountId, first.accountId);
   });
 

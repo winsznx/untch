@@ -275,11 +275,28 @@ export function normaliseAddress(chainKind: ChainKind, address: string): string 
 }
 
 export class AccountAuthorityError extends Error {
-  constructor(message: string) {
+  /**
+   * A stable code beside the sentence, so a route can answer with a named refusal instead of matching
+   * on prose. Absent on the errors that predate this and never needed one.
+   */
+  readonly code: string | undefined;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "AccountAuthorityError";
+    this.code = code;
   }
 }
+
+/**
+ * An address already belongs to a different account, permanently.
+ *
+ * Raised rather than returning `bound: false`, because the two are different facts and the caller
+ * must not conflate them. `bound: false` means "nothing changed, and that is fine" — a duplicate
+ * link, a no-op refresh. This means "you asked to move an identity between accounts", which is a
+ * request the system does not fulfil at all and must never appear to have half-fulfilled.
+ */
+export const WALLET_PERMANENTLY_BOUND_TO_DIFFERENT_ACCOUNT = "WALLET_PERMANENTLY_BOUND_TO_DIFFERENT_ACCOUNT";
 
 export interface AccountStore {
   createAccount(args: { readonly displayName?: string | null } & Provenance): Promise<UntchAccount>;
@@ -397,22 +414,53 @@ export class PgAccountStore implements AccountStore {
   }
 
   /**
-   * Bind a wallet, or refresh the binding that address already has on THIS account.
+   * Bind a wallet, refresh the binding that address already has on THIS account, or reactivate one
+   * this account revoked.
    *
-   * The `WHERE account_id = EXCLUDED.account_id` on the upsert is what stops an address being moved
-   * between accounts by re-binding it: a second account signing for an address already bound elsewhere
-   * updates nothing and the caller is told so. Moving an address is a recovery operation with a human
-   * in it, not an idempotent write that happens to have a surprising effect.
+   * ONE ADDRESS, ONE ACCOUNT, FOR ITS LIFETIME
    *
-   * A binding that is REVOKED is not refreshed either — the conflict target is the address, and a
-   * revoked row still occupies it. Re-binding after revocation goes through `rebindWallet`, which is
-   * explicit about resurrecting an authority somebody deliberately ended.
+   * `WHERE account_id = EXCLUDED.account_id` on the upsert stops an address being moved between
+   * accounts, and migration 024 stops the same thing being done by a direct UPDATE or DELETE. The
+   * invariant is load-bearing rather than tidy: the deployed `SpendIntent` commits the policy owner
+   * ADDRESS and carries no account reference, so an address that could change owner would make every
+   * direct decision receipted under it ambiguous after the fact.
+   *
+   * REVOCATION ENDS AUTHORITY; IT DOES NOT FREE THE ADDRESS
+   *
+   * A revoked row keeps its place, so the address stays claimed. Re-linking it later resolves the
+   * SAME account — that is reactivation, and it is handled here rather than in the `rebindWallet`
+   * this comment used to promise. That method never existed, which meant the documented path back
+   * from a revocation was a name with nothing behind it.
    */
   async linkWallet(binding: WalletBindingInput & Provenance): Promise<{ readonly bound: boolean }> {
     if (binding.proofKind === "siwe" && (!binding.proofRef || !binding.verifiedAt)) {
       throw new AccountAuthorityError(
         "a wallet binding that claims a signature must carry the proof reference and the time it was verified; " +
           "record it as `declared` instead of asserting a proof nobody can date",
+      );
+    }
+
+    /**
+     * Read the current owner BEFORE writing, so a cross-account attempt is refused by name.
+     *
+     * The upsert would already decline to move it — `rowCount` would be 0 — but "nothing happened"
+     * is the same answer it gives for a harmless duplicate link. A caller that cannot tell those
+     * apart will eventually report the wrong one to a person.
+     */
+    const normalised = normaliseAddress(binding.chainKind, binding.address);
+    const { rows: existing } = await this.pool.query<{ account_id: string; status: string }>(
+      "SELECT account_id, status FROM untch_wallet_bindings WHERE chain_kind = $1 AND address = $2",
+      [binding.chainKind, normalised],
+    );
+    const holder = existing[0];
+    if (holder && holder.account_id !== binding.accountId) {
+      throw new AccountAuthorityError(
+        `wallet ${normalised} is permanently bound to a different Untch account. Revocation ends that ` +
+          "account's authority and does not release the address, and there is no way to move it: a " +
+          "direct request is identified on chain by this address alone, so reassigning it would " +
+          "silently reattribute every decision already receipted under it. Recovering or merging an " +
+          "account is a separate audited protocol.",
+        WALLET_PERMANENTLY_BOUND_TO_DIFFERENT_ACCOUNT,
       );
     }
     const { rowCount } = await this.pool.query(
@@ -439,9 +487,15 @@ export class PgAccountStore implements AccountStore {
              challenge_ref = EXCLUDED.challenge_ref,
              challenge_transport = EXCLUDED.challenge_transport,
              updated_at = now(),
-             updated_by = EXCLUDED.updated_by
-         WHERE untch_wallet_bindings.account_id = EXCLUDED.account_id
-           AND untch_wallet_bindings.status = 'ACTIVE'`,
+             updated_by = EXCLUDED.updated_by,
+             -- Reactivation. A revoked binding on the SAME account comes back with a fresh proof;
+             -- the row never moved, so nothing about who owns the address changes. revoked_at is
+             -- cleared because the binding is live again, and verified_at above carries the NEW
+             -- proof — migration 024 refuses to let it be unset, only moved forward.
+             status = 'ACTIVE',
+             revoked_at = NULL,
+             revoked_by = NULL
+         WHERE untch_wallet_bindings.account_id = EXCLUDED.account_id`,
       [
         binding.bindingId ?? newWalletBindingId(),
         binding.accountId,

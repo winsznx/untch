@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 import type { MarketplaceBinding, UntchAccount, WalletBinding } from "@untch/consumer-core";
 import type { StoredPolicy } from "@untch/policy-store";
 import { findOwnedService } from "@untch/owned-work";
+import { accountRefHash, commitmentInputOf, requesterCommitment } from "@untch/consumer-core";
 import {
   resolveAuthority,
   publicOutcomeFor,
@@ -279,34 +280,83 @@ describe("the buyer agent id comes from a signature or from nowhere", () => {
     assert.match(record?.derivedFrom ?? "", /wallet signature/);
   });
 
-  test("an unproven binding does not, and the refusal says why", async () => {
+  /**
+   * ── THE TWO TESTS THIS REPLACES, AND WHY THEY WERE WRONG RATHER THAN BROKEN ──
+   *
+   * Both encoded the contract V3 removes:
+   *
+   *   "an unproven binding does not, and the refusal says why" asserted that a caller with an
+   *   unproven binding and no buyerAgentId gets AUTHORITY_NOT_DERIVABLE. Under the old contract that
+   *   was right — every caller needed a buyer agent id. It is now wrong twice over: that caller is a
+   *   DIRECT account request, which is a complete and legitimate description of who they are, and the
+   *   advice it asserted on ("send buyerAgentId … recorded as a claim") points at a path that no
+   *   longer exists.
+   *
+   *   "a caller-supplied id is accepted … and is labelled a claim" asserted that an unproven id is
+   *   recorded with `verified: false`. Defensible under V2, where nothing downstream read the label.
+   *   Not under V3, where `buyerAgentIdSemantics` is a committed field a stranger reads off a receipt
+   *   with no way to see a `verified: false` that lived in a response body months ago.
+   *
+   * Deleting them would have left the new contract untested. These are their replacements: same two
+   * situations, asserting what must happen now.
+   */
+  test("an unproven binding is not marketplace intent — the caller is a direct account", async () => {
     const result = await resolveAuthority(
       DEMO_REQUEST,
       IDENTITY,
       deps(world({ marketplaces: [marketplace({ provenBy: "unproven" })] })),
     );
-    assert.equal(result.ok, false);
-    if (result.ok) return;
-    assert.equal(result.code, "AUTHORITY_NOT_DERIVABLE");
-    assert.match(result.missing[0]?.why ?? "", /unproven/);
-    // `resolveBy` is null: proving a marketplace binding has no public route yet, and pointing at
-    // one that returns 404 is the "unobtainable predecessor" defect reproduced inside a refusal.
-    assert.equal(result.resolveBy, null);
-    assert.match(result.missing[0]?.resolvedFrom ?? "", /send buyerAgentId/);
-    assert.match(result.missing[0]?.resolvedFrom ?? "", /recorded as a claim/);
+    assert.equal(result.ok, true, "an unproven binding does not make somebody a marketplace requester");
+    if (!result.ok) return;
+    const r = result.authority.requesterEvidence;
+    assert.equal(r.requesterPrincipalKind, "untch_account");
+    assert.equal(r.onchainBuyerAgentId, "0");
+    assert.equal(r.buyerAgentId, null);
+    // The unproven binding must not be attached to a decision that was not made through it.
+    assert.equal(r.marketplace, null);
+    assert.equal(r.marketplaceBindingId, null);
+    assert.equal(result.authority.marketplace, null);
   });
 
-  test("a caller-supplied id is accepted only when no proven binding contradicts it, and is labelled a claim", async () => {
+  test("an unverified caller-supplied id is refused, not recorded as a claim", async () => {
     const result = await resolveAuthority(
       { ...DEMO_REQUEST, buyerAgentId: "999" },
       IDENTITY,
       deps(world({ marketplaces: [] })),
     );
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.equal(result.authority.buyerAgentId, "999");
-    const record = result.authority.derived.find((d) => d.field === "buyerAgentId");
-    assert.match(record?.derivedFrom ?? "", /recorded as a claim/);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "MARKETPLACE_BUYER_REQUIRED");
+    assert.match(result.message, /VERIFIED marketplace identity/);
+    // The refusal has to name the path that actually works, or it is the unobtainable-predecessor
+    // defect again: a refusal whose advice cannot be followed.
+    assert.match(result.missing[0]?.resolvedFrom ?? "", /omit buyerAgentId entirely/);
+    assert.match(result.missing[0]?.resolvedFrom ?? "", /direct Untch account/);
+  });
+
+  test("a declared binding plus a matching id is still refused", async () => {
+    const result = await resolveAuthority(
+      { ...DEMO_REQUEST, buyerAgentId: "6047" },
+      IDENTITY,
+      deps(world({ marketplaces: [marketplace({ provenBy: "unproven" })] })),
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "MARKETPLACE_BUYER_REQUIRED");
+    assert.match(result.missing[0]?.why ?? "", /unproven/);
+  });
+
+  test("a proven binding whose agent id is 0 does not become a marketplace requester", async () => {
+    // The zero would claim `verified_marketplace_agent` over the same value a direct request uses to
+    // mean "there is no marketplace buyer" — the two readings of the zero meeting in one record.
+    const result = await resolveAuthority(
+      { ...DEMO_REQUEST, buyerAgentId: "0" },
+      IDENTITY,
+      deps(world({ marketplaces: [marketplace({ agentId: "0" })] })),
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "MARKETPLACE_BUYER_REQUIRED");
   });
 
   test("a header never overrides a signature", async () => {
@@ -314,6 +364,207 @@ describe("the buyer agent id comes from a signature or from nowhere", () => {
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal(result.authority.buyerAgentId, "6047", "the proven binding wins");
+  });
+
+  test("account-only authority is not marketplace proof", async () => {
+    // A SIWE-proven WALLET proves an account. It says nothing about a marketplace, and a resolver that
+    // let one stand in for the other would let every signed-in user claim any agent id.
+    const result = await resolveAuthority(
+      { ...DEMO_REQUEST, buyerAgentId: "6047" },
+      IDENTITY,
+      deps(world({ marketplaces: [] })),
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "MARKETPLACE_BUYER_REQUIRED");
+  });
+});
+
+/**
+ * The direct account path, which is the whole point of this pass.
+ *
+ * Every assertion here is about a value NOBODY SENT and nobody may invent: the reserved zero, the
+ * absent marketplace, the seller that is not the worker, and the agent id that must never appear.
+ */
+describe("a direct account request identifies itself without a marketplace", () => {
+  const direct = () => world({ marketplaces: [] });
+
+  test("succeeds with no buyerAgentId and no marketplace binding at all", async () => {
+    const result = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(direct()));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const r = result.authority.requesterEvidence;
+    assert.equal(r.requesterPrincipalKind, "untch_account");
+    assert.equal(r.requesterPrincipalNamespace, "untch-account");
+    assert.equal(r.buyerAgentIdSemantics, "no_marketplace_buyer");
+    assert.equal(r.onchainBuyerAgentId, "0");
+    assert.equal(result.authority.buyerAgentId, null);
+  });
+
+  test("the requester reference IS the accountRefHash, and the raw accountId is not in it", async () => {
+    const result = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(direct()));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const r = result.authority.requesterEvidence;
+    assert.equal(r.requesterPrincipalRef, r.accountRefHash);
+    assert.equal(r.accountRefHash, accountRefHash("acct_test"));
+    assert.equal(r.requesterPrincipalRef.includes("acct_test"), false);
+  });
+
+  test("the wallet authority is committed, and it is not the address", async () => {
+    const result = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(direct()));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const r = result.authority.requesterEvidence;
+    assert.match(r.walletAuthorityRef, /^0x[0-9a-f]{64}$/);
+    assert.equal(r.walletAuthorityRef.toLowerCase().includes(OWNER.slice(2).toLowerCase()), false);
+  });
+
+  test("6047 is never inserted into a direct request", async () => {
+    // The account HOLDS a proven 6047 binding here. A direct request is still made when no marketplace
+    // intent is present — but this request carries none, so nothing may reach for the id that is lying
+    // around. The world used is the default one, which has the binding.
+    const result = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(direct()));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(JSON.stringify(result.authority.requesterEvidence).includes("6047"), false);
+  });
+
+  test("the wallet address is never cast into an agent id field", async () => {
+    const result = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(direct()));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const r = result.authority.requesterEvidence;
+    // A 20-byte address serialised into a uint256 agent id is a category error that hashes cleanly,
+    // which is why it is asserted on rather than trusted to be obviously wrong.
+    for (const value of [r.onchainBuyerAgentId, r.workerAgentId, r.sellerAspId]) {
+      assert.equal(value.toLowerCase().includes(OWNER.slice(2, 10).toLowerCase()), false);
+      assert.match(value, /^[0-9]+$/, "an agent id is a uint, never an address");
+    }
+  });
+
+  test("sellerAspId and workerAgentId are separate fields that currently hold the same value", async () => {
+    const result = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(direct()));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const r = result.authority.requesterEvidence;
+    assert.equal(r.sellerAspId, "6086");
+    assert.equal(r.workerAgentId, "6086");
+    // Equal today and read from two different sources: the deployment's seller identity and the
+    // service's worker identity. The assertion that matters is that both keys exist.
+    assert.ok("sellerAspId" in r && "workerAgentId" in r, "two roles, two fields");
+    assert.equal(r.serviceId, "owned_work.demo");
+  });
+
+  test("a delegated policy is refused: the owner address would name somebody else", async () => {
+    const result = await resolveAuthority(
+      DEMO_REQUEST,
+      IDENTITY,
+      deps(
+        world({
+          marketplaces: [],
+          policies: { "7": policy({ owner: OTHER_WALLET as `0x${string}` }) },
+          linkedPolicies: ["7"],
+        }),
+      ),
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "REQUESTER_AUTHORITY_NOT_DERIVABLE");
+    assert.match(result.message, /delegated to this account rather than owned by it/);
+  });
+
+  test("a policy owned by an address this account never proved is refused before delegation is even asked", async () => {
+    const result = await resolveAuthority(
+      DEMO_REQUEST,
+      IDENTITY,
+      deps(world({ marketplaces: [], policies: { "7": policy({ owner: OTHER_WALLET as `0x${string}` }) } })),
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "POLICY_REQUIRED");
+  });
+
+  test("an identity-only binding proves a name and does not spend", async () => {
+    const result = await resolveAuthority(
+      DEMO_REQUEST,
+      IDENTITY,
+      deps(world({ marketplaces: [], wallets: [wallet({ scopes: ["identity"] })] })),
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "AUTHORITY_NOT_DERIVABLE");
+    assert.equal(result.missing[0]?.field, "scopes");
+  });
+
+  test("a revoked wallet produces no requester at all", async () => {
+    const result = await resolveAuthority(
+      DEMO_REQUEST,
+      IDENTITY,
+      deps(world({ marketplaces: [], wallets: [wallet({ status: "REVOKED" })] })),
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "ACCOUNT_LINK_REQUIRED");
+  });
+
+  test("an expired policy is refused on the direct path too", async () => {
+    const result = await resolveAuthority(
+      DEMO_REQUEST,
+      IDENTITY,
+      deps(world({ marketplaces: [], policies: { "7": policy({ expiry: Math.floor(NOW / 1000) - 1 }) } })),
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "POLICY_INACTIVE");
+  });
+
+  test("two accounts asking identically produce different requester commitments", async () => {
+    const mine = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(direct()));
+    const theirs = await resolveAuthority(
+      DEMO_REQUEST,
+      { ...IDENTITY, accountId: "acct_other" },
+      deps(
+        world({
+          marketplaces: [],
+          account: account({ accountId: "acct_other" }),
+          wallets: [wallet({ accountId: "acct_other" })],
+        }),
+      ),
+    );
+    assert.equal(mine.ok, true);
+    assert.equal(theirs.ok, true);
+    if (!mine.ok || !theirs.ok) return;
+    assert.notEqual(
+      requesterCommitment(commitmentInputOf(mine.authority.requesterEvidence)),
+      requesterCommitment(commitmentInputOf(theirs.authority.requesterEvidence)),
+      "an identical request from another account must not commit to the same requester",
+    );
+  });
+});
+
+describe("a marketplace request names a verified agent", () => {
+  test("a verified binding produces the marketplace requester record", async () => {
+    const result = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(world()));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const r = result.authority.requesterEvidence;
+    assert.equal(r.requesterPrincipalKind, "marketplace_agent");
+    assert.equal(r.requesterPrincipalNamespace, "okx-ai");
+    assert.equal(r.requesterPrincipalRef, "okx-ai:6047");
+    assert.equal(r.buyerAgentIdSemantics, "verified_marketplace_agent");
+    assert.equal(r.onchainBuyerAgentId, "6047");
+    assert.equal(r.buyerAgentId, "6047");
+    assert.equal(r.marketplaceBindingId, "mb_1");
+  });
+
+  test("a marketplace requester cannot present itself as a direct account", async () => {
+    const result = await resolveAuthority(DEMO_REQUEST, IDENTITY, deps(world()));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const r = result.authority.requesterEvidence;
+    assert.notEqual(r.requesterPrincipalKind, "untch_account");
+    assert.notEqual(r.requesterPrincipalRef, r.accountRefHash);
   });
 });
 

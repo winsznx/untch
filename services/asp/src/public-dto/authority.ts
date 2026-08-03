@@ -39,6 +39,16 @@ import type {
 } from "@untch/consumer-core";
 import type { StoredPolicy } from "@untch/policy-store";
 import type { ServiceDefinition } from "@untch/owned-work";
+import {
+  DIRECT_ACCOUNT_ONCHAIN_BUYER_AGENT_ID,
+  OKX_MARKETPLACE_NAMESPACE,
+  UNTCH_ACCOUNT_NAMESPACE,
+  accountRefHash,
+  requesterPrincipalRefOf,
+  walletAuthorityRef,
+  type RequesterEvidenceV3,
+} from "@untch/consumer-core";
+import { UNTCH_SELLER_ASP_ID } from "@untch/owned-work";
 import type { MissingAuthority } from "./types";
 
 /**
@@ -60,6 +70,15 @@ export type PreflightOutcomeCode =
   | "POLICY_INACTIVE"
   | "RECIPIENT_REQUIRED"
   | "AUTHORITY_NOT_DERIVABLE"
+  /**
+   * The requester itself could not be established, as distinct from a field it failed to supply.
+   * `AUTHORITY_NOT_DERIVABLE` means "you did not give me X"; these mean "who you are does not hold
+   * together", which is a different thing to tell somebody and a different thing to fix.
+   */
+  | "REQUESTER_AUTHORITY_NOT_DERIVABLE"
+  | "REQUESTER_BUYER_SEMANTICS_MISMATCH"
+  | "MARKETPLACE_BUYER_REQUIRED"
+  | "DIRECT_ACCOUNT_V3_REQUIRED"
   | "QUOTE_REQUIRED"
   | "QUOTE_EXPIRED";
 
@@ -73,6 +92,10 @@ export const OUTCOME_STATUS: Readonly<Record<PreflightOutcomeCode, number>> = Ob
   POLICY_INACTIVE: 409,
   RECIPIENT_REQUIRED: 409,
   AUTHORITY_NOT_DERIVABLE: 409,
+  REQUESTER_AUTHORITY_NOT_DERIVABLE: 409,
+  REQUESTER_BUYER_SEMANTICS_MISMATCH: 409,
+  MARKETPLACE_BUYER_REQUIRED: 409,
+  DIRECT_ACCOUNT_V3_REQUIRED: 409,
   QUOTE_REQUIRED: 409,
   QUOTE_EXPIRED: 410,
 });
@@ -140,16 +163,74 @@ export interface AuthorityRequest {
   readonly workerAgentId?: string | undefined;
 }
 
+/**
+ * WHO IS ASKING, AS A TYPE RATHER THAN AS A NULLABLE FIELD.
+ *
+ * The defect this closes: `buyerAgentId` was required of EVERY caller, including one whose policy
+ * names their own wallet as both owner and governed agent and which has nothing to do with any
+ * marketplace. The only two ways to obtain it were a wallet-proven marketplace binding — for which no
+ * public route exists — and a caller-supplied claim. So a user who had done everything correctly, on
+ * a policy they registered on-chain themselves, could not spend: the refusal named a predecessor
+ * nobody could obtain. That is the exact "unobtainable predecessor" the registry's `predecessors`
+ * field was built to expose, sitting on the money path.
+ *
+ * A nullable `buyerAgentId` would not have fixed it. Null means "absent", and absent is
+ * indistinguishable from "a marketplace caller who forgot it" — so the check would either let a real
+ * marketplace request through unidentified, or keep refusing the direct one. The two callers are
+ * different KINDS, with different required facts, so the type says so and the resolver branches once.
+ */
+export type RequesterPrincipal =
+  | {
+      readonly kind: "untch_account";
+      readonly accountId: string;
+      readonly accountRefHash: Hex;
+      readonly walletBindingId: string;
+      readonly walletAddress: Address;
+      readonly walletBindingKind: string;
+      /** How the wallet proved itself. Only `siwe` is authority; `declared` is audit context. */
+      readonly authorityProof: string;
+      readonly scopes: readonly BindingScope[];
+    }
+  | {
+      readonly kind: "marketplace_agent";
+      readonly marketplace: string;
+      readonly marketplaceBindingId: string;
+      readonly buyerAgentId: string;
+      readonly proofKind: string;
+      /**
+       * True ONLY for a wallet-signature binding. A declared id is recorded and reported, and it can
+       * never satisfy a predecessor that asks for verified marketplace authority.
+       */
+      readonly verified: boolean;
+      readonly accountId: string | null;
+    };
+
 export interface ResolvedAuthority {
   readonly account: UntchAccount;
   readonly wallet: WalletBinding;
   readonly policy: StoredPolicy;
   readonly marketplace: MarketplaceBinding | null;
-  readonly buyerAgentId: string;
+  readonly requester: RequesterPrincipal;
+  /**
+   * Absent for a direct account request. It is NOT defaulted to a zero, to the ASP's own id, or to
+   * the wallet address: each of those would receipt the decision against an agent that did not make
+   * it, and a wallet address serialised into an agent-id field is a category error that hashes
+   * cleanly.
+   */
+  readonly buyerAgentId: string | null;
   readonly workerAgentId: string;
   readonly recipient: Address | null;
   readonly recipientDerivedFrom: string | null;
   readonly ownedService: OwnedServiceDefinition | null;
+  /**
+   * The V3 requester record, assembled from the same facts the refusals above were decided on.
+   *
+   * Built HERE rather than in `preflight.ts` because this is the only place that holds the account,
+   * the binding, the marketplace binding and the ownership answer at once. Assembling it downstream
+   * would mean re-deriving `ownedByThisAccount` from a `derivedFrom` string, and a security decision
+   * read out of prose is one copy edit from being wrong.
+   */
+  readonly requesterEvidence: RequesterEvidenceV3;
   /** Every value this module produced, with what produced it. Returned to the caller verbatim. */
   readonly derived: readonly DerivedAuthorityField[];
 }
@@ -170,6 +251,15 @@ export type AuthorityOutcome =
       /** What the caller should do, as a route they can actually call. */
       readonly resolveBy: string | null;
     };
+
+/**
+ * The reserved on-chain null for `SpendIntent.buyerAgentId` on a direct Untch-account request.
+ *
+ * Re-exported from `@untch/consumer-core` rather than declared here. It was declared here while the
+ * V3 evidence did not exist yet; now that `buyerAgentIdSemantics` is a stored column with a CHECK
+ * constraint behind it, one definition is what stops the constant and the constraint drifting apart.
+ */
+export { DIRECT_ACCOUNT_ONCHAIN_BUYER_AGENT_ID };
 
 const UINT = /^[0-9]+$/;
 
@@ -270,43 +360,183 @@ export async function resolveAuthority(
   const proven = bindings.find((b) => b.status === "ACTIVE" && b.provenBy === "wallet-signature") ?? null;
   const unproven = bindings.find((b) => b.status === "ACTIVE") ?? null;
 
+  /**
+   * WHICH KIND OF REQUESTER THIS IS, DECIDED BEFORE ANYTHING IS REQUIRED OF THEM.
+   *
+   * A request is a marketplace request when it carries marketplace identity — a proven binding on the
+   * account, or a `buyerAgentId` the caller chose to send. Everything else is a direct account
+   * request, and a direct account request has no buyer agent because there is no marketplace in it.
+   *
+   * Deciding the kind FIRST is the whole correction. The old code asked "can I produce a
+   * buyerAgentId?" and treated the answer no as a failure of the request, when for a direct caller it
+   * is a true and complete description of who they are.
+   */
+  const marketplaceIntent =
+    proven !== null || (request.buyerAgentId !== undefined && request.buyerAgentId.trim() !== "");
+
+  let requester: RequesterPrincipal;
   let buyerAgentId: string | null = null;
-  if (proven && UINT.test(proven.agentId)) {
+
+  /**
+   * The wallet authority this request is made under, hashed once.
+   *
+   * `verifiedAt` comes from the binding row, not from the clock. A binding that was proven in March
+   * and read today has one authority, and hashing "now" would make every request its own authority —
+   * which would defeat the point: an approval and the decision it authorises have to agree on it.
+   */
+  const authorityRef = walletAuthorityRef({
+    chainKind: wallet.chainKind,
+    address: wallet.address,
+    walletBindingId: wallet.bindingId,
+    proofKind: wallet.proofKind,
+    // Normalised to null rather than passed through. `undefined` is dropped by RFC 8785 canonical
+    // JSON and `null` is encoded, so a binding with no recorded proof time would otherwise hash the
+    // same as one where the field was never read — two different facts, one hash.
+    verifiedAt: wallet.verifiedAt ?? null,
+  });
+
+  if (!marketplaceIntent) {
+    /**
+     * ── DIRECT ACCOUNT AUTHORITY ──────────────────────────────────────────
+     *
+     * Everything required here has already been established above and is re-stated rather than
+     * re-derived: the account is ACTIVE, the binding is ACTIVE, the proof is SIWE, and the policy
+     * belongs to this account and to this wallet (checked in `selectPolicy`). What remains is the
+     * scope: an `identity` binding proves who you are, and spending under a policy is a different
+     * permission from proving a name.
+     */
+    if (!wallet.scopes.includes("policy-authority")) {
+      return refuse(
+        "AUTHORITY_NOT_DERIVABLE",
+        "this wallet is bound for identity only: it proves who you are and does not carry authority " +
+          "to spend under a policy",
+        [
+          {
+            field: "scopes",
+            why: `binding ${wallet.bindingId} has [${wallet.scopes.join(", ")}] and needs policy-authority`,
+            resolvedFrom:
+              "re-link this wallet requesting the policy-authority scope at POST /consumer/account/link/start",
+          },
+        ],
+        "/consumer/account/link/start",
+      );
+    }
+
+    /**
+     * ── THE RESTRICTION THE SUBSTITUTION ANALYSIS FORCED ──────────────────
+     *
+     * A direct request must be on a policy this account OWNS, never one merely delegated to it.
+     *
+     * The reason is the on-chain hash. `SpendIntent` has eleven fields and not one of them names an
+     * account; the only field that can identify a requester is `owner`, which `mapping.ts` sets to the
+     * policy's on-chain owner. `untch_wallet_bindings` has PRIMARY KEY (chain_kind, address), so an
+     * address belongs to at most one account — which means that when the policy owner IS this
+     * account's proven wallet, `owner` transitively and uniquely names this account, and no second
+     * account can produce the same intent hash.
+     *
+     * Delegation breaks precisely that. A delegated policy is owned by SOMEBODY ELSE'S wallet, so
+     * `owner` would name an address that is not the requester, and two accounts holding the same
+     * delegated policy would produce byte-identical intent hashes for an identical request. Before
+     * this change `buyerAgentId` carried the distinguishing entropy; with it reserved as 0 for every
+     * direct request, that entropy is gone and the delegated case becomes genuinely ambiguous
+     * on chain.
+     *
+     * So delegation keeps working — through the marketplace path, where a buyer agent id identifies
+     * the requester — and is refused here rather than silently producing an unattributable receipt.
+     */
+    if (!selected.ownedByThisAccount) {
+      return refuse(
+        "REQUESTER_AUTHORITY_NOT_DERIVABLE",
+        `policy ${policy.id} is delegated to this account rather than owned by it, and a direct account ` +
+          "request is identified on chain only by the policy owner's address. A decision made this way " +
+          "could not be told apart from the same decision by any other account holding the delegation",
+        [
+          {
+            field: "policy.owner",
+            why: `the policy is owned on chain by ${policy.owner}, which is not a wallet this account proved`,
+            resolvedFrom:
+              "use a policy your own wallet registered, or send a verified marketplace identity so the " +
+              "request carries a requester the receipt can name",
+          },
+        ],
+        null,
+      );
+    }
+
+    requester = {
+      kind: "untch_account",
+      accountId: account.accountId,
+      accountRefHash: accountRefHash(account.accountId),
+      walletBindingId: wallet.bindingId,
+      walletAddress: wallet.address as Address,
+      walletBindingKind: wallet.bindingKind,
+      authorityProof: wallet.proofKind,
+      scopes: wallet.scopes,
+    };
+    record(
+      "requesterPrincipal",
+      "untch_account",
+      `account ${account.accountId} acting through its own SIWE-proven ${wallet.bindingKind} wallet binding`,
+    );
+    // Deliberately NOT recorded as a derived field: there is no buyer agent to report, and reporting
+    // an empty one would put the field back in every reader's mental model.
+    /**
+     * A proven binding whose agent id is `0` is NOT a marketplace requester.
+     *
+     * It would pass a uint check and then claim `verified_marketplace_agent` over the same zero that
+     * a direct request uses to mean "there is no marketplace buyer" — the two readings of the zero
+     * meeting in one record. Falling through to the refusal below is correct: whatever that binding
+     * is, it does not name an agent.
+     */
+  } else if (proven && UINT.test(proven.agentId) && proven.agentId !== DIRECT_ACCOUNT_ONCHAIN_BUYER_AGENT_ID) {
     buyerAgentId = record(
       "buyerAgentId",
       proven.agentId,
       `the ${proven.marketplace} agent id this account proved with a wallet signature`,
     );
-  } else if (request.buyerAgentId !== undefined && UINT.test(request.buyerAgentId.trim())) {
+    requester = {
+      kind: "marketplace_agent",
+      marketplace: proven.marketplace,
+      marketplaceBindingId: proven.bindingId,
+      buyerAgentId,
+      proofKind: proven.provenBy,
+      verified: true,
+      accountId: account.accountId,
+    };
+    record("requesterPrincipal", "marketplace_agent", `wallet-proven ${proven.marketplace} binding`);
+  } else {
     /**
-     * A caller-supplied id is accepted only when NO proven binding exists to contradict it, and it is
-     * labelled as what it is. Preferring it over a proven binding would let a header override a
-     * signature, which is the exact inversion the binding model exists to prevent.
+     * ── A MARKETPLACE CLAIM THAT NOTHING PROVES ───────────────────────────
+     *
+     * This branch used to ACCEPT a caller-supplied id, labelled `verified: false`, on the reasoning
+     * that a claim recorded as a claim is honest. Under V2 evidence that was defensible: nothing
+     * downstream treated the label as authority.
+     *
+     * V3 removes the defence. The V3 record commits `buyerAgentIdSemantics`, and the only marketplace
+     * value it can carry is `verified_marketplace_agent` — because a receipt is checked by strangers,
+     * and a stranger reading `buyerAgentId: 999` has no way to see a `verified: false` that lived in a
+     * response body months ago. Writing an unproven id into a committed field would publish a claim in
+     * the shape of a fact, which is worse than refusing it: the refusal is visible.
+     *
+     * A caller who genuinely has no marketplace identity is not stuck. Omitting `buyerAgentId`
+     * entirely IS the direct account path, and that path is now reachable — which is exactly the
+     * defect this pass opened by fixing.
      */
-    buyerAgentId = record(
-      "buyerAgentId",
-      request.buyerAgentId.trim(),
-      "the buyer agent id you sent — this account has no wallet-proven marketplace binding, so it is recorded as a claim",
-    );
-  }
-
-  if (buyerAgentId === null) {
     return refuse(
-      "AUTHORITY_NOT_DERIVABLE",
-      "which agent is doing the spending cannot be derived: this account has no wallet-proven marketplace " +
-        "binding and no buyerAgentId was sent. A zero here would receipt the decision against an agent that does not exist",
+      "MARKETPLACE_BUYER_REQUIRED",
+      "this request carries marketplace intent and no VERIFIED marketplace identity. A buyer agent id " +
+        "committed to a receipt is read later by people who cannot see how it was obtained, so an id " +
+        "this account has not proven with a wallet signature is refused rather than recorded as though " +
+        "it had been",
       [
         {
           field: "buyerAgentId",
           why: unproven
             ? `this account's ${unproven.marketplace} binding is ${unproven.provenBy}, which is audit context and not authority`
-            : "this account has no marketplace binding at all",
-          // Pointed at a route nobody built. An "obtainable by" that names a 404 is the exact defect
-          // the service registry's `predecessors` field exists to prevent, reproduced in a refusal.
+            : "no wallet-proven marketplace binding on this account issued the id you sent",
           resolvedFrom:
-            "send buyerAgentId with the request. A wallet-proven marketplace binding is not yet " +
-            "obtainable through any public route, so an id sent here is recorded as a claim rather " +
-            "than as proof.",
+            "prove a marketplace binding with a wallet signature — or omit buyerAgentId entirely and " +
+            "call as a direct Untch account, which needs no marketplace identity at all.",
         },
       ],
       null,
@@ -363,13 +593,85 @@ export async function resolveAuthority(
   const resolvedRecipient = resolveRecipient(request, owned, record);
   if (!resolvedRecipient.ok) return resolvedRecipient.outcome;
 
+  /**
+   * ── 6. the V3 requester record ────────────────────────────────────────────
+   *
+   * `sellerAspId` and `workerAgentId` are read from two different places on purpose. The seller is a
+   * property of the DEPLOYMENT — who a caller is transacting with — and the worker is a property of
+   * the SERVICE. They are both 6086 right now and they are not the same fact, so they are not the same
+   * read: the day Untch brokers work it does not perform, one changes and the other does not.
+   *
+   * `serviceId` falls back to `provider/capability` for a provider with no owned definition, which is
+   * a description of what was bought rather than a registered service id. It is never blank, because a
+   * blank there would be a committed field that says nothing.
+   */
+  const sellerAspId = record(
+    "sellerAspId",
+    owned?.sellerAspId ?? UNTCH_SELLER_ASP_ID,
+    owned
+      ? `the seller ASP identity of this deployment, as declared by owned service ${owned.serviceId}`
+      : "the seller ASP identity of this deployment",
+  );
+  const serviceId = record(
+    "serviceId",
+    owned?.serviceId ?? `${request.provider}/${request.capability}`,
+    owned ? `the registered id of owned service ${owned.serviceId}@${owned.version}` : "the provider and capability you named",
+  );
+
+  const requesterEvidence: RequesterEvidenceV3 =
+    requester.kind === "untch_account"
+      ? {
+          requesterPrincipalKind: "untch_account",
+          requesterPrincipalNamespace: UNTCH_ACCOUNT_NAMESPACE,
+          requesterPrincipalRef: requester.accountRefHash,
+          accountRefHash: requester.accountRefHash,
+          walletAuthorityRef: authorityRef,
+          onchainBuyerAgentId: DIRECT_ACCOUNT_ONCHAIN_BUYER_AGENT_ID,
+          buyerAgentIdSemantics: "no_marketplace_buyer",
+          // Null, never "0". The zero is the ON-CHAIN encoding of "there is none"; this field is where
+          // that distinction survives, and writing a 0 here is how it would stop surviving.
+          buyerAgentId: null,
+          marketplace: null,
+          marketplaceBindingId: null,
+          sellerAspId,
+          workerAgentId,
+          serviceId,
+        }
+      : {
+          requesterPrincipalKind: "marketplace_agent",
+          requesterPrincipalNamespace: marketplaceNamespaceOf(requester.marketplace),
+          requesterPrincipalRef: requesterPrincipalRefOf({
+            kind: "marketplace_agent",
+            namespace: marketplaceNamespaceOf(requester.marketplace),
+            accountRefHash: accountRefHash(account.accountId),
+            walletAuthorityRef: authorityRef,
+            buyerAgentId: requester.buyerAgentId,
+            marketplaceBindingId: requester.marketplaceBindingId,
+          }),
+          accountRefHash: accountRefHash(account.accountId),
+          walletAuthorityRef: authorityRef,
+          onchainBuyerAgentId: requester.buyerAgentId,
+          buyerAgentIdSemantics: "verified_marketplace_agent",
+          buyerAgentId: requester.buyerAgentId,
+          marketplace: requester.marketplace,
+          marketplaceBindingId: requester.marketplaceBindingId,
+          sellerAspId,
+          workerAgentId,
+          serviceId,
+        };
+
   return {
     ok: true,
     authority: {
       account,
       wallet,
       policy,
-      marketplace: proven ?? unproven,
+      // A direct account request reports NO marketplace, even when the account happens to hold an
+      // unproven binding. Reporting one would attach a marketplace to a decision that was not made
+      // through it, and every downstream reader would inherit the association.
+      marketplace: requester.kind === "marketplace_agent" ? (proven ?? unproven) : null,
+      requester,
+      requesterEvidence,
       buyerAgentId,
       workerAgentId,
       recipient: resolvedRecipient.recipient,
@@ -380,8 +682,33 @@ export async function resolveAuthority(
   };
 }
 
+/**
+ * The registry namespace an agent id is scoped to.
+ *
+ * `okx` is the marketplace name this deployment stores on a binding; `okx-ai` is the namespace the
+ * protocol publishes. Mapping here rather than storing the namespace on the binding keeps one table
+ * from having to be migrated every time a marketplace renames itself, and an unmapped marketplace
+ * keeps its own name rather than being folded into a namespace that would misattribute its agent ids.
+ */
+function marketplaceNamespaceOf(marketplace: string): string {
+  return marketplace === "okx" ? OKX_MARKETPLACE_NAMESPACE : marketplace;
+}
+
 type PolicySelection =
-  | { readonly ok: true; readonly policy: StoredPolicy; readonly derivedFrom: string }
+  | {
+      readonly ok: true;
+      readonly policy: StoredPolicy;
+      readonly derivedFrom: string;
+      /**
+       * True when the policy's ON-CHAIN owner is a wallet this account proved with SIWE, false when
+       * the account reaches it only by delegation.
+       *
+       * A flag rather than a substring of `derivedFrom`, because the direct-account path depends on
+       * this answer and a security decision read out of prose is a security decision waiting to be
+       * broken by a copy edit.
+       */
+      readonly ownedByThisAccount: boolean;
+    }
   | (AuthorityOutcome & { readonly ok: false });
 
 /**
@@ -481,10 +808,10 @@ async function selectPolicy(
         "/consumer/policies",
       ) as PolicySelection;
     }
-    return { ok: true, policy, derivedFrom: `${derivedFrom} (delegated to this account)` };
+    return { ok: true, policy, derivedFrom: `${derivedFrom} (delegated to this account)`, ownedByThisAccount: false };
   }
 
-  return { ok: true, policy, derivedFrom };
+  return { ok: true, policy, derivedFrom, ownedByThisAccount: true };
 }
 
 type RecipientResolution =
