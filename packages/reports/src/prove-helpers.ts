@@ -80,7 +80,7 @@ export function buildPolicy(over: Partial<Policy["rules"]> = {}): Policy {
 }
 
 export function emptyLedger(over: Partial<LedgerWindowState> = {}): LedgerWindowState {
-  return { spentTodayByAgent: 0, recentIntents: [], lastCallByService: {}, callsInLastHour: 0, ...over };
+  return { budgetUsage: { settledToday: 0, reservedActiveToday: 0, effectiveToday: 0 }, recentIntents: [], lastCallByService: {}, callsInLastHour: 0, ...over };
 }
 
 /** A hex→small-int helper for deterministic-but-varied nonces. */

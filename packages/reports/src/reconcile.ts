@@ -17,7 +17,11 @@ import { AMOUNT_DECIMALS } from "./dispute";
 /**
  * `reconcile_agent_spend` assembly (§11, $0.25/day · $1.00/wk). Over one agent's durable history in a
  * period, assemble:
- *   • spend totals        — money that actually moved (ledger SPEND rows, per token);
+ *   • settled spend       — money that actually moved (ledger SPEND rows, per token). An APPROVED
+ *                           preflight decision is NOT one of these: it writes AUTHORITY_RESERVED,
+ *                           because a decision grants permission and settles nothing;
+ *   • reserved authority  — approved but unsettled governed amounts, reported separately and never
+ *                           summed into spend;
  *   • blocked-waste totals — money that would have moved but was blocked (BLOCKED_* DECISION receipts);
  *   • escalated exposure   — money held for operator decision (ESCALATED_* receipts), reported SEPARATELY
  *                            from waste because an escalation may still be approved (not yet waste);
@@ -54,7 +58,10 @@ export interface ReconcileReport {
     readonly toIso: string;
     readonly periodCode: string;
   };
-  readonly spend: { readonly approvedCount: number; readonly totals: readonly TokenTotal[] };
+  /** Money that actually moved. An approved decision does not appear here. */
+  readonly spend: { readonly settledCount: number; readonly totals: readonly TokenTotal[] };
+  /** Approved authority that has not settled. Never added to `spend`. */
+  readonly reservedAuthority: { readonly approvedCount: number; readonly totals: readonly TokenTotal[] };
   readonly blockedWaste: { readonly blockedCount: number; readonly totals: readonly TokenTotal[] };
   readonly escalatedExposure: { readonly escalatedCount: number; readonly totals: readonly TokenTotal[] };
   readonly decisionBreakdown: readonly { readonly outcome: string; readonly count: number }[];
@@ -116,7 +123,12 @@ export function assembleReconcileReport(
   const decisionReceipts = receipts.filter((r) => r.kind === "DECISION");
   const verifyReceipts = receipts.filter((r) => r.kind === "VERIFY");
 
+  // SPEND only. `AUTHORITY_RESERVED` rows are approved decisions and belong in `reserved`, not here —
+  // summing them was what let this report describe granted authority as money that had moved.
   const spendRows = ledger.filter((l) => l.type === "SPEND").map((l) => ({ token: l.token, amount: l.amount }));
+  const reservedRows = ledger
+    .filter((l) => l.type === "AUTHORITY_RESERVED")
+    .map((l) => ({ token: l.token, amount: l.amount }));
   const blockedRows = decisionReceipts
     .filter((r) => BLOCKED_CODES.has(r.decision))
     .map((r) => ({ token: r.token, amount: r.amount }));
@@ -125,6 +137,7 @@ export function assembleReconcileReport(
     .map((r) => ({ token: r.token, amount: r.amount }));
 
   const spendTotals = sumByToken(spendRows);
+  const reservedTotals = sumByToken(reservedRows);
   const blockedTotals = sumByToken(blockedRows);
   const escalatedTotals = sumByToken(escalatedRows);
 
@@ -167,7 +180,7 @@ export function assembleReconcileReport(
     );
   }
   if (spendTotals.length === 0 && receipts.length > 0) {
-    notes.push("No APPROVED spend in this period — the agent's activity was entirely blocked/escalated.");
+    notes.push("No SETTLED spend in this period. Approved decisions appear under reservedAuthority: they granted permission and moved no money.");
   }
   if (escalatedTotals.length > 0) {
     notes.push(
@@ -194,7 +207,8 @@ export function assembleReconcileReport(
       toIso: period.toIso,
       periodCode: period.periodCode.toString(),
     },
-    spend: { approvedCount: spendRows.length, totals: spendTotals },
+    spend: { settledCount: spendRows.length, totals: spendTotals },
+    reservedAuthority: { approvedCount: reservedRows.length, totals: reservedTotals },
     blockedWaste: { blockedCount: blockedRows.length, totals: blockedTotals },
     escalatedExposure: { escalatedCount: escalatedRows.length, totals: escalatedTotals },
     decisionBreakdown,

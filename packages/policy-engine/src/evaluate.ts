@@ -221,8 +221,15 @@ function tryHashIntent(intent: SpendIntentInput): Hex {
 function isValidLedgerState(state: LedgerWindowState): boolean {
   if (!state || typeof state !== "object") return false;
   const s = state as unknown as Record<string, unknown>;
-  const spent = s.spentTodayByAgent;
-  if (typeof spent !== "number" || !Number.isFinite(spent) || spent < 0) return false;
+  // Fail CLOSED on a malformed budget window. A negative or non-finite component would make the
+  // budget rule compare against a number nobody computed, which is the failure mode that must never
+  // resolve to "approved".
+  const usage = s.budgetUsage as Record<string, unknown> | undefined;
+  if (!usage || typeof usage !== "object") return false;
+  for (const key of ["settledToday", "reservedActiveToday", "effectiveToday"]) {
+    const v = usage[key];
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0) return false;
+  }
   if (!Array.isArray(s.recentIntents)) return false;
   const calls = s.callsInLastHour;
   if (typeof calls !== "number" || !Number.isFinite(calls) || calls < 0) return false;

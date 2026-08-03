@@ -366,7 +366,7 @@ const PLANS: Readonly<Record<string, SmokePlan>> = {
 class SmokeLedger implements Ledger {
   private spent = 0;
   async read(): Promise<LedgerWindowState> {
-    return { spentTodayByAgent: this.spent, recentIntents: [], lastCallByService: {}, callsInLastHour: 0 };
+    return { budgetUsage: { settledToday: 0, reservedActiveToday: this.spent, effectiveToday: this.spent }, recentIntents: [], lastCallByService: {}, callsInLastHour: 0 };
   }
   async commitApproved(_k: string, i: SpendIntentInput): Promise<void> {
     this.spent += i.amount;

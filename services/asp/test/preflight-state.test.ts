@@ -97,5 +97,5 @@ test("wrapLedgerWithInjects merges into read()", async () => {
   const state = await wrapped.read("policy:1");
   assert.equal(state.availableProofTier, 0);
   assert.equal(state.vendorScore?.lcb, 0.5);
-  assert.equal(state.spentTodayByAgent, 0);
+  assert.equal(state.budgetUsage.effectiveToday, 0);
 });

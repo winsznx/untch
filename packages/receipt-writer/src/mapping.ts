@@ -165,7 +165,17 @@ export function draftFromDecision(input: SpendIntentInput, decision: Decision): 
 
   const ledger: LedgerEntryInput = {
     agentId,
-    type: decision.decision === "APPROVED" ? "SPEND" : "BLOCK_SAVED",
+    /**
+     * An APPROVED preflight is AUTHORITY_RESERVED, not SPEND.
+     *
+     * This line wrote `SPEND` with the governed amount for every approved decision. That is how a
+     * 4.00 authorisation became a 4,000,000-base-unit SPEND row on 2026-08-02 for a decision where no
+     * provider ran and no payment settled — and how the reconcile report and the dashboard came to
+     * describe granted authority as money that had moved.
+     *
+     * `SPEND` is now written only when a reservation is consumed at the settlement point.
+     */
+    type: decision.decision === "APPROVED" ? "AUTHORITY_RESERVED" : "BLOCK_SAVED",
     amount: amount.toString(),
     token: input.token,
     counterparty: input.recipientAddress,

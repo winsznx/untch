@@ -181,7 +181,7 @@ async function main(): Promise<void> {
   const decB = decisionOf(resB);
 
   // Read the committed spend back from each partition (public read on the real ledger).
-  const spentA = ledger.read(keyA).spentTodayByAgent;
+  const spentA = ledger.read(keyA).budgetUsage.effectiveToday;
   const spentB = ledger.read(keyB).spentTodayByAgent;
 
   // #then each policy's OWN budget is still independently enforced — a second 20 overspends 25.

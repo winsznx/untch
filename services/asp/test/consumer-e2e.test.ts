@@ -94,7 +94,7 @@ class MemoryLedger implements Ledger {
   private calls = 0;
   async read(): Promise<LedgerWindowState> {
     return {
-      spentTodayByAgent: this.spent,
+      budgetUsage: { settledToday: 0, reservedActiveToday: this.spent, effectiveToday: this.spent },
       recentIntents: [],
       lastCallByService: {},
       callsInLastHour: this.calls,

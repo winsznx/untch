@@ -275,7 +275,8 @@ describe(
       assert.equal(after.recentIntents, 0);
       assert.equal(after.rateTicks, 0);
       assert.equal(after.replayMarkers, 0);
-      assert.equal(after.dailySpend, "0");
+      assert.equal(after.activeReserved, "0");
+      assert.equal(after.settledSpend, "0");
     });
 
     test("validation does not mutate a process singleton — there is no longer one to mutate", async () => {
@@ -283,7 +284,7 @@ describe(
       // observe state is to read the tables, and they are empty after a rollback. A singleton would
       // have survived it, which is exactly how the production defect went unnoticed.
       const after = await counts();
-      assert.deepEqual(after, { recentIntents: 0, rateTicks: 0, replayMarkers: 0, serviceCalls: 0, dailySpend: "0" });
+      assert.deepEqual(after, { recentIntents: 0, rateTicks: 0, replayMarkers: 0, serviceCalls: 0, activeReserved: "0", settledSpend: "0" });
     });
 
     /** THE REGRESSION. This is the exact sequence that failed in production. */
@@ -314,7 +315,7 @@ describe(
 
       assert.deepEqual(second, first);
       assert.deepEqual(first, ["APPROVED", "ESCALATED_THRESHOLD", "BLOCKED_PER_CALL_CAP"]);
-      assert.deepEqual(await counts(), { recentIntents: 0, rateTicks: 0, replayMarkers: 0, serviceCalls: 0, dailySpend: "0" });
+      assert.deepEqual(await counts(), { recentIntents: 0, rateTicks: 0, replayMarkers: 0, serviceCalls: 0, activeReserved: "0", settledSpend: "0" });
     });
 
     test("a blocked decision proposes no effects at all", async () => {
@@ -323,12 +324,12 @@ describe(
       assert.equal((body.decisionState as Record<string, unknown>).effectsApplied, false);
       const after = await counts();
       assert.equal(after.recentIntents, 0, "a blocked intent is not a duplicate later requests are measured against");
-      assert.equal(after.dailySpend, "0", "a blocked intent consumed no budget");
+      assert.equal(after.activeReserved, "0", "a blocked intent reserves nothing");
     });
 
     // ── production DOES commit ────────────────────────────────────────────────
 
-    test("a committed approval records the duplicate marker, the spend, the tick and the replay marker", async () => {
+    test("a committed approval records the duplicate marker, a RESERVATION, the tick and the replay marker", async () => {
       const body = await run(request("4.00"), "commit");
       assert.equal(body.outcome, "APPROVED_AUTOMATIC");
 
@@ -336,7 +337,9 @@ describe(
       assert.equal(after.recentIntents, 1);
       assert.equal(after.rateTicks, 1);
       assert.equal(after.replayMarkers, 1);
-      assert.equal(Number(after.dailySpend), 4);
+      // The approval RESERVED 4.00. It did not spend it: no provider ran and nothing settled.
+      assert.equal(Number(after.activeReserved), 4, "authority reserved");
+      assert.equal(Number(after.settledSpend), 0, "and nothing settled");
     });
 
     test("a second committed intent for the same tuple is blocked, per policy", async () => {

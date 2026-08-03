@@ -24,6 +24,7 @@
  */
 
 import type { DecisionEffects, LedgerWindowState, RecentIntent } from "@untch/policy-engine";
+import { budgetExposure } from "./budget-reservation";
 import type { Hex } from "viem";
 
 /** The transaction handle every method takes. Same shape the evidence writer uses. */
@@ -91,10 +92,15 @@ export async function snapshotDecisionState(
     ...(r.category !== null ? { category: r.category } : {}),
   })) as RecentIntent[];
 
-  const spend = (await tx.query(
-    "SELECT amount::text AS amount FROM untch_decision_daily_spend WHERE partition_key = $1 AND day_key = $2",
-    [partitionKey, dayKey],
-  )) as { rows: { amount: string }[] };
+  /**
+   * Settled money and still-executable authority, read separately.
+   *
+   * This replaced a single `untch_decision_daily_spend` counter that summed the governed amounts of
+   * APPROVED decisions and was named, traced and rendered as spend. Nothing had been paid: the
+   * preflight route is decision-only. Reservations make the same capacity visible to the next
+   * decision — so two agents still cannot over-authorise one account — without calling it spend.
+   */
+  const usage = await budgetExposure(tx, partitionKey, dayKey, new Date(nowMs).toISOString());
 
   const calls = (await tx.query(
     "SELECT count(*)::text AS n FROM untch_decision_rate_ticks WHERE partition_key = $1 AND called_at_ms > $2",
@@ -110,7 +116,7 @@ export async function snapshotDecisionState(
   for (const s of services.rows) lastCallByService[s.service_host] = Number(s.last_called_ms);
 
   return {
-    spentTodayByAgent: Number(spend.rows[0]?.amount ?? 0),
+    budgetUsage: usage,
     recentIntents,
     lastCallByService,
     callsInLastHour: Number(calls.rows[0]?.n ?? 0),
@@ -153,13 +159,14 @@ export async function commitDecisionEffects(tx: DecisionStateTx, effects: Decisi
     ],
   );
 
-  await tx.query(
-    `INSERT INTO untch_decision_daily_spend (partition_key, day_key, amount)
-     VALUES ($1,$2,$3)
-     ON CONFLICT (partition_key, day_key)
-       DO UPDATE SET amount = untch_decision_daily_spend.amount + EXCLUDED.amount, updated_at = now()`,
-    [p, effects.budget.dayKey, String(effects.budget.amount)],
-  );
+  /**
+   * NO SPEND COUNTER IS INCREMENTED HERE.
+   *
+   * An approved decision grants authority; it does not move money. The budget capacity it consumes is
+   * recorded as a RESERVATION by the caller, in this same transaction — see `createReservation`. The
+   * counter this used to increment was called spend, and the ledger, the reports and the dashboard
+   * all believed it.
+   */
 
   await tx.query(
     "INSERT INTO untch_decision_rate_ticks (partition_key, called_at_ms) VALUES ($1,$2)",
@@ -184,7 +191,10 @@ export async function decisionStateCounts(
   readonly rateTicks: number;
   readonly replayMarkers: number;
   readonly serviceCalls: number;
-  readonly dailySpend: string;
+  /** Authority granted and still executable. NOT money. */
+  readonly activeReserved: string;
+  /** Money that actually moved for a governed spend. Zero while preflight stays decision-only. */
+  readonly settledSpend: string;
 }> {
   const one = async (sql: string): Promise<string> =>
     String(((await tx.query(sql, [partitionKey])) as { rows: { n: string }[] }).rows[0]?.n ?? "0");
@@ -194,6 +204,9 @@ export async function decisionStateCounts(
     rateTicks: Number(await one("SELECT count(*)::text n FROM untch_decision_rate_ticks WHERE partition_key = $1")),
     replayMarkers: Number(await one("SELECT count(*)::text n FROM untch_decision_replay_markers WHERE partition_key = $1")),
     serviceCalls: Number(await one("SELECT count(*)::text n FROM untch_decision_service_calls WHERE partition_key = $1")),
-    dailySpend: await one("SELECT coalesce(sum(amount),0)::text n FROM untch_decision_daily_spend WHERE partition_key = $1"),
+    activeReserved: await one(
+      "SELECT coalesce(sum(amount),0)::text n FROM untch_budget_reservations WHERE partition_key = $1 AND status = 'ACTIVE'"),
+    settledSpend: await one(
+      "SELECT coalesce(sum(amount),0)::text n FROM untch_settled_spend WHERE partition_key = $1"),
   };
 }

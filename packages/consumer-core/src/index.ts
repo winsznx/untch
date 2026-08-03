@@ -461,4 +461,5 @@ export {
 export * from "./requester-principal";
 export * from "./decision-evidence";
 export * from "./requester-presentation";
+export * from "./budget-reservation";
 export * from "./decision-state";

@@ -42,7 +42,8 @@ export interface ReceiptRow {
 export interface LedgerRow {
   readonly receiptId: Hex;
   readonly agentId: Hex;
-  readonly type: "SPEND" | "BLOCK_SAVED" | "FEE_UNTCH" | "REFUND";
+  /** `AUTHORITY_RESERVED` is an approved decision: authority granted, no money moved. */
+  readonly type: "SPEND" | "AUTHORITY_RESERVED" | "BLOCK_SAVED" | "FEE_UNTCH" | "REFUND";
   readonly amount: string;
   readonly token: string;
   readonly counterparty: string | null;

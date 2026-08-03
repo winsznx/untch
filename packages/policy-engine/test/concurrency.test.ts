@@ -34,7 +34,7 @@ class InMemoryLedger implements Ledger {
   async read(agentKey: string): Promise<LedgerWindowState> {
     await tick(this.delayMs);
     return {
-      spentTodayByAgent: this.spent.get(agentKey) ?? 0,
+      budgetUsage: { settledToday: 0, reservedActiveToday: this.spent.get(agentKey) ?? 0, effectiveToday: this.spent.get(agentKey) ?? 0 },
       recentIntents: [],
       lastCallByService: {},
       callsInLastHour: 0,

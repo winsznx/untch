@@ -66,7 +66,7 @@ export function activePolicy(overrides: Partial<Policy> = {}): Policy {
 /** Empty ledger window: nothing spent, no recent intents, no prior service calls, zero rate count. */
 export function emptyLedger(overrides: Partial<LedgerWindowState> = {}): LedgerWindowState {
   return {
-    spentTodayByAgent: 0,
+    budgetUsage: { settledToday: 0, reservedActiveToday: 0, effectiveToday: 0 },
     recentIntents: [],
     lastCallByService: {},
     callsInLastHour: 0,

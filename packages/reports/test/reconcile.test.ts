@@ -25,9 +25,10 @@ const IN_DAY = "2026-07-11T09:00:00.000Z";
  * no history in the period.
  */
 
-test("spend = SPEND ledger; blocked-waste = BLOCKED_* only; escalated exposure separate", () => {
-  // Two approved spends (0.5 + 0.5 = 1.0 moved), two blocked (budget + duplicate, 0.5 + 0.5 waste),
-  // one escalated (0.5 held — NOT waste). One real T0 PASS verify.
+test("settled spend and reserved authority are separate; blocked-waste = BLOCKED_* only", () => {
+  // Two APPROVED decisions. Under the corrected model these are AUTHORITY_RESERVED — permission
+  // granted, nothing settled — so `spend` is empty and `reservedAuthority` carries the 1.0. Reporting
+  // them as spend is what let this report describe granted authority as money that had moved.
   const iApp1 = intentOf("app1");
   const iApp2 = intentOf("app2");
   const iBlk1 = intentOf("blk1");
@@ -42,8 +43,8 @@ test("spend = SPEND ledger; blocked-waste = BLOCKED_* only; escalated exposure s
   const verify = mkVerify({ intentHash: iApp1, verifyResult: 1, createdAt: IN_DAY });
 
   const ledger = [
-    mkLedger({ receiptId: decApp1.receiptId, type: "SPEND", createdAt: IN_DAY }),
-    mkLedger({ receiptId: decApp2.receiptId, type: "SPEND", createdAt: IN_DAY }),
+    mkLedger({ receiptId: decApp1.receiptId, type: "AUTHORITY_RESERVED", createdAt: IN_DAY }),
+    mkLedger({ receiptId: decApp2.receiptId, type: "AUTHORITY_RESERVED", createdAt: IN_DAY }),
     mkLedger({ receiptId: decBlk1.receiptId, type: "BLOCK_SAVED", createdAt: IN_DAY }),
     mkLedger({ receiptId: decBlk2.receiptId, type: "BLOCK_SAVED", createdAt: IN_DAY }),
     mkLedger({ receiptId: decEsc.receiptId, type: "BLOCK_SAVED", createdAt: IN_DAY }),
@@ -59,10 +60,15 @@ test("spend = SPEND ledger; blocked-waste = BLOCKED_* only; escalated exposure s
     { assembledAt: ASSEMBLED_AT },
   );
 
-  assert.equal(report.spend.approvedCount, 2);
-  assert.equal(report.spend.totals.length, 1);
-  assert.equal(report.spend.totals[0]!.totalBaseUnits, "1000000");
-  assert.equal(report.spend.totals[0]!.totalDisplay, "1");
+  // No money moved: an approved preflight decision settles nothing.
+  assert.equal(report.spend.settledCount, 0, "an approved DECISION is not settled spend");
+  assert.deepEqual(report.spend.totals, []);
+
+  // The same 1.0 appears as authority that was granted and has not settled.
+  assert.equal(report.reservedAuthority.approvedCount, 2);
+  assert.equal(report.reservedAuthority.totals.length, 1);
+  assert.equal(report.reservedAuthority.totals[0]!.totalBaseUnits, "1000000");
+  assert.equal(report.reservedAuthority.totals[0]!.totalDisplay, "1");
 
   assert.equal(report.blockedWaste.blockedCount, 2, "only BLOCKED_* count as waste");
   assert.equal(report.blockedWaste.totals[0]!.totalBaseUnits, "1000000");
@@ -88,8 +94,9 @@ test("spend = SPEND ledger; blocked-waste = BLOCKED_* only; escalated exposure s
 test("HONEST-EMPTY: no history in the period → all-zero totals, explicitly labeled", () => {
   const report = assembleReconcileReport(AGENT, DAY, [], [], [], { assembledAt: ASSEMBLED_AT });
 
-  assert.equal(report.spend.approvedCount, 0);
+  assert.equal(report.spend.settledCount, 0);
   assert.deepEqual(report.spend.totals, []);
+  assert.equal(report.reservedAuthority.approvedCount, 0);
   assert.equal(report.blockedWaste.blockedCount, 0);
   assert.equal(report.escalatedExposure.escalatedCount, 0);
   assert.equal(report.receipts.total, 0);

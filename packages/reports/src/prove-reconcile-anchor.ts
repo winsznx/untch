@@ -52,7 +52,7 @@ async function main(): Promise<void> {
       tag: t[0]!,
       expected: "BLOCKED_BUDGET",
       policy: { budgets: { daily: 25, token: "USDT" } },
-      ledger: { spentTodayByAgent: 24.8 },
+      ledger: { budgetUsage: { settledToday: 0, reservedActiveToday: 24.8, effectiveToday: 24.8 }},
       intent: { nonce: BigInt(200 + i) },
       createdAt: at(t[1]!),
     });
@@ -122,7 +122,8 @@ async function main(): Promise<void> {
   console.log(`[prove] chain    : ${AUDIT_ANCHOR_CHAIN.name} (${AUDIT_ANCHOR_CHAIN.id})`);
   console.log(`[prove] contract : ${contract}`);
   console.log(`[prove] agent    : ${AGENT_ID}   period=${PERIOD.label} (code ${PERIOD.periodCode})`);
-  console.log(`[prove] spend    : approved=${report.spend.approvedCount} total=${report.spend.totals[0]?.totalDisplay ?? "0"}`);
+  console.log(`[prove] settled  : count=${report.spend.settledCount} total=${report.spend.totals[0]?.totalDisplay ?? "0"}`);
+  console.log(`[prove] reserved : approved=${report.reservedAuthority.approvedCount} total=${report.reservedAuthority.totals[0]?.totalDisplay ?? "0"} (authority, not spend)`);
   console.log(`[prove] blocked  : count=${report.blockedWaste.blockedCount} waste=${report.blockedWaste.totals[0]?.totalDisplay ?? "0"}`);
   console.log(`[prove] escalated: count=${report.escalatedExposure.escalatedCount} held=${report.escalatedExposure.totals[0]?.totalDisplay ?? "0"}`);
   console.log(`[prove] verifies : total=${report.verifications.total} pass=${report.verifications.passed} fail=${report.verifications.failed}`);
