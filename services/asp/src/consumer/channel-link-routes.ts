@@ -126,8 +126,15 @@ export const CHANNEL_LINK_STATUS_ROUTE = "/consumer/account/channel/link/status"
 export const TELEGRAM_WEBHOOK_ROUTE = "/consumer/channel/telegram/webhook" as const;
 export const DISCORD_CALLBACK_ROUTE = "/consumer/channel/discord/callback" as const;
 
-/** Thirty minutes, so a person can finish both links without racing an expiry. */
-const LINK_TTL_MS = 30 * 60_000;
+/**
+ * Sixty minutes.
+ *
+ * Long enough that a person can be interrupted between opening the link and finishing the platform
+ * step without having to ask for a new one. Short enough that an unused link in a browser history is
+ * not a standing invitation. It is single-use regardless, so the window bounds exposure rather than
+ * being the only thing preventing reuse.
+ */
+const LINK_TTL_MS = 60 * 60_000;
 
 const KNOWN_SCOPES: readonly LinkScope[] = ["notify", "policy-approval"];
 
