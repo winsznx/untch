@@ -98,6 +98,11 @@ import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifie
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
 import { registerAgenticLinkRoutes } from "./consumer/agentic-link-routes";
 import { registerPreflightValidateRoute } from "./consumer/preflight-validate-route";
+import { openAccountSession } from "./consumer/account-auth";
+import {
+  registerSettledReplayResolver,
+  type ReplayResolverDeps,
+} from "./consumer/settled-replay-resolver";
 import {
   EXECUTION_MANIFEST_ROUTE,
   executionManifest,
@@ -194,6 +199,13 @@ export function createSellerApp(
   app.set("trust proxy", 1);
 
   /**
+   * Assigned once the consumer store and session secret exist, read by the replay resolver that has to
+   * be REGISTERED further up to sit in front of the payment gate. Null until then, and the resolver
+   * falls through while it is null rather than answering without being able to authenticate.
+   */
+  let replayResolverDeps: ReplayResolverDeps | null = null;
+
+  /**
    * Readiness and deployment identity, registered BEFORE the payment gate.
    *
    * Ordering is the point. Registered after `paymentMiddleware` these would be reachable only by a
@@ -221,6 +233,21 @@ export function createSellerApp(
       decimals: SETTLEMENT_TOKEN.decimals,
     },
   });
+
+  /**
+   * The already-settled replay, resolved BEFORE the payment gate.
+   *
+   * A client whose response was lost retries with the same idempotency key and a FRESH authorization,
+   * and `paymentMiddleware` settles on any 2xx, so an ordinary idempotent answer would charge twice.
+   * There is no signal that makes the middleware skip settlement without either discarding the body
+   * or bending `SETTLEMENT_OVERRIDES_HEADER` into a do-not-charge switch, so the only safe place to
+   * answer is upstream of it. This never calls next() for a FINALIZED call, so nothing is verified,
+   * nothing settles, and no settlement header is emitted.
+   *
+   * Registered only when there is a database and a session secret to check against. Without both it
+   * cannot authenticate a caller, and an unauthenticated replay resolver would be an oracle.
+   */
+  registerSettledReplayResolver(app, PREFLIGHT_ROUTE, () => replayResolverDeps);
 
   // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
   app.use(
@@ -716,6 +743,23 @@ export function createSellerApp(
    * string. A request naming any other currency is refused by name rather than judged against a token
    * nobody verified.
    */
+  /**
+   * The replay resolver can answer now that there is a store to read and a secret to authenticate
+   * against. Its route was registered ahead of the payment gate, so assigning this is what switches it
+   * from falling through to resolving.
+   */
+  replayResolverDeps =
+    consumerWiring && consumerAuthConfig.secret
+      ? {
+          pool: consumerWiring.pool,
+          accountForSession: async (authorization: string | undefined) => {
+            const bearer = /^Bearer\s+(.+)$/i.exec(authorization ?? "")?.[1]?.trim();
+            const session = openAccountSession(consumerAuthConfig.secret!, bearer, Date.now());
+            return session ? { accountId: session.accountId } : null;
+          },
+        }
+      : null;
+
   publicPreflightDeps =
     accountRoutesDeps && policyWiring && consumerAuthConfig.secret
       ? {
