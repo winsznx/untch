@@ -574,3 +574,10 @@ export {
   type LinkVerdict,
   type PlatformSubject,
 } from "./channel-link-token";
+export {
+  ensureWebApprovalBinding,
+  newWebBindingId,
+  webChannelSubject,
+  type WebBindingRefusal,
+  type WebBindingResult,
+} from "./web-approval-binding";

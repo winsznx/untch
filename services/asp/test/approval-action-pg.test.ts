@@ -833,4 +833,121 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
       /channel bound to account/,
     );
   });
+
+  // ── restart and replicas ───────────────────────────────────────────────────
+
+  test("a terminal decision survives a process restart", async () => {
+    const b = await binding("web");
+    const { id, subject, policyId } = await pending("6.00");
+    const result = await act(id, mintApprovalActionToken(TOKEN_SECRET, claims(subject, b)), b, { policyId });
+    assert.equal(result.outcome, "APPROVED");
+
+    /** A different pool entirely, holding none of the previous one's connections or state. */
+    const u = new URL(TEST_DB!);
+    u.pathname = `/${OWN_DATABASE}`;
+    const restarted = createPool(u.toString());
+    try {
+      const { rows } = await restarted.query<{ state: string; n: string }>(
+        `SELECT r.state, (SELECT count(*)::text FROM untch_budget_reservations WHERE approval_request_id = r.approval_request_id) n
+           FROM untch_approval_requests r WHERE r.approval_request_id = $1`,
+        [id],
+      );
+      assert.equal(rows[0]!.state, "APPROVED", "the decision was durable, not in memory");
+      assert.equal(Number(rows[0]!.n), 1, "and so was the authority it created");
+    } finally {
+      await restarted.end();
+    }
+  });
+
+  test("two replicas acting at once converge on one terminal result", async () => {
+    const tg = await binding("telegram");
+    const web = await binding("web");
+    const { id, subject, policyId } = await pending("6.00");
+
+    /** Two pools stand in for two processes. Neither can see the other's transaction. */
+    const u = new URL(TEST_DB!);
+    u.pathname = `/${OWN_DATABASE}`;
+    const replicaA = createPool(u.toString());
+    const replicaB = createPool(u.toString());
+
+    const actOn = async (p: Pool, bindingId: string) => {
+      const client = await p.connect();
+      try {
+        await client.query("BEGIN");
+        const out = await actOnApproval(client, {
+          approvalRequestId: id,
+          action: "APPROVE",
+          token: mintApprovalActionToken(TOKEN_SECRET, claims(subject, bindingId)),
+          tokenSecret: TOKEN_SECRET,
+          channelBindingId: bindingId,
+          nowMs: Date.now(),
+          partitionKey: `policy:${policyId}`,
+          resolvePolicy: async () => POLICY_10,
+        });
+        await client.query("COMMIT");
+        return out;
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+    };
+
+    try {
+      const results = await Promise.all([actOn(replicaA, tg), actOn(replicaB, web)]);
+      assert.equal(results.filter((r) => r.outcome === "APPROVED").length, 1);
+      assert.equal(results.filter((r) => r.outcome === "ALREADY_RESOLVED").length, 1);
+    } finally {
+      await replicaA.end();
+      await replicaB.end();
+    }
+
+    const { rows: d } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text n FROM untch_approval_decisions WHERE approval_request_id = $1`, [id]);
+    const { rows: r } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text n FROM untch_budget_reservations WHERE approval_request_id = $1`, [id]);
+    assert.equal(Number(d[0]!.n), 1, "no in-process mutex was the boundary: the database was");
+    assert.equal(Number(r[0]!.n), 1);
+  });
+
+  test("supersession survives a restart", async () => {
+    const b = await binding("web");
+    const lineage = newQuoteLineageId();
+    const first = await pending("6.00", lineage);
+    await act(first.id, mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b)), b, { policyId: first.policyId });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await supersedePriorQuote(client, {
+        priorApprovalRequestId: first.id,
+        newApprovalRequestId: "aprq_restart_650",
+        quoteLineageId: lineage,
+        newQuoteDigest: "qd_restart_650",
+        reason: "PROVIDER_REQUOTE",
+        accountId: ACCOUNT,
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    const u = new URL(TEST_DB!);
+    u.pathname = `/${OWN_DATABASE}`;
+    const restarted = createPool(u.toString());
+    try {
+      const c = await restarted.connect();
+      try {
+        const exposure = await activeReservedExposure(c, first.policyId, Date.now());
+        assert.equal(exposure, 0n, "the released exposure stayed released across the restart");
+      } finally {
+        c.release();
+      }
+      const { rows } = await restarted.query<{ state: string }>(
+        `SELECT state FROM untch_approval_requests WHERE approval_request_id = $1`, [first.id]);
+      assert.equal(rows[0]!.state, "SUPERSEDED");
+    } finally {
+      await restarted.end();
+    }
+  });
 });

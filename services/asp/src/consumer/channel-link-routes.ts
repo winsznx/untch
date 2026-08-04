@@ -49,6 +49,14 @@ export interface ChannelLinkDeps {
     readonly botUsername: string | null;
     /** Shared secret Telegram echoes in `X-Telegram-Bot-Api-Secret-Token`. */
     readonly webhookSecret: string | null;
+    /**
+     * Production-disabled while the bot cannot authenticate.
+     *
+     * The implementation stays, its tests stay, and its security requirements are not weakened. What
+     * is switched off is the ability to ISSUE a link, because a link that cannot be completed is a
+     * dead end handed to a user. Recovering the bot flips this back without touching the protocol.
+     */
+    readonly enabled: boolean;
   };
   readonly discord: {
     readonly applicationId: string | null;
@@ -234,6 +242,24 @@ export function registerChannelLinkRoutes(app: Express, deps: ChannelLinkDeps): 
        * Telegram carries the token in the `start` deep-link payload, which the bot receives verbatim.
        * Discord carries it in OAuth `state`, which comes back on the callback.
        */
+      if (channel === "telegram" && !deps.telegram.enabled) {
+        return refuse(
+          res,
+          503,
+          "CHANNEL_DISABLED",
+          "telegram linking is implemented and disabled on this deployment: the bot cannot currently authenticate",
+          {
+            channelStatus: {
+              implementation: "CODE_COMPLETE",
+              callbackVerification: "AUTOMATED_TEST_PROVEN",
+              productionBotAuthentication: "BLOCKED",
+              accountBinding: "BLOCKED_BY_PLATFORM_ACCOUNT_ACCESS",
+              policyApproval: "DISABLED",
+            },
+          },
+        );
+      }
+
       const url =
         channel === "telegram"
           ? deps.telegram.botUsername
@@ -323,7 +349,15 @@ export function registerChannelLinkRoutes(app: Express, deps: ChannelLinkDeps): 
   app.post(TELEGRAM_WEBHOOK_ROUTE, (req: Request, res: Response) => {
     void (async () => {
       const expected = deps.telegram.webhookSecret;
-      if (!expected) return refuse(res, 503, "CHANNEL_NOT_CONFIGURED", "telegram webhook is not configured");
+      /**
+       * Disabled means the webhook answers 200 and does nothing. Not an error: Telegram retries a
+       * non-2xx, and a disabled endpoint that generates retry storms is worse than one that quietly
+       * accepts and discards.
+       */
+      if (!expected || !deps.telegram.enabled) {
+        res.status(200).json({ ok: true, linked: false, reason: "CHANNEL_DISABLED" });
+        return;
+      }
       const presented = req.header("x-telegram-bot-api-secret-token") ?? "";
       if (!presented || !secretMatches(presented, expected)) {
         /** 200 on purpose: Telegram retries a non-2xx, and a forged call should not earn retries. */

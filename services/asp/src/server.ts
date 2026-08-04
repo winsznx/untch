@@ -842,6 +842,8 @@ export function createSellerApp(
       telegram: {
         botUsername: process.env.TELEGRAM_LINK_BOT_USERNAME?.trim().replace(/^@/, "") || null,
         webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null,
+        /** Opt-IN. An unset flag means disabled, so recovering the bot is a deliberate act. */
+        enabled: process.env.TELEGRAM_LINK_ENABLED?.trim() === "true",
       },
       discord: { applicationId: discordAppId, redirectUri: discordRedirect },
       /**
