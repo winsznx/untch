@@ -557,3 +557,20 @@ export {
   approvalCaseProjection,
   type PublicApprovalCase,
 } from "./approval-case-projection";
+export {
+  CHANNEL_LINK_TOKEN_VERSION,
+  consumeChannelLink,
+  linkTokenFingerprint,
+  mintChannelLinkToken,
+  newLinkCodeId,
+  newLinkedChannelBindingId,
+  newLinkNonce,
+  readChannelLinkToken,
+  type ChannelLinkClaims,
+  type ConsumeResult,
+  type LinkChannel,
+  type LinkRefusal,
+  type LinkScope,
+  type LinkVerdict,
+  type PlatformSubject,
+} from "./channel-link-token";
