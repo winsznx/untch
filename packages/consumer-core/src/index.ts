@@ -396,6 +396,43 @@ export {
  * answer. What is being answered is a property of the intent and the quote, which is this package's
  * vocabulary.
  */
+/**
+ * The payment half of an approval (migration 028).
+ *
+ * Separate from `./approvals` because the two answer different questions. That module answers "what
+ * exactly was agreed to". This one answers "was the service fee that bought the right to ask actually
+ * paid", which the x402 lifecycle makes a genuinely hard question: the handler commits before
+ * settlement runs, and `processSettlement` reports a pending settlement as a successful one.
+ */
+export {
+  APPROVAL_DIGEST_SCHEMA_VERSION,
+  type ApprovalSettlementBinding,
+} from "./approvals";
+export {
+  PgServiceCallStore,
+  SettlementEvidenceError,
+  authorizationDigest,
+  finalizeSettlement,
+  newApprovalOutboxEventId,
+  newPaymentAttemptId,
+  newServiceCallId,
+  requestFingerprint,
+  type AuthorizedTerms,
+  type FinalizeResult,
+  type PaymentAttemptRow,
+  type PaymentAttemptState,
+  type ServiceCallIdentity,
+  type ServiceCallRow,
+  type ServiceCallState,
+  type SettlementEvidence,
+} from "./x402-service-calls";
+export {
+  facilitatorOracle,
+  reconcileOnce,
+  type ReconcileReport,
+  type SettlementOracle,
+} from "./x402-reconciler";
+
 export {
   ApprovalError,
   PgApprovalStore,

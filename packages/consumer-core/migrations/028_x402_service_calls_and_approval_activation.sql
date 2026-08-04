@@ -231,17 +231,31 @@ ALTER TABLE untch_approval_requests ADD CONSTRAINT untch_approval_resolved_dated
 -- The load-bearing constraint of this file.
 --
 -- A request a human may act on must name the settled payment that bought it. PROVISIONAL and
--- PAYMENT_FAILED may not name one, because neither has a confirmed settlement. Every actionable and
--- post-actionable state MUST. This is what makes "an unsettled fee cannot create an actionable
--- request" impossible to violate, rather than merely intended.
+-- PAYMENT_FAILED may not name one, because neither has a confirmed settlement.
+--
+-- SCOPED TO THE PAID PATH, and that scoping is a real distinction rather than a convenience.
+-- `service_call_id IS NULL` means no Untch service fee bought the right to ask: an approval raised by
+-- an operator, or through the dashboard escalation lifecycle that predates this migration, has no
+-- settlement to prove and requiring one would be demanding evidence of a payment that never existed.
+-- Applying this to every row broke exactly those flows, which is how the distinction was found.
+--
+-- What the paid path cannot do is opt out, because it always sets `service_call_id`, and
+-- `untch_approval_one_per_service_call` below stops two requests sharing one.
 ALTER TABLE untch_approval_requests DROP CONSTRAINT IF EXISTS untch_approval_actionable_is_paid;
 ALTER TABLE untch_approval_requests ADD CONSTRAINT untch_approval_actionable_is_paid
   CHECK (
-    (state IN ('PROVISIONAL', 'PAYMENT_FAILED') AND settled_attempt_id IS NULL AND activated_at IS NULL)
-    OR
-    (state IN ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED', 'SUPERSEDED', 'EXECUTED', 'CANCELLED')
-     AND settled_attempt_id IS NOT NULL AND activated_at IS NOT NULL)
+    service_call_id IS NULL
+    OR (state IN ('PROVISIONAL', 'PAYMENT_FAILED') AND settled_attempt_id IS NULL AND activated_at IS NULL)
+    OR (state IN ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED', 'SUPERSEDED', 'EXECUTED', 'CANCELLED')
+        AND settled_attempt_id IS NOT NULL AND activated_at IS NOT NULL)
   );
+
+-- Independent of the paid path: a settled attempt may never be named by a request that is not
+-- actionable, whatever raised it. This is the half of the rule that has nothing to do with which
+-- flow created the row.
+ALTER TABLE untch_approval_requests DROP CONSTRAINT IF EXISTS untch_approval_unpaid_states_name_no_settlement;
+ALTER TABLE untch_approval_requests ADD CONSTRAINT untch_approval_unpaid_states_name_no_settlement
+  CHECK (state NOT IN ('PROVISIONAL', 'PAYMENT_FAILED') OR settled_attempt_id IS NULL);
 
 -- ONE approval request per service call. Two would mean one fee bought two promises.
 CREATE UNIQUE INDEX IF NOT EXISTS untch_approval_one_per_service_call
