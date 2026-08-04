@@ -40,6 +40,24 @@ import type { InMemoryIntentStore } from "./ledger-state";
  */
 export const EXECUTION_MANIFEST_ROUTE = "/execution-manifest" as const;
 
+/**
+ * Whether an escalated decision can actually reach a human.
+ *
+ * FALSE, and it is the honest value. PR #65 moved the account route onto an inline decision
+ * transaction wired with `DecisionOnlyDeps`, which correctly cannot name a channel gateway — and in
+ * doing so removed the only call site that created an escalation. So on the paid V3 account path an
+ * `ESCALATED_THRESHOLD` decision persists evidence and reaches nobody.
+ *
+ * A constant rather than an environment variable on purpose. The value is a property of what is
+ * WIRED, not of how an operator configured the process, and a flag somebody could flip would let the
+ * approval path be advertised as available before the writer exists — which is precisely the claim
+ * this whole pass has been removing from the documentation.
+ *
+ * The foundation PR flips this in the same commit that activates `PgApprovalStore`, and the manifest
+ * and the gate below both read it, so they cannot disagree.
+ */
+export const APPROVAL_PATH_READY = false as const;
+
 export type RouteExecutionProfile =
   /** Judges. Reads state, records evidence, moves no money and runs no provider. */
   | "decision_only"
@@ -195,8 +213,26 @@ export function narrowToDecisionOnly<T extends DecisionOnlyDeps>(deps: T): Decis
 export interface RouteReachability {
   readonly routeExecutionProfile: RouteExecutionProfile;
   readonly providerExecutionReachable: boolean;
+  /** Governed provider payment. NOT the Untch x402 service fee, which is a different economic fact. */
   readonly paymentExecutionReachable: boolean;
+  /**
+   * DEPRECATED ALIAS for `providerDeliveryExecutionReachable`.
+   *
+   * Kept because it is already published and a consumer may reasonably read it as permission to
+   * perform the purchased service's delivery. It is NOT the OR of provider delivery and approval
+   * notification: widening it would turn "we may enqueue a notification" into "we may deliver the
+   * thing you bought", which is the opposite of what a reader needs. Removed only in a future
+   * versioned manifest.
+   */
   readonly deliveryExecutionReachable: boolean;
+  /** Delivering the purchased service's output. The precise successor to the alias above. */
+  readonly providerDeliveryExecutionReachable: boolean;
+  /** Whether this route may write approval state. False until the production writer is wired. */
+  readonly approvalStatePersistenceReachable: boolean;
+  /** Whether this route may enqueue approval-notification work. Never a direct channel call. */
+  readonly approvalNotificationEnqueueReachable: boolean;
+  /** Whether this route can reach Telegram, Discord, Slack or web push directly. Always false. */
+  readonly directChannelGatewayReachable: boolean;
 }
 
 const DECISION_ONLY: RouteReachability = {
@@ -204,6 +240,12 @@ const DECISION_ONLY: RouteReachability = {
   providerExecutionReachable: false,
   paymentExecutionReachable: false,
   deliveryExecutionReachable: false,
+  providerDeliveryExecutionReachable: false,
+  // Both false until the writer foundation lands. Tables existing is not the same as a path being
+  // wired, and advertising persistence because a table exists is how "LIVE" got into the README.
+  approvalStatePersistenceReachable: APPROVAL_PATH_READY,
+  approvalNotificationEnqueueReachable: APPROVAL_PATH_READY,
+  directChannelGatewayReachable: false,
 };
 
 const VERIFICATION_ONLY: RouteReachability = {
@@ -211,6 +253,10 @@ const VERIFICATION_ONLY: RouteReachability = {
   providerExecutionReachable: false,
   paymentExecutionReachable: false,
   deliveryExecutionReachable: false,
+  providerDeliveryExecutionReachable: false,
+  approvalStatePersistenceReachable: false,
+  approvalNotificationEnqueueReachable: false,
+  directChannelGatewayReachable: false,
 };
 
 const PROVIDER_EXECUTION: RouteReachability = {
@@ -218,6 +264,11 @@ const PROVIDER_EXECUTION: RouteReachability = {
   providerExecutionReachable: true,
   paymentExecutionReachable: true,
   deliveryExecutionReachable: true,
+  providerDeliveryExecutionReachable: true,
+  approvalStatePersistenceReachable: false,
+  approvalNotificationEnqueueReachable: false,
+  // The legacy escalation gateway still serves the older protocol route, and that is a direct call.
+  directChannelGatewayReachable: true,
 };
 
 /**
@@ -232,6 +283,10 @@ const OWNED_WORK: RouteReachability = {
   providerExecutionReachable: false,
   paymentExecutionReachable: false,
   deliveryExecutionReachable: true,
+  providerDeliveryExecutionReachable: true,
+  approvalStatePersistenceReachable: false,
+  approvalNotificationEnqueueReachable: false,
+  directChannelGatewayReachable: false,
 };
 
 /**
@@ -267,10 +322,18 @@ export function routeReachability(route: string): RouteReachability | null {
 export function executionManifest(globalProviderExecutionEnabled: boolean): Record<string, unknown> {
   return {
     globalProviderExecutionEnabled,
+    approvalPathReady: APPROVAL_PATH_READY,
     note:
       "Per-route reachability is a property of the dependency types each route is wired with, not of " +
       "the global flag. A decision_only route cannot reach a provider, a settlement sender or a " +
       "channel gateway even while the global flag is true, because its dependency type cannot name one.",
+    deprecations: {
+      deliveryExecutionReachable:
+        "Deprecated alias for providerDeliveryExecutionReachable. It means the purchased service's " +
+        "OWN delivery and nothing else. It is deliberately NOT the OR of provider delivery and " +
+        "approval-notification delivery, because a consumer may read it as permission to deliver what " +
+        "was bought. Removed only in a future versioned manifest.",
+    },
     routes: ROUTE_EXECUTION_MANIFEST,
   };
 }

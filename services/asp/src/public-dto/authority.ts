@@ -79,6 +79,8 @@ export type PreflightOutcomeCode =
   | "REQUESTER_BUYER_SEMANTICS_MISMATCH"
   | "MARKETPLACE_BUYER_REQUIRED"
   | "DIRECT_ACCOUNT_V3_REQUIRED"
+  /** An escalation cannot reach a human yet, so the request is refused rather than charged. */
+  | "APPROVAL_PATH_NOT_READY"
   | "QUOTE_REQUIRED"
   | "QUOTE_EXPIRED";
 
@@ -96,6 +98,7 @@ export const OUTCOME_STATUS: Readonly<Record<PreflightOutcomeCode, number>> = Ob
   REQUESTER_BUYER_SEMANTICS_MISMATCH: 409,
   MARKETPLACE_BUYER_REQUIRED: 409,
   DIRECT_ACCOUNT_V3_REQUIRED: 409,
+  APPROVAL_PATH_NOT_READY: 503,
   QUOTE_REQUIRED: 409,
   QUOTE_EXPIRED: 410,
 });
