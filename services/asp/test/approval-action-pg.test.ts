@@ -11,8 +11,12 @@ import {
   deliverOnce,
   mintApprovalActionToken,
   newActionNonce,
+  NEVER_PUBLIC_CASE_FIELDS,
+  approvalCaseProjection,
   newApprovalRequestId,
+  newQuoteLineageId,
   projectDeliveries,
+  supersedePriorQuote,
   settledGovernedSpend,
   verifyApprovalActionToken,
   type ApprovalActionClaims,
@@ -547,6 +551,273 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
     const other = rows.find((r) => r.channel_binding_id === dc);
     assert.equal(acted?.status, "ACTED", "the channel that answered is recorded as the one that did");
     assert.equal(other?.status, "INVALIDATED", "and the rest stop being actionable");
+  });
+
+  // ── bootstrap bindings ─────────────────────────────────────────────────────
+
+  test("a bootstrap receive-only binding cannot approve", async () => {
+    seq += 1;
+    const id = `cbnd_bootstrap_${seq}`;
+    await pool.query(
+      `INSERT INTO untch_channel_bindings
+         (binding_id, account_id, channel, channel_user_id, channel_chat_id, can_decide, status,
+          scopes, verification_method, created_at, created_by, updated_at, updated_by)
+       VALUES ($1,$2,'telegram',$3,$3,false,'ACTIVE_RECEIVE_ONLY', ARRAY['notify'],
+               'operator_bootstrap_unverified', now(),'t', now(),'t')`,
+      [id, ACCOUNT, `tg-bootstrap-${seq}`],
+    );
+    const { id: reqId, subject, policyId } = await pending();
+    const result = await act(reqId, mintApprovalActionToken(TOKEN_SECRET, claims(subject, id)), id, { policyId });
+    assert.equal(result.outcome, "CHANNEL_BINDING_NOT_VERIFIED_FOR_APPROVAL");
+    assert.equal(result.reservationId, null);
+  });
+
+  test("the database refuses to give a bootstrap binding approval scope", async () => {
+    seq += 1;
+    await assert.rejects(
+      () =>
+        pool.query(
+          `INSERT INTO untch_channel_bindings
+             (binding_id, account_id, channel, channel_user_id, can_decide, status, verified_at,
+              scopes, verification_method, created_at, created_by, updated_at, updated_by)
+           VALUES ($1,$2,'telegram',$3,true,'ACTIVE_RECEIVE_ONLY', now(), ARRAY['notify','policy-approval'],
+                   'operator_bootstrap_unverified', now(),'t', now(),'t')`,
+          [`cbnd_bad_${seq}`, ACCOUNT, `tg-bad-${seq}`],
+        ),
+      /untch_channel_receive_only_cannot_decide|untch_channel_unverified_cannot_approve/,
+    );
+  });
+
+  test("a bootstrap binding receives no approval delivery", async () => {
+    seq += 1;
+    const boot = `cbnd_bootrecv_${seq}`;
+    await pool.query(
+      `INSERT INTO untch_channel_bindings
+         (binding_id, account_id, channel, channel_user_id, can_decide, status, scopes,
+          verification_method, created_at, created_by, updated_at, updated_by)
+       VALUES ($1,$2,'discord',$3,false,'ACTIVE_RECEIVE_ONLY', ARRAY['notify'],
+               'operator_bootstrap_unverified', now(),'t', now(),'t')`,
+      [boot, ACCOUNT, `dc-bootstrap-${seq}`],
+    );
+    const { id } = await pending();
+    await pool.query(
+      `INSERT INTO untch_approval_outbox (event_id, approval_request_id, name) VALUES ($1,$2,'approval.request.ready.v1')`,
+      [`aoev_boot_${id}`, id],
+    );
+    await projectDeliveries(pool, { limit: 10 });
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text n FROM untch_approval_deliveries WHERE approval_request_id = $1 AND channel_binding_id = $2`,
+      [id, boot],
+    );
+    assert.equal(Number(rows[0]!.n), 0, "an approval message needs a channel that could answer it");
+  });
+
+  // ── supersession ───────────────────────────────────────────────────────────
+
+  test("a requote supersedes the prior quote, its reservation and its messages", async () => {
+    const b = await binding("telegram");
+    const lineage = newQuoteLineageId();
+    const first = await pending("6.00", lineage);
+    await pool.query(
+      `INSERT INTO untch_approval_outbox (event_id, approval_request_id, name) VALUES ($1,$2,'approval.request.ready.v1')`,
+      [`aoev_sup_${first.id}`, first.id],
+    );
+    await projectDeliveries(pool, { limit: 10 });
+    const approved = await act(first.id, mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b)), b, { policyId: first.policyId });
+    assert.equal(approved.outcome, "APPROVED");
+
+    const client = await pool.connect();
+    let exposureAfter = 0n;
+    try {
+      await client.query("BEGIN");
+      const result = await supersedePriorQuote(client, {
+        priorApprovalRequestId: first.id,
+        newApprovalRequestId: "aprq_new_650",
+        quoteLineageId: lineage,
+        newQuoteDigest: "qd_650",
+        reason: "PROVIDER_REQUOTE",
+        accountId: ACCOUNT,
+      });
+      assert.equal(result.ok, true);
+      assert.equal(result.ok === true && result.releasedExposure, "6.00");
+      exposureAfter = await activeReservedExposure(client, first.policyId, Date.now());
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    assert.equal(exposureAfter, 0n, "the 6.00 authority stops counting the moment it is superseded");
+    const { rows: req } = await pool.query<{ state: string }>(
+      `SELECT state FROM untch_approval_requests WHERE approval_request_id = $1`, [first.id]);
+    assert.equal(req[0]!.state, "SUPERSEDED");
+    const { rows: rsv } = await pool.query<{ status: string }>(
+      `SELECT status FROM untch_budget_reservations WHERE approval_request_id = $1`, [first.id]);
+    assert.equal(rsv[0]!.status, "SUPERSEDED");
+    const { rows: del } = await pool.query<{ status: string }>(
+      `SELECT status FROM untch_approval_deliveries WHERE approval_request_id = $1`, [first.id]);
+    assert.ok(del.every((d) => ["INVALIDATED", "ACTED"].includes(d.status)), "no live button survives a requote");
+  });
+
+  test("the old token refuses once the request is superseded", async () => {
+    const b = await binding("telegram");
+    const lineage = newQuoteLineageId();
+    const first = await pending("6.00", lineage);
+    const oldToken = mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b));
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await supersedePriorQuote(client, {
+        priorApprovalRequestId: first.id,
+        newApprovalRequestId: "aprq_new_650b",
+        quoteLineageId: lineage,
+        newQuoteDigest: "qd_650b",
+        reason: "PROVIDER_REQUOTE",
+        accountId: ACCOUNT,
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+    const result = await act(first.id, oldToken, b, { policyId: first.policyId });
+    assert.equal(result.outcome, "APPROVAL_SUPERSEDED", "the 6.00 token cannot authorise anything now");
+  });
+
+  test("an unchanged quote cannot claim supersession", async () => {
+    const lineage = newQuoteLineageId();
+    const first = await pending("6.00", lineage);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await supersedePriorQuote(client, {
+        priorApprovalRequestId: first.id,
+        newApprovalRequestId: "aprq_same",
+        quoteLineageId: lineage,
+        newQuoteDigest: first.subject.quoteDigest,
+        reason: "NOT_REALLY_A_REQUOTE",
+        accountId: ACCOUNT,
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.ok === false && result.refusal, "QUOTE_UNCHANGED");
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  });
+
+  test("another account cannot supersede a request it does not own", async () => {
+    const lineage = newQuoteLineageId();
+    const first = await pending("6.00", lineage);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await supersedePriorQuote(client, {
+        priorApprovalRequestId: first.id,
+        newApprovalRequestId: "aprq_theirs",
+        quoteLineageId: lineage,
+        newQuoteDigest: "qd_theirs",
+        reason: "HOSTILE",
+        accountId: OTHER,
+      });
+      assert.equal(result.ok === false && result.refusal, "ACCOUNT_MISMATCH");
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  });
+
+  test("a rolled-back supersession leaves the prior authority exactly as it was", async () => {
+    const b = await binding("telegram");
+    const lineage = newQuoteLineageId();
+    const first = await pending("6.00", lineage);
+    await act(first.id, mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b)), b, { policyId: first.policyId });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await supersedePriorQuote(client, {
+        priorApprovalRequestId: first.id,
+        newApprovalRequestId: "aprq_rolled",
+        quoteLineageId: lineage,
+        newQuoteDigest: "qd_rolled",
+        reason: "PROVIDER_REQUOTE",
+        accountId: ACCOUNT,
+      });
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+    const { rows: req } = await pool.query<{ state: string }>(
+      `SELECT state FROM untch_approval_requests WHERE approval_request_id = $1`, [first.id]);
+    assert.equal(req[0]!.state, "APPROVED", "the rollback preserved the old state");
+    const { rows: rsv } = await pool.query<{ status: string }>(
+      `SELECT status FROM untch_budget_reservations WHERE approval_request_id = $1`, [first.id]);
+    assert.equal(rsv[0]!.status, "ACTIVE");
+  });
+
+  test("only one successor may be open in a lineage", async () => {
+    const lineage = newQuoteLineageId();
+    await pending("6.50", lineage);
+    await assert.rejects(() => pending("6.75", lineage), /untch_approval_one_open_per_lineage/);
+  });
+
+  // ── the public case ────────────────────────────────────────────────────────
+
+  test("the public case joins the whole story and leaks none of it", async () => {
+    const b = await binding("telegram");
+    const { id, subject, policyId } = await pending("6.00");
+    await pool.query(
+      `INSERT INTO untch_approval_outbox (event_id, approval_request_id, name) VALUES ($1,$2,'approval.request.ready.v1')`,
+      [`aoev_case_${id}`, id],
+    );
+    await projectDeliveries(pool, { limit: 10 });
+    await act(id, mintApprovalActionToken(TOKEN_SECRET, claims(subject, b)), b, { policyId });
+
+    const client = await pool.connect();
+    let json = "";
+    let projected: Awaited<ReturnType<typeof approvalCaseProjection>> = null;
+    try {
+      projected = await approvalCaseProjection(client, id);
+      json = JSON.stringify(projected);
+    } finally {
+      client.release();
+    }
+
+    assert.ok(projected, "the case exists");
+    assert.equal(projected!.projection, "APPROVAL_CASE_PROJECTION");
+    assert.equal(projected!.serviceCall.state, "FINALIZED");
+    assert.ok(projected!.serviceCall.settlementTransactionHash, "the confirmed settlement is named");
+    assert.equal(projected!.approval.state, "APPROVED");
+    assert.equal(projected!.terminalDecision?.decision, "APPROVE");
+    assert.equal(projected!.reservation?.storedStatus, "ACTIVE");
+    assert.equal(projected!.reservation?.effectiveStatus, "ACTIVE");
+    assert.equal(projected!.reservation?.countsTowardExposure, true);
+    assert.equal(projected!.reservation?.economicClassification, "RESERVED_AUTHORITY_NOT_SPEND");
+    assert.ok(projected!.deliveries.length >= 1);
+    assert.ok(projected!.deliveries.every((d) => typeof d.channel === "string"));
+
+    assert.ok(!json.includes(ACCOUNT), "the raw account id never appears");
+    for (const forbidden of NEVER_PUBLIC_CASE_FIELDS) {
+      assert.ok(!json.includes(`"${forbidden}"`), `${forbidden} must not be published`);
+    }
+    assert.ok(!json.includes("telegram-user-"), "a platform handle is somebody real");
+  });
+
+  test("an expired reservation reads EXPIRED in the case without a sweeper", async () => {
+    const b = await binding("telegram");
+    const { id, subject, policyId } = await pending("6.00");
+    await act(id, mintApprovalActionToken(TOKEN_SECRET, claims(subject, b)), b, { policyId });
+    await pool.query(
+      `UPDATE untch_budget_reservations SET expires_at = now() - interval '1 minute' WHERE approval_request_id = $1`,
+      [id],
+    );
+    const client = await pool.connect();
+    try {
+      const c = await approvalCaseProjection(client, id);
+      assert.equal(c!.reservation?.storedStatus, "ACTIVE", "the stored status is preserved");
+      assert.equal(c!.reservation?.effectiveStatus, "EXPIRED", "and the derived one tells the truth");
+      assert.equal(c!.reservation?.countsTowardExposure, false);
+    } finally {
+      client.release();
+    }
   });
 
   test("a cross-account delivery cannot be written at all", async () => {

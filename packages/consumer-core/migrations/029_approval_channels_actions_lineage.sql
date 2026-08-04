@@ -37,9 +37,34 @@ ALTER TABLE untch_channel_bindings
   ADD COLUMN IF NOT EXISTS expires_at         TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS superseded_by      TEXT;
 
+-- ACTIVE_RECEIVE_ONLY is its own state and not a flavour of ACTIVE.
+--
+-- A bootstrap binding built from an operator-held chat id can genuinely receive a message: the id is
+-- real and the delivery works. What never happened is the platform callback that proves the person
+-- holding that chat is the account owner. Recording it as ACTIVE with `can_decide = false` would make
+-- the row's provenance a matter of reading two columns together and hoping every future query does.
+-- A distinct state means a binding that was never verified cannot be mistaken for one that was, by a
+-- query, a report, or a person reading a table.
 ALTER TABLE untch_channel_bindings DROP CONSTRAINT IF EXISTS untch_channel_status_known;
 ALTER TABLE untch_channel_bindings ADD CONSTRAINT untch_channel_status_known
-  CHECK (status IN ('PENDING', 'ACTIVE', 'REVOKED', 'EXPIRED', 'SUPERSEDED'));
+  CHECK (status IN ('PENDING', 'ACTIVE', 'ACTIVE_RECEIVE_ONLY', 'REVOKED', 'EXPIRED', 'SUPERSEDED'));
+
+-- A receive-only binding may never decide and may never hold the approval scope. Both halves stated,
+-- because either one alone would leave the other free to be granted by a later careless update.
+ALTER TABLE untch_channel_bindings DROP CONSTRAINT IF EXISTS untch_channel_receive_only_cannot_decide;
+ALTER TABLE untch_channel_bindings ADD CONSTRAINT untch_channel_receive_only_cannot_decide
+  CHECK (
+    status <> 'ACTIVE_RECEIVE_ONLY'
+    OR (can_decide = false AND NOT ('policy-approval' = ANY(scopes)))
+  );
+
+-- An unverified proof method can never carry approval authority, whatever the status says.
+ALTER TABLE untch_channel_bindings DROP CONSTRAINT IF EXISTS untch_channel_unverified_cannot_approve;
+ALTER TABLE untch_channel_bindings ADD CONSTRAINT untch_channel_unverified_cannot_approve
+  CHECK (
+    verification_method IS DISTINCT FROM 'operator_bootstrap_unverified'
+    OR (can_decide = false AND NOT ('policy-approval' = ANY(scopes)))
+  );
 
 -- 'web' joins the known channels. It is a real binding rather than a special case in code, so the
 -- operator-identity checks a Telegram action passes are the same ones a browser action passes.
@@ -64,10 +89,16 @@ ALTER TABLE untch_channel_bindings ADD CONSTRAINT untch_channel_slack_cannot_dec
 
 -- The one-active-identity index from 016 counted only ACTIVE. PENDING is also live, in the sense that
 -- two pending links for one Telegram user would race to become the active one.
+-- One live row per platform identity, counting every live state.
+--
+-- A bootstrap row and its verified replacement would both match a Telegram DM's chat id, so the
+-- verified binding must be created in the SAME transaction that supersedes the bootstrap one. That is
+-- the correct behaviour regardless: two live rows for one identity means delivery could send twice and
+-- an inbound callback would have two possible owners.
 DROP INDEX IF EXISTS untch_channel_one_active_identity;
 CREATE UNIQUE INDEX IF NOT EXISTS untch_channel_one_active_identity
   ON untch_channel_bindings (channel, channel_user_id)
-  WHERE status IN ('PENDING', 'ACTIVE');
+  WHERE status IN ('PENDING', 'ACTIVE', 'ACTIVE_RECEIVE_ONLY');
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Link tokens carry scope and channel, not just an account
@@ -195,6 +226,7 @@ ALTER TABLE untch_approval_requests
   ADD COLUMN IF NOT EXISTS previous_quote_digest         TEXT,
   ADD COLUMN IF NOT EXISTS supersedes_approval_request_id TEXT,
   ADD COLUMN IF NOT EXISTS supersedes_reservation_id     TEXT,
+  ADD COLUMN IF NOT EXISTS superseded_by_approval_request_id TEXT,
   ADD COLUMN IF NOT EXISTS superseded_at                 TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS supersession_reason           TEXT;
 

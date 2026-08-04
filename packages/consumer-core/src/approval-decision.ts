@@ -39,6 +39,7 @@ export type ApprovalOutcome =
   | "BINDING_NOT_ACTIVE"
   | "BINDING_WRONG_ACCOUNT"
   | "BINDING_CANNOT_DECIDE"
+  | "CHANNEL_BINDING_NOT_VERIFIED_FOR_APPROVAL"
   | "WALLET_AUTHORITY_INACTIVE"
   | "POLICY_INACTIVE"
   | "TOKEN_REFUSED";
@@ -171,6 +172,18 @@ export async function actOnApproval(tx: ServiceCallTx, input: ApprovalActionInpu
     [input.channelBindingId],
   );
   const binding = bindRows[0];
+  /**
+   * A receive-only binding is a real, working delivery destination whose OWNER was never proven. It can
+   * be told about an approval and must never answer one, and it gets its own refusal rather than being
+   * folded into "not active", because a bootstrap row IS active for delivery and saying otherwise
+   * would send whoever reads the error looking for the wrong problem.
+   */
+  if (binding?.status === "ACTIVE_RECEIVE_ONLY" || binding?.verification_method === "operator_bootstrap_unverified") {
+    return refuse(
+      "CHANNEL_BINDING_NOT_VERIFIED_FOR_APPROVAL",
+      "this channel can receive approvals and has not proven who holds it, so it cannot answer one",
+    );
+  }
   if (!binding || binding.status !== "ACTIVE") return refuse("BINDING_NOT_ACTIVE", "this channel is not active");
   if (binding.account_id !== request.account_id) {
     /**

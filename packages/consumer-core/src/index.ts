@@ -545,3 +545,15 @@ export {
   type DeliveryTarget,
   type SendOutcome,
 } from "./approval-delivery-worker";
+export {
+  newQuoteLineageId,
+  supersedePriorQuote,
+  type SupersessionRefusal,
+  type SupersessionResult,
+} from "./approval-supersession";
+export {
+  APPROVAL_CASE_PROJECTION_VERSION,
+  NEVER_PUBLIC_CASE_FIELDS,
+  approvalCaseProjection,
+  type PublicApprovalCase,
+} from "./approval-case-projection";
