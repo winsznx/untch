@@ -186,6 +186,7 @@ jobs:
           PGHOST: localhost
           PGPORT: "5432"
           PGDATABASE: untch_test
+          REQUIRE_POSTGRES_TESTS: "1"
 
       - name: Consumer providers suite (x402 / MPP / SIWX against real captured challenges)
         run: pnpm test:consumer-providers
@@ -206,6 +207,11 @@ jobs:
       # one: it and the operator-route suite both register a provider called `purch` and need it to declare
       # different settlement chains, so sharing made each fail on the other's fixture while both passed
       # alone — flakiness in appearance, a shared-fixture collision in fact.
+      # REQUIRE_POSTGRES_TESTS turns the registration guard from advisory into blocking. Every Postgres
+      # suite here gates itself with `describe(..., { skip })`, and node:test does not register the
+      # children of a skipped describe at all — so losing TEST_DATABASE_URL does not produce skips, it
+      # produces a smaller run that still reports everything green. The totals moved 567 → 416 and no
+      # signal said so. With this set, that condition fails the job and names how many suites vanished.
       - name: ASP suite (handlers + governed consumer lifecycle + operator routes + two-process controller)
         run: |
           export TEST_DATABASE_URL="postgresql://${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE}"
@@ -215,6 +221,7 @@ jobs:
           PGHOST: localhost
           PGPORT: "5432"
           PGDATABASE: untch_test
+          REQUIRE_POSTGRES_TESTS: "1"
 
       # The remote proof controller: its refusals, and the import-graph test that proves it CANNOT open a
       # database, hold a signer, construct an adapter or reach a rail client. That last one is the whole

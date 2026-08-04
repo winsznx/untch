@@ -36,6 +36,23 @@ jobs:
   receipt-writer:
     name: batching triggers + retry/backoff + reorg-resubmit + mapping
     runs-on: ubuntu-latest
+    # PgReceiptsRepo is the SQL the hermetic tests never touch: FOR UPDATE SKIP LOCKED claiming, the
+    # bigint and numeric round-trip, the QUEUED → BATCHED → SUBMITTED → CONFIRMED walk. It skipped on
+    # every CI run this workflow has ever done, because there was no database for it to find.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: untch_receipt_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,5 +72,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # The suite runs its own migrations into this database, so it gets its own rather than sharing
+      # the one the consumer pack uses.
       - name: Receipt-writer suite
         run: pnpm test:receipt-writer
+        env:
+          DATABASE_URL: postgresql://postgres@localhost:5432/untch_receipt_test
