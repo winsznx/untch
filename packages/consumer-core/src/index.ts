@@ -500,3 +500,77 @@ export * from "./decision-evidence";
 export * from "./requester-presentation";
 export * from "./budget-reservation";
 export * from "./decision-state";
+
+/**
+ * The approval action path (migration 029).
+ *
+ * The token is what makes a button press into an authorised decision, and the decision function is the
+ * one place a human answer becomes financial authority. Kept apart from `./approvals`, which owns what
+ * was agreed to, because these own who may agree and what changed while they were deciding.
+ */
+export {
+  APPROVAL_ACTION_TOKEN_VERSION,
+  actionTokenFamily,
+  actionTokenFingerprint,
+  mintApprovalActionToken,
+  newActionNonce,
+  verifyApprovalActionToken,
+  type ActionTokenRefusal,
+  type ActionTokenVerdict,
+  type ApprovalAction,
+  type ApprovalActionClaims,
+  type ApprovalActionSubject,
+} from "./approval-action-token";
+export {
+  actOnApproval,
+  activeReservedExposure,
+  approvalFromMicros,
+  approvalToMicros,
+  newApprovalDecisionId,
+  newReservationId,
+  settledGovernedSpend,
+  type ApprovalActionInput,
+  type ApprovalActionResult,
+  type ApprovalOutcome,
+  type BudgetSnapshot,
+  type ResolvedPolicy,
+} from "./approval-decision";
+export {
+  deliverOnce,
+  newApprovalDeliveryId,
+  projectDeliveries,
+  type ChannelGateway,
+  type DeliveryReport,
+  type DeliveryStatus,
+  type DeliveryTarget,
+  type SendOutcome,
+} from "./approval-delivery-worker";
+export {
+  newQuoteLineageId,
+  supersedePriorQuote,
+  type SupersessionRefusal,
+  type SupersessionResult,
+} from "./approval-supersession";
+export {
+  APPROVAL_CASE_PROJECTION_VERSION,
+  NEVER_PUBLIC_CASE_FIELDS,
+  approvalCaseProjection,
+  type PublicApprovalCase,
+} from "./approval-case-projection";
+export {
+  CHANNEL_LINK_TOKEN_VERSION,
+  consumeChannelLink,
+  linkTokenFingerprint,
+  mintChannelLinkToken,
+  newLinkCodeId,
+  newLinkedChannelBindingId,
+  newLinkNonce,
+  readChannelLinkToken,
+  type ChannelLinkClaims,
+  type ConsumeResult,
+  type LinkChannel,
+  type LinkRefusal,
+  type LinkScope,
+  type LinkVerdict,
+  type PlatformSubject,
+} from "./channel-link-token";

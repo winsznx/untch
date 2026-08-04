@@ -100,6 +100,10 @@ import { registerAgenticLinkRoutes } from "./consumer/agentic-link-routes";
 import { registerPreflightValidateRoute } from "./consumer/preflight-validate-route";
 import { openAccountSession } from "./consumer/account-auth";
 import {
+  discordCodeExchanger,
+  registerChannelLinkRoutes,
+} from "./consumer/channel-link-routes";
+import {
   registerSettledReplayResolver,
   type ReplayResolverDeps,
 } from "./consumer/settled-replay-resolver";
@@ -118,7 +122,7 @@ import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
 import { registerConsumerSettlementRoutes } from "./consumer/operator-settlement-routes";
 import { registerConsumerQuotePreviewRoute } from "./consumer/operator-quote-routes";
 import { registerConsumerVerifyRoutes } from "./consumer/operator-verify-routes";
-import { asset, loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
+import { accountRefHash, asset, loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
 import { findOwnedService } from "@untch/owned-work";
 import {
   handlePublicPreflight,
@@ -815,6 +819,66 @@ export function createSellerApp(
     decisionDeps: policyWiring ? () => preflightDecisionDeps(policyWiring.provider) : null,
     secret: consumerAuthConfig.secret ?? "",
   });
+
+  /**
+   * The genuine channel-link flows.
+   *
+   * Registered only when there is a store and a session secret, because a link request has to be
+   * attributable to an authenticated account and an unauthenticated one would be a way to aim a link
+   * at somebody else's account.
+   *
+   * The link token is signed with the account-session secret. It commits to the account, channel,
+   * scope and nonce, so it is a different credential from the session even though it shares a key.
+   */
+  if (consumerWiring && consumerAuthConfig.secret) {
+    const linkSecret = consumerAuthConfig.secret;
+    const discordAppId = process.env.DISCORD_APPLICATION_ID?.trim() || null;
+    const discordSecret = process.env.DISCORD_CLIENT_SECRET?.trim() || null;
+    const discordRedirect = process.env.DISCORD_OAUTH_REDIRECT_URI?.trim() || null;
+    registerChannelLinkRoutes(app, {
+      pool: consumerWiring.pool,
+      linkSecret,
+      publicBaseUrl,
+      telegram: {
+        botUsername: process.env.TELEGRAM_LINK_BOT_USERNAME?.trim().replace(/^@/, "") || null,
+        webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null,
+      },
+      discord: { applicationId: discordAppId, redirectUri: discordRedirect },
+      /**
+       * Absent configuration produces a function that refuses rather than one that throws. A missing
+       * client secret is a deployment that cannot link Discord, not a deployment that 500s when
+       * somebody tries.
+       */
+      exchangeDiscordCode:
+        discordAppId && discordSecret && discordRedirect
+          ? discordCodeExchanger({
+              applicationId: discordAppId,
+              clientSecret: discordSecret,
+              redirectUri: discordRedirect,
+            })
+          : async () => null,
+      accountForSession: async (authorization) => {
+        const bearer = /^Bearer\s+(.+)$/i.exec(authorization ?? "")?.[1]?.trim();
+        const session = openAccountSession(linkSecret, bearer, Date.now());
+        if (!session) return null;
+        /**
+         * Wallet scopes are re-read from the binding rather than taken from the token. A session is a
+         * claim about a moment, and the wallet behind it can be revoked inside that session's life.
+         */
+        const { rows } = await consumerWiring.pool.query<{ scopes: string[] | null }>(
+          `SELECT scopes FROM untch_wallet_bindings
+            WHERE account_id = $1 AND status = 'ACTIVE'`,
+          [session.accountId],
+        );
+        const walletScopes = rows.flatMap((r) => r.scopes ?? []);
+        return {
+          accountId: session.accountId,
+          accountRefHash: accountRefHash(session.accountId),
+          walletScopes,
+        };
+      },
+    });
+  }
 
   /**
    * What the public verify route needs. It reads the CONSUMER store rather than the policy store,
