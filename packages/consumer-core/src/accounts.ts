@@ -697,10 +697,18 @@ export class PgAccountStore implements AccountStore {
       );
     }
     const { rowCount } = await this.pool.query(
+      /**
+       * Scopes are DERIVED from `canDecide` rather than taken as a second parameter.
+       *
+       * Migration 029 made `policy-approval` the thing that actually confers decision authority, and a
+       * writer that could set one without the other would let the two disagree — which is an authority
+       * bug wearing the shape of a defaulted column. Deriving them here keeps every caller of this
+       * store consistent without every caller having to know.
+       */
       `INSERT INTO untch_channel_bindings
          (binding_id, account_id, channel, channel_user_id, channel_chat_id, display_label, can_decide,
-          status, verified_at, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'ACTIVE',$8,$9,$9)
+          status, verified_at, scopes, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'ACTIVE',$8,$10,$9,$9)
        ON CONFLICT DO NOTHING`,
       [
         binding.bindingId ?? newChannelBindingId(),
@@ -712,6 +720,7 @@ export class PgAccountStore implements AccountStore {
         binding.canDecide,
         binding.verifiedAt ?? null,
         binding.by,
+        binding.canDecide ? ["notify", "policy-approval"] : ["notify"],
       ],
     );
     return { bound: (rowCount ?? 0) === 1 };

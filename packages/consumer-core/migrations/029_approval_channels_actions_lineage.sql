@@ -72,6 +72,18 @@ ALTER TABLE untch_channel_bindings DROP CONSTRAINT IF EXISTS untch_channel_known
 ALTER TABLE untch_channel_bindings ADD CONSTRAINT untch_channel_known
   CHECK (channel IN ('telegram', 'discord', 'email', 'dashboard', 'web', 'slack'));
 
+-- BACKFILL BEFORE CONSTRAINING.
+--
+-- A binding that already had `can_decide = true` was ALREADY carrying decision authority under the
+-- previous model. Adding the constraint without this would reject rows that were valid when written
+-- and are unchanged in meaning, which is the migration failing rather than the data being wrong.
+--
+-- This grants no authority that did not exist. It writes down, in the new vocabulary, exactly what the
+-- old column already said. Bindings that could not decide get `notify` and stay unable to.
+UPDATE untch_channel_bindings
+   SET scopes = ARRAY['notify', 'policy-approval']
+ WHERE can_decide = true AND NOT ('policy-approval' = ANY(scopes));
+
 -- THE SCOPE THAT COMMITS MONEY.
 --
 -- `policy-approval` is what lets a channel identity answer a financial approval. A binding that can
