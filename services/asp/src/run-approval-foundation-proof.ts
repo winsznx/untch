@@ -1,4 +1,13 @@
 import {
+  APPROVAL_ACTION_TOKEN_VERSION,
+  actOnApproval,
+  activeReservedExposure,
+  ensureWebApprovalBinding,
+  mintApprovalActionToken,
+  newActionNonce,
+  newQuoteLineageId,
+  supersedePriorQuote,
+  approvalCaseProjection,
   PgServiceCallStore,
   createPool,
   finalizeSettlement,
@@ -22,6 +31,7 @@ import {
  */
 
 const DATABASE_URL = process.env.DATABASE_URL?.trim();
+const TOKEN_SECRET = process.env.PROOF_TOKEN_SECRET?.trim() || "approval-proof-secret";
 if (!DATABASE_URL) {
   console.error("DATABASE_URL is required");
   process.exit(1);
@@ -110,16 +120,47 @@ try {
     chain: attempt.chain,
   };
 
+  /**
+   * Every field the action token binds is written at INSERT.
+   *
+   * The immutability trigger refuses a later change to the approval digest, which is exactly right and
+   * is how the first run of this proof failed: a request cannot have its subject rewritten after a
+   * human has been asked about it.
+   */
   const approvalRequestId = newApprovalRequestId();
+  const accountRef = `arh_proof_${call.serviceCallId.slice(-8)}`;
+  const lineage = newQuoteLineageId();
+  const subject = {
+    approvalRequestId,
+    approvalDigest: `apd_proof_${call.serviceCallId}`,
+    intentHash: "0xproofintent",
+    quoteDigest: "qd_proof_600",
+    policyId: "778001",
+    policyHash: "0xproofpolicy",
+    amount: "6.00",
+    asset: "USDT0",
+    chain: "eip155:196",
+    recipient: "0xproofrecipient",
+    provider: "untch",
+    capability: "owned_work.demo",
+    requesterPrincipalRef: "req_proof",
+    walletAuthorityRef: "wa_proof",
+    accountRefHash: accountRef,
+  };
   await client.query(
     `INSERT INTO untch_approval_requests
       (approval_request_id, account_id, policy_id, policy_version, intent_id, quote_hash, provider, capability,
        amount, asset, reason, approval_digest, nonce, state, expires_at, created_by, updated_by,
-       service_call_id, decision_id, approval_digest_schema_version)
+       service_call_id, decision_id, approval_digest_schema_version,
+       intent_hash, quote_digest, policy_hash, chain, recipient,
+       requester_principal_ref, wallet_authority_ref, account_ref_hash, quote_lineage_id)
      VALUES ($1,$2,'778001',1,'intent_proof','qh_proof','untch','owned_work.demo','6.00','USDT0',
              'ESCALATED_THRESHOLD', $3, 'nonce_proof', 'PROVISIONAL', now() + interval '1 hour',
-             'rollback-proof','rollback-proof',$4,'dec_proof',$5)`,
-    [approvalRequestId, accountId, `apd_proof_${call.serviceCallId}`, call.serviceCallId, APPROVAL_DIGEST_SCHEMA_VERSION],
+             'rollback-proof','rollback-proof',$4,'dec_proof',$5,
+             $6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+    [approvalRequestId, accountId, subject.approvalDigest, call.serviceCallId, APPROVAL_DIGEST_SCHEMA_VERSION,
+     subject.intentHash, subject.quoteDigest, subject.policyHash, subject.chain, subject.recipient,
+     subject.requesterPrincipalRef, subject.walletAuthorityRef, accountRef, lineage],
   );
 
   const provisionalOutbox = await client.query(
@@ -223,6 +264,133 @@ try {
 
   const escalationsNow = await client.query<{ n: number }>(`SELECT count(*)::int AS n FROM escalations`);
   observed.legacyEscalations = (escalationsNow.rows[0] as { n: number }).n;
+
+  // ── the human half ────────────────────────────────────────────────────────
+  //
+  // Everything below runs inside the SAME always-rollback transaction. It exercises the real web
+  // binding, the real action token, the real terminal decision and the real supersession against
+  // production data, and leaves none of it behind.
+
+  const web = await ensureWebApprovalBinding(client, {
+    accountId,
+    accountRefHash: accountRef,
+    walletScopes: ["identity", "policy-authority"],
+  });
+  observed.webBinding = { ok: web.ok, created: web.ok === true ? web.created : null };
+  if (!web.ok) throw new Error(`web binding refused: ${web.refusal}`);
+
+  const identityOnly = await ensureWebApprovalBinding(client, {
+    accountId,
+    accountRefHash: `${accountRef}_id`,
+    walletScopes: ["identity"],
+  });
+  observed.identityOnlyRefused = identityOnly.ok === false ? identityOnly.refusal : "NOT_REFUSED";
+
+
+  const mkToken = (bindingId: string, over: Record<string, unknown> = {}) =>
+    mintApprovalActionToken(TOKEN_SECRET, {
+      v: APPROVAL_ACTION_TOKEN_VERSION,
+      ...subject,
+      channelBindingId: bindingId,
+      action: "APPROVE",
+      nonce: newActionNonce(),
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + 3_600_000,
+      ...over,
+    } as never);
+
+  const policy10 = async () => ({ status: "ACTIVE", expiresAtMs: null, dailyLimit: "10.00" });
+  const policy4 = async () => ({ status: "ACTIVE", expiresAtMs: null, dailyLimit: "4.00" });
+
+  // Proof 4 first, because a refusal must leave the request approvable afterwards.
+  await client.query("SAVEPOINT budget_probe");
+  const tight = await actOnApproval(client, {
+    approvalRequestId, action: "APPROVE", token: mkToken(web.bindingId), tokenSecret: TOKEN_SECRET,
+    channelBindingId: web.bindingId, nowMs: Date.now(), partitionKey: "policy:778001",
+    resolvePolicy: policy4,
+  });
+  observed.budgetChanged = { outcome: tight.outcome, reservation: tight.reservationId };
+  await client.query("ROLLBACK TO SAVEPOINT budget_probe");
+
+  // A changed amount must refuse.
+  await client.query("SAVEPOINT token_probe");
+  const wrongAmount = await actOnApproval(client, {
+    approvalRequestId, action: "APPROVE",
+    token: mkToken(web.bindingId, { amount: "6.50" }), tokenSecret: TOKEN_SECRET,
+    channelBindingId: web.bindingId, nowMs: Date.now(), partitionKey: "policy:778001",
+    resolvePolicy: policy10,
+  });
+  observed.changedAmountRefused = { outcome: wrongAmount.outcome, refusal: wrongAmount.tokenRefusal };
+  await client.query("ROLLBACK TO SAVEPOINT token_probe");
+
+  // Proof 2: the real approval.
+  const approved = await actOnApproval(client, {
+    approvalRequestId, action: "APPROVE", token: mkToken(web.bindingId), tokenSecret: TOKEN_SECRET,
+    channelBindingId: web.bindingId, nowMs: Date.now(), partitionKey: "policy:778001",
+    resolvePolicy: policy10,
+  });
+  observed.approval = {
+    outcome: approved.outcome,
+    hasDecision: approved.decisionId !== null,
+    hasReservation: approved.reservationId !== null,
+    budget: approved.budget,
+  };
+
+  const exposureAfterApproval = await activeReservedExposure(client, "778001", Date.now());
+  observed.exposureAfterApproval = exposureAfterApproval.toString();
+
+  // Proof 3: a second action.
+  const second = await actOnApproval(client, {
+    approvalRequestId, action: "APPROVE", token: mkToken(web.bindingId), tokenSecret: TOKEN_SECRET,
+    channelBindingId: web.bindingId, nowMs: Date.now(), partitionKey: "policy:778001",
+    resolvePolicy: policy10,
+  });
+  observed.secondAction = second.outcome;
+
+  // Proof 7: the public case.
+  const projected = await approvalCaseProjection(client, approvalRequestId);
+  const caseJson = JSON.stringify(projected);
+  observed.caseProjection = {
+    version: projected?.version ?? null,
+    serviceCallState: projected?.serviceCall.state ?? null,
+    hasSettlementTx: Boolean(projected?.serviceCall.settlementTransactionHash),
+    approvalState: projected?.approval.state ?? null,
+    decision: projected?.terminalDecision?.decision ?? null,
+    reservationStored: projected?.reservation?.storedStatus ?? null,
+    reservationEffective: projected?.reservation?.effectiveStatus ?? null,
+    countsTowardExposure: projected?.reservation?.countsTowardExposure ?? null,
+    leaksAccountId: caseJson.includes(accountId),
+  };
+
+  // Proof 5 and 6: the requote.
+  const oldToken = mkToken(web.bindingId);
+  const sup = await supersedePriorQuote(client, {
+    priorApprovalRequestId: approvalRequestId,
+    newApprovalRequestId: "aprq_proof_650",
+    quoteLineageId: lineage,
+    newQuoteDigest: "qd_proof_650",
+    reason: "PROVIDER_REQUOTE",
+    accountId,
+  });
+  observed.supersession = sup.ok
+    ? { ok: true, releasedExposure: sup.releasedExposure, invalidatedDeliveries: sup.invalidatedDeliveries }
+    : { ok: false, refusal: sup.refusal };
+
+  const exposureAfterSupersession = await activeReservedExposure(client, "778001", Date.now());
+  observed.exposureAfterSupersession = exposureAfterSupersession.toString();
+
+  const oldTokenNow = await actOnApproval(client, {
+    approvalRequestId, action: "APPROVE", token: oldToken, tokenSecret: TOKEN_SECRET,
+    channelBindingId: web.bindingId, nowMs: Date.now(), partitionKey: "policy:778001",
+    resolvePolicy: policy10,
+  });
+  observed.oldTokenAfterSupersession = oldTokenNow.outcome;
+
+  const { rows: rsvNow } = await client.query<{ status: string }>(
+    `SELECT status FROM untch_budget_reservations WHERE approval_request_id = $1`,
+    [approvalRequestId],
+  );
+  observed.oldReservationStatus = rsvNow[0]?.status ?? null;
 
   const inTx = await counts(client);
   observed.countsInsideTransaction = inTx;
