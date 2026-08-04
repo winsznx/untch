@@ -11,7 +11,9 @@ import {
   mintChannelLinkToken,
   newLinkCodeId,
   newLinkNonce,
+  ensureWebApprovalBinding,
   readChannelLinkToken,
+  webChannelSubject,
   type ChannelLinkClaims,
   type LinkChannel,
   type LinkScope,
@@ -345,5 +347,88 @@ describe("linking a channel proves who holds it", { skip: TEST_DB ? false : "TES
     const { rows } = await pool.query<{ n: string }>(
       `SELECT count(*)::text n FROM untch_channel_bindings WHERE channel_user_id = 'tg-race'`);
     assert.equal(Number(rows[0]!.n), 1);
+  });
+
+  // ── the web surface ────────────────────────────────────────────────────────
+
+  const ensureWeb = async (accountId: string, ref: string, scopes: string[]) => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const out = await ensureWebApprovalBinding(client, {
+        accountId,
+        accountRefHash: ref,
+        walletScopes: scopes,
+      });
+      await client.query("COMMIT");
+      return out;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  };
+
+  test("a policy-authority session gets a web binding that can decide", async () => {
+    const out = await ensureWeb(ACCOUNT, ACCOUNT_REF, ["identity", "policy-authority"]);
+    assert.equal(out.ok, true);
+    const { rows } = await pool.query<Record<string, unknown>>(
+      `SELECT * FROM untch_channel_bindings WHERE binding_id = $1`,
+      [out.ok === true ? out.bindingId : ""],
+    );
+    assert.equal(rows[0]!.channel, "web");
+    assert.equal(rows[0]!.can_decide, true);
+    assert.equal(rows[0]!.verification_method, "account_session_siwe", "the proof is the SIWE session");
+    assert.ok((rows[0]!.scopes as string[]).includes("policy-approval"));
+  });
+
+  test("an identity-only session gets no web binding at all", async () => {
+    const out = await ensureWeb(OTHER, OTHER_REF, ["identity"]);
+    assert.equal(out.ok, false);
+    assert.equal(out.ok === false && out.refusal, "AUTHORITY_NOT_DERIVABLE");
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text n FROM untch_channel_bindings WHERE channel_user_id = $1`,
+      [webChannelSubject(OTHER_REF)],
+    );
+    assert.equal(Number(rows[0]!.n), 0, "a browser cookie is not approval authority");
+  });
+
+  test("ensuring the web binding twice returns the same row", async () => {
+    const first = await ensureWeb(ACCOUNT, ACCOUNT_REF, ["identity", "policy-authority"]);
+    const second = await ensureWeb(ACCOUNT, ACCOUNT_REF, ["identity", "policy-authority"]);
+    assert.equal(second.ok, true);
+    assert.equal(
+      second.ok === true ? second.bindingId : null,
+      first.ok === true ? first.bindingId : "x",
+      "clicking through the dashboard twice must not supersede your own channel mid-approval",
+    );
+    assert.equal(second.ok === true && second.created, false);
+  });
+
+  test("a revoked wallet leaves the web surface unable to approve", async () => {
+    await pool.query(
+      `UPDATE untch_wallet_bindings SET status = 'REVOKED', revoked_at = now() WHERE account_id = $1`,
+      [OTHER],
+    );
+    const out = await ensureWeb(OTHER, OTHER_REF, ["identity", "policy-authority"]);
+    assert.equal(out.ok === false && out.refusal, "WALLET_AUTHORITY_INACTIVE");
+    await pool.query(
+      `UPDATE untch_wallet_bindings SET status = 'ACTIVE', revoked_at = NULL WHERE account_id = $1`,
+      [OTHER],
+    );
+  });
+
+  test("a suspended account gets no web binding", async () => {
+    await pool.query(`UPDATE untch_accounts SET status = 'SUSPENDED' WHERE account_id = $1`, [OTHER]);
+    const out = await ensureWeb(OTHER, OTHER_REF, ["identity", "policy-authority"]);
+    assert.equal(out.ok === false && out.refusal, "ACCOUNT_NOT_ACTIVE");
+    await pool.query(`UPDATE untch_accounts SET status = 'ACTIVE' WHERE account_id = $1`, [OTHER]);
+  });
+
+  test("the web subject carries no raw account id", () => {
+    const subj = webChannelSubject(ACCOUNT_REF);
+    assert.ok(!subj.includes(ACCOUNT), "the surface is identified by the account reference hash");
+    assert.ok(subj.startsWith("web:"));
   });
 });
