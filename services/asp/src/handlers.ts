@@ -36,6 +36,12 @@ import type { InMemoryIntentStore } from "./ledger-state";
 export interface HandlerResult {
   readonly status: number;
   readonly body: Record<string, unknown>;
+  /**
+   * Response headers a handler needs the transport to set. Optional, because almost no handler needs
+   * one: the body is the contract. It exists for the cases where HTTP semantics carry meaning the
+   * body cannot, such as a refusal that wants a backoff hint and must never be cached.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 /** §11 error envelope `{code, message, retryable, docsUrl}`. `docsUrl` is null — no public docs

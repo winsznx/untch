@@ -312,16 +312,19 @@ describe(
     });
 
     test("the boundary proof run twice produces identical decisions", async () => {
+      // 6.00 now returns APPROVAL_PATH_NOT_READY rather than a 200 ESCALATED, so the engine verdict
+      // is read from `decisionOutcome` on the refusal and from `decision` on the served outcomes.
+      const verdict = (b: Record<string, unknown>): unknown => b.decision ?? b.decisionOutcome;
       const first = [
         await run(request("4.00"), "rollback"),
         await run(request("6.00"), "rollback"),
         await run(request("9.00"), "rollback"),
-      ].map((b) => b.decision);
+      ].map(verdict);
       const second = [
         await run(request("4.00"), "rollback"),
         await run(request("6.00"), "rollback"),
         await run(request("9.00"), "rollback"),
-      ].map((b) => b.decision);
+      ].map(verdict);
 
       assert.deepEqual(second, first);
       assert.deepEqual(first, ["APPROVED", "ESCALATED_THRESHOLD", "BLOCKED_PER_CALL_CAP"]);
@@ -492,12 +495,13 @@ describe(
     test("the decision route reports that it cannot reach an executor, while the global flag is ON", async () => {
       assert.equal(publicDeps.executionEnabled, true, "the global flag is true in this suite, as in production");
       const body = await run(request("4.00"), "rollback");
-      assert.deepEqual(body.routeExecution, {
-        routeExecutionProfile: "decision_only",
-        providerExecutionReachable: false,
-        paymentExecutionReachable: false,
-        deliveryExecutionReachable: false,
-      });
+      const re = body.routeExecution as Record<string, unknown>;
+      assert.equal(re.routeExecutionProfile, "decision_only");
+      assert.equal(re.providerExecutionReachable, false);
+      assert.equal(re.paymentExecutionReachable, false);
+      assert.equal(re.deliveryExecutionReachable, false);
+      assert.equal(re.providerDeliveryExecutionReachable, false);
+      assert.equal(re.directChannelGatewayReachable, false);
     });
 
     test("a decision_only bundle carrying an executor is refused at runtime, by name", async () => {
@@ -518,14 +522,129 @@ describe(
     });
 
     test("a provider_execution route still declares full reach, so the profile is not vacuous", () => {
-      assert.deepEqual(routeReachability("/consumer/execute"), {
-        routeExecutionProfile: "provider_execution",
-        providerExecutionReachable: true,
-        paymentExecutionReachable: true,
-        deliveryExecutionReachable: true,
-      });
+      const pe = routeReachability("/consumer/execute")!;
+      assert.equal(pe.routeExecutionProfile, "provider_execution");
+      assert.equal(pe.providerExecutionReachable, true);
+      assert.equal(pe.paymentExecutionReachable, true);
+      assert.equal(pe.providerDeliveryExecutionReachable, true);
+      // The alias tracks provider delivery exactly, never a widened OR.
+      assert.equal(pe.deliveryExecutionReachable, pe.providerDeliveryExecutionReachable);
       // An unclassified route reports as unclassified rather than defaulting to the safe-sounding value.
       assert.equal(routeReachability("/not/classified"), null);
+    });
+
+    /**
+     * AN ESCALATION THAT CANNOT REACH A HUMAN MUST NOT BE SOLD.
+     *
+     * PR #65 moved the account route onto an inline decision transaction wired with `DecisionOnlyDeps`,
+     * which correctly cannot name a channel gateway — and in doing so removed the only call site that
+     * created an escalation. So an `ESCALATED_THRESHOLD` decision on the paid V3 account path recorded
+     * evidence and reached nobody.
+     *
+     * Returning 200 would take 0.05 USDT0 for a promise the service cannot keep. The gate refuses from
+     * inside the transaction, so the request stays eligible for the moment the approval path exists.
+     */
+    describe("an escalated account-path decision refuses rather than charging", () => {
+      test("6.00 evaluates to ESCALATED_THRESHOLD and is refused with APPROVAL_PATH_NOT_READY", async () => {
+        const body = await run(request("6.00", { idempotencyKey: "gate-escalated" }), "commit");
+        assert.equal(body.outcome, "APPROVAL_PATH_NOT_READY");
+        assert.equal(body.decisionOutcome, "ESCALATED_THRESHOLD", "the engine still decided, and says so");
+        assert.equal(body.approvalPathAvailable, false);
+        assert.equal(body.servicePaymentSettled, false);
+        assert.equal(body.paymentConsumed, false);
+        assert.equal(body.retryable, true);
+        assert.equal(body.retryAfterApprovalPathActivation, true);
+        assert.equal(body.humanNotified, false, "it must never imply somebody was told");
+        assert.equal(body.decisionPersisted, false);
+      });
+
+      /**
+       * The status and the headers carry meaning the body cannot. 503 is what keeps the x402
+       * middleware from settling, since it only settles on 2xx, so asserting the body alone would
+       * leave the actual payment safety untested.
+       */
+      test("it answers 503 with a backoff hint and is never cached", async () => {
+        const result = await handlePublicPreflight(
+          request("6.00", { idempotencyKey: "gate-escalated-headers" }),
+          `Bearer ${token}`,
+          { ...publicDeps, evidenceTx: committing },
+          decisionDeps,
+        );
+        assert.equal(result.status, 503, "non-2xx is what stops x402 from settling");
+        assert.equal(result.headers?.["Retry-After"], "300");
+        assert.equal(result.headers?.["Cache-Control"], "no-store");
+      });
+
+    const tableCount = async (t: string): Promise<number> => {
+      const client = await pool.connect();
+      try {
+        const { rows } = await client.query<{ n: string }>(`SELECT count(*)::text n FROM ${t}`);
+        return Number(rows[0]!.n);
+      } finally {
+        client.release();
+      }
+    };
+
+      test("the refusal commits no durable state at all", async () => {
+        const before = await counts();
+        const beforeTables: Record<string, number> = {};
+        for (const t of ["untch_decision_evidence", "untch_budget_reservations", "escalations"]) {
+          beforeTables[t] = await tableCount(t);
+        }
+        const body = await run(request("6.00", { idempotencyKey: "gate-no-state" }), "commit");
+        assert.equal(body.outcome, "APPROVAL_PATH_NOT_READY");
+
+        const after = await counts();
+        assert.deepEqual(after, before, "no replay marker, recent intent, rate tick, cooldown or reservation");
+
+        // Deltas, not absolutes: earlier tests in this suite legitimately committed rows, and the
+        // claim here is that the REFUSAL adds nothing, not that the database is empty.
+        for (const table of ["untch_decision_evidence", "untch_budget_reservations", "escalations"]) {
+          assert.equal(await tableCount(table), beforeTables[table], `${table} unchanged by a refused escalation`);
+        }
+        // The one that must be zero absolutely: the approval writer does not exist yet.
+        assert.equal(await tableCount("untch_approval_requests"), 0, "no approval object is created anywhere");
+      });
+
+      test("the same request stays eligible immediately afterwards", async () => {
+        // The whole reason the gate rolls back: an outage must not poison the duplicate window for a
+        // request the caller will legitimately retry once approval works.
+        const before = await counts();
+        const first = await run(request("6.00", { idempotencyKey: "gate-retryable" }), "commit");
+        const second = await run(request("6.00", { idempotencyKey: "gate-retryable" }), "commit");
+        assert.equal(first.outcome, "APPROVAL_PATH_NOT_READY");
+        assert.equal(second.outcome, "APPROVAL_PATH_NOT_READY");
+        assert.equal(second.decisionOutcome, "ESCALATED_THRESHOLD", "not BLOCKED_DUPLICATE");
+        assert.deepEqual(await counts(), before, "two refusals leave the window exactly as they found it");
+      });
+
+      test("an approved decision is unaffected and still commits", async () => {
+        // A fresh amount, so this is not a duplicate of anything earlier in the suite.
+        const before = await counts();
+        const body = await run(request("3.25", { idempotencyKey: "gate-approved-unchanged" }), "commit");
+        assert.equal(body.outcome, "APPROVED_AUTOMATIC", "the gate is for escalations only");
+        assert.equal((body.budget as Record<string, unknown>).economicClassification, "RESERVED_AUTHORITY_NOT_SPEND");
+        const after = await counts();
+        assert.equal(after.replayMarkers, before.replayMarkers + 1, "the approved path still records its decision");
+        assert.equal(Number(after.activeReserved), Number(before.activeReserved) + 3.25);
+      });
+
+      test("a blocked decision keeps its existing truthful semantics", async () => {
+        const body = await run(request("9.50", { idempotencyKey: "gate-blocked-unchanged" }), "commit");
+        assert.equal(body.outcome, "BLOCKED");
+        assert.equal(body.decision, "BLOCKED_PER_CALL_CAP");
+        assert.notEqual(body.outcome, "APPROVAL_PATH_NOT_READY", "the gate is for escalations only");
+      });
+
+      test("the manifest does not advertise approval persistence it does not have", () => {
+        const r = routeReachability("/preflight_payment")!;
+        assert.equal(r.approvalStatePersistenceReachable, false);
+        assert.equal(r.approvalNotificationEnqueueReachable, false);
+        assert.equal(r.directChannelGatewayReachable, false);
+        // The deprecated alias means provider delivery ONLY, never the OR with notification delivery.
+        assert.equal(r.deliveryExecutionReachable, r.providerDeliveryExecutionReachable);
+        assert.equal(r.providerDeliveryExecutionReachable, false);
+      });
     });
   },
 );

@@ -55,7 +55,7 @@ import { toEnginePolicy } from "@untch/policy-store";
 import { canonTimestamp } from "@untch/canon";
 import type { HandlerResult } from "../handlers";
 import { assemblePreflightInjects } from "../preflight-state";
-import { routeReachability, type DecisionOnlyDeps } from "../route-profiles";
+import { APPROVAL_PATH_READY, routeReachability, type DecisionOnlyDeps } from "../route-profiles";
 import { openAccountSession } from "../consumer/account-auth";
 import { mapPreflightRequest, type NetworkFacts } from "./mapping";
 import {
@@ -424,6 +424,21 @@ export async function handlePublicPreflight(
    * back. Because everything that could change a later decision happens inside it, those two routes
    * differ in exactly one thing — whether the transaction commits — and in nothing else.
    */
+  /**
+   * Thrown inside the decision transaction when an escalation cannot reach a human.
+   *
+   * A sentinel rather than a returned value, because the refusal has to take the TRANSACTION with
+   * it. Returning early would leave the evidence row and the durable decision state committed for a
+   * request that was never served — poisoning the duplicate, replay, rate and cooldown windows for a
+   * decision the caller could not act on and will legitimately retry.
+   */
+  class ApprovalPathUnavailable extends Error {
+    constructor(public readonly engineDecision: string) {
+      super("approval path not ready");
+      this.name = "ApprovalPathUnavailable";
+    }
+  }
+
   interface Committed {
     readonly assembled: AssembledEvidenceV3;
     readonly engineDecision: DecisionOutcome;
@@ -476,6 +491,26 @@ export async function handlePublicPreflight(
         ruleTrace: engineResult.rules as unknown as Record<string, unknown>[],
         evaluatedAt,
       });
+
+      /**
+       * ── THE SAFETY GATE ───────────────────────────────────────────────
+       *
+       * An escalated decision promises that a human will be asked. On the account path nothing
+       * currently asks one: PR #65 removed the only escalation call site, and the writer that
+       * replaces it is not built yet. Returning 200 here would take 0.05 USDT0 for a promise the
+       * service cannot keep, and would leave the caller waiting for a message nobody will send.
+       *
+       * So it refuses BEFORE the evidence is written, from inside the transaction. Everything this
+       * decision touched rolls back — evidence, replay marker, recent intent, rate tick, cooldown —
+       * because the same request must remain eligible the moment the approval path is available.
+       * Poisoning a duplicate window on behalf of a service that could not complete would punish the
+       * caller twice for one outage.
+       *
+       * x402 settles only on a 2xx, so the non-2xx below is also what stops the fee being taken.
+       */
+      if (!APPROVAL_PATH_READY && engineResult.decision.startsWith("ESCALATED")) {
+        throw new ApprovalPathUnavailable(engineResult.decision);
+      }
 
       await persistDecisionEvidenceV3(tx, assembledEvidence);
 
@@ -542,6 +577,46 @@ export async function handlePublicPreflight(
       };
     });
   } catch (err) {
+    if (err instanceof ApprovalPathUnavailable) {
+      /**
+       * Non-2xx, so the x402 middleware does not settle. Nothing was charged and nothing was kept.
+       *
+       * The body says what the engine decided, because a caller is entitled to know their request
+       * WOULD need human approval — that is useful and true. It does not say a human was notified,
+       * which would be the lie this gate exists to prevent.
+       *
+       * On the signed payment authorization the caller sent: this gate commits no replay marker, no
+       * decision state and no settlement, so nothing here makes that authorization unusable at the
+       * protocol level. The rule is a client-side one and is stated as such: the client discards the
+       * authorization after a failed attempt, and a later retry mints and signs a fresh one. No
+       * durable payment-auth replay record is added for this hotfix, because x402 does not require
+       * one for an unsettled attempt and inventing one would be new state on a refusal path whose
+       * entire promise is that it writes nothing.
+       */
+      return {
+        status: 503,
+        /**
+         * `Retry-After` is a backoff hint, not a promise that approval will be reachable in five
+         * minutes. `no-store` because a cached 503 would keep refusing after the path is wired.
+         */
+        headers: { "Retry-After": "300", "Cache-Control": "no-store" },
+        body: {
+          outcome: "APPROVAL_PATH_NOT_READY",
+          code: "APPROVAL_PATH_NOT_READY",
+          message: "Human approval is temporarily unavailable. No payment was taken.",
+          decisionOutcome: err.engineDecision,
+          approvalPathAvailable: false,
+          servicePaymentSettled: false,
+          paymentConsumed: false,
+          retryable: true,
+          retryAfterApprovalPathActivation: true,
+          // Stated so nobody has to infer it from the absence of a field.
+          humanNotified: false,
+          decisionPersisted: false,
+          docsUrl: null,
+        },
+      };
+    }
     return {
       status: 500,
       body: {

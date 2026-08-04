@@ -282,11 +282,18 @@ describe(
     });
 
     test("an escalated decision does not silently reserve executable authority", async () => {
+      const before = await exposure();
       const body = await run("6.00", "commit");
-      assert.equal(body.decision, "ESCALATED_THRESHOLD");
-      assert.equal((body.budget as Record<string, unknown>).reservationId, null,
-        "a pending request must not hold budget a human has not yet approved");
-      assert.equal((await exposure()).reservedActiveToday, 4, "unchanged");
+      /**
+       * The escalation safety gate now refuses this before it is served, because nothing on the
+       * account path can reach a human yet. The engine verdict moves to `decisionOutcome`, and the
+       * property this test exists for holds either way: a request awaiting human authority reserves
+       * nothing. It was true when the decision was returned, and it is true when it is refused.
+       */
+      assert.equal(body.outcome, "APPROVAL_PATH_NOT_READY");
+      assert.equal(body.decisionOutcome, "ESCALATED_THRESHOLD");
+      assert.equal(body.servicePaymentSettled, false, "and no fee is taken for an outcome it cannot deliver");
+      assert.deepEqual(await exposure(), before, "no budget is held for a request no human will see");
     });
 
     test("concurrent approvals cannot exceed the daily limit", async () => {
