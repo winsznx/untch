@@ -482,13 +482,19 @@ export async function finalizeSettlement(
     );
   }
 
-  if (
-    attempt.state === "SETTLED" &&
-    attempt.transaction_hash !== null &&
-    String(attempt.transaction_hash) !== evidence.transactionHash
-  ) {
+  /**
+   * A recorded hash may be confirmed, never replaced.
+   *
+   * This covers more than the already-SETTLED case. An attempt that went SETTLEMENT_PENDING has a
+   * hash too, and confirmation for that attempt must name the SAME transaction — a different one
+   * would mean two transfers exist for one authorization, which is a fact to refuse and investigate
+   * rather than to overwrite. Caught by the always-rollback proof, which reached the immutability
+   * trigger and got a raw database error where a domain refusal belongs.
+   */
+  if (attempt.transaction_hash !== null && String(attempt.transaction_hash) !== evidence.transactionHash) {
     throw new SettlementEvidenceError(
-      `attempt ${attempt.attempt_id} is already settled by a different transaction`,
+      `attempt ${attempt.attempt_id} already names transaction ${String(attempt.transaction_hash)}, ` +
+        `and the evidence names ${evidence.transactionHash}`,
       "CONFLICTING_EVIDENCE",
     );
   }
