@@ -334,6 +334,42 @@ describe("the settlement boundary between a fee and a human", { skip: TEST_DB ? 
     assert.equal(await outboxCount(approvalRequestId), 1);
   });
 
+  /**
+   * Found by the always-rollback production proof rather than by writing a test first.
+   *
+   * A pending settlement records a transaction hash. If confirmation later names a DIFFERENT one, two
+   * transfers exist for one authorization, which is a fact to refuse and investigate rather than to
+   * overwrite. Before the fix this reached the immutability trigger and surfaced as a raw database
+   * error where a domain refusal belongs.
+   */
+  test("confirmation naming a different transaction than the pending one is refused", async () => {
+    const { serviceCallId, nonce } = await provisional();
+    await inTx((tx) =>
+      finalizeSettlement(tx, {
+        serviceCallId,
+        evidence: { kind: "PENDING", transactionHash: "0xtx-first-seen", paymentId: null },
+      }),
+    );
+    await assert.rejects(
+      () => inTx((tx) => finalizeSettlement(tx, { serviceCallId, evidence: confirmed(nonce, "0xtx-a-different-one") })),
+      (e: SettlementEvidenceError) => e.code === "CONFLICTING_EVIDENCE",
+    );
+  });
+
+  test("confirmation naming the same transaction the pending phase recorded activates", async () => {
+    const { serviceCallId, approvalRequestId, nonce } = await provisional();
+    await inTx((tx) =>
+      finalizeSettlement(tx, {
+        serviceCallId,
+        evidence: { kind: "PENDING", transactionHash: "0xtx-same-one", paymentId: null },
+      }),
+    );
+    const result = await inTx((tx) => finalizeSettlement(tx, { serviceCallId, evidence: confirmed(nonce, "0xtx-same-one") }));
+    assert.equal(result.outcome, "ACTIVATED");
+    assert.equal((await requestState(approvalRequestId)).state, "PENDING");
+    assert.equal(await outboxCount(approvalRequestId), 1);
+  });
+
   test("the reconciler leaves a still-pending settlement alone", async () => {
     const { serviceCallId, approvalRequestId, nonce } = await provisional();
     await pool.query(
@@ -383,6 +419,62 @@ describe("the settlement boundary between a fee and a human", { skip: TEST_DB ? 
     await Promise.all([reconcileOnce(pool, oracle, { limit: 50 }), reconcileOnce(pool, oracle, { limit: 50 })]);
     assert.equal((await requestState(approvalRequestId)).state, "PENDING");
     assert.equal(await outboxCount(approvalRequestId), 1, "two workers, one notification");
+  });
+
+  /**
+   * PROOF C, as a test rather than as a script.
+   *
+   * The finalizer is interrupted between the settlement confirming and the activation committing,
+   * which is modelled by opening the transaction, doing the work, and rolling it back the way a
+   * process death would. Then a FRESH pool stands in for the restarted process, holding none of the
+   * previous one's connections, caches or in-flight state.
+   *
+   * If activation depended on anything in memory, this is where it would fail.
+   */
+  test("a process that dies mid-finalization is recovered by a restarted one", async () => {
+    const { serviceCallId, approvalRequestId, nonce } = await provisional();
+    await pool.query(
+      `UPDATE untch_x402_payment_attempts SET state='SETTLEMENT_PENDING', transaction_hash=$2 WHERE authorization_nonce=$1`,
+      [nonce, "0xtx-interrupted"],
+    );
+    await pool.query(`UPDATE untch_x402_service_calls SET state='SETTLEMENT_PENDING' WHERE service_call_id=$1`, [serviceCallId]);
+
+    // The interrupted attempt: all the work, then the process dies before COMMIT.
+    const dying = await pool.connect();
+    try {
+      await dying.query("BEGIN");
+      await finalizeSettlement(dying, { serviceCallId, evidence: confirmed(nonce, "0xtx-interrupted") });
+      await dying.query("ROLLBACK");
+    } finally {
+      dying.release();
+    }
+
+    assert.equal((await requestState(approvalRequestId)).state, "PROVISIONAL", "the interrupted work left nothing");
+    assert.equal(await outboxCount(approvalRequestId), 0);
+
+    // A different process entirely.
+    const u = new URL(TEST_DB!);
+    u.pathname = `/${OWN_DATABASE}`;
+    const restarted = createPool(u.toString());
+    try {
+      const oracle = facilitatorOracle({
+        async getSettleStatus() {
+          return { success: true, status: "success" };
+        },
+      });
+      const report = await reconcileOnce(restarted, oracle, { limit: 50 });
+      assert.ok(report.activated >= 1, "the restarted process finished the job");
+    } finally {
+      await restarted.end();
+    }
+
+    assert.equal((await requestState(approvalRequestId)).state, "PENDING");
+    assert.equal(await outboxCount(approvalRequestId), 1, "exactly one event, not one per attempt");
+    const { rows: attempts } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text n FROM untch_x402_payment_attempts WHERE service_call_id = $1`,
+      [serviceCallId],
+    );
+    assert.equal(Number(attempts[0]!.n), 1, "no second payment attempt was created to recover");
   });
 
   // ── identity ───────────────────────────────────────────────────────────────
