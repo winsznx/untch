@@ -584,16 +584,26 @@ export async function handlePublicPreflight(
        * The body says what the engine decided, because a caller is entitled to know their request
        * WOULD need human approval — that is useful and true. It does not say a human was notified,
        * which would be the lie this gate exists to prevent.
+       *
+       * On the signed payment authorization the caller sent: this gate commits no replay marker, no
+       * decision state and no settlement, so nothing here makes that authorization unusable at the
+       * protocol level. The rule is a client-side one and is stated as such: the client discards the
+       * authorization after a failed attempt, and a later retry mints and signs a fresh one. No
+       * durable payment-auth replay record is added for this hotfix, because x402 does not require
+       * one for an unsettled attempt and inventing one would be new state on a refusal path whose
+       * entire promise is that it writes nothing.
        */
       return {
         status: 503,
+        /**
+         * `Retry-After` is a backoff hint, not a promise that approval will be reachable in five
+         * minutes. `no-store` because a cached 503 would keep refusing after the path is wired.
+         */
+        headers: { "Retry-After": "300", "Cache-Control": "no-store" },
         body: {
           outcome: "APPROVAL_PATH_NOT_READY",
           code: "APPROVAL_PATH_NOT_READY",
-          message:
-            "Human approval is temporarily unavailable. No payment was taken. This request needs a " +
-            "person to approve it, and the approval path is not yet wired on this deployment, so it " +
-            "was refused rather than charged for an outcome it could not deliver.",
+          message: "Human approval is temporarily unavailable. No payment was taken.",
           decisionOutcome: err.engineDecision,
           approvalPathAvailable: false,
           servicePaymentSettled: false,

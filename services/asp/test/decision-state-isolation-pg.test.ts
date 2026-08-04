@@ -558,6 +558,23 @@ describe(
         assert.equal(body.decisionPersisted, false);
       });
 
+      /**
+       * The status and the headers carry meaning the body cannot. 503 is what keeps the x402
+       * middleware from settling, since it only settles on 2xx, so asserting the body alone would
+       * leave the actual payment safety untested.
+       */
+      test("it answers 503 with a backoff hint and is never cached", async () => {
+        const result = await handlePublicPreflight(
+          request("6.00", { idempotencyKey: "gate-escalated-headers" }),
+          `Bearer ${token}`,
+          { ...publicDeps, evidenceTx: committing },
+          decisionDeps,
+        );
+        assert.equal(result.status, 503, "non-2xx is what stops x402 from settling");
+        assert.equal(result.headers?.["Retry-After"], "300");
+        assert.equal(result.headers?.["Cache-Control"], "no-store");
+      });
+
     const tableCount = async (t: string): Promise<number> => {
       const client = await pool.connect();
       try {

@@ -946,6 +946,9 @@ function reportStoreUnconfigured(): HandlerResult {
 }
 
 function send(res: Response, result: HandlerResult): void {
+  if (result.headers) {
+    for (const [name, value] of Object.entries(result.headers)) res.setHeader(name, value);
+  }
   res.status(result.status).json(result.body);
 }
 
