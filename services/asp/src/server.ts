@@ -135,6 +135,7 @@ import { registerDeploymentRoutes, HEALTH_ROUTE, DEPLOYMENT_INFO_ROUTE } from ".
 import { challengeDescription, registerRegistryRoutes } from "./registry/routes";
 import { CHAIN, SETTLEMENT_TOKEN } from "./config";
 import { installUnhandledRejectionGuard, registerJsonErrorBoundary } from "./http-errors";
+import { observeSettlements } from "./settlement-observability";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -252,6 +253,16 @@ export function createSellerApp(
    * cannot authenticate a caller, and an unauthenticated replay resolver would be an oracle.
    */
   registerSettledReplayResolver(app, PREFLIGHT_ROUTE, () => replayResolverDeps);
+
+  /**
+   * Settlement observability, mounted OUTSIDE the payment gate so it sees the final response including
+   * whatever settlement headers the middleware attached.
+   *
+   * It observes and never decides. A 0.05 USDT0 transfer was once unattributable because nothing here
+   * recorded route, nonce, status or transaction hash, and the answer had to come from a block-by-block
+   * balance search. This makes that a query.
+   */
+  app.use(observeSettlements([PREFLIGHT_ROUTE, VERIFY_ROUTE, PING_ROUTE, BRAND_PACK_ROUTE]));
 
   // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
   app.use(
