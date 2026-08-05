@@ -169,7 +169,7 @@ export const APPROVAL_DIGEST_SCHEMA_VERSION = 3 as const;
  */
 export function approvalDigest(subject: ApprovalSubject): string {
   const field = (name: string, value: string | number | null): string => {
-    const encoded = value === null ? " null" : String(value);
+    const encoded = value === null ? "\u0000null" : String(value);
     return `${name}=${Buffer.byteLength(encoded, "utf8")}:${encoded}`;
   };
   const requester = subject.requester;

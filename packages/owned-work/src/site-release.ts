@@ -325,7 +325,7 @@ export function publishedHeadersFor(path: string, contentHash: Hex): Readonly<Re
 /** The manifest hash a release commits to: every path with the hash of its bytes, in sorted order. */
 export function manifestHashOf(files: readonly { readonly path: string; readonly contentHash: Hex }[]): Hex {
   const sorted = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  const body = sorted.map((f) => `${f.path} ${f.contentHash}`).join("\n");
+  const body = sorted.map((f) => `${f.path}\u0000${f.contentHash}`).join("\n");
   return contentHashOf(new TextEncoder().encode(body));
 }
 
