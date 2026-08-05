@@ -116,7 +116,11 @@ import {
 } from "./route-profiles";
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
-import { registerApprovalActionRoutes } from "./consumer/approval-action-routes";
+import {
+  APPROVAL_OAUTH_SMOKE_ROUTE,
+  mintOAuthSmokeUrl,
+  registerApprovalActionRoutes,
+} from "./consumer/approval-action-routes";
 import { discordApprovalGateway } from "./consumer/discord-approval-gateway";
 import { registerMarketplaceRoutes } from "./consumer/marketplace-continuity";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
@@ -931,6 +935,63 @@ export function createSellerApp(
    * because a stalled reconciler is operational detail, and publishing "nothing has reconciled in an
    * hour" would tell a stranger when the settlement path is unattended.
    */
+  /**
+   * The non-financial Discord sign-in probe.
+   *
+   * A test suite substitutes the code exchange, so it can prove the handlers agree with each other and
+   * cannot prove that Discord accepts the registered redirect URI, that the application id matches, or
+   * that a real exchange returns the subject the binding expects. Only a real round trip answers that,
+   * and doing it with a live approval link would mean putting a real payment in front of somebody to
+   * test a login.
+   *
+   * The state this mints names a binding and carries no action reference, so the round trip it starts
+   * can reach the smoke branch of the callback and nothing else.
+   */
+  app.post(APPROVAL_OAUTH_SMOKE_ROUTE, (req, res) => {
+    const auth = authenticateOperator(req, { route: APPROVAL_OAUTH_SMOKE_ROUTE, env: process.env });
+    if (!auth.ok) {
+      res.status(auth.status).json({ code: auth.code, message: auth.message, retryable: false, docsUrl: null });
+      return;
+    }
+    const bindingId = typeof req.query.channelBindingId === "string" ? req.query.channelBindingId : null;
+    if (!bindingId || !consumerAuthConfig.secret) {
+      res.status(400).json({
+        code: "SMOKE_BINDING_REQUIRED",
+        message: "name the channelBindingId to probe",
+        retryable: false,
+        docsUrl: null,
+      });
+      return;
+    }
+    const minted = mintOAuthSmokeUrl(
+      {
+        secret: consumerAuthConfig.secret,
+        discord: {
+          applicationId: process.env.DISCORD_APPLICATION_ID?.trim() || null,
+          redirectUri: process.env.DISCORD_ACTION_REDIRECT_URI?.trim() || null,
+          exchangeCode: async () => null,
+        },
+      },
+      bindingId,
+    );
+    if ("refusal" in minted) {
+      res.status(503).json({ code: minted.refusal, message: "this deployment cannot verify a Discord identity", retryable: false, docsUrl: null });
+      return;
+    }
+    res.status(200).json({
+      probe: "NON_FINANCIAL_OAUTH_SMOKE",
+      url: minted.url,
+      expiresAt: minted.expiresAt,
+      nonce: minted.nonce,
+      carries: {
+        approvalRequest: null,
+        payment: null,
+        actionToken: null,
+        authority: "none — this state names no action reference",
+      },
+    });
+  });
+
   app.get(APPROVAL_WORKER_HEALTH_ROUTE, (req, res) => {
     const auth = authenticateOperator(req, { route: APPROVAL_WORKER_HEALTH_ROUTE, env: process.env });
     if (!auth.ok) {
