@@ -76,11 +76,31 @@ export const EXECUTION_MANIFEST_ROUTE = "/execution-manifest" as const;
  * THE CLOSED BEHAVIOUR IS STILL REACHABLE, AND STILL TESTED
  *
  * `escalationRefusedForUnreadyPath` below takes readiness as an ARGUMENT rather than reading this
- * constant, so both states stay provable after the flip. That matters twice: the refusal is what an
- * operator falls back to if this ever has to be closed again, and a behaviour nothing exercises is a
+ * constant, so both states stay provable in either position. That matters twice: the refusal is what
+ * an operator falls back to when this has to be closed, and a behaviour nothing exercises is a
  * behaviour that has quietly stopped working.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * RE-CLOSED 2026-08-05, AND THE REASON IS THE ONLY THING THAT MATTERS HERE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * The first paid call under activation settled — 0.05 USDT0, transaction
+ * `0x2a604ff3acf51fce453844aa6d091abf1f868bdd0b19676901ce00cba32b3db1` — and reached nobody. The
+ * service call FINALIZED, the request reached PENDING, the outbox event was written and claimed, and
+ * the Discord send returned 404. `DISCORD_SEND_404`, terminal, no message.
+ *
+ * The cause was a binding whose `channel_chat_id` held the Discord USER id, so the gateway took its
+ * guild branch and POSTed to `/channels/<user id>/messages`, which is not a channel. It would have
+ * failed identically every time.
+ *
+ * So the claim this constant makes — an escalated decision reaches a human — was FALSE while it said
+ * true, and a person paid for the difference. Everything the activation rested on held except the one
+ * link no test covered end to end, which is exactly where it broke.
+ *
+ * It stays false until the DM path is corrected, the web surface has a real production call site, a
+ * non-financial DM actually arrives, and both rollback proofs pass with delivery included.
  */
-export const APPROVAL_PATH_READY = true as const;
+export const APPROVAL_PATH_READY = false as const;
 
 /**
  * The gate the paid decision route applies to an escalated verdict.
