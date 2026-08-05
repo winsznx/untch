@@ -3,8 +3,11 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import {
   actOnApproval,
   consumeActionRef,
+  consumeOAuthStateNonce,
   mintTokenForRef,
+  newActionNonce,
   resolveActionRef,
+  type ApprovalAction,
   type Pool,
   type ResolvedActionRef,
 } from "@untch/consumer-core";
@@ -16,10 +19,17 @@ import { openAccountSession } from "./account-auth";
  *
  * THE SHAPE, AND WHY IT IS THIS SHAPE
  *
- *   GET  /consumer/approvals/action/:ref            → redirect into Discord OAuth. Writes nothing.
- *   GET  /consumer/approvals/action/:ref/return     → OAuth returns. Verifies the subject. Writes nothing.
+ *   GET  /consumer/approvals/action/:ref/start      → redirect into Discord OAuth. Writes nothing.
+ *   GET  /consumer/approvals/action/discord/callback → OAuth returns. Proves identity. Spends the state.
+ *   GET  /consumer/approvals/action/:ref/confirm    → the facts and a form. Writes nothing.
  *   POST /consumer/approvals/action/:ref/confirm    → the ONLY thing that decides.
  *   POST /consumer/approvals/:id/act                → the web actor, same implementation.
+ *
+ * THE CALLBACK IS FIXED, AND THE REFERENCE TRAVELS IN `state`
+ *
+ * Discord matches `redirect_uri` against a registered, exact string, so a per-reference callback path
+ * cannot be registered and cannot work. The callback is therefore one URI for every link, and the
+ * reference reaches it inside a signed, single-use `state` instead.
  *
  * EVERY GET IS INERT, AND THAT IS NOT A STYLE PREFERENCE
  *
@@ -40,15 +50,37 @@ import { openAccountSession } from "./account-auth";
  * screen and then a refusal.
  */
 
-export const APPROVAL_ACTION_START_ROUTE = "/consumer/approvals/action/:actionReferenceId" as const;
-export const APPROVAL_ACTION_RETURN_ROUTE = "/consumer/approvals/action/:actionReferenceId/return" as const;
+export const APPROVAL_ACTION_START_ROUTE = "/consumer/approvals/action/:actionReferenceId/start" as const;
+
+/**
+ * ONE FIXED CALLBACK, AND IT IS WHY THE REFERENCE MOVED INTO `state`.
+ *
+ * Discord matches `redirect_uri` against a registered, exact string. The previous callback was
+ * `/consumer/approvals/action/:actionReferenceId/return`, which is a different string for every link —
+ * so only one of them could ever be registered, and every real round trip would have returned to a
+ * reference that was not the one the person opened. The flow could not have worked, and nothing said so
+ * because no test drove the routes over HTTP.
+ *
+ * The reference now travels in signed `state`. That is also the stronger position: a value the server
+ * signs and spends once is a claim it can verify, where a path segment is a parameter the caller
+ * chooses.
+ */
+export const APPROVAL_ACTION_CALLBACK_ROUTE = "/consumer/approvals/action/discord/callback" as const;
 export const APPROVAL_ACTION_CONFIRM_ROUTE = "/consumer/approvals/action/:actionReferenceId/confirm" as const;
 export const WEB_APPROVAL_ACTION_ROUTE = "/consumer/approvals/:approvalRequestId/act" as const;
+
+/** What the state is FOR. Checked on redemption, so one signing secret cannot serve two surfaces. */
+const ACTION_STATE_PURPOSE = "approval_action_v1" as const;
 
 /** How long a minted token lives. Short: it exists only between a confirmation page and its POST. */
 const TOKEN_TTL_MS = 10 * 60_000;
 /** How long the OAuth-proven subject stays usable without re-authenticating. */
 const ACTOR_TTL_MS = 10 * 60_000;
+/** How long a person has to finish the Discord round trip they just started. */
+const STATE_TTL_MS = 10 * 60_000;
+
+/** The scope an account grants a channel before that channel may answer a payment question. */
+const DECIDE_SCOPE = "policy-approval" as const;
 
 export interface ApprovalActionDeps {
   readonly pool: Pool;
@@ -133,6 +165,82 @@ function openActor(
   if (ref !== actionReferenceId) return null;
   if (!Number.isFinite(Number(expiry)) || Number(expiry) <= nowMs) return null;
   return { subject };
+}
+
+/**
+ * The OAuth `state`, which is now the only thing that carries the reference across the round trip.
+ *
+ * Signed, because an unsigned state is a parameter an attacker chooses: without the MAC, presenting
+ * `actionReferenceId=<somebody else's>` at the fixed callback would have the server verify a Discord
+ * subject against a binding of the caller's choosing.
+ *
+ * It carries a PURPOSE so a state minted here cannot be redeemed at another surface that shares the
+ * secret, and a NONCE so the round trip can be spent exactly once. The nonce is what the database
+ * enforces; everything else here is what the signature enforces.
+ */
+export interface ApprovalActionState {
+  readonly purpose: typeof ACTION_STATE_PURPOSE;
+  readonly actionReferenceId: string;
+  readonly channelBindingId: string;
+  readonly action: ApprovalAction;
+  readonly nonce: string;
+  readonly issuedAt: number;
+  readonly expiresAt: number;
+}
+
+function sealActionState(secret: string, state: ApprovalActionState): string {
+  const payload = Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
+  const mac = createHmac("sha256", secret).update(`untch.approval.state.v1.${payload}`).digest("base64url");
+  return `${payload}.${mac}`;
+}
+
+export type ActionStateRefusal =
+  | "STATE_REQUIRED"
+  | "STATE_MALFORMED"
+  | "STATE_SIGNATURE"
+  | "STATE_PURPOSE"
+  | "STATE_EXPIRED";
+
+function openActionState(
+  secret: string,
+  raw: unknown,
+  nowMs: number,
+): { ok: true; state: ApprovalActionState } | { ok: false; refusal: ActionStateRefusal } {
+  if (typeof raw !== "string" || raw === "") return { ok: false, refusal: "STATE_REQUIRED" };
+  const dot = raw.lastIndexOf(".");
+  if (dot <= 0) return { ok: false, refusal: "STATE_MALFORMED" };
+
+  /**
+   * The signature is checked BEFORE the payload is parsed as anything meaningful, so a malformed or
+   * hostile body is never interpreted on the strength of having arrived.
+   */
+  const expected = createHmac("sha256", secret)
+    .update(`untch.approval.state.v1.${raw.slice(0, dot)}`)
+    .digest("base64url");
+  const presented = Buffer.from(raw.slice(dot + 1), "utf8");
+  const computed = Buffer.from(expected, "utf8");
+  if (presented.length !== computed.length || !timingSafeEqual(presented, computed)) {
+    return { ok: false, refusal: "STATE_SIGNATURE" };
+  }
+
+  let parsed: ApprovalActionState;
+  try {
+    parsed = JSON.parse(Buffer.from(raw.slice(0, dot), "base64url").toString("utf8")) as ApprovalActionState;
+  } catch {
+    return { ok: false, refusal: "STATE_MALFORMED" };
+  }
+  if (parsed.purpose !== ACTION_STATE_PURPOSE) return { ok: false, refusal: "STATE_PURPOSE" };
+  if (
+    typeof parsed.actionReferenceId !== "string" ||
+    typeof parsed.channelBindingId !== "string" ||
+    (parsed.action !== "APPROVE" && parsed.action !== "DENY") ||
+    typeof parsed.nonce !== "string" ||
+    typeof parsed.expiresAt !== "number"
+  ) {
+    return { ok: false, refusal: "STATE_MALFORMED" };
+  }
+  if (parsed.expiresAt <= nowMs) return { ok: false, refusal: "STATE_EXPIRED" };
+  return { ok: true, state: parsed };
 }
 
 /**
@@ -282,7 +390,8 @@ export function registerApprovalActionRoutes(app: Express, deps: ApprovalActionD
       res.status(503).json({ code: "APPROVAL_ACTIONS_UNAVAILABLE", message: why, retryable: false, docsUrl: null });
     };
     app.get(APPROVAL_ACTION_START_ROUTE, unavailable);
-    app.get(APPROVAL_ACTION_RETURN_ROUTE, unavailable);
+    app.get(APPROVAL_ACTION_CALLBACK_ROUTE, unavailable);
+    app.get(APPROVAL_ACTION_CONFIRM_ROUTE, unavailable);
     app.post(APPROVAL_ACTION_CONFIRM_ROUTE, unavailable);
     app.post(WEB_APPROVAL_ACTION_ROUTE, unavailable);
     return;
@@ -314,11 +423,22 @@ export function registerApprovalActionRoutes(app: Express, deps: ApprovalActionD
       }
 
       /**
-       * `state` carries the reference so the callback knows which action it is returning for. It is
-       * signed, because an unsigned state is a parameter an attacker chooses, and the callback would
-       * then verify a subject against a binding of their choosing.
+       * The state carries everything the fixed callback will need, because the callback URL cannot.
+       * It is signed so the callback is verifying the SERVER'S claim about which action this is,
+       * rather than the caller's.
+       *
+       * Nothing is written here. This is the URL that sits in a Discord message, where crawlers,
+       * prefetchers and link previews reach it, so it stays as inert as the old one was.
        */
-      const state = sealActor(d.secret, id, "pending", now() + ACTOR_TTL_MS);
+      const state = sealActionState(d.secret, {
+        purpose: ACTION_STATE_PURPOSE,
+        actionReferenceId: id,
+        channelBindingId: verdict.ref.channelBindingId,
+        action: verdict.ref.action,
+        nonce: newActionNonce(),
+        issuedAt: now(),
+        expiresAt: now() + STATE_TTL_MS,
+      });
       const url =
         `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(d.discord.applicationId)}` +
         `&response_type=code&scope=identify` +
@@ -333,35 +453,98 @@ export function registerApprovalActionRoutes(app: Express, deps: ApprovalActionD
   });
 
   /**
-   * ── OAuth return: prove who they are, show them the facts, decide nothing ─
+   * ── The fixed OAuth callback: prove who they are, and decide nothing ──────
    *
-   * This is a GET and it stays inert. A crawler, a prefetch or a refresh reaching it produces a page and
-   * no state change. Treating a completed OAuth round trip as consent would mean a prefetched callback
-   * URL could approve a payment nobody looked at.
+   * ONE registered URI for every action link, because that is the only shape Discord will match. The
+   * reference arrives in `state` and is trusted only after the signature, the purpose and the expiry
+   * have been checked, and only once the nonce has been spent.
+   *
+   * It is still a GET, and it stays inert in the sense that matters: it writes no ApprovalDecision,
+   * consumes no action nonce, creates no reservation, moves no request between states and invalidates
+   * no sibling. What it does write is the record that this round trip is now spent — which is the
+   * anti-replay fact itself, and the one thing a second GET must not be able to repeat.
+   *
+   * It ends in 303. A redirect rather than a rendered page so the browser's history entry is the
+   * confirmation URL rather than one carrying a spent OAuth code, and 303 specifically so a refresh
+   * re-fetches the page instead of re-submitting the callback.
    */
-  app.get(APPROVAL_ACTION_RETURN_ROUTE, (req: Request, res: Response, next: NextFunction) => {
+  app.get(APPROVAL_ACTION_CALLBACK_ROUTE, (req: Request, res: Response, next: NextFunction) => {
     void (async () => {
-      const id = req.params.actionReferenceId ?? "";
+      const opened = openActionState(d.secret, req.query.state, now());
+      if (!opened.ok) {
+        return refuse(res, opened.refusal === "STATE_EXPIRED" ? 410 : 400, `ACTION_${opened.refusal}`, {
+          STATE_REQUIRED: "this callback did not carry the state it was started with",
+          STATE_MALFORMED: "this callback's state is not a state this server issued",
+          STATE_SIGNATURE: "this callback's state was not signed by this server",
+          STATE_PURPOSE: "this state was issued for something else",
+          STATE_EXPIRED: "this sign-in took too long; open the link again",
+        }[opened.refusal]);
+      }
+      const state = opened.state;
+
       const code = typeof req.query.code === "string" ? req.query.code : null;
       if (!code) return refuse(res, 400, "OAUTH_CODE_REQUIRED", "discord did not return an authorisation code");
       if (!d.discord.redirectUri) {
         return refuse(res, 503, "DISCORD_NOT_CONFIGURED", "this deployment cannot verify a Discord identity");
       }
 
+      /**
+       * The SAME fixed URI the authorize request named. Discord requires the two to match exactly, and
+       * passing anything else here would fail the exchange rather than merely be untidy.
+       */
       const exchanged = await d.discord.exchangeCode(code, d.discord.redirectUri);
       if (!exchanged) {
         return refuse(res, 400, "NO_PLATFORM_SUBJECT", "discord did not confirm an authenticated identity");
       }
 
-      /** The subject is checked against the binding HERE, by the resolver, in one place. */
-      const verdict = await resolveActionRef(d.pool, id, exchanged.subject, now());
+      /**
+       * The subject is checked against the binding by the resolver, in one place, exactly as before.
+       * The reference comes from the signed state rather than the path, and the resolver still decides
+       * whether the person who authenticated is the person this channel belongs to.
+       */
+      const verdict = await resolveActionRef(d.pool, state.actionReferenceId, exchanged.subject, now());
       if (!verdict.ok) {
         return refuse(res, REFUSAL_STATUS[verdict.refusal] ?? 409, `ACTION_${verdict.refusal}`, verdict.detail);
       }
-      const facts = await requestFacts(d.pool, verdict.ref.approvalRequestId);
-      if (!facts) return refuse(res, 404, "ACTION_NOT_FOUND", "no such approval request");
 
-      const expiresAt = now() + ACTOR_TTL_MS;
+      /**
+       * The state must describe the reference it actually named. A signed state whose binding or action
+       * has drifted from the row is not a state this server would have issued for this reference, and
+       * accepting it would let a valid signature vouch for a claim it never made.
+       */
+      if (
+        verdict.ref.channelBindingId !== state.channelBindingId ||
+        verdict.ref.action !== state.action ||
+        verdict.ref.actionReferenceId !== state.actionReferenceId
+      ) {
+        return refuse(res, 409, "ACTION_STATE_MISMATCH", "this sign-in does not match the action it names");
+      }
+
+      /** The grant, separate from the column. Both must hold. */
+      if (!verdict.ref.scopes.includes(DECIDE_SCOPE)) {
+        return refuse(res, 403, "ACTION_BINDING_CANNOT_DECIDE", "this channel may receive approvals and not answer them");
+      }
+
+      /**
+       * Spent HERE, after identity is proven and before any session exists. A refusal at this point
+       * means the round trip has already been completed once, and the second completion gets nothing —
+       * no cookie, no page, no second chance to press a button that was already presented.
+       */
+      const fresh = await consumeOAuthStateNonce(d.pool, {
+        stateNonce: state.nonce,
+        purpose: state.purpose,
+        actionReferenceId: state.actionReferenceId,
+        channelBindingId: state.channelBindingId,
+        action: state.action,
+        issuedAt: state.issuedAt,
+        expiresAt: state.expiresAt,
+        subject: exchanged.subject,
+      });
+      if (!fresh) {
+        return refuse(res, 409, "ACTION_STATE_REPLAYED", "this sign-in has already been used; open the link again");
+      }
+
+      const id = verdict.ref.actionReferenceId;
       /**
        * `HttpOnly` so script cannot read it, `Secure` so it never travels in clear, `SameSite=Lax` so a
        * cross-site POST does not carry it, and `Path` scoped to this reference so it is useless
@@ -370,10 +553,37 @@ export function registerApprovalActionRoutes(app: Express, deps: ApprovalActionD
        */
       res.setHeader(
         "Set-Cookie",
-        `${ACTOR_COOKIE}=${encodeURIComponent(sealActor(d.secret, id, exchanged.subject, expiresAt))}` +
+        `${ACTOR_COOKIE}=${encodeURIComponent(sealActor(d.secret, id, exchanged.subject, now() + ACTOR_TTL_MS))}` +
           `; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(ACTOR_TTL_MS / 1000)}` +
           `; Path=/consumer/approvals/action/${encodeURIComponent(id)}`,
       );
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      res.redirect(303, `${d.publicBaseUrl}/consumer/approvals/action/${encodeURIComponent(id)}/confirm`);
+    })().catch(next);
+  });
+
+  /**
+   * ── The confirmation page: the facts, and a form ──────────────────────────
+   *
+   * A GET, and inert. It renders only for somebody already holding the actor cookie this reference's
+   * callback issued, so a crawler or a prefetch reaching it gets a refusal rather than a page — and a
+   * page is all it could ever get, because the only interactive element is a form that POSTs.
+   */
+  app.get(APPROVAL_ACTION_CONFIRM_ROUTE, (req: Request, res: Response, next: NextFunction) => {
+    void (async () => {
+      const id = req.params.actionReferenceId ?? "";
+      const actor = openActor(d.secret, readCookie(req, ACTOR_COOKIE), id, now());
+      if (!actor) {
+        return refuse(res, 401, "ACTION_ACTOR_REQUIRED", "open the link again and sign in with Discord before deciding");
+      }
+      const verdict = await resolveActionRef(d.pool, id, actor.subject, now());
+      if (!verdict.ok) {
+        return refuse(res, REFUSAL_STATUS[verdict.refusal] ?? 409, `ACTION_${verdict.refusal}`, verdict.detail);
+      }
+      const facts = await requestFacts(d.pool, verdict.ref.approvalRequestId);
+      if (!facts) return refuse(res, 404, "ACTION_NOT_FOUND", "no such approval request");
+
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("Referrer-Policy", "no-referrer");
       res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -381,7 +591,7 @@ export function registerApprovalActionRoutes(app: Express, deps: ApprovalActionD
         confirmationPage({
           ref: verdict.ref,
           facts,
-          csrf: csrfToken(d.secret, id, exchanged.subject),
+          csrf: csrfToken(d.secret, id, actor.subject),
           postTo: `${d.publicBaseUrl}/consumer/approvals/action/${id}/confirm`,
         }),
       );
@@ -657,7 +867,12 @@ export function csrfForTest(secret: string, actionReferenceId: string, subject: 
 /** Used by the delivery gateway to build the two links a message carries. */
 export function actionUrls(publicBaseUrl: string, refs: { APPROVE: string; DENY: string }): { approve: string; deny: string } {
   return {
-    approve: `${publicBaseUrl}/consumer/approvals/action/${refs.APPROVE}`,
-    deny: `${publicBaseUrl}/consumer/approvals/action/${refs.DENY}`,
+    approve: `${publicBaseUrl}/consumer/approvals/action/${refs.APPROVE}/start`,
+    deny: `${publicBaseUrl}/consumer/approvals/action/${refs.DENY}/start`,
   };
+}
+
+/** Exported so a test can mint a state without driving a real OAuth round trip. */
+export function sealActionStateForTest(secret: string, state: ApprovalActionState): string {
+  return sealActionState(secret, state);
 }

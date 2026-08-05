@@ -572,6 +572,7 @@ export {
   APPROVAL_ACTION_REF_SCHEMA_VERSION,
   actionRefFingerprint,
   consumeActionRef,
+  consumeOAuthStateNonce,
   ensureActionReferences,
   invalidateActionRefs,
   mintTokenForRef,
