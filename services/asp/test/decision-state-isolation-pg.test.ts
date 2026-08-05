@@ -239,13 +239,14 @@ describe(
 
     let seq = 0;
     /**
-     * Readiness passed explicitly, for the cases whose subject is the CLOSED gate.
+     * Readiness passed EXPLICITLY on both sides, so neither state depends on what the build ships.
      *
-     * `APPROVAL_PATH_READY` is true in this build. The refusal it replaced is the fallback an operator
-     * has if the path ever has to be shut again, and a fallback nothing exercises is one that has
-     * quietly stopped working — so those cases keep running, against a path told it is closed.
+     * The constant has now been true and false in production, and each flip would otherwise have
+     * silently disabled half these cases. Naming the state per case is what keeps the closed refusal
+     * and the open writer both exercised whichever way the constant currently points.
      */
     const CLOSED = { approvalPathReady: false } as const;
+    const OPEN = { approvalPathReady: true } as const;
 
     const request = (amount: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({
       provider: "untch",
@@ -399,7 +400,7 @@ describe(
         const result = await handlePublicPreflight(
           request("6.00", { idempotencyKey }),
           `Bearer ${token}`,
-          { ...publicDeps, evidenceTx: committing, serviceCalls: new PgServiceCallStore(pool) },
+          { ...publicDeps, evidenceTx: committing, serviceCalls: new PgServiceCallStore(pool), ...OPEN },
           decisionDeps,
           auth,
         );
@@ -836,11 +837,15 @@ describe(
        * The manifest now advertises persistence, and must still advertise nothing else. The fields
        * that stay false are the ones a reader could mistake for permission to move money.
        */
-      test("the manifest advertises exactly what activation turned on, and nothing more", () => {
+      /**
+       * The manifest tracks the constant, whichever way it points. Asserted as an EQUALITY to the
+       * constant rather than to a literal, so re-closing the gate cannot leave the manifest claiming
+       * an approval path the build no longer has — which is the failure that cost a real fee.
+       */
+      test("the manifest advertises exactly what the build has, and nothing more", () => {
         const r = routeReachability("/preflight_payment")!;
-        assert.equal(APPROVAL_PATH_READY, true, "this build has the approval path activated");
-        assert.equal(r.approvalStatePersistenceReachable, true);
-        assert.equal(r.approvalNotificationEnqueueReachable, true);
+        assert.equal(r.approvalStatePersistenceReachable, APPROVAL_PATH_READY);
+        assert.equal(r.approvalNotificationEnqueueReachable, APPROVAL_PATH_READY);
         /** The route ENQUEUES. The Discord call happens in the worker, after commit. */
         assert.equal(r.directChannelGatewayReachable, false);
         assert.equal(r.providerExecutionReachable, false);
