@@ -424,6 +424,7 @@ export {
   type ServiceCallIdentity,
   type ServiceCallRow,
   type ServiceCallState,
+  type ServiceCallTx,
   type SettlementEvidence,
 } from "./x402-service-calls";
 export {
