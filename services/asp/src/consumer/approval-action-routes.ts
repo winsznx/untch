@@ -68,6 +68,9 @@ export interface ApprovalActionDeps {
 
 const ACTOR_COOKIE = "untch_approval_actor";
 
+/** The states from which no further answer is possible. Kept beside the refusal that reads them. */
+const TERMINAL_REQUEST_STATES = new Set(["APPROVED", "REJECTED", "EXPIRED", "EXECUTED", "CANCELLED", "SUPERSEDED"]);
+
 /**
  * Read one cookie from the raw header.
  *
@@ -539,12 +542,32 @@ async function actOnReference(
    * The partition the reservation is accounted under, read from the request rather than derived from
    * the reference. Budget is a property of the POLICY, and a key built from anything else would let two
    * policies share one window.
+   *
+   * `FOR UPDATE`, AND IT IS THE FIRST LOCK THIS TRANSACTION TAKES.
+   *
+   * `actOnApproval` documents the order every caller must follow — request, then service call, then
+   * binding — and takes the request lock itself. That is not sufficient here, because this function
+   * BURNS A REFERENCE before calling it and then invalidates the siblings after, so the real sequence
+   * without this lock is:
+   *
+   *   own action ref  →  request  →  every other action ref
+   *
+   * Two channels answering at once each hold their own reference and each want the other's, which is a
+   * cycle: Discord holds the Discord ref and waits on the request; the web actor holds the web ref and
+   * waits on the request; whichever wins the request then waits forever on the loser's ref. Postgres
+   * detects it and kills one transaction with 40P01, and the person who pressed the button gets a 500
+   * on a payment decision rather than "that is already handled".
+   *
+   * Taking the REQUEST first makes the order identical for both channels — request, own ref, sibling
+   * refs — so they queue on one row instead of deadlocking on two. The loser then blocks here, reads
+   * the committed terminal state when it is released, and refuses cleanly below.
    */
   const { rows: policyRows } = await tx.query(
-    `SELECT policy_id FROM untch_approval_requests WHERE approval_request_id = $1`,
+    `SELECT policy_id, state FROM untch_approval_requests WHERE approval_request_id = $1 FOR UPDATE`,
     [ref.approvalRequestId],
   );
-  const policyId = (policyRows[0] as { policy_id?: string } | undefined)?.policy_id;
+  const requestRow = policyRows[0] as { policy_id?: string; state?: string } | undefined;
+  const policyId = requestRow?.policy_id;
   if (!policyId) {
     return { status: 404, body: { code: "ACTION_NOT_FOUND", message: "the request behind this action is gone", wroteNothing: true } };
   }
@@ -560,7 +583,24 @@ async function actOnReference(
    * decision. `actOnApproval`'s nonce insert is the second, independent guard for two DIFFERENT links.
    */
   if (!(await consumeActionRef(tx as never, ref.actionReferenceId, token))) {
-    return { status: 409, body: { code: "ACTION_ALREADY_CONSUMED", message: "this action has already been used", wroteNothing: true } };
+    /**
+     * Two ways to arrive here, and they are different facts. The link itself having been used twice is
+     * one; the OTHER channel having answered first — which invalidated this reference on its way out —
+     * is the other, and it is the one a racing caller hits. Reporting the request's own terminal state
+     * says what actually happened rather than blaming the link.
+     */
+    const resolved = TERMINAL_REQUEST_STATES.has(String(requestRow?.state ?? ""));
+    return {
+      status: 409,
+      body: resolved
+        ? {
+            outcome: "ALREADY_RESOLVED",
+            approvalRequestId: ref.approvalRequestId,
+            message: `this request is already ${String(requestRow?.state)}`,
+            wroteNothing: true,
+          }
+        : { code: "ACTION_ALREADY_CONSUMED", message: "this action has already been used", wroteNothing: true },
+    };
   }
 
   const result = await actOnApproval(tx as never, {
