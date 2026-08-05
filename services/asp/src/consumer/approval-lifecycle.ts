@@ -11,6 +11,7 @@ import {
   type SettlementOracle,
 } from "@untch/consumer-core";
 import { rawPaymentAuthorizationHeader } from "./payment-authorization";
+import { ensureWebApprovalSurface } from "./discord-approval-gateway";
 
 /**
  * The two things that make an approval actionable, and the loop that finishes the job when neither ran.
@@ -279,10 +280,51 @@ export function startApprovalWorkers(deps: ApprovalLifecycleDeps): ApprovalWorke
 
   const deliveryPass = async (): Promise<void> => {
     const created = await projectDeliveries(deps.pool, { limit: 20 });
+
+    /**
+     * The WEB surface, projected in the same pass as the channel deliveries.
+     *
+     * `ensureWebApprovalSurface` existed and had no production caller, so the dashboard was never a
+     * place an approval could actually be answered from — the account had a wallet binding with
+     * `policy-authority` and no web ChannelBinding, no action references, and nothing to press. A
+     * readiness report can read "web actor valid" off the wallet scope and be wrong about the surface,
+     * which is exactly what happened.
+     *
+     * It runs AFTER the outbox has been projected, so it only ever sees requests whose settlement is
+     * already committed — the same boundary the Discord delivery sits behind. A rolled-back decision
+     * has no outbox row, so it reaches neither.
+     *
+     * Failures are logged and never throw. A web projection that could not be built must not stop the
+     * Discord message from going out; losing one surface is bad, losing both because of one is worse.
+     */
+    let webProjected = 0;
+    const { rows: pending } = await deps.pool.query<{ approval_request_id: string }>(
+      `SELECT DISTINCT o.approval_request_id
+         FROM untch_approval_outbox o
+         JOIN untch_approval_requests r ON r.approval_request_id = o.approval_request_id
+        WHERE o.name = 'approval.request.ready.v1'
+          AND r.state = 'PENDING'
+          AND r.expires_at > now()
+          AND NOT EXISTS (
+            SELECT 1 FROM untch_approval_action_refs ar
+              JOIN untch_channel_bindings wb ON wb.binding_id = ar.channel_binding_id
+             WHERE ar.approval_request_id = o.approval_request_id AND wb.channel = 'web'
+          )
+        LIMIT 20`,
+    );
+    for (const row of pending) {
+      try {
+        const surface = await ensureWebApprovalSurface(deps.pool, row.approval_request_id);
+        if (surface) webProjected += 1;
+      } catch (err) {
+        log(`[approval-web-projection] failed for one request: ${(err as Error).message.slice(0, 120)}`);
+      }
+    }
+
     const report = await deliverOnce(deps.pool, deps.gateway, { limit: 20 });
     deliveryHealth.ok();
-    if (created > 0 || report.claimed > 0) {
-      log(`[approval-delivery] ${JSON.stringify({ projected: created, ...report })}`);
+    if (created > 0 || webProjected > 0 || report.claimed > 0) {
+      log(`[approval-delivery] ${JSON.stringify({ projected: created, webProjected, ...report })}`);
     }
   };
 

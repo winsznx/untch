@@ -65,7 +65,7 @@ describe("the Discord approval message", { skip: TEST_DB ? false : "TEST_DATABAS
       `INSERT INTO untch_channel_bindings
          (binding_id, account_id, channel, channel_user_id, channel_chat_id, can_decide, status,
           verified_at, scopes, verification_method, account_ref_hash, created_at, created_by, updated_at, updated_by)
-       VALUES ('cbnd_gw', $1, 'discord', $2, '999888777', true, 'ACTIVE', now(),
+       VALUES ('cbnd_gw', $1, 'discord', $2, NULL, true, 'ACTIVE', now(),
                ARRAY['notify','policy-approval'], 'discord_oauth_identify', 'arh_gw', now(),'t', now(),'t')
        ON CONFLICT DO NOTHING`,
       [ACCOUNT, SUBJECT],
@@ -155,6 +155,11 @@ describe("the Discord approval message", { skip: TEST_DB ? false : "TEST_DATABAS
     readonly body: Record<string, unknown>;
   }
 
+  /**
+   * An `discord_oauth_identify` binding carries no channel, so every send here opens a DM first. The
+   * DM open always succeeds; `ok` governs the MESSAGE, which is what these tests are actually about.
+   * Conflating the two would make a failed send indistinguishable from an unreachable recipient.
+   */
   const recordingGateway = (sent: Sent[], ok = true) =>
     discordApprovalGateway({
       pool,
@@ -162,6 +167,7 @@ describe("the Discord approval message", { skip: TEST_DB ? false : "TEST_DATABAS
       botToken: "bot-token-for-test",
       post: async (url, body) => {
         sent.push({ url, body: body as Record<string, unknown> });
+        if (url.endsWith("/users/@me/channels")) return { ok: true, id: "dm_channel_1", status: 200 };
         return { ok, id: ok ? `msg_${sent.length}` : null, status: ok ? 200 : 500 };
       },
     });

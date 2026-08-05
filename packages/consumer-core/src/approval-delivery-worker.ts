@@ -41,6 +41,13 @@ export interface DeliveryTarget {
   readonly channel: string;
   readonly channelUserId: string;
   readonly channelChatId: string | null;
+  /**
+   * How the binding was proven, carried so a gateway can tell a VERIFIED channel from a recorded one.
+   *
+   * An `identify` OAuth grant proves a user and never a channel, so a channel recorded against one was
+   * never verified — which is the distinction a Discord send has to make before choosing a route.
+   */
+  readonly verificationMethod: string | null;
   readonly canDecide: boolean;
   readonly actionTokenFamily: string;
   readonly attempts: number;
@@ -169,6 +176,7 @@ export async function deliverOnce(
       `SELECT d.delivery_id, d.approval_request_id, d.account_id, d.channel_binding_id, d.channel,
               d.action_token_family, d.attempts,
               b.channel_user_id, b.channel_chat_id, b.can_decide, b.status AS binding_status,
+              b.verification_method,
               r.state AS request_state
          FROM untch_approval_deliveries d
          JOIN untch_channel_bindings b ON b.binding_id = d.channel_binding_id
@@ -207,6 +215,7 @@ export async function deliverOnce(
         channel: String(r.channel),
         channelUserId: String(r.channel_user_id),
         channelChatId: r.channel_chat_id === null ? null : String(r.channel_chat_id),
+        verificationMethod: r.verification_method === null ? null : String(r.verification_method),
         canDecide: r.can_decide === true,
         actionTokenFamily: String(r.action_token_family ?? ""),
         attempts: Number(r.attempts ?? 0),
@@ -263,4 +272,116 @@ export async function deliverOnce(
   }
 
   return { claimed: targets.length + skipped, sent, retryable, terminal, skipped };
+}
+
+/**
+ * Return a terminally-failed delivery to the queue, once, after its destination has been corrected.
+ *
+ * WHY THE WORKER CANNOT DO THIS ON ITS OWN
+ *
+ * `FAILED_TERMINAL` means "do not try again", and that classification was right: a 404 from Discord
+ * repeats forever, so retrying it would have burned attempts against a defect no retry could fix.
+ * What the worker cannot know is that the DEFECT has since been repaired — that is an operator fact,
+ * arriving from outside the row.
+ *
+ * So recovery is explicit, narrow, and reuses the SAME delivery row. A second row would be a second
+ * logical delivery of one approval: two messages, two sets of links, and a person choosing between
+ * them. The row goes back to QUEUED with its attempt count intact, and the ordinary worker sends it.
+ *
+ * WHAT MAKES A DELIVERY ELIGIBLE
+ *
+ * Every condition below is about the delivery never having reached anybody, and the approval still
+ * being answerable. A delivery that was SENT, a request that is no longer PENDING, an expired window,
+ * a revoked binding or an approval that already has a terminal decision are all refused BY NAME —
+ * `null` would leave a caller unable to tell "nothing to do" from "not allowed".
+ *
+ * Deliberately no `force`. A parameter that skipped these checks would be the only thing standing
+ * between a corrected defect and re-delivering an approval somebody had already answered.
+ */
+export type DeliveryRecoveryRefusal =
+  | "NOT_FOUND"
+  | "ALREADY_SENT"
+  | "NOT_TERMINAL"
+  | "REQUEST_NOT_PENDING"
+  | "REQUEST_EXPIRED"
+  | "BINDING_NOT_ACTIVE"
+  | "ALREADY_DECIDED";
+
+export type DeliveryRecoveryResult =
+  | { readonly ok: true; readonly deliveryId: string; readonly approvalRequestId: string; readonly attempts: number }
+  | { readonly ok: false; readonly refusal: DeliveryRecoveryRefusal; readonly detail: string };
+
+export async function requeueCorrectedDelivery(
+  pool: Pool,
+  deliveryId: string,
+  opts: { readonly nowMs?: number } = {},
+): Promise<DeliveryRecoveryResult> {
+  const now = new Date(opts.nowMs ?? Date.now());
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<Record<string, unknown>>(
+      `SELECT d.delivery_id, d.approval_request_id, d.status, d.external_delivery_id, d.sent_at, d.attempts,
+              b.status AS binding_status, r.state AS request_state, r.expires_at,
+              (SELECT count(*)::int FROM untch_approval_decisions x
+                WHERE x.approval_request_id = d.approval_request_id) AS decisions
+         FROM untch_approval_deliveries d
+         JOIN untch_channel_bindings b ON b.binding_id = d.channel_binding_id
+         JOIN untch_approval_requests r ON r.approval_request_id = d.approval_request_id
+        WHERE d.delivery_id = $1
+          FOR UPDATE OF d`,
+      [deliveryId],
+    );
+    const row = rows[0];
+    const refuse = async (refusal: DeliveryRecoveryRefusal, detail: string): Promise<DeliveryRecoveryResult> => {
+      await client.query("ROLLBACK");
+      return { ok: false, refusal, detail };
+    };
+
+    if (!row) return await refuse("NOT_FOUND", "no such delivery");
+    /** Checked before status: a SENT row is the one case where re-queueing would message twice. */
+    if (row.external_delivery_id !== null || row.sent_at !== null) {
+      return await refuse("ALREADY_SENT", "this delivery already reached the channel");
+    }
+    if (row.status !== "FAILED_TERMINAL") {
+      return await refuse("NOT_TERMINAL", `this delivery is ${String(row.status)}, and the worker still owns it`);
+    }
+    if (Number(row.decisions) > 0) {
+      return await refuse("ALREADY_DECIDED", "this approval already has a terminal decision");
+    }
+    if (row.request_state !== "PENDING") {
+      return await refuse("REQUEST_NOT_PENDING", `the request is ${String(row.request_state)}`);
+    }
+    const expiresAt = row.expires_at instanceof Date ? row.expires_at : new Date(String(row.expires_at));
+    if (expiresAt.getTime() <= now.getTime()) {
+      return await refuse("REQUEST_EXPIRED", "the approval window has closed; a new request must be raised");
+    }
+    if (row.binding_status !== "ACTIVE") {
+      return await refuse("BINDING_NOT_ACTIVE", "the channel binding is no longer active");
+    }
+
+    /**
+     * Back to QUEUED with `attempts` untouched, so the history of the failure survives the recovery.
+     * Zeroing it would make a delivery that failed and was rescued indistinguishable from one that
+     * never had trouble.
+     */
+    await client.query(
+      `UPDATE untch_approval_deliveries
+          SET status = 'QUEUED', failure_code = NULL, next_attempt_at = NULL
+        WHERE delivery_id = $1`,
+      [deliveryId],
+    );
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      deliveryId: String(row.delivery_id),
+      approvalRequestId: String(row.approval_request_id),
+      attempts: Number(row.attempts ?? 0),
+    };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
 }

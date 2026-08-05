@@ -112,8 +112,19 @@ export function discordCodeExchanger(config: {
 
     return {
       externalSubjectId: String(me.id),
-      /** A DM channel is opened at send time. The user id is what identifies them. */
-      deliveryTargetId: String(me.id),
+      /**
+       * NULL, and that is what makes the DM happen.
+       *
+       * This used to be `String(me.id)` under a comment saying a DM channel is opened at send time.
+       * The comment described the intent and the value defeated it: `deliveryTargetId` becomes
+       * `channel_chat_id`, and the gateway treats a present `channel_chat_id` as a REAL Discord
+       * channel — so it skipped opening a DM and POSTed to `/channels/<user id>/messages`, which is
+       * not a channel. Discord answered 404 every time.
+       *
+       * An `identify` OAuth grant proves WHO somebody is. It conveys no channel, so there is no
+       * channel to record, and recording the user id as one was the whole defect.
+       */
+      deliveryTargetId: null,
       workspaceRef: null,
       displayLabel: me.username ? `@${me.username}` : null,
       verificationMethod: "discord_oauth_identify",

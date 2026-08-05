@@ -556,6 +556,7 @@ export {
   deliverOnce,
   newApprovalDeliveryId,
   projectDeliveries,
+  requeueCorrectedDelivery,
   type ChannelGateway,
   type DeliveryReport,
   type DeliveryStatus,
