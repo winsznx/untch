@@ -53,10 +53,17 @@ import {
 } from "@untch/policy-engine";
 import { toEnginePolicy } from "@untch/policy-store";
 import { canonTimestamp } from "@untch/canon";
+import type { PgServiceCallStore, ServiceCallTx } from "@untch/consumer-core";
 import type { HandlerResult } from "../handlers";
 import { assemblePreflightInjects } from "../preflight-state";
 import { APPROVAL_PATH_READY, routeReachability, type DecisionOnlyDeps } from "../route-profiles";
 import { openAccountSession } from "../consumer/account-auth";
+import {
+  EscalatedApprovalRefused,
+  persistEscalatedApproval,
+  type EscalatedApprovalRecord,
+} from "../consumer/escalated-approval";
+import type { VerifiedPaymentAuthorizationContext } from "../consumer/payment-authorization";
 import { mapPreflightRequest, type NetworkFacts } from "./mapping";
 import {
   DIRECT_ACCOUNT_ONCHAIN_BUYER_AGENT_ID,
@@ -99,7 +106,31 @@ export interface PublicPreflightDeps {
   readonly chainId: number;
   readonly registry: string;
   readonly now?: () => number;
+  /**
+   * Where the escalated branch records the service call and the payment attempt.
+   *
+   * A STORE, not a settlement capability. Its whole surface is four SQL statements against two tables,
+   * every one of them executed on the transaction handed in, and none of them can reach a facilitator,
+   * a signer or a chain. It sits here rather than on `DecisionOnlyDeps` for the same reason `evidenceTx`
+   * does: writing a row inside the caller's transaction is something a rollback undoes, and that is the
+   * boundary those types are drawn on.
+   *
+   * Null on an instance with no database. The escalated branch then refuses rather than raising an
+   * approval nothing could later activate.
+   */
+  readonly serviceCalls?: PgServiceCallStore | null;
+  /**
+   * How long a human is given to answer, in milliseconds.
+   *
+   * Separate from the caller's `deadline`, which is when the QUOTE ages out. The two are different
+   * facts and the approval digest binds both, so collapsing them would make an approval window inherit
+   * whatever expiry a caller happened to ask for.
+   */
+  readonly approvalWindowMs?: number;
 }
+
+/** The default human window. Long enough for a person to read a message, answer and be wrong once. */
+export const DEFAULT_APPROVAL_WINDOW_MS = 60 * 60_000;
 
 /**
  * Does this body speak the public contract?
@@ -185,6 +216,20 @@ export async function handlePublicPreflight(
    * execute a provider.
    */
   decisionDeps: DecisionOnlyDeps,
+  /**
+   * THE PAYMENT AS EVIDENCE, NEVER AS A CAPABILITY.
+   *
+   * `VerifiedPaymentAuthorizationContext` is strings and nulls — proven callable-free by a `tsc`
+   * assertion in `payment-authorization.ts`. It carries no settlement function, no facilitator client,
+   * no treasury signer, no provider executor, no raw bearer, no signature and no key.
+   *
+   * It is a FIFTH parameter rather than a field on `decisionDeps` deliberately. `DecisionOnlyDeps` is
+   * the type whose guarantee is that this route cannot name an executor, and widening it — even with
+   * something inert — would make that guarantee a judgement about each field rather than a property of
+   * the type. So the dependency bundle stays exactly as it was, and the request's own evidence arrives
+   * as what it is: part of the request.
+   */
+  paymentAuthorization: VerifiedPaymentAuthorizationContext | null = null,
 ): Promise<HandlerResult> {
   const now = publicDeps.now ?? Date.now;
   const parsed = readRequest(body);
@@ -449,6 +494,8 @@ export async function handlePublicPreflight(
     readonly reservationId: string | null;
     readonly budgetUsage: { readonly settledToday: number; readonly reservedActiveToday: number; readonly effectiveToday: number };
     readonly stateBefore: { readonly recentIntents: number; readonly callsInLastHour: number };
+    /** Present only when this decision escalated AND the approval path is wired. */
+    readonly escalated: EscalatedApprovalRecord | null;
   }
 
   let committed: Committed;
@@ -515,6 +562,65 @@ export async function handlePublicPreflight(
       await persistDecisionEvidenceV3(tx, assembledEvidence);
 
       /**
+       * ── THE ESCALATED BRANCH ──────────────────────────────────────────
+       *
+       * Reached only when the path is wired. Everything it writes is PROVISIONAL: a service call, the
+       * payment attempt that bought it, and an approval request that is explicitly NOT actionable.
+       *
+       * No outbox event, no delivery, no reservation and no channel call happen here. Those belong to
+       * the finalizer and the worker, which run after this transaction has committed AND after an
+       * authority has confirmed the fee actually settled. Writing any of them now would be promising a
+       * human something the process cannot yet know was paid for.
+       *
+       * It is inside the transaction on purpose. A rollback removes the approval request along with the
+       * decision that raised it, so a caller whose request failed stays eligible to make it again.
+       */
+      let escalated: EscalatedApprovalRecord | null = null;
+      if (engineResult.decision.startsWith("ESCALATED")) {
+        if (!publicDeps.serviceCalls) {
+          throw new EscalatedApprovalRefused(
+            "this instance has no service-call store, so an escalated decision cannot record the payment " +
+              "that bought it and could never be activated",
+            "PAYMENT_AUTHORIZATION_ABSENT",
+          );
+        }
+        escalated = await persistEscalatedApproval(tx as ServiceCallTx, publicDeps.serviceCalls, paymentAuthorization, {
+          route: "/preflight_payment",
+          accountId: a.account.accountId,
+          /**
+           * The caller's key when they gave one, and the intent hash when they did not — the same rule
+           * the quote lineage uses, and for the same reason: a retry after a lost response has to
+           * resolve to the SAME service call rather than buying a second one.
+           */
+          idempotencyKey: request.idempotencyKey ?? intentHash,
+          provider: request.provider,
+          capability: request.capability,
+          amount: request.maxSpend,
+          asset: request.currency,
+          deadline: canonTimestamp(request.deadline),
+          chain: `eip155:${publicDeps.chainId}`,
+          recipient: a.recipient,
+          decisionId: assembledEvidence.evidence.decisionId,
+          intentHash,
+          quoteDigest: assembledEvidence.evidence.quoteDigest,
+          policySnapshotHash: assembledEvidence.evidence.policySnapshotHash,
+          policyId: a.policy.id,
+          policyHash: a.policy.policyHash,
+          policyVersion: a.policy.version,
+          intentNonce: mapped.intent.nonce.toString(),
+          taskHash: mapped.intent.paramsHash,
+          acceptanceHash: mapped.intent.acceptanceHash,
+          requesterPrincipalKind: r.requesterPrincipalKind,
+          requesterPrincipalNamespace: r.requesterPrincipalNamespace,
+          requesterPrincipalRef: r.requesterPrincipalRef,
+          accountRefHash: r.accountRefHash,
+          walletAuthorityRef: r.walletAuthorityRef,
+          reason: engineResult.decision,
+          approvalExpiresAt: new Date(nowMs + (publicDeps.approvalWindowMs ?? DEFAULT_APPROVAL_WINDOW_MS)).toISOString(),
+        });
+      }
+
+      /**
        * The proposal is applied HERE and only here.
        *
        * A non-APPROVED decision proposes nothing: it consumed no budget and is not a duplicate that
@@ -574,6 +680,7 @@ export async function handlePublicPreflight(
           recentIntents: windowState.recentIntents.length,
           callsInLastHour: windowState.callsInLastHour,
         },
+        escalated,
       };
     });
   } catch (err) {
@@ -613,6 +720,33 @@ export async function handlePublicPreflight(
           // Stated so nobody has to infer it from the absence of a field.
           humanNotified: false,
           decisionPersisted: false,
+          docsUrl: null,
+        },
+      };
+    }
+    if (err instanceof EscalatedApprovalRefused) {
+      /**
+       * The escalated branch could not record what it needed to, so the whole decision rolls back.
+       *
+       * Non-2xx, so `paymentMiddleware` never settles: the caller is not charged for a request that
+       * raised nothing. `SERVICE_CALL_NOT_CLAIMABLE` is the one case that means the OPPOSITE of a
+       * failure — the work was already bought — and it is reported as a conflict rather than an
+       * outage so a client retries through the replay resolver rather than paying again.
+       */
+      const alreadyPaid = err.code === "SERVICE_CALL_NOT_CLAIMABLE";
+      return {
+        status: alreadyPaid ? 409 : 503,
+        headers: alreadyPaid ? { "Cache-Control": "no-store" } : { "Retry-After": "60", "Cache-Control": "no-store" },
+        body: {
+          outcome: "APPROVAL_REQUEST_NOT_RECORDABLE",
+          code: err.code,
+          message: err.message,
+          approvalPathAvailable: APPROVAL_PATH_READY,
+          servicePaymentSettled: false,
+          paymentConsumed: false,
+          humanNotified: false,
+          decisionPersisted: false,
+          retryable: !alreadyPaid,
           docsUrl: null,
         },
       };
@@ -719,6 +853,32 @@ export async function handlePublicPreflight(
           "no provider execution, no settlement and no delivery occurred. The only money moving in " +
           "this call is the x402 service fee, which is Untch revenue and is not governed spend.",
       },
+      /**
+       * WHAT WAS RAISED, AND WHAT IT IS NOT YET.
+       *
+       * `state: "PROVISIONAL"` is the honest answer at this moment and the field a caller must branch
+       * on. The handler's transaction commits BEFORE the fee settles, and a pending facilitator status
+       * is reported as success, so nothing here can claim the request is actionable. It becomes PENDING
+       * only when an authority confirms the settlement, and `humanNotified` stays false until the
+       * delivery worker has actually sent something.
+       */
+      approval:
+        committed.escalated === null
+          ? null
+          : {
+              approvalRequestId: committed.escalated.approvalRequestId,
+              approvalDigest: committed.escalated.approvalDigest,
+              serviceCallId: committed.escalated.serviceCallId,
+              quoteLineageId: committed.escalated.quoteLineageId,
+              state: committed.escalated.state,
+              actionable: false,
+              humanNotified: false,
+              activatesOn: "confirmed settlement of the service fee, verified against the facilitator",
+              note:
+                "This request is PROVISIONAL. The service fee for it has been authorised and not yet " +
+                "confirmed settled, so no message has been sent and no authority exists. Poll the " +
+                "approval case rather than treating this response as a request a human can see.",
+            },
       // The engine's own word stays beside the public one. `ESCALATED_OVER_THRESHOLD` says which rule
       // fired; `ESCALATED` is what a caller branches on. Collapsing them would lose the reason.
       engineDecision,

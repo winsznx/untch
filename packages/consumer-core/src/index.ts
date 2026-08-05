@@ -424,6 +424,7 @@ export {
   type ServiceCallIdentity,
   type ServiceCallRow,
   type ServiceCallState,
+  type ServiceCallTx,
   type SettlementEvidence,
 } from "./x402-service-calls";
 export {
@@ -551,6 +552,19 @@ export {
   type SupersessionRefusal,
   type SupersessionResult,
 } from "./approval-supersession";
+export {
+  APPROVAL_ACTION_REF_SCHEMA_VERSION,
+  actionRefFingerprint,
+  consumeActionRef,
+  ensureActionReferences,
+  invalidateActionRefs,
+  mintTokenForRef,
+  newActionReferenceId,
+  resolveActionRef,
+  type ActionRefRefusal,
+  type ActionRefVerdict,
+  type ResolvedActionRef,
+} from "./approval-action-ref";
 export {
   APPROVAL_CASE_PROJECTION_VERSION,
   NEVER_PUBLIC_CASE_FIELDS,

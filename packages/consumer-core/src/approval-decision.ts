@@ -240,10 +240,18 @@ export async function actOnApproval(tx: ServiceCallTx, input: ApprovalActionInpu
 
   if (input.action === "DENY") {
     await tx.query(
+      /**
+       * The nonce is RECORDED on the decision, not merely consumed beside it.
+       *
+       * Consuming it makes the action exactly-once; naming it here is what lets the database prove
+       * afterwards that this decision came through the bound path. Migration 030 refuses a terminal
+       * decision on a service-call-backed request that cannot name the nonce it consumed, which is how
+       * a forgotten code path or a hand-written UPDATE gets caught rather than trusted.
+       */
       `INSERT INTO untch_approval_decisions
          (decision_id, approval_request_id, account_id, channel, channel_binding_id, actor, decision,
-          approval_digest, created_by, requester_principal_ref, wallet_authority_ref)
-       VALUES ($1,$2,$3,$4,$5,$6,'REJECT',$7,'approval-action',$8,$9)`,
+          approval_digest, created_by, requester_principal_ref, wallet_authority_ref, action_nonce)
+       VALUES ($1,$2,$3,$4,$5,$6,'REJECT',$7,'approval-action',$8,$9,$10)`,
       [
         decisionId,
         input.approvalRequestId,
@@ -254,6 +262,7 @@ export async function actOnApproval(tx: ServiceCallTx, input: ApprovalActionInpu
         request.approval_digest,
         request.requester_principal_ref ?? null,
         request.wallet_authority_ref ?? null,
+        verdict.claims.nonce,
       ],
     );
     await tx.query(
@@ -335,8 +344,8 @@ export async function actOnApproval(tx: ServiceCallTx, input: ApprovalActionInpu
   await tx.query(
     `INSERT INTO untch_approval_decisions
        (decision_id, approval_request_id, account_id, channel, channel_binding_id, actor, decision,
-        approval_digest, created_by, requester_principal_ref, wallet_authority_ref)
-     VALUES ($1,$2,$3,$4,$5,$6,'APPROVE',$7,'approval-action',$8,$9)`,
+        approval_digest, created_by, requester_principal_ref, wallet_authority_ref, action_nonce)
+     VALUES ($1,$2,$3,$4,$5,$6,'APPROVE',$7,'approval-action',$8,$9,$10)`,
     [
       decisionId,
       input.approvalRequestId,
@@ -347,6 +356,7 @@ export async function actOnApproval(tx: ServiceCallTx, input: ApprovalActionInpu
       request.approval_digest,
       request.requester_principal_ref ?? null,
       request.wallet_authority_ref ?? null,
+      verdict.claims.nonce,
     ],
   );
 
@@ -411,6 +421,19 @@ export async function actOnApproval(tx: ServiceCallTx, input: ApprovalActionInpu
  * channel answered rather than only that the others did not.
  */
 async function invalidateSiblings(tx: ServiceCallTx, approvalRequestId: string, actedBindingId: string): Promise<void> {
+  /**
+   * Every unspent action reference for this request dies with the decision.
+   *
+   * In the SAME transaction, so a decision that rolls back leaves the links pressable and one that
+   * commits leaves none. Doing it afterwards would leave a window in which a second channel's URL still
+   * resolved to a confirmation page for a request that had already been answered.
+   */
+  await tx.query(
+    `UPDATE untch_approval_action_refs
+        SET invalidated_at = now(), invalidation_reason = 'REQUEST_RESOLVED'
+      WHERE approval_request_id = $1 AND consumed_at IS NULL AND invalidated_at IS NULL`,
+    [approvalRequestId],
+  );
   await tx.query(
     `UPDATE untch_approval_deliveries
         SET status = 'ACTED', acted_at = now()
