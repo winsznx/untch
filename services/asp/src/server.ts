@@ -108,6 +108,7 @@ import {
   type ReplayResolverDeps,
 } from "./consumer/settled-replay-resolver";
 import {
+  APPROVAL_PATH_READY,
   EXECUTION_MANIFEST_ROUTE,
   executionManifest,
   narrowToDecisionOnly,
@@ -122,7 +123,16 @@ import { registerConsumerOperatorRoutes } from "./consumer/operator-routes";
 import { registerConsumerSettlementRoutes } from "./consumer/operator-settlement-routes";
 import { registerConsumerQuotePreviewRoute } from "./consumer/operator-quote-routes";
 import { registerConsumerVerifyRoutes } from "./consumer/operator-verify-routes";
-import { accountRefHash, asset, loadConsumerFlags, loadSolanaProofGate, readSchemaState } from "@untch/consumer-core";
+import {
+  PgServiceCallStore,
+  accountRefHash,
+  asset,
+  facilitatorOracle,
+  loadConsumerFlags,
+  loadSolanaProofGate,
+  readSchemaState,
+  type Pool,
+} from "@untch/consumer-core";
 import { findOwnedService } from "@untch/owned-work";
 import {
   handlePublicPreflight,
@@ -136,6 +146,18 @@ import { challengeDescription, registerRegistryRoutes } from "./registry/routes"
 import { CHAIN, SETTLEMENT_TOKEN } from "./config";
 import { installUnhandledRejectionGuard, registerJsonErrorBoundary } from "./http-errors";
 import { observeSettlements } from "./settlement-observability";
+import { authenticateOperator } from "./internal-auth";
+import {
+  APPROVAL_WORKER_HEALTH_ROUTE,
+  finalizeSettledApprovals,
+  startApprovalWorkers,
+  unconfiguredChannelGateway,
+  type ApprovalWorkers,
+} from "./consumer/approval-lifecycle";
+import {
+  parseVerifiedPaymentAuthorization,
+  rawPaymentAuthorizationHeader,
+} from "./consumer/payment-authorization";
 
 /**
  * Untch A2MCP seller. Real, settled, pay-per-call x402 on X Layer mainnet (eip155:196) via the OKX
@@ -211,6 +233,20 @@ export function createSellerApp(
   let replayResolverDeps: ReplayResolverDeps | null = null;
 
   /**
+   * The settlement authority, and the loops that use it.
+   *
+   * `facilitatorOracle` wraps `getSettleStatus`, which is the ONLY thing allowed to say a settlement is
+   * confirmed. It is deliberately not the middleware's boolean and not the response header: both report
+   * a pending settlement as a success, and a pending settlement must activate nothing.
+   *
+   * Assigned once the pool exists, read by middleware registered further up. Null until then, and both
+   * the finalizer hook and the workers stay inert rather than acting without a store.
+   */
+  const settlementOracle = facilitatorOracle(facilitatorClient);
+  let approvalLifecycleDeps: { readonly pool: Pool } | null = null;
+  let approvalWorkers: ApprovalWorkers | null = null;
+
+  /**
    * Readiness and deployment identity, registered BEFORE the payment gate.
    *
    * Ordering is the point. Registered after `paymentMiddleware` these would be reachable only by a
@@ -263,6 +299,23 @@ export function createSellerApp(
    * balance search. This makes that a query.
    */
   app.use(observeSettlements([PREFLIGHT_ROUTE, VERIFY_ROUTE, PING_ROUTE, BRAND_PACK_ROUTE]));
+
+  /**
+   * Finalization on the way out, mounted beside the observer and outside the payment gate.
+   *
+   * It exists so a human is told in seconds rather than at the next reconciler tick. It is never the
+   * boundary that makes an approval actionable: it asks `getSettleStatus` and hands the answer to
+   * `finalizeSettlement`, which refuses anything short of a confirmed transaction. A process that dies
+   * before this fires loses nothing, because the reconciler reaches the same state from committed data.
+   */
+  app.use((req, res, next) => {
+    if (!approvalLifecycleDeps) return next();
+    return finalizeSettledApprovals({
+      pool: approvalLifecycleDeps.pool,
+      oracle: settlementOracle,
+      routes: [PREFLIGHT_ROUTE],
+    })(req, res, next);
+  });
 
   // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
   app.use(
@@ -538,11 +591,21 @@ export function createSellerApp(
     if (!policyWiring) return send(res, policyStoreUnconfigured());
     const engineDeps = preflightEngineDeps(policyWiring.provider);
     if (publicPreflightDeps && looksPublic(req.body)) {
+      /**
+       * The authorization the middleware ALREADY verified, parsed into inert data.
+       *
+       * `paymentMiddleware` runs ahead of this route and answers an invalid authorization with a 402
+       * without ever calling `next()`, so anything reaching here has been verified. This reads what was
+       * verified and hands on the facts — a nonce, a payer, a token, an amount, a recipient, a chain.
+       * The signature and the complete signed authorization are deliberately not among them: both are
+       * bearer instruments, and a value that travels into application code must not be spendable.
+       */
       handlePublicPreflight(
         req.body,
         req.header("authorization"),
         publicPreflightDeps,
         preflightDecisionDeps(policyWiring.provider),
+        parseVerifiedPaymentAuthorization(rawPaymentAuthorizationHeader(req), { chainId: CHAIN.id }),
       )
         .then((result) => send(res, result))
         .catch(next);
@@ -791,6 +854,14 @@ export function createSellerApp(
           chainId: CHAIN.id,
           registry: policyWiring.registration.registry,
           /**
+           * Where the escalated branch records the service call and the payment attempt.
+           *
+           * A store over two tables, executed on the decision's own transaction. It cannot reach a
+           * facilitator, a signer or a chain, which is why it belongs here rather than anywhere near
+           * `DecisionOnlyDeps`.
+           */
+          serviceCalls: consumerWiring ? new PgServiceCallStore(consumerWiring.pool) : null,
+          /**
            * One transaction per decision, on the same pool the rest of the service writes through.
            *
            * A paid decision that cannot record its evidence must fail rather than return success, so
@@ -816,6 +887,48 @@ export function createSellerApp(
             : null,
         }
       : null;
+
+  /**
+   * The loops that finish the job when nothing else did.
+   *
+   * Started only with a store to read. The reconciler recovers SETTLEMENT_PENDING, UNKNOWN and
+   * SETTLED-but-not-FINALIZED calls, and it never initiates or retries a payment — its only write path
+   * is `finalizeSettlement`, whose only confirmation source is the facilitator's own status API.
+   *
+   * The delivery worker turns committed outbox events into messages. It runs AFTER commit by
+   * construction, because it reads the outbox rather than being called from inside a transaction, so a
+   * rolled-back decision sends nothing.
+   */
+  if (consumerWiring) {
+    approvalLifecycleDeps = { pool: consumerWiring.pool };
+    approvalWorkers = startApprovalWorkers({
+      pool: consumerWiring.pool,
+      oracle: settlementOracle,
+      gateway: unconfiguredChannelGateway,
+      routes: [PREFLIGHT_ROUTE],
+    });
+  }
+
+  /**
+   * Worker health, behind the operator token.
+   *
+   * §12 readiness asks whether the reconciler and the delivery worker are actually running, and that is
+   * not answerable from outside a process whose loops are timers. It is internal rather than public
+   * because a stalled reconciler is operational detail, and publishing "nothing has reconciled in an
+   * hour" would tell a stranger when the settlement path is unattended.
+   */
+  app.get(APPROVAL_WORKER_HEALTH_ROUTE, (req, res) => {
+    const auth = authenticateOperator(req, { route: APPROVAL_WORKER_HEALTH_ROUTE, env: process.env });
+    if (!auth.ok) {
+      res.status(auth.status).json({ code: auth.code, message: auth.message, retryable: false, docsUrl: null });
+      return;
+    }
+    res.status(200).json({
+      approvalPathReady: APPROVAL_PATH_READY,
+      storeWired: approvalLifecycleDeps !== null,
+      workers: approvalWorkers === null ? null : approvalWorkers.health(),
+    });
+  });
 
   /**
    * The non-billable proof that the PAID path produces complete V3 evidence.

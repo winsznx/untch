@@ -39,6 +39,17 @@ export interface VerifiedPaymentAuthorizationContext {
   readonly payTo: string;
   /** CAIP-2. The same string the payment attempt and the finalizer compare on. */
   readonly chain: string;
+  /**
+   * ISO-8601, NOT the unix seconds the authorization carries.
+   *
+   * EIP-3009 states its window in unix seconds and `untch_x402_payment_attempts.valid_after` is a
+   * TIMESTAMPTZ, so passing the raw value through made Postgres try to read `0` as a date and refuse
+   * the whole attempt. Found by the escalation suite before this branch was ever reachable.
+   *
+   * Normalising HERE rather than at the store is deliberate: this is the boundary that turns a wire
+   * format into the repository's vocabulary, and doing it anywhere later would leave two call sites
+   * that each have to remember.
+   */
   readonly validAfter: string | null;
   readonly validBefore: string | null;
   readonly authorizationNonce: string;
@@ -99,6 +110,22 @@ const num = (v: unknown): string | null => {
   if (typeof v === "number" && Number.isFinite(v)) return String(v);
   return str(v);
 };
+
+/**
+ * Unix seconds to ISO-8601, refusing anything that is not a plausible second count.
+ *
+ * `0` is a legitimate EIP-3009 `validAfter` meaning "valid immediately", and it is also what an absent
+ * field coerces to, so it is mapped to the epoch rather than to null: the two are different claims and
+ * the window is what a settlement is checked against.
+ */
+function unixSecondsToIso(value: unknown): string | null {
+  const raw = num(value);
+  if (raw === null) return null;
+  if (!/^\d+$/.test(raw)) return null;
+  const ms = Number(raw) * 1000;
+  if (!Number.isFinite(ms) || ms > 8.64e15) return null;
+  return new Date(ms).toISOString();
+}
 
 /**
  * Parse a VERIFIED authorization into the inert value.
@@ -169,8 +196,8 @@ export function parseVerifiedPaymentAuthorization(
     amount,
     payTo,
     chain,
-    validAfter: num(authorization.validAfter),
-    validBefore: num(authorization.validBefore),
+    validAfter: unixSecondsToIso(authorization.validAfter),
+    validBefore: unixSecondsToIso(authorization.validBefore),
     authorizationNonce,
     authorizationDigest: authorizationDigest(terms),
     headerFingerprint: createHash("sha256").update(raw).digest("hex").slice(0, 16),
