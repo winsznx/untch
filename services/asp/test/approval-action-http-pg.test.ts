@@ -17,10 +17,11 @@ import { persistEscalatedApproval } from "../src/consumer/escalated-approval";
 import { parseVerifiedPaymentAuthorization } from "../src/consumer/payment-authorization";
 import {
   APPROVAL_ACTION_CONFIRM_ROUTE,
-  APPROVAL_ACTION_RETURN_ROUTE,
+  APPROVAL_ACTION_CALLBACK_ROUTE,
   APPROVAL_ACTION_START_ROUTE,
   WEB_APPROVAL_ACTION_ROUTE,
   registerApprovalActionRoutes,
+  sealActionStateForTest,
   webActionCsrfToken,
 } from "../src/consumer/approval-action-routes";
 import { mintAccountSession } from "../src/consumer/account-auth";
@@ -105,6 +106,8 @@ describe(
      */
     let exchangeSubject: string | null = OWNER_SUBJECT;
     let exchangeCalls = 0;
+    /** Records the redirect URI production hands the exchanger, so it can be compared to the authorize URL. */
+    let exchangeRedirectSink: ((redirectUri: string) => void) | null = null;
 
     before(async () => {
       const admin = createPool(TEST_DB!);
@@ -177,9 +180,10 @@ describe(
         publicBaseUrl: "https://asp.test",
         discord: {
           applicationId: "app-id-for-test",
-          redirectUri: "https://asp.test/consumer/approvals/action/x/return",
-          exchangeCode: async () => {
+          redirectUri: "https://asp.test/consumer/approvals/action/discord/callback",
+          exchangeCode: async (_code: string, redirectUri: string) => {
             exchangeCalls += 1;
+            exchangeRedirectSink?.(redirectUri);
             return exchangeSubject === null ? null : { subject: exchangeSubject };
           },
         },
@@ -319,14 +323,34 @@ describe(
       return out;
     };
 
-    const actorCookie = async (ref: string, subject: string): Promise<string> => {
-      exchangeSubject = subject;
-      const res = await fetch(`${base}/consumer/approvals/action/${ref}/return?code=oauth-code`, {
+    /**
+     * The state the START route actually issued, read out of the authorize URL it redirected to.
+     *
+     * Taken from the redirect rather than minted in the test, so every callback below is exercising a
+     * state this server produced through the real path — which is the only way the two halves can be
+     * shown to agree about the fixed callback.
+     */
+    const startAndTakeState = async (ref: string): Promise<{ state: string; redirectUri: string }> => {
+      const res = await fetch(`${base}/consumer/approvals/action/${ref}/start`, { redirect: "manual" });
+      assert.equal(res.status, 302, `start should redirect, got ${res.status}`);
+      const authorize = new URL(res.headers.get("location") ?? "");
+      const state = authorize.searchParams.get("state");
+      assert.ok(state, "the authorize URL must carry state");
+      return { state, redirectUri: authorize.searchParams.get("redirect_uri") ?? "" };
+    };
+
+    const callback = async (state: string, code = "oauth-code"): Promise<Response> =>
+      fetch(`${base}/consumer/approvals/action/discord/callback?code=${code}&state=${encodeURIComponent(state)}`, {
         redirect: "manual",
       });
-      assert.equal(res.status, 200, `expected the confirmation page, got ${res.status}`);
+
+    const actorCookie = async (ref: string, subject: string): Promise<string> => {
+      exchangeSubject = subject;
+      const { state } = await startAndTakeState(ref);
+      const res = await callback(state);
+      assert.equal(res.status, 303, `expected a redirect to the confirmation page, got ${res.status}`);
       const setCookie = res.headers.get("set-cookie");
-      assert.ok(setCookie, "the OAuth return must seal an actor cookie");
+      assert.ok(setCookie, "the OAuth callback must seal an actor cookie");
       return setCookie.split(";")[0]!;
     };
 
@@ -374,7 +398,7 @@ describe(
         const ref = r.refs[DISCORD_BINDING]!.APPROVE;
         const before = await counts();
 
-        const res = await fetch(`${base}/consumer/approvals/action/${ref}`, { redirect: "manual" });
+        const res = await fetch(`${base}/consumer/approvals/action/${ref}/start`, { redirect: "manual" });
         assert.equal(res.status, 302);
         assert.match(res.headers.get("location") ?? "", /^https:\/\/discord\.com\/oauth2\/authorize\?/);
         assert.equal(res.headers.get("cache-control"), "no-store");
@@ -388,7 +412,7 @@ describe(
         const before = await counts();
 
         for (let i = 0; i < 5; i += 1) {
-          const res = await fetch(`${base}/consumer/approvals/action/${ref}`, { redirect: "manual" });
+          const res = await fetch(`${base}/consumer/approvals/action/${ref}/start`, { redirect: "manual" });
           assert.equal(res.status, 302);
         }
         assert.deepEqual(await counts(), before);
@@ -405,11 +429,10 @@ describe(
         const before = await counts();
         exchangeSubject = OWNER_SUBJECT;
 
-        const res = await fetch(`${base}/consumer/approvals/action/${ref}/return?code=oauth-code`, {
-          redirect: "manual",
-        });
-        assert.equal(res.status, 200);
-        assert.match(res.headers.get("content-type") ?? "", /text\/html/);
+        const { state } = await startAndTakeState(ref);
+        const res = await callback(state);
+        assert.equal(res.status, 303);
+        assert.match(res.headers.get("location") ?? "", /\/confirm$/);
 
         assert.deepEqual(await counts(), before);
       });
@@ -426,7 +449,7 @@ describe(
             { "sec-purpose": "prefetch;prerender" },
             { "x-moz": "prefetch" },
           ]) {
-            const res = await fetch(`${base}/consumer/approvals/action/${ref}`, { headers, redirect: "manual" });
+            const res = await fetch(`${base}/consumer/approvals/action/${ref}/start`, { headers, redirect: "manual" });
             assert.equal(res.status, 302);
           }
         }
@@ -452,7 +475,7 @@ describe(
           "facebookexternalhit/1.1",
         ]) {
           for (const ref of [refs.APPROVE, refs.DENY]) {
-            const res = await fetch(`${base}/consumer/approvals/action/${ref}`, {
+            const res = await fetch(`${base}/consumer/approvals/action/${ref}/start`, {
               headers: { "user-agent": agent },
               redirect: "manual",
             });
@@ -472,10 +495,10 @@ describe(
         const refs = r.refs[DISCORD_BINDING]!;
         exchangeSubject = OWNER_SUBJECT;
 
-        await fetch(`${base}/consumer/approvals/action/${refs.APPROVE}`, { redirect: "manual" });
-        await fetch(`${base}/consumer/approvals/action/${refs.APPROVE}/return?code=c`, { redirect: "manual" });
-        await fetch(`${base}/consumer/approvals/action/${refs.DENY}`, { redirect: "manual" });
-        await fetch(`${base}/consumer/approvals/action/${refs.DENY}/return?code=c`, { redirect: "manual" });
+        await fetch(`${base}/consumer/approvals/action/${refs.APPROVE}/start`, { redirect: "manual" });
+        await callback((await startAndTakeState(refs.APPROVE)).state, "c1");
+        await fetch(`${base}/consumer/approvals/action/${refs.DENY}/start`, { redirect: "manual" });
+        await callback((await startAndTakeState(refs.DENY)).state, "c2");
 
         const { rows: nonces } = await pool.query<{ n: string }>(
           `SELECT count(*)::text AS n FROM untch_approval_action_nonces WHERE approval_request_id = $1`,
@@ -497,8 +520,8 @@ describe(
         exchangeSubject = OWNER_SUBJECT;
 
         for (const ref of [refs.APPROVE, refs.DENY]) {
-          await fetch(`${base}/consumer/approvals/action/${ref}`, { redirect: "manual" });
-          await fetch(`${base}/consumer/approvals/action/${ref}/return?code=c`, { redirect: "manual" });
+          await fetch(`${base}/consumer/approvals/action/${ref}/start`, { redirect: "manual" });
+          await callback((await startAndTakeState(ref)).state, "c3");
         }
 
         const { rows: d } = await pool.query<{ n: string }>(
@@ -520,9 +543,12 @@ describe(
       test("the correct Discord subject reaches a confirmation page stating the exact obligation", async () => {
         const r = await pendingRequest({ amount: "6.00" });
         const ref = r.refs[DISCORD_BINDING]!.APPROVE;
-        exchangeSubject = OWNER_SUBJECT;
+        const cookie = await actorCookie(ref, OWNER_SUBJECT);
 
-        const res = await fetch(`${base}/consumer/approvals/action/${ref}/return?code=c`, { redirect: "manual" });
+        const res = await fetch(`${base}/consumer/approvals/action/${ref}/confirm`, {
+          headers: { cookie },
+          redirect: "manual",
+        });
         assert.equal(res.status, 200);
         const html = await res.text();
 
@@ -540,13 +566,14 @@ describe(
         assert.ok(!html.includes(PAY_TO), "the full recipient must be truncated, not pasted");
       });
 
-      test("a stranger holding the URL reaches a refusal, not a confirmation", async () => {
+      test("a stranger completing the round trip reaches a refusal, not a confirmation", async () => {
         const r = await pendingRequest();
         const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const { state } = await startAndTakeState(ref);
         exchangeSubject = STRANGER_SUBJECT;
         const before = await counts();
 
-        const res = await fetch(`${base}/consumer/approvals/action/${ref}/return?code=c`, { redirect: "manual" });
+        const res = await callback(state);
         assert.equal(res.status, 403);
         const body = (await res.json()) as { code: string; wroteNothing?: boolean };
         assert.equal(body.code, "ACTION_SUBJECT_MISMATCH");
@@ -556,20 +583,24 @@ describe(
 
       test("an OAuth round trip Discord did not confirm is refused", async () => {
         const r = await pendingRequest();
-        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const { state } = await startAndTakeState(r.refs[DISCORD_BINDING]!.APPROVE);
         exchangeSubject = null;
 
-        const res = await fetch(`${base}/consumer/approvals/action/${ref}/return?code=c`, { redirect: "manual" });
+        const res = await callback(state);
         assert.equal(res.status, 400);
         assert.equal(((await res.json()) as { code: string }).code, "NO_PLATFORM_SUBJECT");
       });
 
       test("a callback with no code never reaches the exchange at all", async () => {
         const r = await pendingRequest();
-        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const { state } = await startAndTakeState(r.refs[DISCORD_BINDING]!.APPROVE);
+        exchangeSubject = OWNER_SUBJECT;
         const callsBefore = exchangeCalls;
 
-        const res = await fetch(`${base}/consumer/approvals/action/${ref}/return`, { redirect: "manual" });
+        const res = await fetch(
+          `${base}/consumer/approvals/action/discord/callback?state=${encodeURIComponent(state)}`,
+          { redirect: "manual" },
+        );
         assert.equal(res.status, 400);
         assert.equal(((await res.json()) as { code: string }).code, "OAUTH_CODE_REQUIRED");
         assert.equal(exchangeCalls, callsBefore);
@@ -578,12 +609,13 @@ describe(
       test("a revoked binding refuses even while the reference is otherwise live", async () => {
         const r = await pendingRequest();
         const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const { state } = await startAndTakeState(ref);
         exchangeSubject = OWNER_SUBJECT;
         await pool.query(`UPDATE untch_channel_bindings SET status = 'REVOKED' WHERE binding_id = $1`, [
           DISCORD_BINDING,
         ]);
         try {
-          const res = await fetch(`${base}/consumer/approvals/action/${ref}/return?code=c`, { redirect: "manual" });
+          const res = await callback(state);
           assert.equal(res.status, 403);
           assert.equal(((await res.json()) as { code: string }).code, "ACTION_BINDING_NOT_ACTIVE");
         } finally {
@@ -593,16 +625,60 @@ describe(
         }
       });
 
+      /**
+       * The column and the grant are two statements of one fact, and 029 makes them agree in the schema:
+       * `can_decide = false OR 'policy-approval' = ANY(scopes)`. So withdrawing the grant from a decider
+       * is not a state the database will hold — which is the strongest version of this guarantee, and
+       * worth asserting directly rather than assuming.
+       */
+      test("a decider cannot have its policy-approval grant withdrawn behind the route's back", async () => {
+        await assert.rejects(
+          () =>
+            pool.query(`UPDATE untch_channel_bindings SET scopes = ARRAY['notify'] WHERE binding_id = $1`, [
+              DISCORD_BINDING,
+            ]),
+          /untch_channel_decider_scoped/,
+          "the column and the scope must not be allowed to disagree",
+        );
+      });
+
+      test("a notify-only binding refuses at the callback", async () => {
+        const r = await pendingRequest();
+        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const { state } = await startAndTakeState(ref);
+        exchangeSubject = OWNER_SUBJECT;
+        const before = await counts();
+
+        /** Dropped TOGETHER, which is the only way the schema permits it. */
+        await pool.query(
+          `UPDATE untch_channel_bindings SET can_decide = false, scopes = ARRAY['notify'] WHERE binding_id = $1`,
+          [DISCORD_BINDING],
+        );
+        try {
+          const res = await callback(state);
+          assert.equal(res.status, 403);
+          assert.equal(((await res.json()) as { code: string }).code, "ACTION_BINDING_CANNOT_DECIDE");
+          assert.deepEqual(await counts(), before);
+        } finally {
+          await pool.query(
+            `UPDATE untch_channel_bindings SET can_decide = true, scopes = ARRAY['notify','policy-approval']
+              WHERE binding_id = $1`,
+            [DISCORD_BINDING],
+          );
+        }
+      });
+
       test("an expired reference refuses", async () => {
         const r = await pendingRequest();
         const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const { state } = await startAndTakeState(ref);
         exchangeSubject = OWNER_SUBJECT;
         await pool.query(
           `UPDATE untch_approval_action_refs SET expires_at = now() - interval '1 minute'
             WHERE action_reference_id = $1`,
           [ref],
         );
-        const res = await fetch(`${base}/consumer/approvals/action/${ref}/return?code=c`, { redirect: "manual" });
+        const res = await callback(state);
         assert.equal(res.status, 410);
         assert.equal(((await res.json()) as { code: string }).code, "ACTION_EXPIRED");
       });
@@ -610,28 +686,222 @@ describe(
       test("a superseded reference refuses on both the start and the callback", async () => {
         const r = await pendingRequest();
         const refs = r.refs[DISCORD_BINDING]!;
+        const { state } = await startAndTakeState(refs.APPROVE);
         exchangeSubject = OWNER_SUBJECT;
         await inTx((tx) => invalidateActionRefs(tx, r.approvalRequestId, "superseded by a requote"));
 
-        const start = await fetch(`${base}/consumer/approvals/action/${refs.APPROVE}`, { redirect: "manual" });
+        const start = await fetch(`${base}/consumer/approvals/action/${refs.APPROVE}/start`, { redirect: "manual" });
         assert.equal(start.status, 409);
         assert.equal(((await start.json()) as { code: string }).code, "ACTION_INVALIDATED");
 
-        const back = await fetch(`${base}/consumer/approvals/action/${refs.APPROVE}/return?code=c`, {
-          redirect: "manual",
-        });
+        const back = await callback(state);
         assert.equal(back.status, 409);
         assert.equal(((await back.json()) as { code: string }).code, "ACTION_INVALIDATED");
       });
 
       test("an unknown reference is refused without disclosing whether it ever existed", async () => {
-        const res = await fetch(`${base}/consumer/approvals/action/aref_doesnotexist000000000000/return?code=c`, {
+        const res = await fetch(`${base}/consumer/approvals/action/aref_doesnotexist000000000000/start`, {
           redirect: "manual",
         });
         assert.equal(res.status, 404);
         const body = (await res.json()) as { code: string; message: string };
         assert.equal(body.code, "ACTION_NOT_FOUND");
         assert.ok(!body.message.includes("consumed") && !body.message.includes("expired"));
+      });
+    });
+
+    // ── §3b the state itself ──────────────────────────────────────────────────
+
+    describe("the callback trusts the state only after it has checked it", () => {
+      /**
+       * The property the whole redesign rests on. If the authorize URL and the code exchange named
+       * different redirect URIs, or either named a per-reference one, Discord would refuse the exchange
+       * and the flow could not complete — which is precisely the defect this replaced.
+       */
+      test("the authorize URL and the code exchange name the same fixed callback", async () => {
+        const r = await pendingRequest();
+        const refs = r.refs[DISCORD_BINDING]!;
+        exchangeSubject = OWNER_SUBJECT;
+
+        const seen: string[] = [];
+        exchangeRedirectSink = (uri) => seen.push(uri);
+        try {
+          for (const ref of [refs.APPROVE, refs.DENY]) {
+            const { state, redirectUri } = await startAndTakeState(ref);
+            assert.equal(redirectUri, "https://asp.test/consumer/approvals/action/discord/callback");
+            assert.ok(!redirectUri.includes(ref), "the registered callback must not carry the reference");
+            const res = await callback(state);
+            assert.equal(res.status, 303);
+          }
+        } finally {
+          exchangeRedirectSink = null;
+        }
+        assert.deepEqual(seen, [
+          "https://asp.test/consumer/approvals/action/discord/callback",
+          "https://asp.test/consumer/approvals/action/discord/callback",
+        ]);
+      });
+
+      test("no dynamic callback path is generated for any reference", async () => {
+        const r = await pendingRequest();
+        for (const ref of Object.values(r.refs[DISCORD_BINDING]!)) {
+          const { redirectUri } = await startAndTakeState(ref);
+          assert.equal(new URL(redirectUri).pathname, "/consumer/approvals/action/discord/callback");
+        }
+      });
+
+      test("a missing, malformed, unsigned or foreign-signed state refuses", async () => {
+        const r = await pendingRequest();
+        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const { state } = await startAndTakeState(ref);
+        exchangeSubject = OWNER_SUBJECT;
+        const before = await counts();
+
+        const cases: ReadonlyArray<readonly [string, string | null]> = [
+          ["ACTION_STATE_REQUIRED", null],
+          ["ACTION_STATE_MALFORMED", "not-a-state"],
+          ["ACTION_STATE_SIGNATURE", `${state.split(".")[0]}.deadbeef`],
+          ["ACTION_STATE_MALFORMED", `${Buffer.from("{}", "utf8").toString("base64url")}.x`],
+        ];
+        for (const [code, raw] of cases) {
+          const url =
+            raw === null
+              ? `${base}/consumer/approvals/action/discord/callback?code=c`
+              : `${base}/consumer/approvals/action/discord/callback?code=c&state=${encodeURIComponent(raw)}`;
+          const res = await fetch(url, { redirect: "manual" });
+          assert.ok(res.status === 400 || res.status === 410, `${code} should refuse, got ${res.status}`);
+          const body = (await res.json()) as { code: string };
+          assert.ok(body.code.startsWith("ACTION_STATE_"), `expected a state refusal, got ${body.code}`);
+        }
+        assert.deepEqual(await counts(), before);
+      });
+
+      test("a state signed for another purpose refuses", async () => {
+        const r = await pendingRequest();
+        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        exchangeSubject = OWNER_SUBJECT;
+        const forged = sealActionStateForTest(SECRET, {
+          purpose: "channel_link_v1" as never,
+          actionReferenceId: ref,
+          channelBindingId: DISCORD_BINDING,
+          action: "APPROVE",
+          nonce: "nonce-wrong-purpose",
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 600_000,
+        });
+        const res = await callback(forged);
+        assert.equal(res.status, 400);
+        assert.equal(((await res.json()) as { code: string }).code, "ACTION_STATE_PURPOSE");
+      });
+
+      test("an expired state refuses", async () => {
+        const r = await pendingRequest();
+        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        exchangeSubject = OWNER_SUBJECT;
+        const stale = sealActionStateForTest(SECRET, {
+          purpose: "approval_action_v1",
+          actionReferenceId: ref,
+          channelBindingId: DISCORD_BINDING,
+          action: "APPROVE",
+          nonce: "nonce-expired",
+          issuedAt: Date.now() - 1_200_000,
+          expiresAt: Date.now() - 600_000,
+        });
+        const res = await callback(stale);
+        assert.equal(res.status, 410);
+        assert.equal(((await res.json()) as { code: string }).code, "ACTION_STATE_EXPIRED");
+      });
+
+      /**
+       * The reason the nonce is spent in the database rather than merely signed. A browser back button,
+       * a refresh, a shared URL or a proxy retry all present the same signed state again.
+       */
+      test("a replayed state refuses, and issues no second actor session", async () => {
+        const r = await pendingRequest();
+        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const { state } = await startAndTakeState(ref);
+        exchangeSubject = OWNER_SUBJECT;
+
+        const first = await callback(state);
+        assert.equal(first.status, 303);
+        assert.ok(first.headers.get("set-cookie"));
+
+        const before = await counts();
+        const second = await callback(state);
+        assert.equal(second.status, 409);
+        assert.equal(((await second.json()) as { code: string }).code, "ACTION_STATE_REPLAYED");
+        assert.equal(second.headers.get("set-cookie"), null, "a replay must not mint a second session");
+        assert.deepEqual(await counts(), before);
+      });
+
+      test("a state whose reference or binding was swapped refuses", async () => {
+        const r = await pendingRequest();
+        const other = await pendingRequest();
+        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        exchangeSubject = OWNER_SUBJECT;
+
+        /** Same signature, different reference: the row says one thing and the state another. */
+        const swappedRef = sealActionStateForTest(SECRET, {
+          purpose: "approval_action_v1",
+          actionReferenceId: other.refs[DISCORD_BINDING]!.DENY,
+          channelBindingId: DISCORD_BINDING,
+          action: "APPROVE",
+          nonce: "nonce-swapped-ref",
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 600_000,
+        });
+        const a = await callback(swappedRef);
+        assert.equal(a.status, 409);
+        assert.equal(((await a.json()) as { code: string }).code, "ACTION_STATE_MISMATCH");
+
+        const swappedBinding = sealActionStateForTest(SECRET, {
+          purpose: "approval_action_v1",
+          actionReferenceId: ref,
+          channelBindingId: WEB_BINDING,
+          action: "APPROVE",
+          nonce: "nonce-swapped-binding",
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 600_000,
+        });
+        const b = await callback(swappedBinding);
+        assert.equal(b.status, 409);
+        assert.equal(((await b.json()) as { code: string }).code, "ACTION_STATE_MISMATCH");
+      });
+
+      test("the callback creates no financial state, however many times it is reached", async () => {
+        const r = await pendingRequest();
+        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        exchangeSubject = OWNER_SUBJECT;
+        const before = await counts();
+
+        for (let i = 0; i < 3; i += 1) {
+          const { state } = await startAndTakeState(ref);
+          await callback(state);
+        }
+
+        const after = await counts();
+        assert.equal(after["untch_approval_decisions"], before["untch_approval_decisions"]);
+        assert.equal(after["untch_budget_reservations"], before["untch_budget_reservations"]);
+        assert.equal(after["untch_approval_action_nonces"], before["untch_approval_action_nonces"]);
+        assert.equal(after["consumed_refs"], before["consumed_refs"]);
+        assert.equal(after["non_pending_requests"], before["non_pending_requests"]);
+      });
+
+      test("the confirmation GET is inert and refuses without an actor session", async () => {
+        const r = await pendingRequest();
+        const ref = r.refs[DISCORD_BINDING]!.APPROVE;
+        const before = await counts();
+
+        const bare = await fetch(`${base}/consumer/approvals/action/${ref}/confirm`, { redirect: "manual" });
+        assert.equal(bare.status, 401);
+        assert.equal(((await bare.json()) as { code: string }).code, "ACTION_ACTOR_REQUIRED");
+
+        const cookie = await actorCookie(ref, OWNER_SUBJECT);
+        for (const headers of [{ cookie }, { cookie, purpose: "prefetch" }, { cookie, "user-agent": "Discordbot/2.0" }]) {
+          const res = await fetch(`${base}/consumer/approvals/action/${ref}/confirm`, { headers, redirect: "manual" });
+          assert.equal(res.status, 200);
+        }
+        assert.deepEqual(await counts(), before);
       });
     });
 
@@ -788,7 +1058,7 @@ describe(
         });
         assert.equal(approve.status, 200);
 
-        const start = await fetch(`${base}/consumer/approvals/action/${refs.DENY}`, { redirect: "manual" });
+        const start = await fetch(`${base}/consumer/approvals/action/${refs.DENY}/start`, { redirect: "manual" });
         assert.ok(start.status >= 400, "the Deny link must stop resolving once Approve won");
       });
     });
@@ -1003,8 +1273,9 @@ describe(
         const url = `http://127.0.0.1:${addr.port}`;
         try {
           for (const [method, path] of [
-            ["GET", "/consumer/approvals/action/anything"],
-            ["GET", "/consumer/approvals/action/anything/return"],
+            ["GET", "/consumer/approvals/action/anything/start"],
+            ["GET", "/consumer/approvals/action/discord/callback"],
+            ["GET", "/consumer/approvals/action/anything/confirm"],
             ["POST", "/consumer/approvals/action/anything/confirm"],
             ["POST", "/consumer/approvals/anything/act"],
           ] as const) {
@@ -1020,8 +1291,8 @@ describe(
 
     /** The route constants are part of the contract the gateway builds links against. */
     test("the routes are mounted at the paths the message links point to", () => {
-      assert.equal(APPROVAL_ACTION_START_ROUTE, "/consumer/approvals/action/:actionReferenceId");
-      assert.equal(APPROVAL_ACTION_RETURN_ROUTE, "/consumer/approvals/action/:actionReferenceId/return");
+      assert.equal(APPROVAL_ACTION_START_ROUTE, "/consumer/approvals/action/:actionReferenceId/start");
+      assert.equal(APPROVAL_ACTION_CALLBACK_ROUTE, "/consumer/approvals/action/discord/callback");
       assert.equal(APPROVAL_ACTION_CONFIRM_ROUTE, "/consumer/approvals/action/:actionReferenceId/confirm");
       assert.equal(WEB_APPROVAL_ACTION_ROUTE, "/consumer/approvals/:approvalRequestId/act");
     });

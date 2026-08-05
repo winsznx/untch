@@ -208,7 +208,7 @@ describe("the Discord approval message", { skip: TEST_DB ? false : "TEST_DATABAS
 
     for (const button of buttons) {
       assert.equal(button.style, 5, "link buttons, so no Discord Interactions Endpoint is required");
-      assert.match(button.url, new RegExp(`^${BASE}/consumer/approvals/action/aref_[A-Za-z0-9_-]+$`));
+      assert.match(button.url, new RegExp(`^${BASE}/consumer/approvals/action/aref_[A-Za-z0-9_-]+/start$`));
       /** Everything the token commits to must be absent from the URL. */
       assert.ok(!button.url.includes(digest), "the approval digest must not be in a link");
       assert.ok(!button.url.includes(approvalRequestId), "the request id must not be in a link");
@@ -219,7 +219,9 @@ describe("the Discord approval message", { skip: TEST_DB ? false : "TEST_DATABAS
     }
 
     /** And the references they name actually resolve, for the bound subject only. */
-    const approveRef = buttons[0]!.url.split("/").pop()!;
+    /** `.../action/<ref>/start` — the reference is the segment before the verb, not the last one. */
+    const approveSegments = buttons[0]!.url.split("/");
+    const approveRef = approveSegments[approveSegments.length - 2]!;
     const mine = await resolveActionRef(pool, approveRef, SUBJECT, Date.now());
     assert.equal(mine.ok, true);
     const stranger = await resolveActionRef(pool, approveRef, "someone-else", Date.now());

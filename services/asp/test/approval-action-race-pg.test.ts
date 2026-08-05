@@ -273,11 +273,17 @@ describe(
       return Number(rows[0]!.n);
     };
 
+    /** The real round trip: start, take the state the server issued, redeem it at the fixed callback. */
     const actorCookie = async (replica: Replica, ref: string): Promise<string> => {
-      const res = await fetch(`${replica.base}/consumer/approvals/action/${ref}/return?code=c`, {
-        redirect: "manual",
-      });
-      assert.equal(res.status, 200);
+      const started = await fetch(`${replica.base}/consumer/approvals/action/${ref}/start`, { redirect: "manual" });
+      assert.equal(started.status, 302);
+      const state = new URL(started.headers.get("location") ?? "").searchParams.get("state");
+      assert.ok(state);
+      const res = await fetch(
+        `${replica.base}/consumer/approvals/action/discord/callback?code=c&state=${encodeURIComponent(state)}`,
+        { redirect: "manual" },
+      );
+      assert.equal(res.status, 303);
       const setCookie = res.headers.get("set-cookie");
       assert.ok(setCookie);
       return setCookie.split(";")[0]!;

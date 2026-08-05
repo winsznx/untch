@@ -55,6 +55,14 @@ export interface ResolvedActionRef {
   readonly expiresAt: string;
   /** The platform identity that must be presented to use this reference. Never surfaced publicly. */
   readonly channelUserId: string;
+  /**
+   * The binding's scopes, carried out so a caller can require one without a second query.
+   *
+   * `can_decide` and `policy-approval` are checked separately on purpose. The column is what the
+   * binding is CONFIGURED to do; the scope is what the account granted it. A binding can have the
+   * column set and the grant withdrawn, and the OAuth callback refuses on either.
+   */
+  readonly scopes: readonly string[];
 }
 
 export type ActionRefVerdict =
@@ -218,8 +226,52 @@ export async function resolveActionRef(
       approvalDigest: String(row.approval_digest),
       expiresAt: new Date(expiresAt).toISOString(),
       channelUserId: String(row.channel_user_id),
+      scopes: Array.isArray(row.scopes) ? row.scopes.map((s) => String(s)) : [],
     },
   };
+}
+
+/**
+ * Spend an OAuth state nonce, once.
+ *
+ * The INSERT is the check. A read-then-write would let two callbacks arriving together both find the
+ * nonce unspent and both proceed, which is exactly the replay the nonce exists to stop — so the primary
+ * key decides, and a duplicate is a refusal rather than a thrown error.
+ *
+ * Returns false when the nonce has already been spent. Every other failure still throws, because a
+ * database that is refusing for some OTHER reason must not be read as "this was a replay".
+ */
+export async function consumeOAuthStateNonce(
+  tx: ServiceCallTx,
+  state: {
+    readonly stateNonce: string;
+    readonly purpose: string;
+    readonly actionReferenceId: string;
+    readonly channelBindingId: string;
+    readonly action: ApprovalAction;
+    readonly issuedAt: number;
+    readonly expiresAt: number;
+    readonly subject: string | null;
+  },
+): Promise<boolean> {
+  const { rows } = await tx.query<{ state_nonce: string }>(
+    `INSERT INTO untch_approval_oauth_states
+       (state_nonce, purpose, action_reference_id, channel_binding_id, action, issued_at, expires_at, subject)
+     VALUES ($1,$2,$3,$4,$5, to_timestamp($6/1000.0), to_timestamp($7/1000.0), $8)
+     ON CONFLICT (state_nonce) DO NOTHING
+     RETURNING state_nonce`,
+    [
+      state.stateNonce,
+      state.purpose,
+      state.actionReferenceId,
+      state.channelBindingId,
+      state.action,
+      state.issuedAt,
+      state.expiresAt,
+      state.subject,
+    ],
+  );
+  return rows.length === 1;
 }
 
 /**
