@@ -97,10 +97,29 @@ export const EXECUTION_MANIFEST_ROUTE = "/execution-manifest" as const;
  * true, and a person paid for the difference. Everything the activation rested on held except the one
  * link no test covered end to end, which is exactly where it broke.
  *
- * It stays false until the DM path is corrected, the web surface has a real production call site, a
- * non-financial DM actually arrives, and both rollback proofs pass with delivery included.
+ * It stayed false until the DM path was corrected, the web surface had a real production call site, a
+ * non-financial DM actually arrived, and both rollback proofs passed with delivery included.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * RE-OPENED, AND THIS TIME THE DELIVERY WAS WATCHED
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Each of the four conditions above was met and observed rather than assumed:
+ *
+ *   - the link flow records no channel for an `identify` grant, migration 034 repaired the one row
+ *     that held a user id as a channel, and a CHECK makes the shape unrepresentable
+ *   - `discordDeliveryRoute` chooses a DM for null, empty, chat-equals-user and identify bindings,
+ *     and is exported so the property is testable without a Discord token
+ *   - `ensureWebApprovalSurface` is called from the delivery pass, behind the outbox, so a request
+ *     that reaches PENDING has a browser surface as well as a chat one
+ *   - a real non-financial DM was delivered to the production binding, opening a DM channel whose id
+ *     differs from the user id — which is the exact step the defect skipped
+ *   - both rollback proofs pass with `routeMode: "dm"` and two answerable surfaces per request
+ *
+ * The request that paid for the lesson was allowed to expire with no decision, no reservation and no
+ * authority. Its fee bought a defect report.
  */
-export const APPROVAL_PATH_READY = false as const;
+export const APPROVAL_PATH_READY = true as const;
 
 /**
  * The gate the paid decision route applies to an escalated verdict.
