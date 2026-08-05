@@ -79,6 +79,53 @@ export interface PublicPreflightRequest extends PolicySelection {
    */
   readonly buyerAgentId?: string;
   readonly workerAgentId?: string;
+
+  /**
+   * Optional. Present only when this request REPLACES an earlier quote in the same conversation.
+   *
+   * WHY IT IS A FIELD ON THIS ROUTE RATHER THAN A ROUTE OF ITS OWN
+   *
+   * A requote is the same purchase at a different price. It needs the same SIWE session, the same
+   * identity and policy-authority scopes, the same x402 middleware, the same inert payment
+   * authorization, the same service-call and payment-attempt stores, the same confirmed-settlement
+   * boundary, the same finalizer, the same ApprovalRequest lifecycle and the same replay resolver.
+   *
+   * A second endpoint would have to reproduce all of that, and the first thing it would lose is the
+   * one that is invisible when it is missing: the pre-middleware replay resolver, without which a
+   * client retrying a requote after a lost response pays the fee twice.
+   *
+   * Absent on a first quote. Its presence is what makes this a successor.
+   */
+  readonly requote?: PublicRequoteClaim;
+}
+
+/**
+ * The predecessor a requote replaces, named in full by the caller.
+ *
+ * Every field is required, and none of them may be inferred. A shape that took only the lineage and
+ * let the server pick the newest open request would make the server's lookup the claim — and the
+ * caller, who is requoting precisely because something changed, is the party most likely to be
+ * working from a view that has moved.
+ *
+ * It is a signed part of the request body rather than a query parameter for the same reason: it is
+ * committed into the request fingerprint, the quote digest and the approval digest, and a value that
+ * travels outside the canonicalised body cannot be committed to any of them.
+ */
+export interface PublicRequoteClaim {
+  /** The lineage the prior quote already carries. Returned in the prior response as `quoteLineageId`. */
+  readonly quoteLineageId: string;
+  /** The prior request's `quoteDigest`. The anti-substitution field. */
+  readonly previousQuoteDigest: string;
+  readonly supersedesApprovalRequestId: string;
+  /**
+   * The prior request's ACTIVE reservation, when it has one.
+   *
+   * Required when the predecessor was approved and therefore holds authority; absent or null when it
+   * was still PROVISIONAL or PENDING and holds none. Both cases are refused when they disagree with
+   * what the predecessor actually holds, because "there was no reservation" and "I did not check" are
+   * different claims and a requote is only allowed to make the first.
+   */
+  readonly supersedesReservationId?: string | null;
 }
 
 /**

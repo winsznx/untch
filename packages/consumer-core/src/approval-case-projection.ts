@@ -99,6 +99,14 @@ export interface PublicApprovalCase {
 
   readonly lineage: {
     readonly quoteLineageId: string | null;
+    /**
+     * Position in the lineage. 1 on a first quote, higher on each requote.
+     *
+     * Public because it is the field that makes a linked pair readable without following the links: a
+     * case at version 3 says plainly that this price has moved twice, which is a fact about the
+     * negotiation rather than about either party.
+     */
+    readonly quoteVersion: number;
     readonly previousQuoteDigest: string | null;
     readonly supersedesApprovalRequestId: string | null;
     readonly supersededByApprovalRequestId: string | null;
@@ -259,6 +267,7 @@ export async function approvalCaseProjection(
 
     lineage: {
       quoteLineageId: r.quote_lineage_id === null ? null : String(r.quote_lineage_id),
+      quoteVersion: Number(r.quote_version ?? 1),
       previousQuoteDigest: r.previous_quote_digest === null ? null : String(r.previous_quote_digest),
       supersedesApprovalRequestId:
         r.supersedes_approval_request_id === null ? null : String(r.supersedes_approval_request_id),

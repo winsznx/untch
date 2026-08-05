@@ -406,6 +406,7 @@ export {
  */
 export {
   APPROVAL_DIGEST_SCHEMA_VERSION,
+  type ApprovalRequoteBinding,
   type ApprovalSettlementBinding,
 } from "./approvals";
 export {
@@ -425,8 +426,23 @@ export {
   type ServiceCallRow,
   type ServiceCallState,
   type ServiceCallTx,
+  type RequoteLineageClaim,
   type SettlementEvidence,
 } from "./x402-service-calls";
+/**
+ * The requote gate.
+ *
+ * Exported beside the service-call machinery rather than buried in it, because the ASP route has to
+ * call it BEFORE anything is written and a validator that is hard to reach is a validator somebody
+ * eventually decides to skip.
+ */
+export {
+  validateRequoteClaim,
+  type RequoteCommercialIdentity,
+  type RequoteRefusal,
+  type RequoteVerdict,
+  type ValidatedRequote,
+} from "./requote-lineage";
 export {
   facilitatorOracle,
   reconcileOnce,

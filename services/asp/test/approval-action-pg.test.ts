@@ -175,6 +175,67 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
     return { id, subject, policyId };
   };
 
+  /**
+   * A REAL successor, because 031 will not accept an imaginary one.
+   *
+   * These tests used to pass a made-up id like `aprq_new_650` as the request doing the superseding.
+   * That was fine while supersession was allowed by whoever called the function, and it is exactly what
+   * migration 031 exists to stop: a predecessor may only be retired by a successor that exists, claims
+   * it, shares its lineage and account, and whose own service call is FINALIZED — meaning an authority
+   * confirmed the fee for it.
+   *
+   * So the fixture now builds what production builds. The properties each test asserts are unchanged;
+   * what changed is that the setup can no longer skip the thing being protected.
+   */
+  const successor = async (
+    prior: { id: string; policyId: string },
+    lineage: string,
+    amount: string,
+    opts: { readonly settled?: boolean } = {},
+  ): Promise<string> => {
+    seq += 1;
+    const serviceCallId = `svc_succ_${seq}`;
+    const attemptId = `pay_succ_${seq}`;
+    await pool.query(
+      `INSERT INTO untch_x402_service_calls (service_call_id, account_id, route, idempotency_key, request_fingerprint, state)
+       VALUES ($1,$2,'/preflight_payment',$3,$4,'EVALUATED')`,
+      [serviceCallId, ACCOUNT, `ks-${seq}`, `fps-${seq}`],
+    );
+    await pool.query(
+      `INSERT INTO untch_x402_payment_attempts (attempt_id, service_call_id, authorization_nonce, authorization_digest,
+         payer, token, amount, pay_to, chain, state, transaction_hash, settled_at)
+       VALUES ($1,$2,$3,'adg','0xpayer','0xtok','50000','0xto',$4,'SETTLED',$5, now())`,
+      [attemptId, serviceCallId, `0xnonce-succ-${seq}`, CHAIN, `0xtx-succ-${seq}`],
+    );
+    /**
+     * `settled: false` leaves the call at PAYMENT_AUTH_VERIFIED, which is the shape of a requote whose
+     * fee has NOT been confirmed. It is what the backstop must refuse.
+     */
+    if (opts.settled !== false) {
+      await pool.query(
+        `UPDATE untch_x402_service_calls SET state='FINALIZED', settled_at=now(), finalized_at=now() WHERE service_call_id=$1`,
+        [serviceCallId],
+      );
+    }
+    const id = newApprovalRequestId();
+    await pool.query(
+      `INSERT INTO untch_approval_requests
+        (approval_request_id, account_id, policy_id, policy_version, intent_id, quote_hash, provider, capability,
+         amount, asset, reason, approval_digest, nonce, state, expires_at, created_by, updated_by,
+         service_call_id, decision_id, intent_hash, quote_digest, policy_hash,
+         chain, recipient, requester_principal_ref, wallet_authority_ref, account_ref_hash, quote_lineage_id,
+         quote_version, supersedes_approval_request_id, previous_quote_digest)
+       VALUES ($1,$2,$3,1,$4,'qh','untch','owned_work.demo',$5,'USDT0','threshold',$6,$7,'PROVISIONAL',
+               now() + interval '1 hour','t','t',$8,$9,$10,$11,$12,$13,'0xrecipient',$14,$15,$16,$17,2,$18,$19)`,
+      [
+        id, ACCOUNT, prior.policyId, `intent-succ-${seq}`, amount, `apd_succ_${seq}`, `ns${seq}`,
+        serviceCallId, `dec_succ_${seq}`, `0xih_succ_${seq}`, `qd_succ_${seq}`, `0xph_succ_${seq}`,
+        CHAIN, `req_succ_${seq}`, `wa_succ_${seq}`, `arh_succ_${seq}`, lineage, prior.id, `qd_prior_${seq}`,
+      ],
+    );
+    return id;
+  };
+
   const claims = (
     subject: ApprovalActionSubject,
     bindingId: string,
@@ -626,13 +687,14 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
     const approved = await act(first.id, mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b)), b, { policyId: first.policyId });
     assert.equal(approved.outcome, "APPROVED");
 
+    const next = await successor(first, lineage, "6.50");
     const client = await pool.connect();
     let exposureAfter = 0n;
     try {
       await client.query("BEGIN");
       const result = await supersedePriorQuote(client, {
         priorApprovalRequestId: first.id,
-        newApprovalRequestId: "aprq_new_650",
+        newApprovalRequestId: next,
         quoteLineageId: lineage,
         newQuoteDigest: "qd_650",
         reason: "PROVIDER_REQUOTE",
@@ -656,6 +718,51 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
     const { rows: del } = await pool.query<{ status: string }>(
       `SELECT status FROM untch_approval_deliveries WHERE approval_request_id = $1`, [first.id]);
     assert.ok(del.every((d) => ["INVALIDATED", "ACTED"].includes(d.status)), "no live button survives a requote");
+    const { rows: link } = await pool.query<{ superseded_by_approval_request_id: string | null }>(
+      `SELECT superseded_by_approval_request_id FROM untch_approval_requests WHERE approval_request_id = $1`,
+      [first.id],
+    );
+    assert.equal(
+      link[0]!.superseded_by_approval_request_id,
+      next,
+      "the successor is named in the same statement that retires the predecessor, or the 031 backstop is decorative",
+    );
+  });
+
+  test("an unconfirmed requote cannot retire the authority it claims to replace", async () => {
+    const b = await binding("telegram");
+    const lineage = newQuoteLineageId();
+    const first = await pending("6.00", lineage);
+    const approved = await act(first.id, mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b)), b, { policyId: first.policyId });
+    assert.equal(approved.outcome, "APPROVED");
+
+    /** A successor whose fee was authorised and never confirmed. This is the failure mode that matters. */
+    const unpaid = await successor(first, lineage, "6.50", { settled: false });
+
+    const client = await pool.connect();
+    await client.query("BEGIN");
+    await assert.rejects(
+      () =>
+        supersedePriorQuote(client, {
+          priorApprovalRequestId: first.id,
+          newApprovalRequestId: unpaid,
+          quoteLineageId: lineage,
+          newQuoteDigest: "qd_650_unpaid",
+          reason: "PROVIDER_REQUOTE",
+          accountId: ACCOUNT,
+        }),
+      /no authority has confirmed its payment/,
+      "a failed or unconfirmed payment must not revoke authority that was already granted",
+    );
+    await client.query("ROLLBACK");
+    client.release();
+
+    const { rows: req } = await pool.query<{ state: string }>(
+      `SELECT state FROM untch_approval_requests WHERE approval_request_id = $1`, [first.id]);
+    assert.equal(req[0]!.state, "APPROVED", "the 6.00 the person said yes to is exactly where they left it");
+    const { rows: rsv } = await pool.query<{ status: string }>(
+      `SELECT status FROM untch_budget_reservations WHERE approval_request_id = $1`, [first.id]);
+    assert.equal(rsv[0]!.status, "ACTIVE", "and it still holds its authority");
   });
 
   test("the old token refuses once the request is superseded", async () => {
@@ -663,12 +770,13 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
     const lineage = newQuoteLineageId();
     const first = await pending("6.00", lineage);
     const oldToken = mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b));
+    const next = await successor(first, lineage, "6.50");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       await supersedePriorQuote(client, {
         priorApprovalRequestId: first.id,
-        newApprovalRequestId: "aprq_new_650b",
+        newApprovalRequestId: next,
         quoteLineageId: lineage,
         newQuoteDigest: "qd_650b",
         reason: "PROVIDER_REQUOTE",
@@ -730,12 +838,13 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
     const lineage = newQuoteLineageId();
     const first = await pending("6.00", lineage);
     await act(first.id, mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b)), b, { policyId: first.policyId });
+    const rolledSuccessor = await successor(first, lineage, "6.50");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       await supersedePriorQuote(client, {
         priorApprovalRequestId: first.id,
-        newApprovalRequestId: "aprq_rolled",
+        newApprovalRequestId: rolledSuccessor,
         quoteLineageId: lineage,
         newQuoteDigest: "qd_rolled",
         reason: "PROVIDER_REQUOTE",
@@ -756,7 +865,34 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
   test("only one successor may be open in a lineage", async () => {
     const lineage = newQuoteLineageId();
     await pending("6.50", lineage);
-    await assert.rejects(() => pending("6.75", lineage), /untch_approval_one_open_per_lineage/);
+    /**
+     * 031 split 029's single index in two, because PROVISIONAL and PENDING stopped meaning the same
+     * thing. A PROVISIONAL successor must be able to exist beside its PENDING predecessor — that is the
+     * whole window a correct requote passes through — while two ANSWERABLE requests in one lineage stay
+     * impossible. `pending()` builds PENDING rows, so this is the second index.
+     */
+    await assert.rejects(() => pending("6.75", lineage), /untch_approval_one_pending_per_lineage/);
+  });
+
+  test("a provisional successor may exist beside the pending request it will replace", async () => {
+    const lineage = newQuoteLineageId();
+    const first = await pending("6.00", lineage);
+    const next = await successor(first, lineage, "6.50");
+    const { rows } = await pool.query<{ approval_request_id: string; state: string }>(
+      `SELECT approval_request_id, state FROM untch_approval_requests WHERE quote_lineage_id = $1 ORDER BY quote_version`,
+      [lineage],
+    );
+    assert.deepEqual(
+      rows.map((r) => r.state),
+      ["PENDING", "PROVISIONAL"],
+      "the successor has to be able to be raised before its fee is confirmed, or a requote could never be paid for",
+    );
+    assert.equal(rows[1]!.approval_request_id, next);
+    await assert.rejects(
+      () => successor(first, lineage, "6.75"),
+      /untch_approval_one_provisional_per_lineage/,
+      "and only one of them at a time",
+    );
   });
 
   // ── the public case ────────────────────────────────────────────────────────
@@ -916,12 +1052,13 @@ describe("a human answer becomes authority, or is refused", { skip: TEST_DB ? fa
     const lineage = newQuoteLineageId();
     const first = await pending("6.00", lineage);
     await act(first.id, mintApprovalActionToken(TOKEN_SECRET, claims(first.subject, b)), b, { policyId: first.policyId });
+    const next = await successor(first, lineage, "6.50");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       await supersedePriorQuote(client, {
         priorApprovalRequestId: first.id,
-        newApprovalRequestId: "aprq_restart_650",
+        newApprovalRequestId: next,
         quoteLineageId: lineage,
         newQuoteDigest: "qd_restart_650",
         reason: "PROVIDER_REQUOTE",

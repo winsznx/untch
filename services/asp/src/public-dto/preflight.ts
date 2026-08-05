@@ -35,6 +35,7 @@ import {
   persistDecisionEvidenceV3,
   presentRequester,
   projectionReportV3,
+  quoteDigestOfV3,
   rawLegacyAgentProjection,
   snapshotDecisionState,
   type AssembledEvidenceV3,
@@ -63,6 +64,7 @@ import {
   persistEscalatedApproval,
   type EscalatedApprovalRecord,
 } from "../consumer/escalated-approval";
+import { validateRequoteClaim, type ValidatedRequote } from "@untch/consumer-core";
 import type { VerifiedPaymentAuthorizationContext } from "../consumer/payment-authorization";
 import { mapPreflightRequest, type NetworkFacts } from "./mapping";
 import {
@@ -76,7 +78,7 @@ import {
   type OwnedServiceDefinition,
   type StoredPolicyReader,
 } from "./authority";
-import type { PublicPreflightRequest } from "./types";
+import type { PublicPreflightRequest, PublicRequoteClaim } from "./types";
 
 /** What the public preflight needs from the account store: the resolver's reads, plus one write. */
 export interface AccountUse extends AccountFactsReader {
@@ -152,10 +154,15 @@ export function looksPublic(body: unknown): boolean {
 
 const REQUIRED_FIELDS = ["provider", "capability", "task", "maxSpend", "currency", "deadline"] as const;
 
-function readRequest(body: unknown): PublicPreflightRequest | { readonly missing: readonly string[] } {
+function readRequest(
+  body: unknown,
+): PublicPreflightRequest | { readonly missing: readonly string[] } | { readonly malformed: "requote" } {
   const b = (body ?? {}) as Record<string, unknown>;
   const missing = REQUIRED_FIELDS.filter((f) => typeof b[f] !== "string" || (b[f] as string).trim() === "");
   if (missing.length > 0) return { missing };
+
+  const requote = readRequote(b);
+  if (requote === REQUOTE_MALFORMED) return { malformed: "requote" };
 
   const optionalString = (k: string): string | undefined =>
     typeof b[k] === "string" && (b[k] as string).trim() !== "" ? (b[k] as string) : undefined;
@@ -179,7 +186,45 @@ function readRequest(body: unknown): PublicPreflightRequest | { readonly missing
     ...(optionalString("idempotencyKey") !== undefined ? { idempotencyKey: optionalString("idempotencyKey") as string } : {}),
     ...(optionalString("buyerAgentId") !== undefined ? { buyerAgentId: optionalString("buyerAgentId") as string } : {}),
     ...(optionalString("workerAgentId") !== undefined ? { workerAgentId: optionalString("workerAgentId") as string } : {}),
+    ...(requote !== null ? { requote } : {}),
   };
+}
+
+/**
+ * The requote claim, read strictly.
+ *
+ * A malformed `requote` is NOT silently dropped. Dropping it would turn "replace my 6.00 with a 6.50"
+ * into "buy a second 6.50 alongside the 6.00", which is the accumulation the whole lineage concept
+ * exists to prevent — arriving through a typo rather than through an attack. So a present-but-invalid
+ * object returns the sentinel below and the handler refuses.
+ */
+const REQUOTE_MALFORMED = Symbol("requote-malformed");
+
+function readRequote(b: Record<string, unknown>): PublicRequoteClaim | null | typeof REQUOTE_MALFORMED {
+  const raw = b.requote;
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) return REQUOTE_MALFORMED;
+
+  const o = raw as Record<string, unknown>;
+  const req = (k: string): string | null =>
+    typeof o[k] === "string" && (o[k] as string).trim() !== "" ? (o[k] as string).trim() : null;
+
+  const quoteLineageId = req("quoteLineageId");
+  const previousQuoteDigest = req("previousQuoteDigest");
+  const supersedesApprovalRequestId = req("supersedesApprovalRequestId");
+  if (!quoteLineageId || !previousQuoteDigest || !supersedesApprovalRequestId) return REQUOTE_MALFORMED;
+
+  /**
+   * The reservation is the one field that may legitimately be absent, because a PROVISIONAL or PENDING
+   * predecessor holds none. Absent and explicit-null are treated as the same claim — "it holds no
+   * reservation" — and the validator refuses if that turns out to be false.
+   */
+  const reservation = o.supersedesReservationId;
+  if (reservation !== undefined && reservation !== null && typeof reservation !== "string") return REQUOTE_MALFORMED;
+  const supersedesReservationId =
+    typeof reservation === "string" && reservation.trim() !== "" ? reservation.trim() : null;
+
+  return { quoteLineageId, previousQuoteDigest, supersedesApprovalRequestId, supersedesReservationId };
 }
 
 const refusal = (
@@ -233,6 +278,29 @@ export async function handlePublicPreflight(
 ): Promise<HandlerResult> {
   const now = publicDeps.now ?? Date.now;
   const parsed = readRequest(body);
+  if ("malformed" in parsed) {
+    /**
+     * Refused rather than ignored, and the message says what ignoring it would have cost.
+     *
+     * A caller who meant to replace a quote and mistyped one field would otherwise get a second live
+     * request at the new price beside the old one at the old price — two authorities, two answerable
+     * messages, and double the exposure for one piece of work.
+     */
+    return {
+      status: 400,
+      body: {
+        outcome: "REQUEST_SCHEMA_VIOLATION",
+        code: "REQUOTE_CLAIM_MALFORMED",
+        message:
+          "requote must name quoteLineageId, previousQuoteDigest and supersedesApprovalRequestId as " +
+          "non-empty strings, and supersedesReservationId as a string or null. This request was " +
+          "refused rather than treated as a new quote, which would have left two live requests for " +
+          "one piece of work.",
+        retryable: false,
+        docsUrl: null,
+      },
+    };
+  }
   if ("missing" in parsed) {
     return {
       status: 400,
@@ -415,13 +483,24 @@ export async function handlePublicPreflight(
    * is the only place the exact policy is bound to the exact quote.
    */
   const r = a.requesterEvidence;
-  const quoteTermsFor = (intentHash: string): CanonicalQuoteTermsV3 => ({
+  const quoteTermsFor = (intentHash: string, quoteVersion: number): CanonicalQuoteTermsV3 => ({
     quoteSchemaVersion: 3,
-    // The lineage is the caller's idempotency key when they gave one, because that is the value they
-    // chose to identify this logical request. Without one it is the intent hash, which is unique per
-    // request and therefore correctly makes every call its own lineage.
-    lineage: request.idempotencyKey ?? intentHash,
-    version: 1,
+    /**
+     * On a first quote: the caller's idempotency key when they gave one, because that is the value they
+     * chose to identify this logical request. Without one it is the intent hash, which is unique per
+     * request and therefore correctly makes every call its own lineage.
+     *
+     * On a REQUOTE: the lineage the predecessor already carries. That is what `lineage` and `version`
+     * were declared for — "a re-quote of the same logical work shares the lineage and increments the
+     * version" — and it is what puts the lineage inside the quote digest, so a requote's digest cannot
+     * be produced by a request that did not claim the lineage.
+     *
+     * A first quote's lineage is deliberately UNCHANGED by this commit. Deriving it from the minted
+     * `qln_` id instead would have altered the digest of every decision this route has ever taken,
+     * requote or not, which is the rewriting-the-past failure this repository keeps refusing.
+     */
+    lineage: request.requote?.quoteLineageId ?? request.idempotencyKey ?? intentHash,
+    version: quoteVersion,
     requesterPrincipalKind: r.requesterPrincipalKind,
     requesterPrincipalNamespace: r.requesterPrincipalNamespace,
     requesterPrincipalRef: r.requesterPrincipalRef,
@@ -496,6 +575,29 @@ export async function handlePublicPreflight(
     readonly stateBefore: { readonly recentIntents: number; readonly callsInLastHour: number };
     /** Present only when this decision escalated AND the approval path is wired. */
     readonly escalated: EscalatedApprovalRecord | null;
+    /** Present only on a requote that passed validation. The predecessor is still untouched. */
+    readonly requote: ValidatedRequote | null;
+  }
+
+  /**
+   * Thrown inside the decision transaction when a requote claim does not hold.
+   *
+   * A sentinel for the same reason `ApprovalPathUnavailable` is one: the refusal has to take the
+   * transaction with it. A returned value would leave the evidence row, the replay marker and the
+   * decision-state window committed for a request that raised nothing — poisoning the duplicate,
+   * cooldown and rate windows for a caller whose only mistake was naming a predecessor that had moved.
+   *
+   * x402 settles only on a 2xx, so the non-2xx this produces is also what stops the fee being taken for
+   * a refusal.
+   */
+  class RequoteRefused extends Error {
+    constructor(
+      public readonly refusal: string,
+      public readonly detail: string,
+    ) {
+      super(detail);
+      this.name = "RequoteRefused";
+    }
   }
 
   let committed: Committed;
@@ -518,7 +620,57 @@ export async function handlePublicPreflight(
       );
 
       const intentHash = engineResult.intentHash;
-      const quoteTerms = quoteTermsFor(intentHash);
+
+      /**
+       * ── THE REQUOTE GATE ──────────────────────────────────────────────
+       *
+       * Run BEFORE the evidence is assembled, because the verdict carries the lineage position and the
+       * position is hashed into the quote digest. Assembling first and validating afterwards would mean
+       * the digest committed to a version the validator had not agreed to.
+       *
+       * It runs on THIS transaction and takes the predecessor's row lock, which is what makes "the
+       * prior authority has not changed" true of the row this request was validated against rather than
+       * true at the instant it was read. A concurrent Approve on the predecessor queues behind it.
+       *
+       * It changes nothing. The predecessor is read, compared and left exactly as it was.
+       */
+      let validatedRequote: ValidatedRequote | null = null;
+      if (request.requote) {
+        const provisionalTerms = quoteTermsFor(intentHash, 1);
+        const verdict = await validateRequoteClaim(
+          tx as ServiceCallTx,
+          {
+            quoteLineageId: request.requote.quoteLineageId,
+            previousQuoteDigest: request.requote.previousQuoteDigest,
+            supersedesApprovalRequestId: request.requote.supersedesApprovalRequestId,
+            supersedesReservationId: request.requote.supersedesReservationId ?? null,
+          },
+          {
+            accountId: a.account.accountId,
+            requesterPrincipalRef: r.requesterPrincipalRef,
+            provider: request.provider,
+            capability: request.capability,
+            asset: request.currency,
+            chain: `eip155:${publicDeps.chainId}`,
+            recipient: a.recipient,
+            taskHash: mapped.intent.paramsHash,
+            acceptanceHash: mapped.intent.acceptanceHash,
+            policyId: a.policy.id,
+            /**
+             * The digest the new terms WOULD produce at version 1, used only to answer "is this quote
+             * actually different". Comparing at the real version would make every requote trivially
+             * different from its predecessor, because the version is inside the hash — so the unchanged-
+             * quote refusal would never fire and a caller could mint a fresh request on identical terms
+             * whenever the duplicate window was inconvenient.
+             */
+            newQuoteDigest: quoteDigestOfV3(provisionalTerms),
+          },
+        );
+        if (!verdict.ok) throw new RequoteRefused(verdict.refusal, verdict.detail);
+        validatedRequote = verdict;
+      }
+
+      const quoteTerms = quoteTermsFor(intentHash, validatedRequote?.quoteVersion ?? 1);
       const assembledEvidence = assembleDecisionEvidenceV3({
         decisionId: `dec_${keccak256(toHex(`${intentHash}:${evaluatedAt}`)).slice(2, 34)}`,
         intentId: intentHash,
@@ -617,6 +769,23 @@ export async function handlePublicPreflight(
           walletAuthorityRef: r.walletAuthorityRef,
           reason: engineResult.decision,
           approvalExpiresAt: new Date(nowMs + (publicDeps.approvalWindowMs ?? DEFAULT_APPROVAL_WINDOW_MS)).toISOString(),
+          /**
+           * The VALIDATED verdict, not the caller's claim.
+           *
+           * `persistEscalatedApproval` has no rules of its own about supersession and must not acquire
+           * any — one gate, holding one lock, is what makes the answer reproducible.
+           */
+          ...(validatedRequote
+            ? {
+                requote: {
+                  quoteLineageId: validatedRequote.quoteLineageId,
+                  quoteVersion: validatedRequote.quoteVersion,
+                  previousQuoteDigest: validatedRequote.priorQuoteDigest,
+                  supersedesApprovalRequestId: validatedRequote.priorApprovalRequestId,
+                  supersedesReservationId: validatedRequote.priorReservationId,
+                },
+              }
+            : {}),
         });
       }
 
@@ -681,6 +850,7 @@ export async function handlePublicPreflight(
           callsInLastHour: windowState.callsInLastHour,
         },
         escalated,
+        requote: validatedRequote,
       };
     });
   } catch (err) {
@@ -720,6 +890,40 @@ export async function handlePublicPreflight(
           // Stated so nobody has to infer it from the absence of a field.
           humanNotified: false,
           decisionPersisted: false,
+          docsUrl: null,
+        },
+      };
+    }
+    if (err instanceof RequoteRefused) {
+      /**
+       * 409, not 503 and not 400.
+       *
+       * The request is well-formed and the service is healthy. What is wrong is a claim about state:
+       * the predecessor has moved, or was never what the caller believed. A conflict is what a client
+       * can act on — re-read the lineage and try again with what is actually there — and it is what
+       * stops a retry loop treating this as a transient outage.
+       *
+       * Nothing was written. The transaction that would have carried the evidence, the replay marker
+       * and the decision-state window rolled back with this, so the same request stays eligible the
+       * moment the caller's view of the lineage is correct.
+       */
+      return {
+        status: 409,
+        headers: { "Cache-Control": "no-store" },
+        body: {
+          outcome: "REQUOTE_REFUSED",
+          code: err.refusal,
+          message: err.detail,
+          /**
+           * The three facts a caller most needs to be told explicitly, because the alarming reading of
+           * a refused requote is "did it take my old approval with it".
+           */
+          priorAuthorityUnchanged: true,
+          servicePaymentSettled: false,
+          paymentConsumed: false,
+          humanNotified: false,
+          decisionPersisted: false,
+          retryable: false,
           docsUrl: null,
         },
       };
@@ -870,6 +1074,35 @@ export async function handlePublicPreflight(
               approvalDigest: committed.escalated.approvalDigest,
               serviceCallId: committed.escalated.serviceCallId,
               quoteLineageId: committed.escalated.quoteLineageId,
+              quoteVersion: committed.escalated.quoteVersion,
+              /**
+               * WHAT THIS WILL RETIRE, AND THAT IT HAS NOT.
+               *
+               * The tense is the whole content of this field. A caller reading `supersedes: "aprq_…"`
+               * with no further qualification would reasonably conclude the 6.00 is gone, and act on
+               * it — stop showing it, stop counting its exposure, tell the user it was replaced. It is
+               * not gone. It is untouched, still answerable if it was PENDING, still holding its
+               * reservation if it was APPROVED, and it stays that way unless an authority confirms this
+               * request's fee actually settled.
+               */
+              requote:
+                committed.requote === null
+                  ? null
+                  : {
+                      supersedesApprovalRequestId: committed.requote.priorApprovalRequestId,
+                      supersedesReservationId: committed.requote.priorReservationId,
+                      previousQuoteDigest: committed.requote.priorQuoteDigest,
+                      previousAmount: committed.requote.priorAmount,
+                      previousState: committed.requote.priorState,
+                      priorAuthorityRetired: false,
+                      priorAuthorityStillLive: committed.requote.priorState !== "PROVISIONAL",
+                      retiresOn: "confirmed settlement of this request's service fee",
+                      note:
+                        "The earlier request has NOT been replaced. It keeps its state, its reservation " +
+                        "and its buttons until an authority confirms this request's fee settled. If that " +
+                        "payment fails, the earlier authority survives untouched — a failed payment does " +
+                        "not revoke authority that was already granted.",
+                    },
               state: committed.escalated.state,
               actionable: false,
               humanNotified: false,
