@@ -43,20 +43,55 @@ export const EXECUTION_MANIFEST_ROUTE = "/execution-manifest" as const;
 /**
  * Whether an escalated decision can actually reach a human.
  *
- * FALSE, and it is the honest value. PR #65 moved the account route onto an inline decision
- * transaction wired with `DecisionOnlyDeps`, which correctly cannot name a channel gateway — and in
- * doing so removed the only call site that created an escalation. So on the paid V3 account path an
- * `ESCALATED_THRESHOLD` decision persists evidence and reaches nobody.
+ * TRUE, and every word of that is load-bearing.
  *
- * A constant rather than an environment variable on purpose. The value is a property of what is
- * WIRED, not of how an operator configured the process, and a flag somebody could flip would let the
- * approval path be advertised as available before the writer exists — which is precisely the claim
- * this whole pass has been removing from the documentation.
+ * It was false for the right reason: PR #65 moved the account route onto an inline decision
+ * transaction wired with `DecisionOnlyDeps`, which correctly cannot name a channel gateway, and in
+ * doing so removed the only call site that created an escalation. An `ESCALATED_THRESHOLD` decision
+ * persisted evidence and reached nobody, so the honest answer was that nobody would be asked.
  *
- * The foundation PR flips this in the same commit that activates `PgApprovalStore`, and the manifest
- * and the gate below both read it, so they cannot disagree.
+ * A constant rather than an environment variable, still, and for the original reason: the value is a
+ * property of what is WIRED, not of how an operator configured the process. That is also why flipping
+ * it is a reviewed commit rather than a dashboard toggle.
+ *
+ * WHAT HAD TO BE TRUE BEFORE THIS COULD BE
+ *
+ *   - the paid lifecycle raises a PROVISIONAL request and activates it only on confirmed settlement
+ *   - the delivery worker projects outbox events and sends through the real Discord gateway
+ *   - the reconciler reaches the same state from committed data when a process dies
+ *   - the action links resolve, and the terminal decision is bound to a nonce, a token and a binding
+ *   - a REAL Discord OAuth round trip completes against the registered callback
+ *
+ * The last one is the one no test could establish. A suite substitutes the code exchange, so it proves
+ * the handlers agree with each other and cannot prove Discord accepts the redirect URI. That was
+ * settled by a non-financial probe — an OAuth state naming a binding and no action reference — which a
+ * person completed against production, matching the subject on the live binding and moving nothing.
+ *
+ * WHAT THIS DOES NOT CLAIM
+ *
+ * Not that a provider will run, that a payment will settle, or that anything is delivered. The
+ * decision route's dependency type still cannot name an executor, and the per-route manifest below
+ * still answers false for all of it. This says one thing: an escalated decision now reaches a human.
+ *
+ * THE CLOSED BEHAVIOUR IS STILL REACHABLE, AND STILL TESTED
+ *
+ * `escalationRefusedForUnreadyPath` below takes readiness as an ARGUMENT rather than reading this
+ * constant, so both states stay provable after the flip. That matters twice: the refusal is what an
+ * operator falls back to if this ever has to be closed again, and a behaviour nothing exercises is a
+ * behaviour that has quietly stopped working.
  */
-export const APPROVAL_PATH_READY = false as const;
+export const APPROVAL_PATH_READY = true as const;
+
+/**
+ * The gate the paid decision route applies to an escalated verdict.
+ *
+ * A pure function of two facts, so it can be checked in both states without deploying either. When the
+ * path is not ready an escalated decision must REFUSE rather than return 200: x402 settles only on a
+ * 2xx, so a success here would take the fee for a promise that nobody would be asked.
+ */
+export function escalationRefusedForUnreadyPath(approvalPathReady: boolean, decision: string): boolean {
+  return !approvalPathReady && decision.startsWith("ESCALATED");
+}
 
 export type RouteExecutionProfile =
   /** Judges. Reads state, records evidence, moves no money and runs no provider. */
@@ -241,10 +276,18 @@ const DECISION_ONLY: RouteReachability = {
   paymentExecutionReachable: false,
   deliveryExecutionReachable: false,
   providerDeliveryExecutionReachable: false,
-  // Both false until the writer foundation lands. Tables existing is not the same as a path being
-  // wired, and advertising persistence because a table exists is how "LIVE" got into the README.
+  // Both read the flag rather than restating it, so the manifest and the gate cannot disagree. Tables
+  // existing is not the same as a path being wired, and advertising persistence because a table exists
+  // is how "LIVE" got into the README.
   approvalStatePersistenceReachable: APPROVAL_PATH_READY,
   approvalNotificationEnqueueReachable: APPROVAL_PATH_READY,
+  /**
+   * Still false, and it is not an oversight.
+   *
+   * The route ENQUEUES; it does not send. The outbox row is written inside the decision transaction and
+   * the Discord call happens later, in the worker, after that transaction has committed. So a rolled
+   * back decision messages nobody — which is a property of this being false rather than a caveat on it.
+   */
   directChannelGatewayReachable: false,
 };
 

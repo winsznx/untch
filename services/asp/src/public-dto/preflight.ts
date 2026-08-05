@@ -57,7 +57,12 @@ import { canonTimestamp } from "@untch/canon";
 import type { PgServiceCallStore, ServiceCallTx } from "@untch/consumer-core";
 import type { HandlerResult } from "../handlers";
 import { assemblePreflightInjects } from "../preflight-state";
-import { APPROVAL_PATH_READY, routeReachability, type DecisionOnlyDeps } from "../route-profiles";
+import {
+  APPROVAL_PATH_READY,
+  escalationRefusedForUnreadyPath,
+  routeReachability,
+  type DecisionOnlyDeps,
+} from "../route-profiles";
 import { openAccountSession } from "../consumer/account-auth";
 import {
   EscalatedApprovalRefused,
@@ -121,6 +126,15 @@ export interface PublicPreflightDeps {
    * approval nothing could later activate.
    */
   readonly serviceCalls?: PgServiceCallStore | null;
+  /**
+   * Whether the approval path is ready, defaulting to what this build was compiled with.
+   *
+   * Injectable so the CLOSED behaviour stays exercisable after the constant was flipped to true. That
+   * refusal is the fallback an operator has if the path ever has to be shut again, and a fallback
+   * nothing tests is one that has quietly stopped working. Production passes nothing and gets the
+   * constant, so this cannot become a way to arm or disarm the path at runtime.
+   */
+  readonly approvalPathReady?: boolean;
   /**
    * How long a human is given to answer, in milliseconds.
    *
@@ -277,6 +291,8 @@ export async function handlePublicPreflight(
   paymentAuthorization: VerifiedPaymentAuthorizationContext | null = null,
 ): Promise<HandlerResult> {
   const now = publicDeps.now ?? Date.now;
+  /** What this build was compiled with, unless a caller is deliberately exercising the closed gate. */
+  const approvalPathReady = publicDeps.approvalPathReady ?? APPROVAL_PATH_READY;
   const parsed = readRequest(body);
   if ("malformed" in parsed) {
     /**
@@ -707,7 +723,7 @@ export async function handlePublicPreflight(
        *
        * x402 settles only on a 2xx, so the non-2xx below is also what stops the fee being taken.
        */
-      if (!APPROVAL_PATH_READY && engineResult.decision.startsWith("ESCALATED")) {
+      if (escalationRefusedForUnreadyPath(approvalPathReady, engineResult.decision)) {
         throw new ApprovalPathUnavailable(engineResult.decision);
       }
 
@@ -945,7 +961,7 @@ export async function handlePublicPreflight(
           outcome: "APPROVAL_REQUEST_NOT_RECORDABLE",
           code: err.code,
           message: err.message,
-          approvalPathAvailable: APPROVAL_PATH_READY,
+          approvalPathAvailable: approvalPathReady,
           servicePaymentSettled: false,
           paymentConsumed: false,
           humanNotified: false,
