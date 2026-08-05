@@ -7,7 +7,9 @@ import type { Address } from "viem";
 import { keccak256, toHex } from "viem";
 import {
   PgAccountStore,
+  PgServiceCallStore,
   createPool,
+  finalizeSettlement,
   decisionStateCounts,
   newWalletBindingId,
   type Pool,
@@ -17,10 +19,13 @@ import { ledgerPartitionKey } from "@untch/policy-engine";
 import { hashCanonicalJson } from "@untch/canon";
 import { findOwnedService } from "@untch/owned-work";
 import { handlePublicPreflight, type PublicPreflightDeps } from "../src/public-dto/preflight";
+import { parseVerifiedPaymentAuthorization } from "../src/consumer/payment-authorization";
 import { mintAccountSession } from "../src/consumer/account-auth";
 import { InMemoryIntentStore } from "../src/ledger-state";
 import {
+  APPROVAL_PATH_READY,
   ExecutionDependencyLeakError,
+  escalationRefusedForUnreadyPath,
   narrowToDecisionOnly,
   routeReachability,
   type DecisionOnlyDeps,
@@ -233,6 +238,15 @@ describe(
     };
 
     let seq = 0;
+    /**
+     * Readiness passed explicitly, for the cases whose subject is the CLOSED gate.
+     *
+     * `APPROVAL_PATH_READY` is true in this build. The refusal it replaced is the fallback an operator
+     * has if the path ever has to be shut again, and a fallback nothing exercises is one that has
+     * quietly stopped working — so those cases keep running, against a path told it is closed.
+     */
+    const CLOSED = { approvalPathReady: false } as const;
+
     const request = (amount: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({
       provider: "untch",
       capability: "owned_work.demo",
@@ -247,11 +261,12 @@ describe(
     const run = async (
       body: Record<string, unknown>,
       mode: "commit" | "rollback",
+      over: Partial<PublicPreflightDeps> = {},
     ): Promise<Record<string, unknown>> => {
       const result = await handlePublicPreflight(
         body,
         `Bearer ${token}`,
-        { ...publicDeps, evidenceTx: mode === "commit" ? committing : rollingBack },
+        { ...publicDeps, evidenceTx: mode === "commit" ? committing : rollingBack, ...over },
         decisionDeps,
       );
       const bodyOut = result.body as Record<string, unknown>;
@@ -312,23 +327,189 @@ describe(
     });
 
     test("the boundary proof run twice produces identical decisions", async () => {
-      // 6.00 now returns APPROVAL_PATH_NOT_READY rather than a 200 ESCALATED, so the engine verdict
-      // is read from `decisionOutcome` on the refusal and from `decision` on the served outcomes.
+      /**
+       * Run against the CLOSED gate, which is what keeps this test about the ENGINE.
+       *
+       * With the path open a 6.00 continues into the escalated branch, and on this bundle — which has
+       * no service-call store — that refuses for a completely different reason. The verdict would then
+       * be absent from the body and this would be measuring the writer rather than determinism. The
+       * closed gate surfaces the engine's verdict on `decisionOutcome`, which is the value under test.
+       */
       const verdict = (b: Record<string, unknown>): unknown => b.decision ?? b.decisionOutcome;
       const first = [
-        await run(request("4.00"), "rollback"),
-        await run(request("6.00"), "rollback"),
-        await run(request("9.00"), "rollback"),
+        await run(request("4.00"), "rollback", CLOSED),
+        await run(request("6.00"), "rollback", CLOSED),
+        await run(request("9.00"), "rollback", CLOSED),
       ].map(verdict);
       const second = [
-        await run(request("4.00"), "rollback"),
-        await run(request("6.00"), "rollback"),
-        await run(request("9.00"), "rollback"),
+        await run(request("4.00"), "rollback", CLOSED),
+        await run(request("6.00"), "rollback", CLOSED),
+        await run(request("9.00"), "rollback", CLOSED),
       ].map(verdict);
 
       assert.deepEqual(second, first);
       assert.deepEqual(first, ["APPROVED", "ESCALATED_THRESHOLD", "BLOCKED_PER_CALL_CAP"]);
       assert.deepEqual(await counts(), { recentIntents: 0, rateTicks: 0, replayMarkers: 0, serviceCalls: 0, activeReserved: "0", settledSpend: "0" });
+    });
+
+    /**
+     * THE OTHER HALF OF ACTIVATION.
+     *
+     * The closed gate is proven above. This is what replaces it: with the path open, an escalated
+     * decision no longer refuses — it raises a PROVISIONAL request against the service call that
+     * bought it, and stays unactionable until an authority confirms the fee settled.
+     *
+     * `preflight-escalation-pg` proves the WRITER in isolation. This drives the real handler, which is
+     * the path activation actually opened, and the one nothing exercised end to end before now.
+     */
+    describe("with the path open, an escalated decision raises a provisional request", () => {
+      const PAYER = "0x5a2c16c74e9e15cf74add824f2ef97d6b3fbab64";
+      const PAY_TO = "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba";
+      const TOKEN_ADDR = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
+      let openSeq = 0;
+
+      const authFor = (nonce: string) =>
+        parseVerifiedPaymentAuthorization(
+          Buffer.from(
+            JSON.stringify({
+              x402Version: 1,
+              accepted: { scheme: "exact", network: "eip155:196", asset: TOKEN_ADDR, amount: "50000", payTo: PAY_TO },
+              payload: {
+                signature: "0xsignaturethatmustnevertravel",
+                authorization: {
+                  from: PAYER,
+                  to: PAY_TO,
+                  value: "50000",
+                  validAfter: "0",
+                  validBefore: "99999999999",
+                  nonce,
+                },
+              },
+            }),
+            "utf8",
+          ).toString("base64"),
+          { chainId: 196 },
+        );
+
+      const escalate = async (idempotencyKey: string): Promise<{ body: Record<string, unknown>; nonce: string }> => {
+        openSeq += 1;
+        const nonce = `0xopen${String(openSeq).padStart(4, "0")}${"f".repeat(51)}`;
+        const auth = authFor(nonce);
+        assert.ok(auth);
+        const result = await handlePublicPreflight(
+          request("6.00", { idempotencyKey }),
+          `Bearer ${token}`,
+          { ...publicDeps, evidenceTx: committing, serviceCalls: new PgServiceCallStore(pool) },
+          decisionDeps,
+          auth,
+        );
+        return { body: result.body as Record<string, unknown>, nonce };
+      };
+
+      const one = async (sql: string, params: readonly unknown[] = []): Promise<number> => {
+        const { rows } = await pool.query<{ n: string }>(sql, params as never);
+        return Number(rows[0]!.n);
+      };
+
+      test("it creates the service call, the attempt and one PROVISIONAL request, and reserves nothing", async () => {
+        const reservationsBefore = await one(`SELECT count(*)::text n FROM untch_budget_reservations`);
+        const { body, nonce } = await escalate("open-escalated");
+
+        assert.notEqual(body.outcome, "APPROVAL_PATH_NOT_READY", "the gate is open in this build");
+        assert.equal(body.decision ?? body.decisionOutcome, "ESCALATED_THRESHOLD");
+
+        const requests = await one(
+          `SELECT count(*)::text n FROM untch_approval_requests WHERE state = 'PROVISIONAL' AND amount = '6.00'`,
+        );
+        assert.equal(requests, 1, "exactly one provisional request");
+
+        const attempts = await one(
+          `SELECT count(*)::text n FROM untch_x402_payment_attempts WHERE authorization_nonce = $1`,
+          [nonce],
+        );
+        assert.equal(attempts, 1, "the attempt is bound to the exact nonce that paid");
+
+        assert.equal(
+          await one(`SELECT count(*)::text n FROM untch_budget_reservations`),
+          reservationsBefore,
+          "a request nobody has answered reserves nothing",
+        );
+      });
+
+      /**
+       * The window that makes the whole model safe: it is raised, it is not actionable, and nobody has
+       * been told. Enqueuing before the fee is confirmed would promise a human something that might
+       * never have been paid for.
+       */
+      test("nothing is enqueued and nothing is deliverable before settlement is confirmed", async () => {
+        await escalate("open-no-outbox");
+        const { rows } = await pool.query<{ approval_request_id: string }>(
+          `SELECT approval_request_id FROM untch_approval_requests WHERE state = 'PROVISIONAL' ORDER BY created_at DESC LIMIT 1`,
+        );
+        const id = rows[0]!.approval_request_id;
+        assert.equal(
+          await one(`SELECT count(*)::text n FROM untch_approval_outbox WHERE approval_request_id = $1`, [id]),
+          0,
+          "no outbox event before the fee is confirmed",
+        );
+        assert.equal(
+          await one(`SELECT count(*)::text n FROM untch_approval_deliveries WHERE approval_request_id = $1`, [id]),
+          0,
+          "and nothing deliverable",
+        );
+      });
+
+      test("authoritative confirmation moves it to PENDING and enqueues exactly one event", async () => {
+        const { nonce } = await escalate("open-activation");
+        const { rows } = await pool.query<{ approval_request_id: string; service_call_id: string }>(
+          `SELECT approval_request_id, service_call_id FROM untch_approval_requests
+            WHERE state = 'PROVISIONAL' ORDER BY created_at DESC LIMIT 1`,
+        );
+        const { approval_request_id: id, service_call_id: callId } = rows[0]!;
+
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const outcome = await finalizeSettlement(client as never, {
+            serviceCallId: callId,
+            evidence: {
+              kind: "CONFIRMED",
+              source: "facilitator_settle_status",
+              transactionHash: `0xtxopen${openSeq}`,
+              paymentId: null,
+              terms: {
+                authorizationNonce: nonce,
+                payer: PAYER,
+                token: TOKEN_ADDR,
+                amount: "50000",
+                payTo: PAY_TO,
+                chain: "eip155:196",
+              },
+            },
+          });
+          await client.query("COMMIT");
+          assert.equal(outcome.outcome, "ACTIVATED");
+        } catch (err) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          throw err;
+        } finally {
+          client.release();
+        }
+
+        const { rows: after } = await pool.query<{ state: string }>(
+          `SELECT state FROM untch_approval_requests WHERE approval_request_id = $1`,
+          [id],
+        );
+        assert.equal(after[0]!.state, "PENDING", "confirmed settlement is what makes it answerable");
+        assert.equal(
+          await one(
+            `SELECT count(*)::text n FROM untch_approval_outbox WHERE approval_request_id = $1 AND name = 'approval.request.ready.v1'`,
+            [id],
+          ),
+          1,
+          "exactly one event, so one message reaches one human",
+        );
+      });
     });
 
     test("a blocked decision proposes no effects at all", async () => {
@@ -543,10 +724,17 @@ describe(
      *
      * Returning 200 would take 0.05 USDT0 for a promise the service cannot keep. The gate refuses from
      * inside the transaction, so the request stays eligible for the moment the approval path exists.
+     *
+     * THE PATH IS NOW OPEN, AND THIS BLOCK STILL RUNS.
+     *
+     * `APPROVAL_PATH_READY` is true in this build, so every case below passes readiness explicitly as
+     * false. That is not a workaround for a stale test: the refusal is the fallback an operator has if
+     * the path ever has to be closed again, and a fallback nothing exercises is one that has quietly
+     * stopped working. Deleting these would have traded a proven behaviour for an assumed one.
      */
-    describe("an escalated account-path decision refuses rather than charging", () => {
+    describe("an escalated account-path decision refuses rather than charging, when the path is closed", () => {
       test("6.00 evaluates to ESCALATED_THRESHOLD and is refused with APPROVAL_PATH_NOT_READY", async () => {
-        const body = await run(request("6.00", { idempotencyKey: "gate-escalated" }), "commit");
+        const body = await run(request("6.00", { idempotencyKey: "gate-escalated" }), "commit", CLOSED);
         assert.equal(body.outcome, "APPROVAL_PATH_NOT_READY");
         assert.equal(body.decisionOutcome, "ESCALATED_THRESHOLD", "the engine still decided, and says so");
         assert.equal(body.approvalPathAvailable, false);
@@ -567,7 +755,7 @@ describe(
         const result = await handlePublicPreflight(
           request("6.00", { idempotencyKey: "gate-escalated-headers" }),
           `Bearer ${token}`,
-          { ...publicDeps, evidenceTx: committing },
+          { ...publicDeps, evidenceTx: committing, ...CLOSED },
           decisionDeps,
         );
         assert.equal(result.status, 503, "non-2xx is what stops x402 from settling");
@@ -587,11 +775,12 @@ describe(
 
       test("the refusal commits no durable state at all", async () => {
         const before = await counts();
+        const beforeRequests = await tableCount("untch_approval_requests");
         const beforeTables: Record<string, number> = {};
         for (const t of ["untch_decision_evidence", "untch_budget_reservations", "escalations"]) {
           beforeTables[t] = await tableCount(t);
         }
-        const body = await run(request("6.00", { idempotencyKey: "gate-no-state" }), "commit");
+        const body = await run(request("6.00", { idempotencyKey: "gate-no-state" }), "commit", CLOSED);
         assert.equal(body.outcome, "APPROVAL_PATH_NOT_READY");
 
         const after = await counts();
@@ -602,16 +791,23 @@ describe(
         for (const table of ["untch_decision_evidence", "untch_budget_reservations", "escalations"]) {
           assert.equal(await tableCount(table), beforeTables[table], `${table} unchanged by a refused escalation`);
         }
-        // The one that must be zero absolutely: the approval writer does not exist yet.
-        assert.equal(await tableCount("untch_approval_requests"), 0, "no approval object is created anywhere");
+        /**
+         * A DELTA, now that the suite legitimately raises requests through the open path above. The
+         * claim was never "the table is empty" — it is that a REFUSED escalation adds nothing to it.
+         */
+        assert.equal(
+          await tableCount("untch_approval_requests"),
+          beforeRequests,
+          "a refused escalation creates no approval object",
+        );
       });
 
       test("the same request stays eligible immediately afterwards", async () => {
         // The whole reason the gate rolls back: an outage must not poison the duplicate window for a
         // request the caller will legitimately retry once approval works.
         const before = await counts();
-        const first = await run(request("6.00", { idempotencyKey: "gate-retryable" }), "commit");
-        const second = await run(request("6.00", { idempotencyKey: "gate-retryable" }), "commit");
+        const first = await run(request("6.00", { idempotencyKey: "gate-retryable" }), "commit", CLOSED);
+        const second = await run(request("6.00", { idempotencyKey: "gate-retryable" }), "commit", CLOSED);
         assert.equal(first.outcome, "APPROVAL_PATH_NOT_READY");
         assert.equal(second.outcome, "APPROVAL_PATH_NOT_READY");
         assert.equal(second.decisionOutcome, "ESCALATED_THRESHOLD", "not BLOCKED_DUPLICATE");
@@ -621,7 +817,7 @@ describe(
       test("an approved decision is unaffected and still commits", async () => {
         // A fresh amount, so this is not a duplicate of anything earlier in the suite.
         const before = await counts();
-        const body = await run(request("3.25", { idempotencyKey: "gate-approved-unchanged" }), "commit");
+        const body = await run(request("3.25", { idempotencyKey: "gate-approved-unchanged" }), "commit", CLOSED);
         assert.equal(body.outcome, "APPROVED_AUTOMATIC", "the gate is for escalations only");
         assert.equal((body.budget as Record<string, unknown>).economicClassification, "RESERVED_AUTHORITY_NOT_SPEND");
         const after = await counts();
@@ -630,20 +826,42 @@ describe(
       });
 
       test("a blocked decision keeps its existing truthful semantics", async () => {
-        const body = await run(request("9.50", { idempotencyKey: "gate-blocked-unchanged" }), "commit");
+        const body = await run(request("9.50", { idempotencyKey: "gate-blocked-unchanged" }), "commit", CLOSED);
         assert.equal(body.outcome, "BLOCKED");
         assert.equal(body.decision, "BLOCKED_PER_CALL_CAP");
         assert.notEqual(body.outcome, "APPROVAL_PATH_NOT_READY", "the gate is for escalations only");
       });
 
-      test("the manifest does not advertise approval persistence it does not have", () => {
+      /**
+       * The manifest now advertises persistence, and must still advertise nothing else. The fields
+       * that stay false are the ones a reader could mistake for permission to move money.
+       */
+      test("the manifest advertises exactly what activation turned on, and nothing more", () => {
         const r = routeReachability("/preflight_payment")!;
-        assert.equal(r.approvalStatePersistenceReachable, false);
-        assert.equal(r.approvalNotificationEnqueueReachable, false);
+        assert.equal(APPROVAL_PATH_READY, true, "this build has the approval path activated");
+        assert.equal(r.approvalStatePersistenceReachable, true);
+        assert.equal(r.approvalNotificationEnqueueReachable, true);
+        /** The route ENQUEUES. The Discord call happens in the worker, after commit. */
         assert.equal(r.directChannelGatewayReachable, false);
+        assert.equal(r.providerExecutionReachable, false);
+        assert.equal(r.paymentExecutionReachable, false);
         // The deprecated alias means provider delivery ONLY, never the OR with notification delivery.
         assert.equal(r.deliveryExecutionReachable, r.providerDeliveryExecutionReachable);
         assert.equal(r.providerDeliveryExecutionReachable, false);
+      });
+
+      /**
+       * The gate as a pure function, so both states stay proven whatever the constant currently is.
+       */
+      test("the gate refuses an escalation only while the path is closed", () => {
+        for (const decision of ["ESCALATED_THRESHOLD", "ESCALATED_VENDOR_RISK"]) {
+          assert.equal(escalationRefusedForUnreadyPath(false, decision), true, `closed must refuse ${decision}`);
+          assert.equal(escalationRefusedForUnreadyPath(true, decision), false, `open must allow ${decision}`);
+        }
+        for (const decision of ["APPROVED_AUTOMATIC", "BLOCKED_PER_CALL_CAP"]) {
+          assert.equal(escalationRefusedForUnreadyPath(false, decision), false, "the gate is for escalations only");
+          assert.equal(escalationRefusedForUnreadyPath(true, decision), false);
+        }
       });
     });
   },

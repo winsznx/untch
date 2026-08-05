@@ -220,7 +220,19 @@ describe(
     };
 
     let seq = 0;
-    const run = async (amount: string, mode: "commit" | "rollback", key?: string, policyId?: string) => {
+    /**
+     * Readiness is passed explicitly by the escalation case below, which is about what an escalated
+     * decision RESERVES. Driving it through the closed gate keeps that the subject: with the path open
+     * the same request continues into the writer, and this suite's bundle has no service-call store, so
+     * it would refuse for an unrelated reason and stop measuring budget.
+     */
+    const run = async (
+      amount: string,
+      mode: "commit" | "rollback",
+      key?: string,
+      policyId?: string,
+      over: Record<string, unknown> = {},
+    ) => {
       const result = await handlePublicPreflight(
         {
           provider: "untch", capability: "owned_work.demo", task: `reservation test ${amount} ${key ?? ++seq}`,
@@ -229,7 +241,7 @@ describe(
           ...(policyId ? { policyId } : {}),
         },
         `Bearer ${token}`,
-        { ...publicDeps, evidenceTx: mode === "commit" ? committing : rollingBack },
+        { ...publicDeps, evidenceTx: mode === "commit" ? committing : rollingBack, ...over },
         decisionDeps,
       );
       return result.body as Record<string, unknown>;
@@ -283,12 +295,13 @@ describe(
 
     test("an escalated decision does not silently reserve executable authority", async () => {
       const before = await exposure();
-      const body = await run("6.00", "commit");
+      const body = await run("6.00", "commit", undefined, undefined, { approvalPathReady: false });
       /**
-       * The escalation safety gate now refuses this before it is served, because nothing on the
-       * account path can reach a human yet. The engine verdict moves to `decisionOutcome`, and the
-       * property this test exists for holds either way: a request awaiting human authority reserves
-       * nothing. It was true when the decision was returned, and it is true when it is refused.
+       * Driven through the CLOSED gate, which is what keeps this test about BUDGET.
+       *
+       * The property it exists for holds in both states — a request awaiting human authority reserves
+       * nothing, whether the decision is served or refused — and the closed gate is the one that
+       * surfaces the engine verdict on `decisionOutcome` without needing a service-call store.
        */
       assert.equal(body.outcome, "APPROVAL_PATH_NOT_READY");
       assert.equal(body.decisionOutcome, "ESCALATED_THRESHOLD");
