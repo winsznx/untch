@@ -14,8 +14,10 @@ import {
   newApprovalRequestId,
   requestFingerprint,
   APPROVAL_DIGEST_SCHEMA_VERSION,
+  ensureActionReferences,
   type AuthorizedTerms,
 } from "@untch/consumer-core";
+import { discordDeliveryRoute } from "./consumer/discord-approval-gateway";
 
 /**
  * The always-rollback proof for the approval foundation.
@@ -285,6 +287,84 @@ try {
     walletScopes: ["identity"],
   });
   observed.identityOnlyRefused = identityOnly.ok === false ? identityOnly.refusal : "NOT_REFUSED";
+
+  /**
+   * ── The two surfaces a person can actually answer from ─────────────────────
+   *
+   * Added after a paid approval settled and reached nobody. The proof covered every state transition
+   * and none of the DELIVERY, so a request could be PENDING, correct in every field, and unreachable.
+   * These are the two things that were true and untested.
+   *
+   * `ensureWebApprovalSurface` is deliberately NOT called: it opens its own connection and commits, so
+   * inside an always-rollback proof it would be the one write that survived. The primitives it composes
+   * run here on the proof's transaction instead, which is the same work under the same rollback.
+   */
+  const webRefs = await ensureActionReferences(client, {
+    approvalRequestId,
+    accountId,
+    accountRefHash: accountRef,
+    channelBindingId: web.bindingId,
+    approvalDigest: subject.approvalDigest,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  });
+  observed.webProjection = {
+    bindingId: web.bindingId.slice(0, 12) + "…",
+    hasApprove: Boolean(webRefs.APPROVE),
+    hasDeny: Boolean(webRefs.DENY),
+    distinct: webRefs.APPROVE !== webRefs.DENY,
+  };
+
+  /**
+   * The Discord destination, decided from the REAL production binding.
+   *
+   * A pure function over the row, so it asserts the routing without opening a DM or sending anything.
+   * `mode: "dm"` is the whole repair: the binding that took the guild branch and 404'd would answer
+   * `"channel"` here.
+   */
+  const { rows: discordBindings } = await client.query<{
+    binding_id: string;
+    channel_chat_id: string | null;
+    channel_user_id: string;
+    verification_method: string | null;
+    status: string;
+  }>(
+    `SELECT binding_id, channel_chat_id, channel_user_id, verification_method, status
+       FROM untch_channel_bindings WHERE channel = 'discord' AND status = 'ACTIVE' LIMIT 1`,
+  );
+  const dcb = discordBindings[0];
+  if (dcb) {
+    const route = discordDeliveryRoute({
+      channelChatId: dcb.channel_chat_id,
+      channelUserId: dcb.channel_user_id,
+      verificationMethod: dcb.verification_method,
+    });
+    const dcRefs = await ensureActionReferences(client, {
+      approvalRequestId,
+      accountId,
+      accountRefHash: accountRef,
+      channelBindingId: dcb.binding_id,
+      approvalDigest: subject.approvalDigest,
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    observed.discordDelivery = {
+      routeMode: route.mode,
+      chatIdRecorded: dcb.channel_chat_id !== null,
+      wouldPostToUserId: route.mode === "channel" && route.channelId === dcb.channel_user_id,
+      hasApprove: Boolean(dcRefs.APPROVE),
+      hasDeny: Boolean(dcRefs.DENY),
+    };
+  } else {
+    observed.discordDelivery = { routeMode: "NO_ACTIVE_BINDING" };
+  }
+
+  const { rows: surfaceCount } = await client.query<{ n: number }>(
+    `SELECT count(DISTINCT b.channel)::int AS n
+       FROM untch_approval_action_refs r
+       JOIN untch_channel_bindings b ON b.binding_id = r.channel_binding_id
+      WHERE r.approval_request_id = $1`,
+    [approvalRequestId],
+  );
+  observed.answerableSurfaces = surfaceCount[0]!.n;
 
 
   const mkToken = (bindingId: string, over: Record<string, unknown> = {}) =>
