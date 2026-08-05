@@ -116,6 +116,7 @@ import {
 } from "./route-profiles";
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
+import { registerApprovalActionRoutes } from "./consumer/approval-action-routes";
 import { registerMarketplaceRoutes } from "./consumer/marketplace-continuity";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
@@ -1047,6 +1048,54 @@ export function createSellerApp(
    * request is CALLED. With providers disabled the surface says APPROVED_AWAITING_EXECUTION and states
    * that nothing was paid — the difference between an honest demo and a claim that a purchase happened.
    */
+  /**
+   * The bound approval actions — the only surface that may resolve a paid request.
+   *
+   * Registered whenever there is a store and a session secret. Discord identity verification needs the
+   * OAuth application too, and a deployment without one answers a named 503 on the Discord half rather
+   * than sending links that lead nowhere.
+   *
+   * `resolvePolicy` reads the policy at ACTION time, not at raise time. That is the whole reason the
+   * terminal decision re-reads: between being asked and answering, the policy can have been paused, the
+   * budget consumed by other decisions, and the daily cap changed.
+   */
+  registerApprovalActionRoutes(
+    app,
+    consumerWiring && consumerAuthConfig.secret && policyWiring
+      ? {
+          pool: consumerWiring.pool,
+          secret: consumerAuthConfig.secret,
+          publicBaseUrl,
+          discord: {
+            applicationId: process.env.DISCORD_APPLICATION_ID?.trim() || null,
+            redirectUri: process.env.DISCORD_ACTION_REDIRECT_URI?.trim() || null,
+            exchangeCode: async (code: string, redirectUri: string) => {
+              const appId = process.env.DISCORD_APPLICATION_ID?.trim();
+              const clientSecret = process.env.DISCORD_CLIENT_SECRET?.trim();
+              if (!appId || !clientSecret) return null;
+              const exchanger = discordCodeExchanger({ applicationId: appId, clientSecret, redirectUri });
+              const result = await exchanger(code);
+              return result ? { subject: result.externalSubjectId } : null;
+            },
+          },
+          resolvePolicy: async (policyId: string) => {
+            const stored = await policyWiring.provider.loadStored(policyId);
+            if (!stored) return null;
+            return {
+              status: stored.status,
+              expiresAtMs: stored.expiry > 0 ? stored.expiry * 1000 : null,
+              /**
+               * The daily cap read from the policy's own rules, as a decimal string. The engine owns
+               * what a budget MEANS; this only carries the number across so the terminal decision does
+               * not grow a second interpretation of it.
+               */
+              dailyLimit: String(stored.rules.budgets.daily),
+            };
+          },
+        }
+      : null,
+  );
+
   registerApprovalRoutes(
     app,
     send,

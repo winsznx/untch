@@ -41,6 +41,7 @@ import {
 } from "@untch/consumer-core";
 import type { HandlerResult } from "../handlers";
 import { openAccountSession } from "./account-auth";
+import { WEB_APPROVAL_ACTION_ROUTE } from "./approval-action-routes";
 
 export const APPROVALS_LIST_ROUTE = "/consumer/approvals" as const;
 export const APPROVAL_DETAIL_ROUTE = "/consumer/approvals/:approvalRequestId" as const;
@@ -298,6 +299,55 @@ export function registerApprovalRoutes(
       const b = (req.body ?? {}) as Record<string, unknown>;
       const decision = typeof b.decision === "string" ? b.decision.toUpperCase() : null;
       const digest = typeof b.approvalDigest === "string" ? b.approvalDigest : null;
+
+      /**
+       * ── THE LEGACY BOUNDARY ───────────────────────────────────────────
+       *
+       * THE DEFECT THIS CLOSES
+       *
+       * This route predates the paid approval model, and `PgApprovalStore.decide` writes to the same
+       * `untch_approval_requests` and `untch_approval_decisions` tables the new lifecycle uses. So the
+       * moment the paid path started creating requests, a session cookie was enough to move one to
+       * APPROVED with:
+       *
+       *   no action token          — nothing binding the answer to the exact amount and recipient
+       *   no consumed action nonce — so two taps could both be recorded
+       *   no FINALIZED check       — so an unpaid request could be approved
+       *   no budget recheck        — so capacity consumed since the ask was invisible
+       *   no BudgetReservation     — so the authority existed nowhere the next decision could see it
+       *
+       * That is a second, weaker terminal path to the same rows, and the weaker path is the one that
+       * gets used. A service-call-backed request is refused here and must go through `actOnApproval`.
+       *
+       * WHY REFUSE RATHER THAN UPGRADE
+       *
+       * Silently routing these into the new implementation would mean this endpoint's contract quietly
+       * changed meaning: a caller who sent `{decision, approvalDigest}` would suddenly need a token
+       * they never had, and would get a refusal describing a model they were never told about. A named
+       * 409 that says which route to use is a smaller surprise and a checkable one.
+       *
+       * The route stays for requests raised before the paid model existed, where `service_call_id IS
+       * NULL`. Those have no service call to finalize, no payment attempt and no action reference, so
+       * the new path could not serve them even if it wanted to.
+       */
+      const bound = await d.approvals.get(id);
+      if (bound && bound.accountId === accountId && bound.serviceCallId !== null) {
+        return refuse(
+          409,
+          "BOUND_ACTION_REQUIRED",
+          "This approval requires an authenticated, request-bound approval action.",
+          {
+            approvalRequestId: id,
+            legacyRoute: true,
+            // Named so a client is not left guessing which surface replaced this one.
+            useInstead: {
+              web: { method: "POST", path: WEB_APPROVAL_ACTION_ROUTE },
+              discord: "the Approve or Deny link in the Discord message for this request",
+            },
+            wroteNothing: true,
+          },
+        );
+      }
 
       if (decision !== "APPROVE" && decision !== "REJECT") {
         return refuse(400, "DECISION_REQUIRED", 'decision must be "APPROVE" or "REJECT"');
