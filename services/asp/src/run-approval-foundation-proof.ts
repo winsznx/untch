@@ -362,22 +362,164 @@ try {
     leaksAccountId: caseJson.includes(accountId),
   };
 
-  // Proof 5 and 6: the requote.
+  // Proof 5 and 6: the requote, as a SECOND PAID CALL rather than a bare supersession.
+  //
+  // WHY THIS IS NOT `supersedePriorQuote` ON ITS OWN ANY MORE
+  //
+  // It used to be, and migration 031 made that shape unwritable — correctly. The successor now has to
+  // EXIST, name the predecessor, sit in the same lineage, belong to the same account, and have a
+  // service call whose fee an authority has confirmed. Every one of those is the same statement from a
+  // different angle: authority that was already granted may only be revoked by a requote somebody
+  // actually paid for, so a failed or unconfirmed second payment cannot destroy the first approval.
+  //
+  // So the 6.50 leg below is the whole lifecycle again — call, attempt, PROVISIONAL successor, an
+  // unconfirmed settlement that must change nothing, then confirmation that supersedes atomically.
   const oldToken = mkToken(web.bindingId);
+
+  const requoteTerms: AuthorizedTerms = { ...terms, authorizationNonce: `0xproof650${"0".repeat(55)}` };
+  const requoteCall = await store.upsertServiceCall(
+    {
+      accountId,
+      route: "/preflight_payment",
+      idempotencyKey: "approval-foundation-rollback-proof-650",
+      requestFingerprint: requestFingerprint({
+        provider: "untch",
+        capability: "owned_work.demo",
+        amount: "6.50",
+        currency: "USDT0",
+        policyId: "778001",
+        deadline: "2026-08-04T12:00:00.000Z",
+      }),
+    },
+    { decisionId: "dec_proof_650", intentHash: "0xproofintent", policyId: "778001" },
+    client,
+  );
+  await store.recordAttempt(requoteCall.serviceCallId, requoteTerms, { validAfter: null, validBefore: null }, client);
+
+  const successorId = newApprovalRequestId();
+  await client.query(
+    `INSERT INTO untch_approval_requests
+      (approval_request_id, account_id, policy_id, policy_version, intent_id, quote_hash, provider, capability,
+       amount, asset, reason, approval_digest, nonce, state, expires_at, created_by, updated_by,
+       service_call_id, decision_id, approval_digest_schema_version,
+       intent_hash, quote_digest, policy_hash, chain, recipient,
+       requester_principal_ref, wallet_authority_ref, account_ref_hash, quote_lineage_id,
+       quote_version, supersedes_approval_request_id)
+     VALUES ($1,$2,'778001',1,'intent_proof','qh_proof_650','untch','owned_work.demo','6.50','USDT0',
+             'ESCALATED_THRESHOLD', $3, 'nonce_proof_650', 'PROVISIONAL', now() + interval '1 hour',
+             'rollback-proof','rollback-proof',$4,'dec_proof_650',$5,
+             $6,'qd_proof_650',$7,$8,$9,$10,$11,$12,$13,2,$14)`,
+    [successorId, accountId, `apd_proof_650_${requoteCall.serviceCallId}`, requoteCall.serviceCallId,
+     APPROVAL_DIGEST_SCHEMA_VERSION, subject.intentHash, subject.policyHash, subject.chain, subject.recipient,
+     subject.requesterPrincipalRef, subject.walletAuthorityRef, accountRef, lineage, approvalRequestId],
+  );
+
+  /** The predecessor's authority must survive an unconfirmed second payment, so that is proven first. */
+  await client.query("SAVEPOINT requote_unpaid");
+  const unpaidSup = await supersedePriorQuote(client, {
+    priorApprovalRequestId: approvalRequestId,
+    newApprovalRequestId: successorId,
+    quoteLineageId: lineage,
+    newQuoteDigest: "qd_proof_650",
+    reason: "PROVIDER_REQUOTE",
+    accountId,
+  }).catch((err: unknown) => ({ ok: false as const, refusal: String((err as Error).message).slice(0, 120) }));
+  observed.supersessionBeforePayment = unpaidSup.ok
+    ? { ok: true, note: "ACCEPTED — an unpaid requote retired granted authority" }
+    : { ok: false, refusal: unpaidSup.refusal };
+  await client.query("ROLLBACK TO SAVEPOINT requote_unpaid");
+
+  const exposureStillHeld = await activeReservedExposure(client, "778001", Date.now());
+  observed.exposureWhileRequoteUnpaid = exposureStillHeld.toString();
+
+  /** Now the successor's fee is confirmed, and supersession becomes writable. */
+  const requoteSettled = await finalizeSettlement(client, {
+    serviceCallId: requoteCall.serviceCallId,
+    evidence: {
+      kind: "CONFIRMED",
+      source: "facilitator_settle_status",
+      transactionHash: "0xproof650tx",
+      paymentId: "pid_proof_650",
+      terms: requoteTerms,
+    },
+  });
+  observed.requoteSettlement = { outcome: requoteSettled.outcome };
+
+  /** What the FINALIZER did, read from the rows rather than from its return value. */
+  const { rows: priorAfter } = await client.query<{ state: string; superseded_by_approval_request_id: string | null }>(
+    `SELECT state, superseded_by_approval_request_id FROM untch_approval_requests WHERE approval_request_id = $1`,
+    [approvalRequestId],
+  );
+  observed.supersededByFinalizer = {
+    priorState: priorAfter[0]?.state ?? null,
+    priorNowPointsAt: priorAfter[0]?.superseded_by_approval_request_id ?? null,
+    matchesSuccessor: priorAfter[0]?.superseded_by_approval_request_id === successorId,
+  };
+
+  /**
+   * A SECOND supersession of the same predecessor must refuse.
+   *
+   * Confirming the successor's fee is what retires the predecessor, atomically, inside
+   * `finalizeSettlement` — so by the time this runs the work is already done. Calling it again is
+   * therefore not a redundant step but the idempotency check: authority may be retired once, and a
+   * replayed finalizer or a retrying operator must not be able to retire it twice.
+   */
   const sup = await supersedePriorQuote(client, {
     priorApprovalRequestId: approvalRequestId,
-    newApprovalRequestId: "aprq_proof_650",
+    newApprovalRequestId: successorId,
     quoteLineageId: lineage,
     newQuoteDigest: "qd_proof_650",
     reason: "PROVIDER_REQUOTE",
     accountId,
   });
-  observed.supersession = sup.ok
-    ? { ok: true, releasedExposure: sup.releasedExposure, invalidatedDeliveries: sup.invalidatedDeliveries }
-    : { ok: false, refusal: sup.refusal };
+  observed.repeatedSupersessionRefused = sup.ok
+    ? { refused: false, note: "ACCEPTED — a settled supersession was performed twice" }
+    : { refused: true, refusal: sup.refusal };
 
   const exposureAfterSupersession = await activeReservedExposure(client, "778001", Date.now());
   observed.exposureAfterSupersession = exposureAfterSupersession.toString();
+
+  const { rows: successorState } = await client.query<{ state: string }>(
+    `SELECT state FROM untch_approval_requests WHERE approval_request_id = $1`,
+    [successorId],
+  );
+  observed.successorAfterSupersession = { approvalRequestId: successorId, state: successorState[0]?.state ?? null };
+
+  /**
+   * The 6.50 is DENIED, which is the half the old proof never reached: a refusal must produce one
+   * terminal decision, grant no authority, and leave nothing actionable behind.
+   */
+  const denied = await actOnApproval(client, {
+    approvalRequestId: successorId,
+    action: "DENY",
+    token: mkToken(web.bindingId, {
+      approvalRequestId: successorId,
+      approvalDigest: `apd_proof_650_${requoteCall.serviceCallId}`,
+      quoteDigest: "qd_proof_650",
+      amount: "6.50",
+      action: "DENY",
+    }),
+    tokenSecret: TOKEN_SECRET,
+    channelBindingId: web.bindingId,
+    nowMs: Date.now(),
+    partitionKey: "policy:778001",
+    resolvePolicy: policy10,
+  });
+  observed.requoteDenied = {
+    outcome: denied.outcome,
+    hasDecision: denied.decisionId !== null,
+    createdReservation: denied.reservationId !== null,
+  };
+
+  const exposureAfterDenial = await activeReservedExposure(client, "778001", Date.now());
+  observed.exposureAfterDenial = exposureAfterDenial.toString();
+
+  const { rows: actionable } = await client.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM untch_approval_requests
+      WHERE quote_lineage_id = $1 AND state IN ('PENDING','PROVISIONAL')`,
+    [lineage],
+  );
+  observed.actionableRequestsLeftInLineage = actionable[0]!.n;
 
   const oldTokenNow = await actOnApproval(client, {
     approvalRequestId, action: "APPROVE", token: oldToken, tokenSecret: TOKEN_SECRET,
