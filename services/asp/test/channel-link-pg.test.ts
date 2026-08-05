@@ -123,9 +123,21 @@ describe("linking a channel proves who holds it", { skip: TEST_DB ? false : "TES
     return { token, claims };
   };
 
-  const subject = (id: string, method = "telegram_start_callback"): PlatformSubject => ({
+  /**
+   * `deliveryTargetId` defaults to the subject id because a Telegram `/start` callback genuinely
+   * carries a chat id, and for that flow the two are the same value.
+   *
+   * A Discord `identify` grant is the opposite case: it proves a USER and conveys no channel. Copying
+   * the user id into the delivery target there is what made the gateway post to
+   * `/channels/<user id>/messages` and 404 on a paid approval, so those subjects pass null explicitly.
+   */
+  const subject = (
+    id: string,
+    method = "telegram_start_callback",
+    deliveryTargetId: string | null = id,
+  ): PlatformSubject => ({
     externalSubjectId: id,
-    deliveryTargetId: id,
+    deliveryTargetId,
     workspaceRef: null,
     displayLabel: "@someone",
     verificationMethod: method,
@@ -186,15 +198,20 @@ describe("linking a channel proves who holds it", { skip: TEST_DB ? false : "TES
     assert.ok(!rows[0]!.scopes.includes("policy-approval"));
   });
 
-  test("a Discord link records the OAuth method it actually used", async () => {
+  test("a Discord link records the OAuth method it actually used, and no channel", async () => {
     const { token, claims } = await issue("discord");
-    const out = await consume(token, claims, subject("dc-user-1", "discord_oauth_identify"));
+    const out = await consume(token, claims, subject("dc-user-1", "discord_oauth_identify", null));
     assert.equal(out.ok, true);
-    const { rows } = await pool.query<{ verification_method: string }>(
-      `SELECT verification_method FROM untch_channel_bindings WHERE binding_id = $1`,
+    const { rows } = await pool.query<{ verification_method: string; channel_chat_id: string | null }>(
+      `SELECT verification_method, channel_chat_id FROM untch_channel_bindings WHERE binding_id = $1`,
       [out.ok === true ? out.bindingId : ""],
     );
     assert.equal(rows[0]!.verification_method, "discord_oauth_identify");
+    /**
+     * The field that cost a fee. An identify grant verifies a user; recording that user as a channel
+     * made the gateway skip opening a DM and post to an address that cannot exist.
+     */
+    assert.equal(rows[0]!.channel_chat_id, null, "an identify grant conveys no channel");
   });
 
   // ── the refusals ───────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   ensureActionReferences,
   ensureWebApprovalBinding,
@@ -40,6 +41,14 @@ export interface DiscordApprovalGatewayDeps {
   /** Injected so a test can assert the exact body without a network. */
   readonly post?: (url: string, body: unknown, token: string) => Promise<{ ok: boolean; id: string | null; status: number }>;
   readonly now?: () => number;
+  /**
+   * Structured delivery logging, off unless a caller wires it.
+   *
+   * The 404 that cost a fee was invisible until the row was read out of the database by hand: the
+   * worker logged a count and the gateway logged nothing at all. Every field it emits is a
+   * fingerprint, so a delivery can be followed end to end without a Discord id appearing in a log.
+   */
+  readonly log?: (line: string) => void;
 }
 
 interface MessageFacts {
@@ -224,27 +233,89 @@ export function discordApprovalGateway(deps: DiscordApprovalGatewayDeps): Channe
 
       /**
        * A direct message needs a DM channel; a guild message needs the channel id the binding recorded.
-       * `channelChatId` is what the link flow stored, so a binding made in a server messages that
-       * server and one made by DM opens a DM.
+       *
+       * WHY THIS IS A FUNCTION AND NOT `if (!channelChatId)`
+       *
+       * It was that, and a binding whose `channel_chat_id` held the Discord USER id took the guild
+       * branch and POSTed to `/channels/<user id>/messages`. That is not a channel, Discord answered
+       * 404 terminally, and a paid approval reached nobody. The link flow no longer writes that value,
+       * but a guard that only trusts the fix is a guard that trusts one row's history — so the shape
+       * is checked here too, where the request is actually made.
        */
-      const channelId = target.channelChatId;
-      if (!channelId) {
+      const route = discordDeliveryRoute(target);
+      const log = (stage: string, extra: Record<string, unknown>): void => {
+        deps.log?.(
+          `[discord-approval] ${JSON.stringify({
+            stage,
+            binding: fingerprint(target.channelBindingId),
+            userTarget: fingerprint(target.channelUserId),
+            approvalRequest: fingerprint(target.approvalRequestId),
+            mode: route.mode,
+            ...extra,
+          })}`,
+        );
+      };
+
+      let channelId: string;
+      if (route.mode === "dm") {
         const dm = await post("https://discord.com/api/v10/users/@me/channels", { recipient_id: target.channelUserId }, deps.botToken);
+        log("dm-open", { status: dm.status, ok: dm.ok, dmChannel: dm.id ? fingerprint(dm.id) : null, reason: route.reason });
         if (!dm.ok || !dm.id) {
           return { ok: false, retryable: dm.status >= 500 || dm.status === 429, failureCode: `DISCORD_DM_OPEN_${dm.status}` };
         }
-        const sent = await post(`https://discord.com/api/v10/channels/${dm.id}/messages`, body, deps.botToken);
-        return sent.ok
-          ? { ok: true, externalDeliveryId: sent.id }
-          : { ok: false, retryable: sent.status >= 500 || sent.status === 429, failureCode: `DISCORD_SEND_${sent.status}` };
+        channelId = dm.id;
+      } else {
+        channelId = route.channelId;
       }
 
       const sent = await post(`https://discord.com/api/v10/channels/${channelId}/messages`, body, deps.botToken);
+      log("send", { status: sent.status, ok: sent.ok, externalMessage: sent.id ? fingerprint(sent.id) : null });
       return sent.ok
         ? { ok: true, externalDeliveryId: sent.id }
         : { ok: false, retryable: sent.status >= 500 || sent.status === 429, failureCode: `DISCORD_SEND_${sent.status}` };
     },
   };
+}
+
+/**
+ * A short, non-reversing fingerprint for a Discord identifier.
+ *
+ * Logs have to be joinable across a delivery without becoming a place someone reads a user's Discord
+ * id out of. Truncated SHA-256 gives the join and not the value.
+ */
+function fingerprint(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 12)}`;
+}
+
+export type DiscordDeliveryRoute =
+  | { readonly mode: "dm"; readonly reason: string }
+  | { readonly mode: "channel"; readonly channelId: string };
+
+/**
+ * Where a Discord approval message is actually sent, decided from the binding rather than assumed.
+ *
+ * A DM whenever there is no INDEPENDENTLY VERIFIED channel to use. That covers the null and empty
+ * cases, the case where the recorded "channel" is really the user id, and any `discord_oauth_identify`
+ * binding — an `identify` grant conveys who somebody is and no channel at all, so a channel recorded
+ * against one cannot have been verified.
+ *
+ * Exported because it is the whole safety property, and a property worth stating is worth testing
+ * without a Discord token.
+ */
+export function discordDeliveryRoute(target: {
+  readonly channelChatId: string | null;
+  readonly channelUserId: string;
+  readonly verificationMethod?: string | null;
+}): DiscordDeliveryRoute {
+  const chat = target.channelChatId?.trim() ?? "";
+  if (chat === "") return { mode: "dm", reason: "no channel recorded" };
+  if (chat === target.channelUserId.trim()) {
+    return { mode: "dm", reason: "the recorded channel is the user id, which is not a channel" };
+  }
+  if (target.verificationMethod === "discord_oauth_identify") {
+    return { mode: "dm", reason: "an identify grant verifies a user, never a channel" };
+  }
+  return { mode: "channel", channelId: chat };
 }
 
 /**
