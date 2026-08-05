@@ -72,6 +72,16 @@ export const WEB_APPROVAL_ACTION_ROUTE = "/consumer/approvals/:approvalRequestId
 /** What the state is FOR. Checked on redemption, so one signing secret cannot serve two surfaces. */
 const ACTION_STATE_PURPOSE = "approval_action_v1" as const;
 
+/**
+ * The second purpose, and the only other thing the fixed callback will redeem.
+ *
+ * A smoke state names a ChannelBinding and nothing else. There is no action reference in it, so the
+ * branch that redeems it has nothing to resolve, no token to mint and no decision to reach — the
+ * inability is structural rather than a check somebody has to remember.
+ */
+const SMOKE_STATE_PURPOSE = "approval_oauth_smoke_v1" as const;
+export const APPROVAL_OAUTH_SMOKE_ROUTE = "/internal/consumer/approval-oauth-smoke" as const;
+
 /** How long a minted token lives. Short: it exists only between a confirmation page and its POST. */
 const TOKEN_TTL_MS = 10 * 60_000;
 /** How long the OAuth-proven subject stays usable without re-authenticating. */
@@ -179,7 +189,8 @@ function openActor(
  * enforces; everything else here is what the signature enforces.
  */
 export interface ApprovalActionState {
-  readonly purpose: typeof ACTION_STATE_PURPOSE;
+  readonly purpose: typeof ACTION_STATE_PURPOSE | typeof SMOKE_STATE_PURPOSE;
+  /** Empty on a smoke state, which is what makes that path unable to reach an approval. */
   readonly actionReferenceId: string;
   readonly channelBindingId: string;
   readonly action: ApprovalAction;
@@ -229,7 +240,9 @@ function openActionState(
   } catch {
     return { ok: false, refusal: "STATE_MALFORMED" };
   }
-  if (parsed.purpose !== ACTION_STATE_PURPOSE) return { ok: false, refusal: "STATE_PURPOSE" };
+  if (parsed.purpose !== ACTION_STATE_PURPOSE && parsed.purpose !== SMOKE_STATE_PURPOSE) {
+    return { ok: false, refusal: "STATE_PURPOSE" };
+  }
   if (
     typeof parsed.actionReferenceId !== "string" ||
     typeof parsed.channelBindingId !== "string" ||
@@ -380,6 +393,39 @@ ${row("Approval expires", ref.expiresAt)}
 </body></html>`;
 }
 
+/**
+ * What a completed smoke round trip shows a person.
+ *
+ * Deliberately says what did NOT happen as well as what did. A page that only said "verified" would be
+ * indistinguishable, to the person reading it, from one that had also approved something.
+ */
+function smokeResultPage(channelBindingId: string): string {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>Discord sign-in verified · Untch</title>
+<style>
+ body{font:16px/1.5 ui-sans-serif,system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem;color:#111}
+ .ok{color:#0a7;font-weight:700;font-size:1.3rem}
+ .note{color:#666;font-size:.95rem}
+ ul{padding-left:1.1rem}
+</style></head><body>
+<p class="ok">Discord sign-in verified.</p>
+<p>Your Discord identity matched the approval channel on this account (binding
+<code>${escapeHtml(channelBindingId)}</code>), through the same fixed callback a real approval uses.</p>
+<p class="note">Nothing was approved, denied or paid. This check carried no approval request, no payment,
+no action token and no authority, so there was nothing here that could have moved money:</p>
+<ul class="note">
+  <li>no approval decision</li>
+  <li>no budget reservation</li>
+  <li>no action nonce consumed</li>
+  <li>no provider call</li>
+</ul>
+<p class="note">This link is now spent and cannot be used again.</p>
+</body></html>`;
+}
+
 export function registerApprovalActionRoutes(app: Express, deps: ApprovalActionDeps | null): void {
   const form = express.urlencoded({ extended: false, limit: "16kb" });
   const json = express.json({ limit: "16kb" });
@@ -495,6 +541,51 @@ export function registerApprovalActionRoutes(app: Express, deps: ApprovalActionD
       const exchanged = await d.discord.exchangeCode(code, d.discord.redirectUri);
       if (!exchanged) {
         return refuse(res, 400, "NO_PLATFORM_SUBJECT", "discord did not confirm an authenticated identity");
+      }
+
+      /**
+       * ── The non-financial branch ────────────────────────────────────────────
+       *
+       * It proves the one thing a test cannot: that Discord accepts the registered redirect URI, that
+       * the code exchange works against the real application, and that the subject it returns is the
+       * subject on the binding. Then it stops.
+       *
+       * It stops because there is nothing here to continue with. The state carries no action reference,
+       * so there is no row to resolve, no token to mint and no decision to reach. It returns BEFORE the
+       * action path below rather than falling through it with a flag.
+       */
+      if (state.purpose === SMOKE_STATE_PURPOSE) {
+        const { rows } = await d.pool.query<{ channel_user_id: string; status: string; can_decide: boolean }>(
+          `SELECT channel_user_id, status, can_decide FROM untch_channel_bindings WHERE binding_id = $1`,
+          [state.channelBindingId],
+        );
+        const binding = rows[0];
+        if (!binding) return refuse(res, 404, "SMOKE_BINDING_NOT_FOUND", "no such channel binding");
+        if (binding.status !== "ACTIVE") {
+          return refuse(res, 403, "SMOKE_BINDING_NOT_ACTIVE", "this channel is no longer active");
+        }
+        if (binding.channel_user_id !== exchanged.subject) {
+          return refuse(res, 403, "SMOKE_SUBJECT_MISMATCH", "this identity does not hold the named binding");
+        }
+
+        const spent = await consumeOAuthStateNonce(d.pool, {
+          stateNonce: state.nonce,
+          purpose: state.purpose,
+          actionReferenceId: "",
+          channelBindingId: state.channelBindingId,
+          action: state.action,
+          issuedAt: state.issuedAt,
+          expiresAt: state.expiresAt,
+          subject: exchanged.subject,
+        });
+        if (!spent) {
+          return refuse(res, 409, "ACTION_STATE_REPLAYED", "this sign-in has already been used");
+        }
+
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Referrer-Policy", "no-referrer");
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        return void res.status(200).send(smokeResultPage(state.channelBindingId));
       }
 
       /**
@@ -869,6 +960,44 @@ export function actionUrls(publicBaseUrl: string, refs: { APPROVE: string; DENY:
   return {
     approve: `${publicBaseUrl}/consumer/approvals/action/${refs.APPROVE}/start`,
     deny: `${publicBaseUrl}/consumer/approvals/action/${refs.DENY}/start`,
+  };
+}
+
+/**
+ * Mint the non-financial OAuth probe.
+ *
+ * Returns the Discord authorize URL a person opens, and nothing else is needed to run the check: the
+ * state it carries names a binding, has no action reference, and can only reach the smoke branch of the
+ * fixed callback. Operator-gated at the route, because it names an internal binding id.
+ */
+export function mintOAuthSmokeUrl(
+  deps: Pick<ApprovalActionDeps, "secret" | "discord"> & { readonly now?: () => number },
+  channelBindingId: string,
+): { readonly url: string; readonly expiresAt: string; readonly nonce: string } | { readonly refusal: string } {
+  const nowMs = deps.now?.() ?? Date.now();
+  if (!deps.discord.applicationId || !deps.discord.redirectUri) {
+    return { refusal: "DISCORD_NOT_CONFIGURED" };
+  }
+  const expiresAt = nowMs + STATE_TTL_MS;
+  const nonce = newActionNonce();
+  const state = sealActionState(deps.secret, {
+    purpose: SMOKE_STATE_PURPOSE,
+    /** Empty, and that emptiness is the whole safety property. */
+    actionReferenceId: "",
+    channelBindingId,
+    action: "DENY",
+    nonce,
+    issuedAt: nowMs,
+    expiresAt,
+  });
+  return {
+    url:
+      `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(deps.discord.applicationId)}` +
+      `&response_type=code&scope=identify` +
+      `&redirect_uri=${encodeURIComponent(deps.discord.redirectUri)}` +
+      `&state=${encodeURIComponent(state)}`,
+    expiresAt: new Date(expiresAt).toISOString(),
+    nonce,
   };
 }
 

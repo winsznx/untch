@@ -21,6 +21,7 @@ import {
   APPROVAL_ACTION_START_ROUTE,
   WEB_APPROVAL_ACTION_ROUTE,
   registerApprovalActionRoutes,
+  mintOAuthSmokeUrl,
   sealActionStateForTest,
   webActionCsrfToken,
 } from "../src/consumer/approval-action-routes";
@@ -1257,6 +1258,132 @@ describe(
         assert.equal(discordBody.providerExecuted, webBody.providerExecuted);
         assert.equal(discordBody.economicClassification, webBody.economicClassification);
         assert.notEqual(discordBody.channel, webBody.channel);
+      });
+    });
+
+    // ── §5b the non-financial probe ───────────────────────────────────────────
+
+    describe("the smoke probe proves a sign-in and cannot reach a payment", () => {
+      const mint = (bindingId = DISCORD_BINDING) =>
+        mintOAuthSmokeUrl(
+          {
+            secret: SECRET,
+            discord: {
+              applicationId: "app-id-for-test",
+              redirectUri: "https://asp.test/consumer/approvals/action/discord/callback",
+              exchangeCode: async () => null,
+            },
+          },
+          bindingId,
+        );
+
+      test("the probe URL names the same fixed callback and carries no action reference", () => {
+        const minted = mint();
+        assert.ok(!("refusal" in minted));
+        const authorize = new URL(minted.url);
+        assert.equal(authorize.origin + authorize.pathname, "https://discord.com/oauth2/authorize");
+        assert.equal(authorize.searchParams.get("scope"), "identify");
+        assert.equal(
+          authorize.searchParams.get("redirect_uri"),
+          "https://asp.test/consumer/approvals/action/discord/callback",
+        );
+        const state = JSON.parse(
+          Buffer.from(authorize.searchParams.get("state")!.split(".")[0]!, "base64url").toString("utf8"),
+        ) as { purpose: string; actionReferenceId: string };
+        assert.equal(state.purpose, "approval_oauth_smoke_v1");
+        assert.equal(state.actionReferenceId, "", "a smoke state must name no action reference");
+      });
+
+      test("a completed probe verifies the identity and changes no financial state", async () => {
+        await pendingRequest();
+        const minted = mint();
+        assert.ok(!("refusal" in minted));
+        const state = new URL(minted.url).searchParams.get("state")!;
+        exchangeSubject = OWNER_SUBJECT;
+        const before = await counts();
+
+        const res = await callback(state);
+        assert.equal(res.status, 200);
+        const html = await res.text();
+        assert.match(html, /Discord sign-in verified/);
+        assert.match(html, /Nothing was approved, denied or paid/);
+        assert.match(html, /noindex/);
+
+        assert.deepEqual(await counts(), before, "the probe must move nothing");
+      });
+
+      test("a stranger completing the probe is refused", async () => {
+        const minted = mint();
+        assert.ok(!("refusal" in minted));
+        exchangeSubject = STRANGER_SUBJECT;
+        const before = await counts();
+
+        const res = await callback(new URL(minted.url).searchParams.get("state")!);
+        assert.equal(res.status, 403);
+        assert.equal(((await res.json()) as { code: string }).code, "SMOKE_SUBJECT_MISMATCH");
+        assert.deepEqual(await counts(), before);
+      });
+
+      test("a probe cannot be replayed", async () => {
+        const minted = mint();
+        assert.ok(!("refusal" in minted));
+        const state = new URL(minted.url).searchParams.get("state")!;
+        exchangeSubject = OWNER_SUBJECT;
+
+        assert.equal((await callback(state)).status, 200);
+        const again = await callback(state);
+        assert.equal(again.status, 409);
+        assert.equal(((await again.json()) as { code: string }).code, "ACTION_STATE_REPLAYED");
+      });
+
+      /**
+       * The safety claim stated as SQL rather than as a promise about the handler. 033 refuses a smoke
+       * row that names a reference, so a code path that aimed one at an approval could not record it.
+       */
+      test("the database refuses a smoke round trip that names an approval", async () => {
+        await assert.rejects(
+          () =>
+            pool.query(
+              `INSERT INTO untch_approval_oauth_states
+                 (state_nonce, purpose, action_reference_id, channel_binding_id, action, issued_at, expires_at)
+               VALUES ('n_smoke_bad','approval_oauth_smoke_v1','aref_something',$1,'APPROVE', now(), now() + interval '1 hour')`,
+              [DISCORD_BINDING],
+            ),
+          /untch_oauth_state_smoke_is_bare/,
+          "a smoke state that named an approval would be a smoke state that could reach one",
+        );
+      });
+
+      test("an unknown or inactive binding refuses", async () => {
+        exchangeSubject = OWNER_SUBJECT;
+        const unknown = mint("cbnd_does_not_exist");
+        assert.ok(!("refusal" in unknown));
+        const a = await callback(new URL(unknown.url).searchParams.get("state")!);
+        assert.equal(a.status, 404);
+        assert.equal(((await a.json()) as { code: string }).code, "SMOKE_BINDING_NOT_FOUND");
+
+        const live = mint();
+        assert.ok(!("refusal" in live));
+        await pool.query(`UPDATE untch_channel_bindings SET status = 'REVOKED' WHERE binding_id = $1`, [
+          DISCORD_BINDING,
+        ]);
+        try {
+          const b = await callback(new URL(live.url).searchParams.get("state")!);
+          assert.equal(b.status, 403);
+          assert.equal(((await b.json()) as { code: string }).code, "SMOKE_BINDING_NOT_ACTIVE");
+        } finally {
+          await pool.query(`UPDATE untch_channel_bindings SET status = 'ACTIVE' WHERE binding_id = $1`, [
+            DISCORD_BINDING,
+          ]);
+        }
+      });
+
+      test("a deployment with no Discord application refuses to mint a probe", () => {
+        const minted = mintOAuthSmokeUrl(
+          { secret: SECRET, discord: { applicationId: null, redirectUri: null, exchangeCode: async () => null } },
+          DISCORD_BINDING,
+        );
+        assert.deepEqual(minted, { refusal: "DISCORD_NOT_CONFIGURED" });
       });
     });
 
