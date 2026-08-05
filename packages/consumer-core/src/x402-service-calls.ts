@@ -1,5 +1,14 @@
 import { randomBytes, createHash } from "node:crypto";
 import type { Pool } from "./db";
+/**
+ * The one runtime edge between these two modules.
+ *
+ * `approval-supersession` imports only the `ServiceCallTx` TYPE from here, which erases at compile, so
+ * this is a one-way dependency rather than a cycle. It is imported rather than reimplemented because a
+ * second supersession would be a second set of rules about when authority may be retired, and the two
+ * would eventually disagree about the case nobody tested.
+ */
+import { supersedePriorQuote } from "./approval-supersession";
 
 /**
  * A structural transaction handle, matching `DecisionStateTx` in `./decision-state`.
@@ -170,20 +179,67 @@ export function requestFingerprint(parts: {
   readonly currency: string;
   readonly policyId: string | null;
   readonly deadline: string;
+  /**
+   * The predecessor this request claims to replace, on a requote and only on a requote.
+   *
+   * APPENDED rather than always present, so a first quote hashes exactly the six fields it always
+   * hashed. A fingerprint that changed shape for every caller would make every service call written
+   * before this commit unfindable by the replay resolver — the identity the whole idempotency guarantee
+   * is matched on, silently rewritten.
+   *
+   * It is in the fingerprint at all because the lineage is part of WHAT WAS ASKED FOR. Two requotes at
+   * the same price, on the same capability, replacing different predecessors, are different requests,
+   * and an identity that could not tell them apart would let a replay of one answer the other.
+   */
+  readonly requote?: RequoteLineageClaim | null;
 }): string {
   const field = (name: string, value: string | null): string => {
     const encoded = value === null ? " null" : value;
     return `${name}=${Buffer.byteLength(encoded, "utf8")}:${encoded}`;
   };
-  const payload = [
+  const base = [
     field("provider", parts.provider),
     field("capability", parts.capability),
     field("amount", parts.amount),
     field("currency", parts.currency),
     field("policy", parts.policyId),
     field("deadline", parts.deadline),
-  ].join("|");
+  ];
+  const q = parts.requote ?? null;
+  const payload = (
+    q === null
+      ? base
+      : [
+          ...base,
+          field("lineage", q.quoteLineageId),
+          field("prevQuote", q.previousQuoteDigest),
+          field("supersedes", q.supersedesApprovalRequestId),
+          field("supersedesReservation", q.supersedesReservationId),
+        ]
+  ).join("|");
   return `rfp_${createHash("sha256").update(payload, "utf8").digest("hex")}`;
+}
+
+/**
+ * What a caller must name to claim a requote, exactly.
+ *
+ * All four fields together, because each one closes a different substitution:
+ *
+ *   quoteLineageId              — which conversation this is a continuation of
+ *   previousQuoteDigest         — which VERSION of it, so a stale client cannot replace the wrong quote
+ *   supersedesApprovalRequestId — which request, so a lineage with history is unambiguous
+ *   supersedesReservationId     — which authority, so an approved predecessor's hold is named and not
+ *                                 merely found. Null when the predecessor has none, which is the
+ *                                 truthful value for a PROVISIONAL or PENDING predecessor.
+ *
+ * Naming three of four and letting the server find the last would make the server's lookup the claim,
+ * and a client that disagreed with it would never find out.
+ */
+export interface RequoteLineageClaim {
+  readonly quoteLineageId: string;
+  readonly previousQuoteDigest: string;
+  readonly supersedesApprovalRequestId: string;
+  readonly supersedesReservationId: string | null;
 }
 
 /**
@@ -328,6 +384,21 @@ export interface FinalizeResult {
   readonly approvalRequestId: string | null;
   readonly outboxEventId: string | null;
   readonly serviceCallState: ServiceCallState;
+  /**
+   * What this activation retired, on a requote.
+   *
+   * Null on a first quote and on every non-activating outcome — including a FAILED settlement, which is
+   * the case worth naming: a requote whose fee did not settle leaves the predecessor exactly as it
+   * found it, and this field being null is that statement rather than an omission.
+   */
+  readonly superseded?: {
+    readonly approvalRequestId: string;
+    readonly priorState: string;
+    readonly reservationId: string | null;
+    readonly releasedExposure: string | null;
+    readonly invalidatedDeliveries: number;
+    readonly invalidatedActionRefs: number;
+  } | null;
 }
 
 /**
@@ -375,11 +446,49 @@ export async function finalizeSettlement(
       `SELECT event_id FROM untch_approval_outbox WHERE approval_request_id = $1 AND name = 'approval.request.ready.v1'`,
       [request?.approval_request_id ?? ""],
     );
+    /**
+     * A repeat finalization of a requote reports the supersession that already happened, and performs
+     * none of it again.
+     *
+     * Read from the committed row rather than remembered, so the answer survives a restart between the
+     * two calls — the same reason the ALREADY_ACTIVE branch reads the outbox rather than a cache. A
+     * caller cannot tell this apart from the first call except by the outcome, which is what makes the
+     * finalizer safe to run on every replica and safe for the reconciler to re-drive forever.
+     */
+    let priorSupersession: FinalizeResult["superseded"] = null;
+    const supersededId = request?.supersedes_approval_request_id;
+    if (typeof supersededId === "string" && supersededId !== "") {
+      const { rows: priorRows } = await client.query<Record<string, unknown>>(
+        `SELECT q.state,
+                (SELECT r.reservation_id FROM untch_budget_reservations r
+                  WHERE r.approval_request_id = q.approval_request_id
+                    AND r.status = 'SUPERSEDED' LIMIT 1) AS reservation_id
+           FROM untch_approval_requests q WHERE q.approval_request_id = $1`,
+        [supersededId],
+      );
+      const prior = priorRows[0];
+      if (prior) {
+        priorSupersession = {
+          approvalRequestId: supersededId,
+          priorState: String(prior.state),
+          reservationId: prior.reservation_id === null || prior.reservation_id === undefined ? null : String(prior.reservation_id),
+          /**
+           * Null rather than recomputed. The exposure this released was released once, at the moment of
+           * the first finalization, and reporting a number here would describe a release happening now.
+           */
+          releasedExposure: null,
+          invalidatedDeliveries: 0,
+          invalidatedActionRefs: 0,
+        };
+      }
+    }
+
     return {
       outcome: "ALREADY_ACTIVE",
       approvalRequestId: (request?.approval_request_id as string) ?? null,
       outboxEventId: ev[0]?.event_id ?? null,
       serviceCallState: "FINALIZED",
+      superseded: priorSupersession,
     };
   }
 
@@ -403,6 +512,15 @@ export async function finalizeSettlement(
     }
     return {
       outcome: "PAYMENT_FAILED",
+      /**
+       * NOTHING WAS SUPERSEDED, AND THAT IS THE POINT.
+       *
+       * A requote whose fee conclusively failed leaves its predecessor in exactly the state the person
+       * left it: same state, same reservation, same action references, same deliveries. A failed
+       * payment must not revoke authority somebody already granted, and this null is that fact in the
+       * return value rather than an inference from a field that happens to be absent.
+       */
+      superseded: null,
       approvalRequestId: (request?.approval_request_id as string) ?? null,
       outboxEventId: null,
       serviceCallState: "SETTLEMENT_FAILED",
@@ -437,6 +555,8 @@ export async function finalizeSettlement(
     );
     return {
       outcome: "LEFT_UNRESOLVED",
+      /** Unconfirmed is not failed and it is certainly not confirmed. The predecessor is untouched. */
+      superseded: null,
       approvalRequestId: (request?.approval_request_id as string) ?? null,
       outboxEventId: null,
       serviceCallState: "SETTLEMENT_PENDING",
@@ -516,6 +636,7 @@ export async function finalizeSettlement(
   );
 
   let outboxEventId: string | null = null;
+  let superseded: FinalizeResult["superseded"] = null;
   if (request) {
     if (request.state !== "PROVISIONAL") {
       throw new SettlementEvidenceError(
@@ -523,6 +644,74 @@ export async function finalizeSettlement(
         "APPROVAL_NOT_PROVISIONAL",
       );
     }
+
+    /**
+     * ── THE REQUOTE RETIRES ITS PREDECESSOR HERE, AND NOWHERE EARLIER ────────
+     *
+     * This is the only moment in the whole lifecycle at which retiring the prior authority is correct.
+     *
+     * Not at handler time: `processSettlement` had not run, and it reports a PENDING facilitator status
+     * as success anyway, so the fee for THIS request was authorised and unconfirmed. Retiring a 6.00 a
+     * person had already approved, in exchange for a 6.50 whose payment might never settle, is the one
+     * outcome nothing in this system is allowed to produce.
+     *
+     * Not by a sweeper afterwards: two writes that must both happen are one transaction or they are a
+     * window, and the window here is one in which a lineage holds two live authorities for one piece of
+     * work — 12.50 of exposure, two answerable messages, and either token able to commit money.
+     *
+     * By the time this line runs the evidence has been proven authoritative, every authorized term has
+     * been compared, and the attempt is SETTLED. So the predecessor is retired and the successor
+     * activated in the same transaction that recorded the payment, and a rollback anywhere in it leaves
+     * the prior 6.00 exactly as the person left it.
+     *
+     * THE LINEAGE LOCK
+     *
+     * Taken before the predecessor's row lock and released by COMMIT or ROLLBACK. Two replicas
+     * finalizing two requotes of one lineage would otherwise be free to interleave their reads of
+     * "does this lineage already have a successor", and both would see none.
+     */
+    const supersedesId = request.supersedes_approval_request_id;
+    if (typeof supersedesId === "string" && supersedesId !== "") {
+      const lineage = String(request.quote_lineage_id ?? "");
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`untch.quote.lineage.${lineage}`]);
+
+      const result = await supersedePriorQuote(client, {
+        priorApprovalRequestId: supersedesId,
+        newApprovalRequestId: String(request.approval_request_id),
+        quoteLineageId: lineage,
+        newQuoteDigest: String(request.quote_digest ?? ""),
+        reason: "REQUOTE_CONFIRMED_SETTLEMENT",
+        accountId: String(request.account_id),
+      });
+
+      if (!result.ok) {
+        /**
+         * The predecessor moved between the handler validating this requote and the fee confirming.
+         *
+         * Refusing takes the whole transaction, so the successor stays PROVISIONAL and the fee stays
+         * recorded but unfinalized — which is the honest state. The alternative shapes are both worse:
+         * activating a successor that failed to retire what it claimed would leave two live authorities
+         * in one lineage, and retiring the predecessor anyway would apply a supersession the rules just
+         * refused. The reconciler will re-read committed state and reach the same refusal, so this does
+         * not spin.
+         */
+        throw new SettlementEvidenceError(
+          `approval ${String(request.approval_request_id)} claims to supersede ${supersedesId} and ` +
+            `cannot: ${result.refusal} — ${result.detail}`,
+          "CONFLICTING_EVIDENCE",
+        );
+      }
+
+      superseded = {
+        approvalRequestId: result.supersededRequestId,
+        priorState: result.priorState,
+        reservationId: result.supersededReservationId,
+        releasedExposure: result.releasedExposure,
+        invalidatedDeliveries: result.invalidatedDeliveries,
+        invalidatedActionRefs: result.invalidatedActionRefs,
+      };
+    }
+
     await client.query(
       `UPDATE untch_approval_requests
           SET state = 'PENDING', settled_attempt_id = $2, activated_at = $3::timestamptz,
@@ -557,6 +746,7 @@ export async function finalizeSettlement(
 
   return {
     outcome: "ACTIVATED",
+    superseded,
     approvalRequestId: (request?.approval_request_id as string) ?? null,
     outboxEventId,
     serviceCallState: "FINALIZED",

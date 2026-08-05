@@ -6,6 +6,7 @@ import {
   requestFingerprint,
   type ApprovalSubject,
   type PgServiceCallStore,
+  type RequoteLineageClaim,
   type ServiceCallTx,
 } from "@untch/consumer-core";
 import {
@@ -84,7 +85,29 @@ export interface EscalatedApprovalInput {
   readonly approvalExpiresAt: string;
   /** Present only on a requote, and then it is the lineage the prior quote already carries. */
   readonly quoteLineageId?: string | undefined;
+  /**
+   * The predecessor this request replaces, ALREADY VALIDATED.
+   *
+   * This module does not check it. `validateRequoteClaim` runs first, in the same transaction, holding
+   * the predecessor's row lock — and it is the thing entitled to say whether the claim is good. Passing
+   * a validated verdict rather than a raw client claim is what stops this function growing a second,
+   * weaker copy of those rules.
+   *
+   * Present here so the successor is WRITTEN with the claim bound into it, which is what lets the
+   * finalizer discover the supersession from the row rather than being told about it by a caller that
+   * may not exist any more.
+   */
+  readonly requote?: EscalatedRequoteBinding | undefined;
   readonly by?: string;
+}
+
+/** The validated claim, in the shape the row and the digest both need. */
+export interface EscalatedRequoteBinding {
+  readonly quoteLineageId: string;
+  readonly quoteVersion: number;
+  readonly previousQuoteDigest: string;
+  readonly supersedesApprovalRequestId: string;
+  readonly supersedesReservationId: string | null;
 }
 
 export interface EscalatedApprovalRecord {
@@ -93,8 +116,17 @@ export interface EscalatedApprovalRecord {
   readonly approvalRequestId: string;
   readonly approvalDigest: string;
   readonly quoteLineageId: string;
+  readonly quoteVersion: number;
   readonly authorizationNonce: string;
   readonly state: "PROVISIONAL";
+  /**
+   * What this request WILL retire, and has not.
+   *
+   * Named in the past tense nowhere: the predecessor is untouched at this point and stays untouched
+   * until an authority confirms the fee. The field exists so the response can say which authority is
+   * pending replacement without implying the replacement happened.
+   */
+  readonly supersedesOnSettlement: string | null;
 }
 
 /**
@@ -110,6 +142,16 @@ export function escalatedRequestFingerprint(input: {
   readonly currency: string;
   readonly policyId: string | null;
   readonly deadline: string;
+  /**
+   * The requote claim, when there is one.
+   *
+   * In the identity because a requote IS a different request from the first quote it replaces, even
+   * when a caller reuses their idempotency key — which is the ordinary case, since the key names the
+   * logical piece of work and the requote is the same work at a new price. Without the lineage in here,
+   * two quotes in one lineage at the same price would share an identity and the second would be
+   * answered as a replay of the first.
+   */
+  readonly requote?: RequoteLineageClaim | null;
 }): string {
   return requestFingerprint(input);
 }
@@ -159,6 +201,14 @@ export async function persistEscalatedApproval(
     currency: input.asset,
     policyId: input.policyId,
     deadline: input.deadline,
+    requote: input.requote
+      ? {
+          quoteLineageId: input.requote.quoteLineageId,
+          previousQuoteDigest: input.requote.previousQuoteDigest,
+          supersedesApprovalRequestId: input.requote.supersedesApprovalRequestId,
+          supersedesReservationId: input.requote.supersedesReservationId,
+        }
+      : null,
   });
 
   const call = await store.upsertServiceCall(
@@ -249,11 +299,32 @@ export async function persistEscalatedApproval(
       acceptanceHash: input.acceptanceHash,
       requestExpiresAt: input.deadline,
     },
+    /**
+     * A requote's digest names what it replaces, so the person answering it is answering a question
+     * that includes "and this retires the 6.00 you already said yes to". A digest that omitted it would
+     * let the same yes be shown for two materially different asks.
+     */
+    ...(input.requote
+      ? {
+          requote: {
+            quoteLineageId: input.requote.quoteLineageId,
+            quoteVersion: input.requote.quoteVersion,
+            previousQuoteDigest: input.requote.previousQuoteDigest,
+            supersedesApprovalRequestId: input.requote.supersedesApprovalRequestId,
+            supersedesReservationId: input.requote.supersedesReservationId,
+          },
+        }
+      : {}),
   };
   const digest = approvalDigest(subject);
 
   const approvalRequestId = newApprovalRequestId();
-  const quoteLineageId = input.quoteLineageId ?? newQuoteLineageId();
+  /**
+   * A requote joins the lineage it named. A first quote mints one, so that the request it raises can be
+   * requoted later without the caller having to have predicted that it would be.
+   */
+  const quoteLineageId = input.requote?.quoteLineageId ?? input.quoteLineageId ?? newQuoteLineageId();
+  const quoteVersion = input.requote?.quoteVersion ?? 1;
   const by = input.by ?? "preflight-escalation";
 
   /**
@@ -270,9 +341,10 @@ export async function persistEscalatedApproval(
         created_by, updated_by, service_call_id, decision_id, approval_digest_schema_version,
         intent_hash, quote_digest, policy_hash, chain, recipient,
         requester_principal_kind, requester_principal_ref, wallet_authority_ref, account_ref_hash,
-        quote_lineage_id)
+        quote_lineage_id, quote_version, task_hash, acceptance_hash,
+        supersedes_approval_request_id, supersedes_reservation_id, previous_quote_digest)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'PROVISIONAL',$14::timestamptz,
-             $15,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
+             $15,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)`,
     [
       approvalRequestId,
       input.accountId,
@@ -302,6 +374,26 @@ export async function persistEscalatedApproval(
       input.walletAuthorityRef,
       input.accountRefHash,
       quoteLineageId,
+      quoteVersion,
+      /**
+       * The task and the acceptance criteria, stored as columns as well as hashed into the digest.
+       *
+       * The digest answers "did everything match" and never "which field moved", so a requote that
+       * quietly changed the work would be refused by a hash comparison with nothing to say about why.
+       * These are what let that refusal name the field.
+       */
+      input.taskHash,
+      input.acceptanceHash,
+      /**
+       * WRITTEN, AND ACTING ON NOTHING.
+       *
+       * These three columns are a CLAIM about the predecessor, not a change to it. The predecessor's
+       * own row is untouched by this statement and stays untouched until `finalizeSettlement` holds
+       * confirmation that the fee for this request actually settled.
+       */
+      input.requote?.supersedesApprovalRequestId ?? null,
+      input.requote?.supersedesReservationId ?? null,
+      input.requote?.previousQuoteDigest ?? null,
     ],
   );
 
@@ -311,7 +403,9 @@ export async function persistEscalatedApproval(
     approvalRequestId,
     approvalDigest: digest,
     quoteLineageId,
+    quoteVersion,
     authorizationNonce: authorization.authorizationNonce,
     state: "PROVISIONAL",
+    supersedesOnSettlement: input.requote?.supersedesApprovalRequestId ?? null,
   };
 }

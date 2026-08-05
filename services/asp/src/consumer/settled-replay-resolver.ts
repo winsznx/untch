@@ -46,6 +46,8 @@ interface StoredReplay {
   readonly approvalRequestId: string | null;
   readonly approvalState: string | null;
   readonly approvalDigest: string | null;
+  readonly quoteLineageId: string | null;
+  readonly supersededApprovalRequestId: string | null;
   readonly activatedAt: string | null;
 }
 
@@ -64,6 +66,48 @@ function fingerprintOf(body: Record<string, unknown>): string | null {
   const currency = s(body.currency);
   const deadline = s(body.deadline);
   if (!provider || !capability || !amount || !currency || !deadline) return null;
+
+  /**
+   * THE REQUOTE HALF, DERIVED HERE THE SAME WAY THE PAID PATH DERIVES IT.
+   *
+   * Two derivations of one identity eventually disagree, and this is the pair most likely to: they read
+   * the same body in two different modules, one before the payment gate and one after it. So the rules
+   * are stated identically in both places — required strings trimmed, an absent or null reservation
+   * read as null — and a claim this cannot parse produces NO fingerprint at all.
+   *
+   * Returning null rather than falling back to the six-field form is the safe direction. A null means
+   * this resolver declines to answer and the request goes down the priced path, where `readRequote`
+   * refuses it properly. The unsafe direction would be to fingerprint a malformed requote as if it were
+   * a first quote, which could match a genuine first quote's service call and replay its result.
+   */
+  const rawRequote = body.requote;
+  let requote: {
+    quoteLineageId: string;
+    previousQuoteDigest: string;
+    supersedesApprovalRequestId: string;
+    supersedesReservationId: string | null;
+  } | null = null;
+
+  if (rawRequote !== undefined && rawRequote !== null) {
+    if (typeof rawRequote !== "object" || Array.isArray(rawRequote)) return null;
+    const o = rawRequote as Record<string, unknown>;
+    const req = (k: string): string | null =>
+      typeof o[k] === "string" && (o[k] as string).trim() !== "" ? (o[k] as string).trim() : null;
+    const quoteLineageId = req("quoteLineageId");
+    const previousQuoteDigest = req("previousQuoteDigest");
+    const supersedesApprovalRequestId = req("supersedesApprovalRequestId");
+    if (!quoteLineageId || !previousQuoteDigest || !supersedesApprovalRequestId) return null;
+    const reservation = o.supersedesReservationId;
+    if (reservation !== undefined && reservation !== null && typeof reservation !== "string") return null;
+    requote = {
+      quoteLineageId,
+      previousQuoteDigest,
+      supersedesApprovalRequestId,
+      supersedesReservationId:
+        typeof reservation === "string" && reservation.trim() !== "" ? reservation.trim() : null,
+    };
+  }
+
   return requestFingerprint({
     provider,
     capability,
@@ -71,6 +115,7 @@ function fingerprintOf(body: Record<string, unknown>): string | null {
     currency,
     policyId: s(body.policyId),
     deadline,
+    requote,
   });
 }
 
@@ -83,7 +128,8 @@ async function findFinalized(
 ): Promise<StoredReplay | null> {
   const { rows } = await pool.query<Record<string, unknown>>(
     `SELECT c.service_call_id, c.state,
-            r.approval_request_id, r.state AS approval_state, r.approval_digest, r.activated_at
+            r.approval_request_id, r.state AS approval_state, r.approval_digest, r.activated_at,
+            r.quote_lineage_id, r.supersedes_approval_request_id
        FROM untch_x402_service_calls c
        LEFT JOIN untch_approval_requests r ON r.service_call_id = c.service_call_id
       WHERE c.account_id = $1 AND c.route = $2 AND c.idempotency_key = $3 AND c.request_fingerprint = $4`,
@@ -97,6 +143,9 @@ async function findFinalized(
     approvalRequestId: row.approval_request_id === null ? null : String(row.approval_request_id),
     approvalState: row.approval_state === null ? null : String(row.approval_state),
     approvalDigest: row.approval_digest === null ? null : String(row.approval_digest),
+    quoteLineageId: row.quote_lineage_id === null ? null : String(row.quote_lineage_id),
+    supersededApprovalRequestId:
+      row.supersedes_approval_request_id === null ? null : String(row.supersedes_approval_request_id),
     activatedAt: row.activated_at instanceof Date ? row.activated_at.toISOString() : null,
   };
 }
@@ -162,6 +211,15 @@ export function registerSettledReplayResolver(
             approvalRequestId: found.approvalRequestId,
             approvalState: found.approvalState,
             approvalDigest: found.approvalDigest,
+            quoteLineageId: found.quoteLineageId,
+            /**
+             * What the original call retired, reported on the replay too.
+             *
+             * A client retrying a requote after a lost response is asking "did my 6.50 land, and is my
+             * 6.00 gone". Answering the first and leaving the second to be inferred is how a retry ends
+             * with somebody reasoning about two live authorities that do not both exist.
+             */
+            supersededApprovalRequestId: found.supersededApprovalRequestId,
             activatedAt: found.activatedAt,
             message:
               "this request was already completed and paid for. The original result is returned and no new payment was taken.",
