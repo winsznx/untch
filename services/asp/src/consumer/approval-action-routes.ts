@@ -88,6 +88,15 @@ const TOKEN_TTL_MS = 10 * 60_000;
 const ACTOR_TTL_MS = 10 * 60_000;
 /** How long a person has to finish the Discord round trip they just started. */
 const STATE_TTL_MS = 10 * 60_000;
+/**
+ * The smoke probe gets its own, longer clock, and the difference is deliberate.
+ *
+ * An action link is answered in the moment somebody is notified about a payment, so ten minutes is the
+ * right pressure: a stale approval window is a window in which the quote has moved. A smoke probe is
+ * opened when an operator gets to it, carries no action reference and grants no authority, so the same
+ * urgency would be friction with nothing behind it.
+ */
+const SMOKE_STATE_TTL_MS = 45 * 60_000;
 
 /** The scope an account grants a channel before that channel may answer a payment question. */
 const DECIDE_SCOPE = "policy-approval" as const;
@@ -978,7 +987,7 @@ export function mintOAuthSmokeUrl(
   if (!deps.discord.applicationId || !deps.discord.redirectUri) {
     return { refusal: "DISCORD_NOT_CONFIGURED" };
   }
-  const expiresAt = nowMs + STATE_TTL_MS;
+  const expiresAt = nowMs + SMOKE_STATE_TTL_MS;
   const nonce = newActionNonce();
   const state = sealActionState(deps.secret, {
     purpose: SMOKE_STATE_PURPOSE,

@@ -1294,6 +1294,19 @@ describe(
         assert.equal(state.actionReferenceId, "", "a smoke state must name no action reference");
       });
 
+      /**
+       * The probe is opened on an operator's schedule, not in the moment of a notification, so its
+       * window is longer than an action link's. Asserted because the two clocks being different is a
+       * decision rather than an accident.
+       */
+      test("the probe window is longer than an action window, and still bounded", () => {
+        const minted = mint();
+        assert.ok(!("refusal" in minted));
+        const ms = new Date(minted.expiresAt).getTime() - Date.now();
+        assert.ok(ms > 10 * 60_000, "a probe must outlive an action link's ten minutes");
+        assert.ok(ms <= 45 * 60_000 + 5_000, "and must still expire");
+      });
+
       test("a completed probe verifies the identity and changes no financial state", async () => {
         await pendingRequest();
         const minted = mint();
