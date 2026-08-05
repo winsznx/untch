@@ -117,6 +117,7 @@ import {
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
 import { registerApprovalActionRoutes } from "./consumer/approval-action-routes";
+import { discordApprovalGateway } from "./consumer/discord-approval-gateway";
 import { registerMarketplaceRoutes } from "./consumer/marketplace-continuity";
 import { initConsumerWiring, startConsumerWorkers, type ConsumerWiring } from "./consumer/wiring";
 import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "./consumer/bridges";
@@ -905,7 +906,19 @@ export function createSellerApp(
     approvalWorkers = startApprovalWorkers({
       pool: consumerWiring.pool,
       oracle: settlementOracle,
-      gateway: unconfiguredChannelGateway,
+      /**
+       * The real adapter when a bot token exists, and the refusing seam when one does not.
+       *
+       * Chosen at startup rather than per send, so a deployment that cannot message anybody says so in
+       * its delivery failures instead of silently marking messages sent.
+       */
+      gateway: process.env.DISCORD_BOT_TOKEN?.trim()
+        ? discordApprovalGateway({
+            pool: consumerWiring.pool,
+            publicBaseUrl,
+            botToken: process.env.DISCORD_BOT_TOKEN.trim(),
+          })
+        : unconfiguredChannelGateway,
       routes: [PREFLIGHT_ROUTE],
     });
   }
