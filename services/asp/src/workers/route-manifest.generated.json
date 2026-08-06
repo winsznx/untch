@@ -1,0 +1,2107 @@
+{
+  "generatedFrom": "a constructed Express app's router stack (ground truth, not static analysis)",
+  "generator": "scripts/gen-route-manifest.ts",
+  "totalRoutes": 126,
+  "byMethod": {
+    "GET": 45,
+    "HEAD": 4,
+    "POST": 76,
+    "PUT": 1
+  },
+  "byClassification": {
+    "public": 7,
+    "marketplace": 78,
+    "account": 24,
+    "callback": 4,
+    "internal": 13
+  },
+  "byState": {
+    "DEFERRED_BLOCKING_CUTOVER": 126
+  },
+  "rawBodyRoutes": [
+    "POST /consumer/approvals/action/discord/interactions"
+  ],
+  "stubbedDuringGeneration": [],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/.well-known/agent-registration.json",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "serveRegistrationCard"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "public",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/x402",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "public",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/agent-registration.json",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "serveRegistrationCard"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/builder/brand_pack",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "HEAD",
+      "path": "/builder/brand_pack",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/builder/brand_pack",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/builder/check_domains",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/builder/rank_options",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/builder/seo_tips",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/builder/suggest_names",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/cafe/menu",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/cafe/order/latte",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "HEAD",
+      "path": "/cafe/order/latte",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/cafe/order/latte",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/catalog",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "public",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/account",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/account/agentic-link/:linkRequestId/challenge",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "linkRequestId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/account/agentic-link/:linkRequestId/complete",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "linkRequestId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/account/agentic-link/:linkRequestId/status",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "linkRequestId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/account/agentic-link/start",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/account/channel/link/start",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/account/channel/link/status",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/account/channels/:bindingId/revoke",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "bindingId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "PUT",
+      "path": "/consumer/account/default-policy",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/account/link/complete",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/account/link/start",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/account/marketplace/:bindingId/revoke",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "bindingId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/account/wallets/:bindingId/revoke",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "bindingId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/approvals",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/approvals/:approvalRequestId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "approvalRequestId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/approvals/:approvalRequestId/act",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "jsonParser",
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "approvalRequestId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/approvals/:approvalRequestId/decide",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "approvalRequestId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/approvals/action/:actionReferenceId/confirm",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "actionReferenceId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/approvals/action/:actionReferenceId/confirm",
+      "bodyMode": "form",
+      "rawBodyRequired": false,
+      "handlers": [
+        "urlencodedParser",
+        "jsonParser",
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "actionReferenceId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/approvals/action/:actionReferenceId/start",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "actionReferenceId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/approvals/action/discord/callback",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "callback",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/approvals/action/discord/interactions",
+      "bodyMode": "raw",
+      "rawBodyRequired": true,
+      "handlers": [
+        "rawParser",
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "callback",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/auth/nonce",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/auth/verify",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/catalog",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "public",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/channel/discord/callback",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "callback",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/channel/telegram/webhook",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "callback",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/domains/check",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/domains/quote",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/domains/register",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/domains/renew",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/domains/status/:intentId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "statusHandler"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/fund/:intentId",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/gifts/order",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/gifts/quote",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/gifts/status/:intentId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "statusHandler"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/intent/:intentId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "statusHandler"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/intent/:intentId/delivery",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/intent/:intentId/events",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/intent/:intentId/payment",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/intent/:intentId/receipt",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/execute",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/inbox/buy",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/inbox/cancel",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/inbox/messages",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/inbox/status",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/inbox/topup",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/send",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/subdomain/buy",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/subdomain/send",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/mail/subdomain/status",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/marketplace/resolve",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/notify/confirmation",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/notify/exception",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/notify/receipt",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/policies",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/policies/:policyId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "policyId"
+      ],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/policies/draft",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/policies/sync",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "account",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/receipt/:intentId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/shop/order/:intentId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "statusHandler"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/shop/purchase",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/shop/quote",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/shop/search",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/travel/book",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/travel/booking/:intentId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "statusHandler"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/travel/compare",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/travel/quote",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/travel/search",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/create_spend_intent",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/create_spend_policy",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/detect_duplicate",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/escalation_status/:pollRef",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "pollRef"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/execution-manifest",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/generate_dispute_packet",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/get_ledger",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/healthz",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "public",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/approval-oauth-smoke",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/internal/consumer/approval-workers",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/discord-native-smoke",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/intents",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/internal/consumer/intents/:intentId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/intents/:intentId/verification-receipt",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/intents/:intentId/verify-delivery",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "intentId"
+      ],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/intents/preflight",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/preflight-validate",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/quote-preview",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/internal/consumer/settlement-accounts",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/consumer/settlement-accounts",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/internal/deployment-info",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "internal",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/log_receipt",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/openapi.json",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "public",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/pause_policy",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/payment-sdk-health",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/ping_untch",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "public",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/preflight_payment",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "HEAD",
+      "path": "/preflight_payment",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/preflight_payment",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/receipt_status/:receiptId",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "receiptId"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/reconcile_agent_spend",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/redact_payment_metadata",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/resume_policy",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/schema",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/schema/:tool",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [
+        "tool"
+      ],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/score_buyer",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/score_vendor",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/sync_policy_registration",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/update_policy",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "GET",
+      "path": "/verify_delivery",
+      "bodyMode": "none",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "HEAD",
+      "path": "/verify_delivery",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    },
+    {
+      "method": "POST",
+      "path": "/verify_delivery",
+      "bodyMode": "json",
+      "rawBodyRequired": false,
+      "handlers": [
+        "<anonymous>"
+      ],
+      "wiredStub": false,
+      "pathParams": [],
+      "classification": "marketplace",
+      "payable": "unclassified",
+      "discoverable": false,
+      "state": "DEFERRED_BLOCKING_CUTOVER",
+      "notes": null
+    }
+  ]
+}
