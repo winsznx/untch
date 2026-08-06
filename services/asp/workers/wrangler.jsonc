@@ -1,0 +1,73 @@
+{
+  // The ASP Worker. Two named environments so a preview can never be mistaken for the listed
+  // endpoint: different Worker names, different public base URLs, and no custom domain on preview.
+  //
+  // Every posture value here is the SAFE one. Arming and write ownership are deliberately absent from
+  // the top level and set to "0" per environment, so a Worker deployed from this file cannot spend
+  // money or claim production writes until somebody changes it on purpose.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "untch-asp-preview",
+  "main": "../src/workers/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+
+  "vars": {
+    "UNTCH_ENVIRONMENT": "preview",
+    "UNTCH_FINANCIAL_ARMED": "0",
+    "UNTCH_PRODUCTION_WRITER_ACTIVE": "0"
+  },
+
+  "hyperdrive": [
+    { "binding": "HYPERDRIVE", "id": "14c781385e4e40759d958fed8a6852c0" }
+  ],
+
+  "queues": {
+    "producers": [{ "binding": "APPROVAL_DELIVERY", "queue": "untch-approval-delivery" }],
+    "consumers": [
+      {
+        "queue": "untch-approval-delivery",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        // Bounded retries, then the dead-letter queue. Retrying forever is how a poison message
+        // occupies a queue indefinitely.
+        "max_retries": 5,
+        "dead_letter_queue": "untch-approval-delivery-dlq"
+      }
+    ]
+  },
+
+  // Derived from services/asp/src/workers/jobs.ts. CI asserts these match `requiredCrons()` so the
+  // config cannot drift from the code.
+  "triggers": {
+    "crons": ["* * * * *", "*/5 * * * *"]
+  },
+
+  "env": {
+    "production": {
+      "name": "untch-asp",
+      "vars": {
+        "UNTCH_ENVIRONMENT": "production",
+        "UNTCH_FINANCIAL_ARMED": "0",
+        "UNTCH_PRODUCTION_WRITER_ACTIVE": "0",
+        "ASP_PUBLIC_URL": "https://asp.untch.xyz"
+      },
+      "observability": { "enabled": true, "head_sampling_rate": 1 },
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "14c781385e4e40759d958fed8a6852c0" }],
+      "queues": {
+        "producers": [{ "binding": "APPROVAL_DELIVERY", "queue": "untch-approval-delivery" }],
+        "consumers": [
+          {
+            "queue": "untch-approval-delivery",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "untch-approval-delivery-dlq"
+          }
+        ]
+      },
+      "triggers": { "crons": ["* * * * *", "*/5 * * * *"] }
+    }
+  }
+}
