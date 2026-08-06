@@ -26,6 +26,8 @@ on:
       - "services/asp/test/service-registry.test.ts"
       - "scripts/gen-service-schemas.ts"
       - "scripts/test/service-schema-drift.test.ts"
+      - "scripts/check-listing-asset.ts"
+      - "scripts/test/listing-asset.test.ts"
       - ".github/workflows/service-schema.yml"
   pull_request:
     paths:
@@ -36,6 +38,8 @@ on:
       - "services/asp/test/service-registry.test.ts"
       - "scripts/gen-service-schemas.ts"
       - "scripts/test/service-schema-drift.test.ts"
+      - "scripts/check-listing-asset.ts"
+      - "scripts/test/listing-asset.test.ts"
       - ".github/workflows/service-schema.yml"
 
 permissions:
@@ -73,3 +77,16 @@ jobs:
 
       - name: Generated artefacts are in sync
         run: pnpm gen:schemas --check
+
+      # The marketplace avatar, offline.
+      #
+      # OKX requires exactly 1:1 with no baked-in rounded corners, and neither property survives in a
+      # README. This runs against bytes committed beside the test, so it stays green when a CDN is
+      # unreachable and red when the asset actually regresses.
+      - name: Listing asset rules
+        run: node --import tsx --test --test-timeout=60000 scripts/test/listing-asset.test.ts
+
+      # The live asset, which is what the marketplace actually renders. Separated from the rule check
+      # above so a network failure reads as a network failure rather than as a broken avatar.
+      - name: Listing asset is reachable and still square
+        run: pnpm lint:listing-asset

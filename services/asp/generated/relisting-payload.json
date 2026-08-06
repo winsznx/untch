@@ -1,0 +1,187 @@
+{
+  "aspId": 6086,
+  "aspType": "A2MCP",
+  "name": "Untch",
+  "conciseDescription": "A live control plane for agent money. The model never touches the money.",
+  "completeDescription": "Untch is a live control plane for agent money. Agents submit exact commercial intents. Deterministic policy automatically approves, blocks or escalates them. Humans retain account and wallet authority. Approved requests create bounded reserved authority rather than broad wallet access.",
+  "capabilities": [
+    "deterministic policy evaluation",
+    "automatic approval, blocking and escalation",
+    "per-call and daily budgets",
+    "provider and capability controls",
+    "duplicate and replay protection",
+    "exact quote binding",
+    "paid x402 control services",
+    "human approval through live supported channels",
+    "reserved authority accounting",
+    "quote lineage and atomic supersession",
+    "decision and payment evidence"
+  ],
+  "productionUrl": "https://asp.untch.xyz",
+  "docsUrl": "https://docs.untch.xyz",
+  "siteUrl": "https://untch.xyz",
+  "profilePicture": {
+    "url": "https://static.okx.com/cdn/web3/wallet/marketplace/headimages/agent/avatar/c00d3425-c37e-4343-8a6a-5d25ca831278.png",
+    "width": 1024,
+    "height": 1024,
+    "mimeType": "image/png"
+  },
+  "network": "eip155:196",
+  "settlementToken": {
+    "symbol": "USDT0",
+    "address": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+    "decimals": 6
+  },
+  "payTo": "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
+  "paymentSdk": {
+    "middleware": "@okxweb3/x402-express",
+    "version": "0.1.1",
+    "scheme": "exact"
+  },
+  "erc8004": {
+    "agentId": 6047,
+    "role": "ERC-8004 on-chain agent identity — never the ASP id"
+  },
+  "approvalChannels": [
+    {
+      "channel": "discord",
+      "status": "live — delivery and one-tap approve/deny, proven against real requests"
+    },
+    {
+      "channel": "web",
+      "status": "live — signed single-use action links"
+    },
+    {
+      "channel": "telegram",
+      "status": "disabled — the stored bot credential is not authorised"
+    }
+  ],
+  "services": [
+    {
+      "toolId": "preflight_payment",
+      "name": "Policy preflight",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/preflight_payment",
+      "protocol": "A2MCP",
+      "paid": true,
+      "price": "$0.05",
+      "amountBaseUnits": "50000",
+      "description": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.\n\nYou provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).\n\nYou receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/preflight_payment",
+      "outputSummary": "a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision",
+      "schemaVersion": "2.0.0"
+    },
+    {
+      "toolId": "verify_delivery",
+      "name": "Delivery verify",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/verify_delivery",
+      "protocol": "A2MCP",
+      "paid": true,
+      "price": "$0.10",
+      "amountBaseUnits": "100000",
+      "description": "Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict. For a buyer deciding whether work they commissioned has actually been delivered.\n\nYou provide: intentId (string).\n\nYou receive: a pass or fail verdict against the committed criteria, and a durable receipt of that verdict.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/verify_delivery",
+      "outputSummary": "a pass or fail verdict against the committed criteria, and a durable receipt of that verdict",
+      "schemaVersion": "2.0.0"
+    },
+    {
+      "toolId": "detect_duplicate",
+      "name": "Duplicate check",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/detect_duplicate",
+      "protocol": "A2MCP",
+      "paid": true,
+      "price": "$0.02",
+      "amountBaseUnits": "20000",
+      "description": "Says whether this exact task, endpoint and parameter set was already paid for recently. For an agent about to retry, that does not want to pay twice for one job.\n\nYou provide: policyId (string); taskHash (string); endpoint (string); paramsHash (string).\n\nYou receive: whether a matching prior intent exists, which one, and how long the match remains in the window.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/detect_duplicate",
+      "outputSummary": "whether a matching prior intent exists, which one, and how long the match remains in the window",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "redact_payment_metadata",
+      "name": "Metadata redaction",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/redact_payment_metadata",
+      "protocol": "A2MCP",
+      "paid": true,
+      "price": "$0.02",
+      "amountBaseUnits": "20000",
+      "description": "Strips emails, phone numbers, API keys and bearer tokens out of payment metadata and hashes what is left. For an agent that must attach metadata to a payment without publishing what is inside it.\n\nYou provide: metadata (object).\n\nYou receive: the redacted metadata and a hash of it, with nothing stored.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/redact_payment_metadata",
+      "outputSummary": "the redacted metadata and a hash of it, with nothing stored",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "suggest_names",
+      "name": "Product name suggestions",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/builder/suggest_names",
+      "protocol": "A2MCP",
+      "paid": true,
+      "price": "$0.01",
+      "amountBaseUnits": "10000",
+      "description": "Proposes short product names for an idea, filtered against a list of over-used startup stems. For a founder or an agent naming something new.\n\nYou provide: idea (string).\n\nYou receive: a handful of candidate names, each with the reasoning behind it.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/suggest_names",
+      "outputSummary": "a handful of candidate names, each with the reasoning behind it",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "rank_options",
+      "name": "Name ranking",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/builder/rank_options",
+      "protocol": "A2MCP",
+      "paid": false,
+      "price": null,
+      "amountBaseUnits": null,
+      "description": "Orders a list of candidate names by length, character set and how easily they are said. For someone choosing between names they already have.\n\nYou provide: names (array).\n\nYou receive: the names in ranked order with their scores.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/rank_options",
+      "outputSummary": "the names in ranked order with their scores",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "check_domains",
+      "name": "Domain availability",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/builder/check_domains",
+      "protocol": "A2MCP",
+      "paid": false,
+      "price": null,
+      "amountBaseUnits": null,
+      "description": "Asks the registries whether the domains for a list of names are taken. For someone checking whether a name is usable before committing to it.\n\nYou provide: names (array).\n\nYou receive: one availability verdict per domain, with the registry response behind it.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/check_domains",
+      "outputSummary": "one availability verdict per domain, with the registry response behind it",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "seo_tips",
+      "name": "Launch checklist",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/builder/seo_tips",
+      "protocol": "A2MCP",
+      "paid": false,
+      "price": null,
+      "amountBaseUnits": null,
+      "description": "Returns a short launch checklist for a chosen brand name. For someone who has picked a name and is about to launch.\n\nYou provide: name (string).\n\nYou receive: a list of concrete steps, using the name given.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/seo_tips",
+      "outputSummary": "a list of concrete steps, using the name given",
+      "schemaVersion": "1.0.0"
+    },
+    {
+      "toolId": "brand_pack",
+      "name": "Launch brand pack",
+      "method": "POST",
+      "endpoint": "https://asp.untch.xyz/builder/brand_pack",
+      "protocol": "A2MCP",
+      "paid": true,
+      "price": "$0.05",
+      "amountBaseUnits": "50000",
+      "description": "Runs naming, domain checking, ranking and the launch checklist as one call. For a founder or an agent wanting a first pass at a brand in a single request.\n\nYou provide: idea (string).\n\nYou receive: candidate names, their domain verdicts, a ranking, and a launch checklist.",
+      "inputSchemaUrl": "https://asp.untch.xyz/schema/brand_pack",
+      "outputSummary": "candidate names, their domain verdicts, a ranking, and a launch checklist",
+      "schemaVersion": "1.0.0"
+    }
+  ]
+}
