@@ -172,6 +172,19 @@ export async function deliverOnce(
   let targets: DeliveryTarget[] = [];
   try {
     await claim.query("BEGIN");
+    /**
+     * DUE-NESS IS DECIDED BY THE DATABASE CLOCK, NOT THE CALLER'S.
+     *
+     * `next_attempt_at` is written by `now()` inside Postgres. Comparing it against a timestamp
+     * generated on the client makes the answer depend on the skew between two machines: if the
+     * database is even milliseconds ahead, a row queued a moment ago is judged "not yet due" and is
+     * silently skipped until the skew elapses. Reproduced with a 180 ms skew — a delivery projected
+     * and immediately swept was never claimed, and it read as a lost message rather than as a clock.
+     *
+     * Workers makes it worse, not better: the isolate's `Date.now()` is coarse and pinned to I/O
+     * boundaries, and the database is in another region. So the caller's clock is consulted only when
+     * one is explicitly supplied, which is a test controlling time on purpose.
+     */
     const { rows } = await claim.query<Record<string, unknown>>(
       `SELECT d.delivery_id, d.approval_request_id, d.account_id, d.channel_binding_id, d.channel,
               d.action_token_family, d.attempts,
@@ -182,11 +195,12 @@ export async function deliverOnce(
          JOIN untch_channel_bindings b ON b.binding_id = d.channel_binding_id
          JOIN untch_approval_requests r ON r.approval_request_id = d.approval_request_id
         WHERE d.status IN ('QUEUED', 'FAILED_RETRYABLE')
-          AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= $2::timestamptz)
+          -- Due-ness is decided by the DATABASE clock, not the caller's. See the note above the query.
+          AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= COALESCE($2::timestamptz, now()))
         ORDER BY d.queued_at ASC
         LIMIT $1
           FOR UPDATE OF d SKIP LOCKED`,
-      [limit, new Date(now).toISOString()],
+      [limit, opts.nowMs === undefined ? null : new Date(opts.nowMs).toISOString()],
     );
 
     for (const r of rows) {
