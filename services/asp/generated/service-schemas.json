@@ -14,6 +14,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "PUBLIC_SUPPORT",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "The free index of what this service serves. Discovery, not a product — nobody buys a list of things they could buy."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Lists every tool this host serves, with its route, price and purpose. For any agent deciding whether this host has a tool worth calling.",
@@ -86,6 +92,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "PUBLIC_SUPPORT",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "A health check. It used to cost $0.01, which billed a buyer to prove that x402 works rather than to receive anything. Free, useful, and not a deliverable."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Reports that this host is up and answering. For any agent checking whether this service is reachable before it decides to spend.",
@@ -171,6 +183,12 @@
         "amountBaseUnits": "50000"
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "Untch's core control capability, and the one a stranger has the clearest reason to buy: it judges a proposed payment against a registered spend policy and returns allow, block or escalate with the rule that decided it. It needs a policyId, and that policy is obtainable through a documented public route the listing names, so the prerequisite is disclosed rather than private."
+      },
       "schemaVersion": "2.0.0",
       "description": {
         "what": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.",
@@ -484,6 +502,12 @@
         "amountBaseUnits": "100000"
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "It evaluates submitted delivery evidence against committed acceptance criteria and returns PASS or FAIL with the differences. That is the whole claim: Untch performed no provider work and settled no provider principal, and the description says exactly that so a buyer cannot read the result as proof that something was delivered on their behalf."
+      },
       "schemaVersion": "2.0.0",
       "description": {
         "what": "Checks a delivered result against the acceptance criteria that were committed to before the work started, and records the verdict. For a buyer deciding whether work they commissioned has actually been delivered.",
@@ -634,6 +658,12 @@
         "amountBaseUnits": null
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It writes an intent into this host's store against a policy the caller must own. Free, correct, and part of operating an Untch account rather than something a stranger buys."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Canonicalises and hashes a proposed payment, binding it to a registered policy. For an agent that wants one stable hash to refer to a payment through preflight, verification and receipt.",
@@ -937,6 +967,12 @@
         "amountBaseUnits": null
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It reads this host's ledger window for a policy the caller must own. Exposing an account's own spend history as an open marketplace service would be publishing private state."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Returns the recent spend window this instance is holding for one policy. For an operator checking what a policy has spent recently.",
@@ -1033,6 +1069,12 @@
         "amountBaseUnits": "20000"
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "It answers whether an identical call was already seen in this host's recent window, which is the replay question an agent has to ask before it pays twice. The window is this instance's own and the contract says so; a caller who has made no prior call here gets a truthful negative rather than a refusal."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Says whether this exact task, endpoint and parameter set was already paid for recently. For an agent about to retry, that does not want to pay twice for one job.",
@@ -1165,6 +1207,12 @@
         "amountBaseUnits": "20000"
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "It takes arbitrary metadata and returns it with the identifying fields removed. No account, no prior state, no host history — the input is the whole input, and the output is the whole product."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Strips emails, phone numbers, API keys and bearer tokens out of payment metadata and hashes what is left. For an agent that must attach metadata to a payment without publishing what is inside it.",
@@ -1264,6 +1312,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It appends to this host's receipt store for a policy the caller must own. Writing into somebody's account is account control, whatever it costs."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Reports the anchoring state of a receipt this host wrote. For a caller holding a receiptRef who wants to know whether it has reached the chain.",
@@ -1354,6 +1408,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It resolves a receiptId that only a prior account-bound write produces. A stranger has no receiptId to ask about, so being free does not make it a service anyone could use."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "The same receipt state, as a plain GET a browser or a poller can use. For anything polling for an anchor without wanting to POST.",
@@ -1429,6 +1489,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It resolves an opaque pollRef issued by a prior escalation on this host. Same shape as receipt status: without the reference there is nothing to poll, and the reference is account-bound."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Reports whether a payment that was escalated to a human has been approved or denied yet. For an agent waiting on a human decision it triggered.",
@@ -1499,6 +1565,12 @@
         "amountBaseUnits": "200000"
       },
       "maturity": "blocked",
+      "classification": {
+        "serviceClass": "INTERNAL_OR_WITHHELD",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It scores a vendor from receipt history held by this host. A stranger's vendor has no history here, so the answer cannot exist. The route now refuses before any payment challenge is emitted rather than charging for a question it cannot answer."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Scores how reliably a vendor has delivered, from receipts this host holds. For a buyer choosing between vendors before committing money to one.",
@@ -1656,6 +1728,12 @@
         "amountBaseUnits": "200000"
       },
       "maturity": "blocked",
+      "classification": {
+        "serviceClass": "INTERNAL_OR_WITHHELD",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It scores a buyer from receipt history held by this host, and refuses before any payment challenge for the same reason vendor scoring does."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Scores how well a buyer has behaved — paying, not disputing spuriously, not retrying blindly. For a vendor deciding whether to take a job from a buyer they do not know.",
@@ -1783,6 +1861,12 @@
         "amountBaseUnits": "500000"
       },
       "maturity": "blocked",
+      "classification": {
+        "serviceClass": "INTERNAL_OR_WITHHELD",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It assembles a dispute packet from an intentHash this host has history for. Without that history there is nothing to assemble, so it refuses before a challenge rather than after settlement."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Assembles everything this host recorded about one payment into a single hashed evidence bundle. For either side of a dispute who needs one artefact both parties can check.",
@@ -1912,6 +1996,12 @@
         "amountBaseUnits": "250000"
       },
       "maturity": "blocked",
+      "classification": {
+        "serviceClass": "INTERNAL_OR_WITHHELD",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It reconciles receipt and ledger history for an agent over a period, all of which is held here. A caller with no history gets a refusal before any payment challenge."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Totals what one agent spent over a period, and what was blocked before it spent. For an operator reconciling an agent's spend against what they authorised.",
@@ -2045,6 +2135,12 @@
         "amountBaseUnits": null
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "PUBLIC_SUPPORT",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "The menu for the cafe demonstration. Free, public, and part of a simulation rather than a service."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "A machine-readable café menu, used to demonstrate governed spending on something ordinary. For an agent being shown what a governed purchase looks like end to end.",
@@ -2122,6 +2218,12 @@
         "amountBaseUnits": null
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "PRODUCTION_DISABLED",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "It simulates a coffee order. No merchant is contacted, no order is placed and no coffee exists. It used to cost $0.04, which made a demonstration look like a purchase. Kept as a free, clearly labelled simulation and excluded from the marketplace, because a listing that sells a simulated latte is a listing that misrepresents what a payment buys."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Simulates a coffee order so a caller can see the shape of a governed purchase. Nothing is bought and nothing is delivered. For anyone evaluating what a governed agent purchase looks like before wiring a real provider.",
@@ -2233,6 +2335,12 @@
         "amountBaseUnits": "10000"
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "It returns generated name candidates for an idea, in the response, in one call. No account, no prior state, and the buyer receives the complete result rather than a handle to fetch later."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Proposes short product names for an idea, filtered against a list of over-used startup stems. For a founder or an agent naming something new.",
@@ -2328,6 +2436,12 @@
         "amountBaseUnits": null
       },
       "maturity": "blocked",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "Free, and it delivers: a heuristic ranking of supplied names with the reasons for each score. It says plainly that it is a heuristic and not trademark clearance, so it makes no claim it cannot check."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Orders a list of candidate names by length, character set and how easily they are said. For someone choosing between names they already have.",
@@ -2418,6 +2532,12 @@
         "amountBaseUnits": null
       },
       "maturity": "blocked",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "Free, and it performs a live RDAP lookup per name. It reports UNKNOWN wherever the registry does not answer, including for TLDs with no trusted RDAP source, so an AVAILABLE from it is a claim it actually verified."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Asks the registries whether the domains for a list of names are taken. For someone checking whether a name is usable before committing to it.",
@@ -2514,6 +2634,12 @@
         "amountBaseUnits": null
       },
       "maturity": "demo",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "Free, and it returns concrete suggestions plus handle and domain candidates in the response. It disclaims legal and trademark advice rather than implying it."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Returns a short launch checklist for a chosen brand name. For someone who has picked a name and is about to launch.",
@@ -2605,6 +2731,12 @@
         "amountBaseUnits": "50000"
       },
       "maturity": "blocked",
+      "classification": {
+        "serviceClass": "MARKETPLACE_LISTABLE",
+        "strangerCallable": true,
+        "catalogVisible": true,
+        "reason": "The paid tier of the builder set: it returns the assembled pack in the response after settlement, with no account and no prior state required. It is priced above the free tools because it produces the whole artifact rather than one heuristic."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Runs naming, domain checking, ranking and the launch checklist as one call. For a founder or an agent wanting a first pass at a brand in a single request.",
@@ -2717,6 +2849,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": false,
+        "reason": "It begins binding a wallet to an Untch account. This is this project's own sign-in, and listing it would be advertising account setup as a purchasable service."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Opens a one-time request to bind a wallet — and optionally a marketplace identity — to an Untch account. For a marketplace caller whose agent id Untch has never seen, or a person signing in for the first time.",
@@ -2869,6 +3007,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": false,
+        "reason": "It completes a wallet binding against a signature. The other half of sign-in, and not a product."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Verifies a wallet signature and binds the wallet, and any marketplace identity, to an account. For the same person who started the link, now holding a signature from their wallet.",
@@ -3038,6 +3182,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It builds an unsigned policy registration for the caller to send from their own wallet. A setup step for an account, correctly free, and not something a stranger buys."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Turns human spending limits into the exact unsigned transaction that registers them on chain. For an account owner setting the rules their agent will spend under.",
@@ -3297,6 +3447,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "It records a policy registration the caller already sent from their own wallet. The second half of setup, and account control for the same reason the first half is."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Reads a confirmed registration from chain and links the policy to the account that can sign for it. For an account owner who has just sent their own registerPolicy transaction.",
@@ -3439,6 +3595,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": false,
+        "reason": "It sets which policy an account uses by default. Configuration of somebody's account."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Chooses which policy answers when a request names none. For an account owner holding more than one policy.",
@@ -3549,6 +3711,12 @@
         "amountBaseUnits": null
       },
       "maturity": "live",
+      "classification": {
+        "serviceClass": "ACCOUNT_CONTROL",
+        "strangerCallable": false,
+        "catalogVisible": true,
+        "reason": "A legacy human control route, replaced by the bound-action path for service-call-backed approvals. It requires account state and refuses a modern paid approval request that has no bound action, so a stranger calling it can only ever be refused. Kept mounted for compatibility, marked deprecated, and removed from the listing where it was advertised as a free marketplace service."
+      },
       "schemaVersion": "1.0.0",
       "description": {
         "what": "Approves or rejects one escalated action, naming the exact payment it authorises. For the account owner, through a wallet-backed session.",

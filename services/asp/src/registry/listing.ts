@@ -134,8 +134,46 @@ export interface ListingVerdict {
   readonly blockedBy: readonly string[];
 }
 
+/**
+ * Two independent reasons to withhold, and both have to be asked.
+ *
+ * The predecessor check catches routes that are BROKEN for a stranger — a service needing a policy
+ * no public route creates. It says nothing about routes that work perfectly and are still not
+ * products. `POST /consumer/account/link/start` is reachable, documented, free and correct, and
+ * listing it advertises this project's own sign-in as something to buy.
+ *
+ * Twenty-four entries were published on the predecessor check alone. Wallet linking, policy
+ * drafting, a default-policy setter and an approval-decision route all passed it, because nothing
+ * about them is broken. The class is what refuses them.
+ */
 export function listingVerdict(service: ServiceDefinition): ListingVerdict {
   const blockedBy = service.predecessors.filter((p) => p.obtainableBy === null).map((p) => p.what);
+  if (service.classification.serviceClass !== "MARKETPLACE_LISTABLE") {
+    return {
+      toolId: service.toolId,
+      listable: false,
+      blockedBy: [
+        `classified ${service.classification.serviceClass}: ${service.classification.reason}`,
+        ...blockedBy,
+      ],
+    };
+  }
+  /**
+   * A listable service that a stranger cannot call is a contradiction, refused here rather than
+   * trusted to be caught by whoever wrote the class. The two fields are set by hand and by different
+   * arguments, so disagreement between them is exactly the kind of thing that survives review.
+   */
+  if (!service.classification.strangerCallable) {
+    return {
+      toolId: service.toolId,
+      listable: false,
+      blockedBy: [
+        "classified MARKETPLACE_LISTABLE but marked not stranger-callable — a marketplace entry no " +
+          "stranger can complete is a contradiction, not a listing",
+        ...blockedBy,
+      ],
+    };
+  }
   return { toolId: service.toolId, listable: blockedBy.length === 0, blockedBy };
 }
 
@@ -149,6 +187,10 @@ export interface ListingEntry {
   readonly description: string;
   readonly schemaUrl: string;
   readonly schemaVersion: string;
+  /** Always `MARKETPLACE_LISTABLE` — published so a reader can see the claim rather than infer it. */
+  readonly serviceClass: string;
+  /** Why this one is safe to list, carried into the payload so the argument travels with the entry. */
+  readonly classReason: string;
 }
 
 export interface ListingPayload {
@@ -185,6 +227,8 @@ export function buildListingPayload(args: {
       description: threePartDescription(s).text,
       schemaUrl: `${args.baseUrl}/schema/${s.toolId}`,
       schemaVersion: s.schemaVersion,
+      serviceClass: s.classification.serviceClass,
+      classReason: s.classification.reason,
     });
   }
 

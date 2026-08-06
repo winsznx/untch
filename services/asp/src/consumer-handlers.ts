@@ -3,6 +3,7 @@
  * Control-plane money decisions stay LLM-free (I1). Launch Pack may use an LLM for naming only.
  */
 
+import { SERVICES } from "./registry/services";
 import type { HandlerResult } from "./handlers";
 import { loadLlmConfig } from "./launch-pack/llm";
 import { suggestProductNames } from "./launch-pack/names";
@@ -279,8 +280,60 @@ export async function handleBrandPack(body: unknown): Promise<HandlerResult> {
 }
 
 /** Free catalog — what agents should list under this ASP. */
+/**
+ * The catalog, generated from the registry rather than typed beside it.
+ *
+ * WHAT IT USED TO BE
+ *
+ * A hand-written array of twenty-odd `{ path, price, role }` literals, grouped by an ad-hoc notion of
+ * surface. It had already drifted: it advertised `GET /ping_untch` at `0.01` and
+ * `POST /cafe/order/latte` at `0.04` after both had been made free, and it listed the four Bureau
+ * tools at full price after they had been gated to refuse before any payment. A caller reading it
+ * would have been told to expect a bill that no longer exists for services that no longer charge.
+ *
+ * That is the same failure the whole registry exists to end: the same contract written in two places
+ * with nothing comparing them. `/catalog` is now a projection, so a price can only change here by
+ * changing the one definition every other surface also reads.
+ *
+ * WHY IT GROUPS BY CLASS
+ *
+ * The old grouping — control, lifestyle, builder — described what a service was ABOUT. A caller
+ * deciding whether to spend needs to know what it IS: something they can buy, something that is only
+ * useful once they have an account here, or something this host will refuse them. Those are the
+ * classes, so those are the groups.
+ */
 export function handleCatalog(): HandlerResult {
   const llm = loadLlmConfig();
+  const visible = SERVICES.filter((s) => s.classification.catalogVisible);
+
+  /**
+   * A price is only shown where a caller could actually be charged it.
+   *
+   * The four Bureau tools carry a price in the registry and refuse before any payment challenge is
+   * emitted, because they answer from history this host holds and a stranger has none. Printing
+   * `$0.20` beside them would advertise a bill that cannot be incurred, which is a subtler version
+   * of the same lie as charging for a simulation. They report their refusal instead.
+   */
+  const entry = (s: (typeof SERVICES)[number]) => {
+    const chargeable =
+      s.classification.serviceClass === "MARKETPLACE_LISTABLE" ||
+      s.classification.serviceClass === "ACCOUNT_CONTROL";
+    return {
+      toolId: s.toolId,
+      path: `${s.method} ${s.path}`,
+      price: s.pricing.kind === "free" ? "free" : chargeable ? s.pricing.price : "not payable",
+      role: s.summary,
+      schema: `https://asp.untch.xyz/schema/${s.toolId}`,
+      ...(s.pricing.kind === "paid" && !chargeable
+        ? { refusesWith: "REQUIRED_HISTORY_UNAVAILABLE, before any payment challenge" }
+        : {}),
+      ...(s.deprecated ? { deprecated: true } : {}),
+    };
+  };
+
+  const inClass = (serviceClass: string) =>
+    visible.filter((s) => s.classification.serviceClass === serviceClass).map(entry);
+
   return {
     status: 200,
     body: {
@@ -288,39 +341,19 @@ export function handleCatalog(): HandlerResult {
       baseUrl: "https://asp.untch.xyz",
       type: "A2MCP",
       surfaces: {
-        control: [
-          { path: "GET /ping_untch", price: "0.01", role: "health / rail proof" },
-          { path: "POST /create_spend_intent", price: "bundled", role: "bound intent + optional on-chain register" },
-          { path: "POST /preflight_payment", price: "0.05", role: "policy gate (13/13 RULE_EVAL + optional Mode C sig)" },
-          { path: "POST /verify_delivery", price: "0.10", role: "T0 proof" },
-          { path: "POST /detect_duplicate", price: "0.02", role: "duplicate check" },
-          { path: "POST /redact_payment_metadata", price: "0.02", role: "PII strip + hash" },
-          { path: "POST /get_ledger", price: "free", role: "ledger window slice" },
-          { path: "POST /log_receipt", price: "free", role: "receipt status façade" },
-          { path: "POST /score_vendor", price: "0.20", role: "bureau" },
-          { path: "POST /score_buyer", price: "0.20", role: "bureau" },
-          { path: "POST /generate_dispute_packet", price: "0.50", role: "reports" },
-          { path: "POST /reconcile_agent_spend", price: "0.25", role: "reports" },
-        ],
-        lifestyle: [
-          { path: "GET /cafe/menu", price: "free", role: "coffee catalog" },
-          { path: "POST /cafe/order/latte", price: "0.04", role: "demo coffee voucher" },
-        ],
-        builder: [
-          {
-            path: "POST /builder/brand_pack",
-            price: "0.05",
-            role: "hireable: names + live domains + rank + SEO",
-          },
-          {
-            path: "POST /builder/suggest_names",
-            price: "0.01",
-            role: llm ? "LLM product names" : "heuristic product names (set XAI_API_KEY for LLM)",
-          },
-          { path: "POST /builder/check_domains", price: "free", role: "live RDAP domain check" },
-          { path: "POST /builder/rank_options", price: "free", role: "rank names" },
-          { path: "POST /builder/seo_tips", price: "free", role: "launch tips" },
-        ],
+        /** What a stranger's agent can call and receive the promised result for. */
+        marketplace: inClass("MARKETPLACE_LISTABLE"),
+        /** Free discovery and health. Real, useful, and not for sale. */
+        publicSupport: inClass("PUBLIC_SUPPORT"),
+        /** Product APIs for operating an Untch account. Not marketplace products. */
+        accountControl: inClass("ACCOUNT_CONTROL"),
+        /**
+         * Listed so their absence from the marketplace is visible rather than mysterious. Each one
+         * refuses before any payment challenge, because a stranger cannot supply the history it needs.
+         */
+        internalOrWithheld: inClass("INTERNAL_OR_WITHHELD"),
+        /** Present, free, and explicitly not delivering what a purchase would imply. */
+        productionDisabled: inClass("PRODUCTION_DISABLED"),
       },
       launchPack: {
         llmConfigured: Boolean(llm),
