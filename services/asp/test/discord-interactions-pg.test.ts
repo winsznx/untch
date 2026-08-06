@@ -23,6 +23,7 @@ import {
   openSmokeCustomId,
   sealSmokeCustomId,
   verifyDiscordSignature,
+  DISCORD_ACK_DEADLINE_MS,
 } from "../src/consumer/discord-interactions";
 
 /**
@@ -72,6 +73,21 @@ describe("a native Discord button decides, once, and only for the person Discord
   let base: string;
   let seq = 0;
 
+  /** Every edit the handler attempts, so ordering and retries are observable. */
+  const edits: { token: string; body: Record<string, unknown> }[] = [];
+  const settled: { verdict: string; edited: boolean }[] = [];
+  let editResponder: () => { ok: boolean; status: number } = () => ({ ok: true, status: 200 });
+  let decisionDelayMs = 0;
+
+  /** Wait for the post-ACK work to finish, which by design happens after the HTTP response. */
+  const waitSettled = async (n = 1, timeoutMs = 20_000): Promise<void> => {
+    const started = Date.now();
+    while (settled.length < n) {
+      if (Date.now() - started > timeoutMs) throw new Error(`post-ack work did not settle (${settled.length}/${n})`);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  };
+
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const publicKeyHex = publicKey.export({ format: "der", type: "spki" }).subarray(12).toString("hex");
   const otherKey = generateKeyPairSync("ed25519").privateKey;
@@ -119,8 +135,15 @@ describe("a native Discord button decides, once, and only for the person Discord
       pool,
       secret: SECRET,
       publicKey: publicKeyHex,
+      applicationId: "app-under-test",
       nativeReady: true,
       resolvePolicy: async () => ({ status: "ACTIVE", expiresAtMs: null, dailyLimit: "1000.00" }),
+      editOriginal: async (_appId, token, body) => {
+        edits.push({ token, body: body as Record<string, unknown> });
+        return editResponder();
+      },
+      onSettled: (o) => settled.push(o),
+      resolveDecisionDelayMs: () => decisionDelayMs,
     });
     app.use(express.json());
     server = createServer(app);
@@ -213,8 +236,32 @@ describe("a native Discord button decides, once, and only for the person Discord
     return { status: res.status, json, text };
   };
 
-  const componentBody = (customId: string, over: { subject?: string; messageId?: string | null } = {}) => ({
+  /**
+   * Press a button and wait for the work that happens AFTER the acknowledgement.
+   *
+   * Returns the body of the edit the handler made, because the verdict no longer travels in the HTTP
+   * response — the response is an ACK, and the answer arrives as a message edit.
+   */
+  const press = async (
+    customId: string,
+    over: { subject?: string; messageId?: string | null } = {},
+  ): Promise<Record<string, unknown>> => {
+    const before = settled.length;
+    const r = await post(componentBody(customId, over));
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json, { type: 6 }, "the first response must be a deferred ACK and nothing else");
+    await waitSettled(before + 1);
+    return edits[edits.length - 1]!.body;
+  };
+
+  let tokenSeq = 0;
+  const componentBody = (
+    customId: string,
+    over: { subject?: string; messageId?: string | null; token?: string | null } = {},
+  ) => ({
     type: 3,
+    /** Discord sends a token on every interaction; it is what the deferred edit is addressed to. */
+    ...(over.token === null ? {} : { token: over.token ?? `itok_${++tokenSeq}` }),
     data: { custom_id: customId, component_type: 2 },
     member: { user: { id: over.subject ?? OWNER_SUBJECT } },
     message: over.messageId === null ? {} : { id: over.messageId ?? MESSAGE_ID },
@@ -314,9 +361,8 @@ describe("a native Discord button decides, once, and only for the person Discord
 
     test("an unknown reference updates the message and decides nothing", async () => {
       const before = await counts();
-      const r = await post(componentBody("v1:APPROVE:aref_doesnotexist000000000000"));
-      assert.equal(r.status, 200);
-      assert.equal((r.json as { type: number }).type, 7);
+      const body = await press("v1:APPROVE:aref_doesnotexist000000000000");
+      assert.match(String(body.content), /Refused/);
       assert.deepEqual(await counts(), before);
     });
   });
@@ -326,12 +372,9 @@ describe("a native Discord button decides, once, and only for the person Discord
   describe("one tap decides, through the same terminal path", () => {
     test("a native Approve creates one decision and one ACTIVE reservation", async () => {
       const p = await pending();
-      const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
-      assert.equal(r.status, 200);
-      const data = (r.json as { type: number; data: Record<string, unknown> });
-      assert.equal(data.type, 7, "the message is updated in place");
-      assert.match(String(data.data.content), /^Approved/);
-      assert.deepEqual(data.data.components, [], "a resolved approval has no button left to press");
+      const body = await press(buildCustomId("APPROVE", p.refs.APPROVE));
+      assert.match(String(body.content), /^Approved/);
+      assert.deepEqual(body.components, [], "a resolved approval has no button left to press");
 
       const { rows: d } = await pool.query<{ n: string }>(
         `SELECT count(*)::text n FROM untch_approval_decisions WHERE approval_request_id=$1`, [p.id]);
@@ -347,8 +390,8 @@ describe("a native Discord button decides, once, and only for the person Discord
 
     test("a native Deny creates one decision and no reservation", async () => {
       const p = await pending();
-      const r = await post(componentBody(buildCustomId("DENY", p.refs.DENY)));
-      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /^Denied/);
+      const body = await press(buildCustomId("DENY", p.refs.DENY));
+      assert.match(String(body.content), /^Denied/);
       const { rows } = await pool.query<{ n: string }>(
         `SELECT count(*)::text n FROM untch_budget_reservations WHERE approval_request_id=$1`, [p.id]);
       assert.equal(rows[0]!.n, "0");
@@ -356,18 +399,18 @@ describe("a native Discord button decides, once, and only for the person Discord
 
     test("a repeated interaction says already resolved and writes nothing", async () => {
       const p = await pending();
-      await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
+      await press(buildCustomId("APPROVE", p.refs.APPROVE));
       const before = await counts();
-      const again = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
-      assert.match(String((again.json as { data: Record<string, unknown> }).data.content), /Already resolved/);
-      assert.deepEqual(await counts(), before);
+      const body = await press(buildCustomId("APPROVE", p.refs.APPROVE));
+      assert.match(String(body.content), /Already resolved/);
+      assert.deepEqual(await counts(), before, "a repeated press is idempotent");
     });
 
     test("a stranger's press is refused, and decides nothing", async () => {
       const p = await pending();
       const before = await counts();
-      const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE), { subject: STRANGER }));
-      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+      const body = await press(buildCustomId("APPROVE", p.refs.APPROVE), { subject: STRANGER });
+      assert.match(String(body.content), /Refused/);
       assert.deepEqual(await counts(), before);
     });
 
@@ -375,8 +418,8 @@ describe("a native Discord button decides, once, and only for the person Discord
     test("an interaction from a message this delivery never sent is refused", async () => {
       const p = await pending();
       const before = await counts();
-      const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE), { messageId: "9999999999" }));
-      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+      const body = await press(buildCustomId("APPROVE", p.refs.APPROVE), { messageId: "9999999999" });
+      assert.match(String(body.content), /Refused/);
       assert.deepEqual(await counts(), before);
     });
 
@@ -384,8 +427,8 @@ describe("a native Discord button decides, once, and only for the person Discord
       const p = await pending();
       await pool.query(`UPDATE untch_channel_bindings SET status='REVOKED' WHERE binding_id=$1`, [DISCORD_BINDING]);
       try {
-        const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
-        assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+        const body = await press(buildCustomId("APPROVE", p.refs.APPROVE));
+        assert.match(String(body.content), /Refused/);
       } finally {
         await pool.query(`UPDATE untch_channel_bindings SET status='ACTIVE' WHERE binding_id=$1`, [DISCORD_BINDING]);
       }
@@ -395,8 +438,8 @@ describe("a native Discord button decides, once, and only for the person Discord
       const p = await pending();
       await pool.query(
         `UPDATE untch_approval_action_refs SET expires_at = now() - interval '1 minute' WHERE approval_request_id=$1`, [p.id]);
-      const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
-      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Expired/);
+      const body = await press(buildCustomId("APPROVE", p.refs.APPROVE));
+      assert.match(String(body.content), /Expired/);
     });
 
     test("a superseded request reads Superseded", async () => {
@@ -404,15 +447,15 @@ describe("a native Discord button decides, once, and only for the person Discord
       await pool.query(
         `UPDATE untch_approval_action_refs SET invalidated_at = now(), invalidation_reason='superseded'
           WHERE approval_request_id=$1`, [p.id]);
-      const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
-      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Superseded/);
+      const body = await press(buildCustomId("APPROVE", p.refs.APPROVE));
+      assert.match(String(body.content), /Superseded/);
     });
 
     test("a button whose action does not match its reference is refused", async () => {
       const p = await pending();
       /** The DENY reference presented under an APPROVE label. */
-      const r = await post(componentBody(buildCustomId("APPROVE", p.refs.DENY)));
-      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+      const body = await press(buildCustomId("APPROVE", p.refs.DENY));
+      assert.match(String(body.content), /Refused/);
     });
 
     test("a binding without policy-approval cannot decide", async () => {
@@ -421,8 +464,8 @@ describe("a native Discord button decides, once, and only for the person Discord
         `UPDATE untch_channel_bindings SET can_decide=false, scopes=ARRAY['notify'] WHERE binding_id=$1`, [DISCORD_BINDING]);
       try {
         const before = await counts();
-        const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
-        assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+        const body = await press(buildCustomId("APPROVE", p.refs.APPROVE));
+        assert.match(String(body.content), /Refused/);
         assert.deepEqual(await counts(), before);
       } finally {
         await pool.query(
@@ -438,11 +481,15 @@ describe("a native Discord button decides, once, and only for the person Discord
     test("two concurrent native presses produce exactly one decision", async () => {
       for (let i = 0; i < 4; i += 1) {
         const p = await pending();
+        const before = settled.length;
         const [a, b] = await Promise.all([
           post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE))),
           post(componentBody(buildCustomId("DENY", p.refs.DENY))),
         ]);
-        const verdicts = [a, b].map((r) => String((r.json as { data: Record<string, unknown> }).data.content));
+        assert.deepEqual(a.json, { type: 6 });
+        assert.deepEqual(b.json, { type: 6 });
+        await waitSettled(before + 2);
+        const verdicts = edits.slice(-2).map((e) => String(e.body.content));
         const winners = verdicts.filter((v) => /^Approved|^Denied/.test(v));
         assert.equal(winners.length, 1, `round ${i}: exactly one press may decide, got ${JSON.stringify(verdicts)}`);
         const { rows } = await pool.query<{ n: string }>(
@@ -476,25 +523,200 @@ describe("a native Discord button decides, once, and only for the person Discord
 
     test("the bound holder presses it and the message is edited in place, with nothing written", async () => {
       const before = await counts();
-      const r = await post(componentBody(sealSmokeCustomId(SECRET, DISCORD_BINDING)));
-      assert.equal(r.status, 200);
-      const body = r.json as { type: number; data: Record<string, unknown> };
-      assert.equal(body.type, 7, "the message is updated in place");
-      assert.match(String(body.data.content), /Native Discord approval path verified/);
-      assert.deepEqual(body.data.components, [], "and the button is gone");
+      const body = await press(sealSmokeCustomId(SECRET, DISCORD_BINDING));
+      assert.match(String(body.content), /Native Discord approval path verified/);
+      assert.deepEqual(body.components, [], "and the button is gone");
       assert.deepEqual(await counts(), before, "the probe must move nothing");
     });
 
     test("a stranger pressing the probe is refused", async () => {
       const before = await counts();
-      const r = await post(componentBody(sealSmokeCustomId(SECRET, DISCORD_BINDING), { subject: STRANGER }));
-      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+      const body = await press(sealSmokeCustomId(SECRET, DISCORD_BINDING), { subject: STRANGER });
+      assert.match(String(body.content), /Refused/);
       assert.deepEqual(await counts(), before);
     });
 
-    test("an unsigned probe id is refused", async () => {
+    /**
+     * A structurally invalid button never reaches the database, so there is nothing slow to wait for
+     * and it is answered IMMEDIATELY rather than deferred. Deferring a refusal would ask Discord to
+     * hold a token for a decision that was never going to happen.
+     */
+    test("an unsigned probe id is refused immediately, without deferring", async () => {
       const r = await post(componentBody("v1:SMOKE:forged.forged"));
-      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+      assert.equal(r.status, 200);
+      const j = r.json as { type: number; data: Record<string, unknown> };
+      assert.equal(j.type, 7, "an immediate refusal, not a deferred one");
+      assert.match(String(j.data.content), /Refused/);
+    });
+  });
+
+  /**
+   * The acknowledgement, and the reason it exists.
+   *
+   * Discord allows three seconds for the first response and invalidates the token if it is missed. The
+   * decision locks the approval request, and another web or OAuth action holding that row is exactly
+   * the case where the wait outlasts the deadline — which would show "This interaction failed" over a
+   * decision that committed perfectly.
+   */
+  describe("the acknowledgement is sent before the work, not after it", () => {
+    test("the ACK arrives while a deliberately slow transaction is still running", async () => {
+      const p = await pending();
+      decisionDelayMs = 5_000;
+      try {
+        const before = settled.length;
+        const started = Date.now();
+        const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
+        const ackAfterMs = Date.now() - started;
+
+        assert.deepEqual(r.json, { type: 6 }, "a deferred ACK, with no verdict in it");
+        assert.ok(
+          ackAfterMs < DISCORD_ACK_DEADLINE_MS,
+          `the ACK took ${ackAfterMs}ms and Discord allows ${DISCORD_ACK_DEADLINE_MS}ms`,
+        );
+        assert.equal(settled.length, before, "and the work had not finished when it was sent");
+
+        await waitSettled(before + 1, 30_000);
+        const body = edits[edits.length - 1]!.body;
+        assert.match(String(body.content), /^Approved/, "the verdict arrives later, as an edit");
+        const total = Date.now() - started;
+        assert.ok(total > DISCORD_ACK_DEADLINE_MS, `the work genuinely outlasted the deadline (${total}ms)`);
+      } finally {
+        decisionDelayMs = 0;
+      }
+    });
+
+    test("the decision commits before the message is edited, never the other way round", async () => {
+      const p = await pending();
+      const seen: string[] = [];
+      const before = settled.length;
+      editResponder = () => {
+        seen.push("edit");
+        return { ok: true, status: 200 };
+      };
+      try {
+        await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
+        await waitSettled(before + 1);
+        const { rows } = await pool.query<{ n: string }>(
+          `SELECT count(*)::text n FROM untch_approval_decisions WHERE approval_request_id=$1`, [p.id]);
+        assert.equal(rows[0]!.n, "1", "the decision is committed by the time the edit has been attempted");
+        assert.deepEqual(seen, ["edit"]);
+      } finally {
+        editResponder = () => ({ ok: true, status: 200 });
+      }
+    });
+
+    /**
+     * The edit is a display concern and the decision is a financial fact. They must not be able to
+     * argue: a failed edit leaves the message as it was and changes nothing that was committed.
+     */
+    test("a failed message edit does not roll back a committed decision", async () => {
+      const p = await pending();
+      const before = settled.length;
+      editResponder = () => ({ ok: false, status: 500 });
+      try {
+        await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
+        await waitSettled(before + 1, 30_000);
+        assert.equal(settled[settled.length - 1]!.edited, false, "the edit failed");
+        const { rows } = await pool.query<{ n: string; status: string }>(
+          `SELECT count(*)::text n, min(status) status FROM untch_budget_reservations WHERE approval_request_id=$1`, [p.id]);
+        assert.equal(rows[0]!.n, "1", "and the reservation stands");
+        assert.equal(rows[0]!.status, "ACTIVE");
+        const { rows: st } = await pool.query<{ state: string }>(
+          `SELECT state FROM untch_approval_requests WHERE approval_request_id=$1`, [p.id]);
+        assert.equal(st[0]!.state, "APPROVED");
+      } finally {
+        editResponder = () => ({ ok: true, status: 200 });
+      }
+    });
+
+    test("a transient edit failure is retried and converges on the correct terminal display", async () => {
+      const p = await pending();
+      const before = settled.length;
+      let attempts = 0;
+      editResponder = () => {
+        attempts += 1;
+        return attempts < 3 ? { ok: false, status: 500 } : { ok: true, status: 200 };
+      };
+      try {
+        await post(componentBody(buildCustomId("DENY", p.refs.DENY)));
+        await waitSettled(before + 1, 30_000);
+        assert.ok(attempts >= 3, `expected retries, saw ${attempts}`);
+        assert.equal(settled[settled.length - 1]!.edited, true);
+        assert.match(String(edits[edits.length - 1]!.body.content), /^Denied/);
+      } finally {
+        editResponder = () => ({ ok: true, status: 200 });
+        attempts = 0;
+      }
+    });
+
+    /** A stale or unknown token cannot be fixed by trying again, and the decision stands regardless. */
+    test("a stale interaction token is not retried, and the decision still stands", async () => {
+      const p = await pending();
+      const before = settled.length;
+      let attempts = 0;
+      editResponder = () => {
+        attempts += 1;
+        return { ok: false, status: 404 };
+      };
+      try {
+        await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)));
+        await waitSettled(before + 1, 30_000);
+        assert.equal(attempts, 1, "a 404 token is not worth repeating");
+        assert.equal(settled[settled.length - 1]!.edited, false);
+        const { rows } = await pool.query<{ state: string }>(
+          `SELECT state FROM untch_approval_requests WHERE approval_request_id=$1`, [p.id]);
+        assert.equal(rows[0]!.state, "APPROVED", "the decision committed regardless of the display");
+      } finally {
+        editResponder = () => ({ ok: true, status: 200 });
+      }
+    });
+
+    test("an interaction carrying no token decides, and simply cannot be edited", async () => {
+      const p = await pending();
+      const before = settled.length;
+      const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE), { token: null }));
+      assert.deepEqual(r.json, { type: 6 });
+      await waitSettled(before + 1, 30_000);
+      assert.equal(settled[settled.length - 1]!.edited, false);
+      const { rows } = await pool.query<{ state: string }>(
+        `SELECT state FROM untch_approval_requests WHERE approval_request_id=$1`, [p.id]);
+      assert.equal(rows[0]!.state, "APPROVED");
+    });
+
+    /** An unverified request must get nothing at all — not even an acknowledgement. */
+    test("an invalid signature receives no acknowledgement and no financial action", async () => {
+      const p = await pending();
+      const before = await counts();
+      const r = await post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE)), { key: otherKey });
+      assert.equal(r.status, 401);
+      assert.equal(r.json, null, "a refused signature gets no interaction response body");
+      assert.deepEqual(await counts(), before);
+    });
+
+    test("a malformed interaction receives no financial action", async () => {
+      const before = await counts();
+      const r = await post({ type: 3, data: {}, member: { user: { id: OWNER_SUBJECT } } });
+      assert.equal(r.status, 200);
+      assert.equal((r.json as { type: number }).type, 7, "structurally invalid is refused immediately");
+      assert.deepEqual(await counts(), before);
+    });
+
+    test("a delayed interaction never creates a second decision", async () => {
+      const p = await pending();
+      decisionDelayMs = 1_500;
+      try {
+        const before = settled.length;
+        await Promise.all([
+          post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE))),
+          post(componentBody(buildCustomId("APPROVE", p.refs.APPROVE))),
+        ]);
+        await waitSettled(before + 2, 30_000);
+        const { rows } = await pool.query<{ n: string }>(
+          `SELECT count(*)::text n FROM untch_approval_decisions WHERE approval_request_id=$1`, [p.id]);
+        assert.equal(rows[0]!.n, "1", "two slow presses, one decision");
+      } finally {
+        decisionDelayMs = 0;
+      }
     });
   });
 

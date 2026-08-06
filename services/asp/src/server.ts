@@ -482,7 +482,13 @@ export function createSellerApp(
           pool: consumerWiring.pool,
           secret: consumerAuthConfig.secret,
           publicKey: process.env.DISCORD_PUBLIC_KEY?.trim() || null,
+          applicationId: process.env.DISCORD_APPLICATION_ID?.trim() || null,
           nativeReady: flagOn(process.env.DISCORD_NATIVE_INTERACTIONS_READY),
+          /**
+           * A deliberate delay on the NON-FINANCIAL probe only, so an operator can prove live that the
+           * acknowledgement really is sent before the work. Zero unless explicitly set.
+           */
+          smokeDelayMs: Number(process.env.DISCORD_SMOKE_DELAY_MS ?? "0") || 0,
           resolvePolicy: async (policyId: string) => {
             const stored = await policyWiring.provider.loadStored(policyId);
             if (!stored) return null;
