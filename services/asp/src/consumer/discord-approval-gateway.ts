@@ -8,6 +8,7 @@ import {
   type SendOutcome,
 } from "@untch/consumer-core";
 import { actionUrls } from "./approval-action-routes";
+import { buildCustomId } from "./discord-interactions";
 
 /**
  * The message a person actually reads, and the two links that are the only way to answer it.
@@ -49,6 +50,8 @@ export interface DiscordApprovalGatewayDeps {
    * fingerprint, so a delivery can be followed end to end without a Discord id appearing in a log.
    */
   readonly log?: (line: string) => void;
+  /** `DISCORD_NATIVE_INTERACTIONS_READY`. False keeps link buttons primary. */
+  readonly nativeInteractions?: boolean;
 }
 
 interface MessageFacts {
@@ -107,6 +110,10 @@ export function renderApprovalMessage(args: {
   readonly denyUrl: string;
   readonly requestExpiresAt: string;
   readonly approvalExpiresAt: string;
+  /** Native buttons are primary only once the interactions endpoint has been verified live. */
+  readonly nativeButtons?: boolean;
+  readonly approveCustomId?: string;
+  readonly denyCustomId?: string;
 }): Record<string, unknown> {
   const f = args.facts;
   return {
@@ -131,23 +138,53 @@ export function renderApprovalMessage(args: {
         ],
       },
     ],
-    components: [
-      {
-        type: 1,
-        components: [
+    components: args.nativeButtons
+      ? [
           /**
-           * Link buttons, not interaction buttons.
+           * NATIVE component buttons. One tap, inside Discord, no browser.
            *
-           * An interaction button would need a Discord Interactions Endpoint, which is new developer-
-           * console configuration. A link button opens the action URL, where the person is
-           * re-authenticated through the OAuth application that already exists. The security property
-           * is identical because the link decides nothing: it leads to a login and then a POST.
+           * Discord signs the resulting interaction with Ed25519 over the exact bytes it sent, so the
+           * identity of whoever pressed this arrives as something the server VERIFIES rather than
+           * something a page asserts after a login. The custom id carries a version, the action and the
+           * opaque reference — nothing about the account, the amount, the recipient or the digest,
+           * because a custom id is client-visible and Discord caps it at 100 characters anyway.
            */
-          { type: 2, style: 5, label: `Approve ${f.amount} ${f.asset}`, url: args.approveUrl },
-          { type: 2, style: 5, label: "Deny", url: args.denyUrl },
+          {
+            type: 1,
+            components: [
+              { type: 2, style: 3, label: `Approve ${f.amount} ${f.asset}`, custom_id: args.approveCustomId },
+              { type: 2, style: 4, label: "Deny", custom_id: args.denyCustomId },
+            ],
+          },
+          /**
+           * The browser path stays, as a SECONDARY row. It is the fallback when interactions are
+           * unavailable, and the only path a web user has — and it is the flow that carried the first
+           * proven paid approval, so it is not being deleted to make a point about the new one.
+           */
+          {
+            type: 1,
+            components: [
+              { type: 2, style: 5, label: "Approve in browser", url: args.approveUrl },
+              { type: 2, style: 5, label: "Deny in browser", url: args.denyUrl },
+            ],
+          },
+        ]
+      : [
+          {
+            type: 1,
+            components: [
+              /**
+               * Link buttons only, while `DISCORD_NATIVE_INTERACTIONS_READY` is false.
+               *
+               * A native button that reaches an unconfigured Interactions Endpoint shows the person a
+               * Discord error, which is worse than the browser trip it was meant to replace. So the
+               * heavier flow stays primary until the endpoint has been verified live.
+               */
+              { type: 2, style: 5, label: `Approve ${f.amount} ${f.asset}`, url: args.approveUrl },
+              { type: 2, style: 5, label: "Deny", url: args.denyUrl },
+            ],
+          },
         ],
-      },
-    ],
   };
 }
 
@@ -229,6 +266,9 @@ export function discordApprovalGateway(deps: DiscordApprovalGatewayDeps): Channe
         denyUrl: urls.deny,
         requestExpiresAt: facts.expiresAt,
         approvalExpiresAt: facts.expiresAt,
+        nativeButtons: deps.nativeInteractions === true,
+        approveCustomId: buildCustomId("APPROVE", refs.APPROVE),
+        denyCustomId: buildCustomId("DENY", refs.DENY),
       });
 
       /**

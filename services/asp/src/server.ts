@@ -116,6 +116,8 @@ import {
 } from "./route-profiles";
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
+import { flagOn } from "@untch/consumer-core";
+import { registerDiscordInteractionRoutes } from "./consumer/discord-interactions";
 import {
   APPROVAL_OAUTH_SMOKE_ROUTE,
   mintOAuthSmokeUrl,
@@ -461,6 +463,38 @@ export function createSellerApp(
   }
 
   // Body parsing AFTER the gate: only paid/unpriced requests that reach a handler get parsed.
+  /**
+   * Native Discord approvals.
+   *
+   * Mounted before the approval routes because it takes a RAW body parser of its own: Discord signs
+   * the exact bytes it sends, and a JSON parser reaching this path first would re-serialise them and
+   * destroy the signature it is meant to prove.
+   *
+   * `DISCORD_NATIVE_INTERACTIONS_READY` governs whether messages ADVERTISE native buttons. The
+   * endpoint itself is wired regardless, because Discord validates an Interactions Endpoint URL by
+   * calling it — an endpoint that only appears once the flag is true could never be turned on.
+   */
+  registerDiscordInteractionRoutes(app, () =>
+    consumerWiring && consumerAuthConfig?.secret && policyWiring
+      ? {
+          pool: consumerWiring.pool,
+          secret: consumerAuthConfig.secret,
+          publicKey: process.env.DISCORD_PUBLIC_KEY?.trim() || null,
+          nativeReady: flagOn(process.env.DISCORD_NATIVE_INTERACTIONS_READY),
+          resolvePolicy: async (policyId: string) => {
+            const stored = await policyWiring.provider.loadStored(policyId);
+            if (!stored) return null;
+            return {
+              status: stored.status,
+              expiresAtMs: stored.expiry > 0 ? stored.expiry * 1000 : null,
+              dailyLimit: String(stored.rules.budgets.daily),
+            };
+          },
+          log: (line: string) => console.log(line),
+        }
+      : null,
+  );
+
   app.use(express.json({ limit: "64kb" }));
 
   /**
@@ -921,6 +955,9 @@ export function createSellerApp(
             pool: consumerWiring.pool,
             publicBaseUrl,
             botToken: process.env.DISCORD_BOT_TOKEN.trim(),
+            /** Native buttons only once the endpoint has been verified live against Discord. */
+            nativeInteractions: flagOn(process.env.DISCORD_NATIVE_INTERACTIONS_READY),
+            log: (line: string) => console.log(line),
           })
         : unconfiguredChannelGateway,
       routes: [PREFLIGHT_ROUTE],
