@@ -6,7 +6,6 @@ import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import {
   BRAND_PACK_PRICE,
   BRAND_PACK_ROUTE,
-  CAFE_LATTE_PRICE,
   CAFE_LATTE_ROUTE,
   CAFE_MENU_ROUTE,
   CATALOG_ROUTE,
@@ -23,7 +22,6 @@ import {
   LOG_RECEIPT_ROUTE,
   NETWORK,
   PAUSE_POLICY_ROUTE,
-  PING_PRICE,
   PING_ROUTE,
   PREFLIGHT_PRICE,
   PREFLIGHT_ROUTE,
@@ -309,7 +307,7 @@ export function createSellerApp(
    * recorded route, nonce, status or transaction hash, and the answer had to come from a block-by-block
    * balance search. This makes that a query.
    */
-  app.use(observeSettlements([PREFLIGHT_ROUTE, VERIFY_ROUTE, PING_ROUTE, BRAND_PACK_ROUTE]));
+  app.use(observeSettlements([PREFLIGHT_ROUTE, VERIFY_ROUTE, BRAND_PACK_ROUTE]));
 
   /**
    * Finalization on the way out, mounted beside the observer and outside the payment gate.
@@ -360,19 +358,9 @@ export function createSellerApp(
   app.use(
     paymentMiddleware(
       {
-        [`GET ${PING_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PING_PRICE },
-          description: challengeDescription("ping_untch", publicBaseUrl),
-          mimeType: "application/json",
-        },
         // Some marketplace validators probe a listed endpoint with GET/HEAD even when
         // the service is invoked with POST. Keep those probes paid and explicit rather
         // than letting Express turn them into an unhelpful 404.
-        [`HEAD ${PING_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PING_PRICE },
-          description: challengeDescription("ping_untch", publicBaseUrl),
-          mimeType: "application/json",
-        },
         [`GET ${PREFLIGHT_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
           description: challengeDescription("preflight_payment", publicBaseUrl),
@@ -421,21 +409,6 @@ export function createSellerApp(
         [`POST ${RECONCILE_ROUTE}`]: {
           accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: RECONCILE_PRICE },
           description: challengeDescription("reconcile_agent_spend", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${CAFE_LATTE_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
-          description: challengeDescription("cafe_order_latte", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`GET ${CAFE_LATTE_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
-          description: challengeDescription("cafe_order_latte", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`HEAD ${CAFE_LATTE_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: CAFE_LATTE_PRICE },
-          description: challengeDescription("cafe_order_latte", publicBaseUrl),
           mimeType: "application/json",
         },
         [`POST ${SUGGEST_NAMES_ROUTE}`]: {
@@ -548,15 +521,18 @@ export function createSellerApp(
 
   // HEAD is accepted only as a paid compatibility probe. It must never execute a
   // business operation or settle a payment, so a verified HEAD remains 405.
-  for (const route of [PING_ROUTE, PREFLIGHT_ROUTE, VERIFY_ROUTE, CAFE_LATTE_ROUTE, BRAND_PACK_ROUTE]) {
+  //
+  // ping_untch is no longer in this list because it is no longer priced: a free health check should
+  // answer a HEAD probe the same way it answers a GET, and Express routes HEAD to the GET handler
+  // on its own once nothing intercepts it first.
+  for (const route of [PREFLIGHT_ROUTE, VERIFY_ROUTE, CAFE_LATTE_ROUTE, BRAND_PACK_ROUTE]) {
     app.head(route, (_req, res) => res.status(405).end());
   }
 
-  // GET is accepted as a paid compatibility probe on the four POST-only business
-  // routes (marketplace validators that GET-probe a listed endpoint). Same rule as
-  // HEAD: a verified GET here must never execute a business operation, since query
-  // parameters are not an acceptable transport for SpendIntent/policy/delivery
-  // payloads (proxy + access logs). Real calls stay POST-only.
+  // GET is accepted as a paid compatibility probe on the POST-only business routes (marketplace
+  // validators that GET-probe a listed endpoint). Same rule as HEAD: a verified GET here must never
+  // execute a business operation, since query parameters are not an acceptable transport for
+  // SpendIntent/policy/delivery payloads (proxy + access logs). Real calls stay POST-only.
   for (const route of [PREFLIGHT_ROUTE, VERIFY_ROUTE, CAFE_LATTE_ROUTE, BRAND_PACK_ROUTE]) {
     app.get(route, (_req, res) => res.status(405).json(errorBody("USE_POST", "this endpoint is POST-only; GET is accepted only as a paid compatibility probe")));
   }
@@ -1571,7 +1547,7 @@ if (isMain) {
           // A boot line in the container's own stdout, addressed to whoever is reading the logs.
           // production-surface-allow: localhost — it is not served to any caller.
           console.log(`[asp] listening on http://localhost:${config.port}`);
-          console.log(`[asp]   GET  ${PING_ROUTE}          ${PING_PRICE}   (proof-of-rail health check)`);
+          console.log(`[asp]   GET  ${PING_ROUTE}          free   (health check — not a marketplace service)`);
           console.log(`[asp]   POST ${CREATE_INTENT_ROUTE}  bundled (canon hash + real-policy binding)`);
           console.log(`[asp]   POST ${PREFLIGHT_ROUTE}    ${PREFLIGHT_PRICE}   (real §7.1 preflight vs a real stored policy)`);
           console.log(`[asp]   POST ${VERIFY_ROUTE}     ${VERIFY_PRICE}   (real §13/§7.3 T0 delivery verification)`);
@@ -1582,7 +1558,7 @@ if (isMain) {
           console.log(`[asp]   POST ${UPDATE_POLICY_ROUTE} / ${PAUSE_POLICY_ROUTE} / ${RESUME_POLICY_ROUTE}  (operator-signed, on-chain)`);
           console.log(`[asp]   GET  ${RECEIPT_STATUS_ROUTE}   (receipt status poll, §7.4)`);
           console.log(`[asp]   GET  ${ESCALATION_STATUS_ROUTE}  (escalation status poll, §7.2)`);
-          console.log(`[asp]   GET  ${CATALOG_ROUTE}  free  ·  GET ${CAFE_MENU_ROUTE} free  ·  POST ${CAFE_LATTE_ROUTE} ${CAFE_LATTE_PRICE}`);
+          console.log(`[asp]   GET  ${CATALOG_ROUTE}  free  ·  GET ${CAFE_MENU_ROUTE} free  ·  POST ${CAFE_LATTE_ROUTE} free (simulation)`);
           console.log(`[asp]   POST ${BRAND_PACK_ROUTE} ${BRAND_PACK_PRICE}  ·  POST ${SUGGEST_NAMES_ROUTE} ${SUGGEST_NAMES_PRICE}`);
           console.log(`[asp]   free builder: check_domains (RDAP) / rank_options / seo_tips`);
           console.log(`[asp]   GET  ${AGENT_REGISTRATION_PATH}  ·  GET ${DEFAULT_WELL_KNOWN_PATH}  (ERC-8004 card)`);

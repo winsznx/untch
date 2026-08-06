@@ -9,7 +9,7 @@ import {
   makeRecordingFetch,
   readSettlementBalance,
 } from "./buyer";
-import { MissingEnvError, NETWORK, PING_PRICE, SETTLEMENT_TOKEN } from "./config";
+import { MissingEnvError, NETWORK, PROOF_OF_RAIL_PRICE, SETTLEMENT_TOKEN } from "./config";
 
 /**
  * Buyer-only D0.1 driver: hits a REMOTE seller (SELLER_URL, e.g. the Railway deploy that can
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   const address = buyerAddress(buyerKey);
   console.log(`[pay] buyer  : ${address}`);
   console.log(`[pay] seller : ${url}`);
-  console.log(`[pay] price  : ${PING_PRICE} in ${SETTLEMENT_TOKEN.symbol} on ${NETWORK}`);
+  console.log(`[pay] price  : ${PROOF_OF_RAIL_PRICE} in ${SETTLEMENT_TOKEN.symbol} on ${NETWORK}`);
 
   // Funding precheck — STOP if unfunded, never simulate.
   const balance = await readSettlementBalance(address);

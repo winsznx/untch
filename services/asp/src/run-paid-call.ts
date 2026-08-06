@@ -16,8 +16,8 @@ import {
   loadSellerConfig,
   MissingEnvError,
   NETWORK,
-  PING_PRICE,
-  PING_ROUTE,
+  PROOF_OF_RAIL_PRICE,
+  PROOF_OF_RAIL_ROUTE,
   SETTLEMENT_TOKEN,
 } from "./config";
 
@@ -72,8 +72,8 @@ async function main(): Promise<void> {
 
   const address = buyerAddress(buyer.buyerPrivateKey);
   console.log(`[pay] buyer   : ${address}`);
-  console.log(`[pay] seller  : ${buyer.sellerUrl}${PING_ROUTE} (payTo ${seller.payTo})`);
-  console.log(`[pay] price   : ${PING_PRICE} in ${SETTLEMENT_TOKEN.symbol} on ${NETWORK}`);
+  console.log(`[pay] seller  : ${buyer.sellerUrl}${PROOF_OF_RAIL_ROUTE} (payTo ${seller.payTo})`);
+  console.log(`[pay] price   : ${PROOF_OF_RAIL_PRICE} in ${SETTLEMENT_TOKEN.symbol} on ${NETWORK}`);
 
   // --- Funding precheck (STOP here if unfunded — never simulate a payment) ---
   let balance: bigint;
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    const url = `${buyer.sellerUrl}${PING_ROUTE}`;
+    const url = `${buyer.sellerUrl}${PROOF_OF_RAIL_ROUTE}`;
 
     const unpaid = await fetch(url);
     const unpaidBody = await unpaid.text();

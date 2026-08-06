@@ -11,20 +11,6 @@
   "openapi": "https://asp.untch.xyz/openapi.json",
   "resources": [
     {
-      "toolId": "ping_untch",
-      "name": "Rail ping",
-      "resource": "https://asp.untch.xyz/ping_untch",
-      "method": "GET",
-      "scheme": "exact",
-      "price": "$0.01",
-      "amountBaseUnits": "10000",
-      "description": "Confirms that a paid call to this host settles end to end.",
-      "schema": "https://asp.untch.xyz/schema/ping_untch",
-      "schemaVersion": "1.0.0",
-      "idempotency": "not-idempotent",
-      "maturity": "live"
-    },
-    {
       "toolId": "preflight_payment",
       "name": "Policy preflight",
       "resource": "https://asp.untch.xyz/preflight_payment",
@@ -137,20 +123,6 @@
       "maturity": "blocked"
     },
     {
-      "toolId": "cafe_order_latte",
-      "name": "Café order",
-      "resource": "https://asp.untch.xyz/cafe/order/latte",
-      "method": "POST",
-      "scheme": "exact",
-      "price": "$0.04",
-      "amountBaseUnits": "40000",
-      "description": "Buys a demonstration coffee voucher, to show a real payment against a real policy.",
-      "schema": "https://asp.untch.xyz/schema/cafe_order_latte",
-      "schemaVersion": "1.0.0",
-      "idempotency": "not-idempotent",
-      "maturity": "demo"
-    },
-    {
       "toolId": "suggest_names",
       "name": "Product name suggestions",
       "resource": "https://asp.untch.xyz/builder/suggest_names",
@@ -187,6 +159,12 @@
       "schema": "https://asp.untch.xyz/schema/catalog"
     },
     {
+      "toolId": "ping_untch",
+      "resource": "https://asp.untch.xyz/ping_untch",
+      "method": "GET",
+      "schema": "https://asp.untch.xyz/schema/ping_untch"
+    },
+    {
       "toolId": "create_spend_intent",
       "resource": "https://asp.untch.xyz/create_spend_intent",
       "method": "POST",
@@ -221,6 +199,12 @@
       "resource": "https://asp.untch.xyz/cafe/menu",
       "method": "GET",
       "schema": "https://asp.untch.xyz/schema/cafe_menu"
+    },
+    {
+      "toolId": "cafe_order_latte",
+      "resource": "https://asp.untch.xyz/cafe/order/latte",
+      "method": "POST",
+      "schema": "https://asp.untch.xyz/schema/cafe_order_latte"
     },
     {
       "toolId": "rank_options",

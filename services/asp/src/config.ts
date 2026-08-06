@@ -21,8 +21,15 @@ export const NETWORK = `eip155:${CHAIN.id}` as const;
 /** The default x402 settlement token for the active network (mainnet ⇒ USDT0, D0.3-verified). */
 export const SETTLEMENT_TOKEN = settlementToken(CHAIN.id);
 
+/**
+ * The health ping. FREE, and no longer a marketplace service.
+ *
+ * It used to cost $0.01, which is the whole objection: a health check is not a deliverable, and
+ * charging for one bills a buyer to prove that x402 works rather than to receive anything. It stays
+ * mounted and stays useful — an agent should be able to ask whether this service is up before it
+ * decides to spend — it simply no longer has a price or a listing entry.
+ */
 export const PING_ROUTE = "/ping_untch" as const;
-export const PING_PRICE = "$0.01" as const;
 
 /** Step-2 tools (§11). `create_spend_intent` is bundled/unpriced; `preflight_payment` is the
  *  priced tool ($0.05, §11), settled the same way as `ping_untch` — real USDT0 via the OKX x402
@@ -58,8 +65,15 @@ export const RECONCILE_PRICE = "$0.25" as const;
 /** Consumer / lifestyle / builder tools (multi-service ASP surface). */
 export const CATALOG_ROUTE = "/catalog" as const;
 export const CAFE_MENU_ROUTE = "/cafe/menu" as const;
+/**
+ * The cafe demo. FREE, and explicitly a simulation.
+ *
+ * It used to cost $0.04 and it does not buy anyone a coffee: no merchant is contacted, no order is
+ * placed, nothing is delivered. Charging for it made a demonstration look like a purchase, which is
+ * the one thing a marketplace listing must never do. It stays as a free, clearly-labelled
+ * demonstration of the intent shape and drops out of the listing.
+ */
 export const CAFE_LATTE_ROUTE = "/cafe/order/latte" as const;
-export const CAFE_LATTE_PRICE = "$0.04" as const;
 export const SUGGEST_NAMES_ROUTE = "/builder/suggest_names" as const;
 export const SUGGEST_NAMES_PRICE = "$0.01" as const;
 export const BRAND_PACK_ROUTE = "/builder/brand_pack" as const;
@@ -101,10 +115,22 @@ export const DEFAULT_PORT = 4021;
 
 /** All consumer priced routes for payment middleware registration. */
 export const CONSUMER_PRICED_ROUTES = {
-  cafeLatte: { methodPath: `POST ${CAFE_LATTE_ROUTE}` as const, price: CAFE_LATTE_PRICE },
   suggestNames: { methodPath: `POST ${SUGGEST_NAMES_ROUTE}` as const, price: SUGGEST_NAMES_PRICE },
   brandPack: { methodPath: `POST ${BRAND_PACK_ROUTE}` as const, price: BRAND_PACK_PRICE },
 } as const;
+
+/**
+ * The route the local buyer drivers and the guard proofs pay, now that the ping is free.
+ *
+ * They need SOMETHING priced to exercise a real 402 → sign → replay → settle round trip, and until
+ * now that was `ping_untch` at $0.01. `redact_payment_metadata` is the honest successor: it is the
+ * cheapest route that still charges, it has no predecessors a driver would have to construct, and
+ * unlike a health check it returns a real artifact for the money.
+ */
+export const PROOF_OF_RAIL_ROUTE = REDACT_META_ROUTE;
+export const PROOF_OF_RAIL_PRICE = REDACT_META_PRICE;
+/** The same price in USDT0 base units (6dp), for drivers that build an authorization by hand. */
+export const PROOF_OF_RAIL_PRICE_ATOMIC = "20000" as const;
 
 export type SellerConfig = {
   okxApiKey: string;

@@ -316,6 +316,27 @@ async function main(): Promise<void> {
   }
 }
 
+/**
+ * STOPPED: this proof pays for `/ping_untch`, and `ping_untch` is now free.
+ *
+ * It was the cheapest priced route, so every guard proof used it as the thing to buy. Charging for a
+ * health check is what the relisting pass removed, and a driver that keeps pointing at it would get a
+ * 200 with no challenge, hand the guard nothing to bind, and print a pass it did not earn — which is
+ * worse than not running at all.
+ *
+ * To restore it, repoint the binding at `PROOF_OF_RAIL_ROUTE` (POST /redact_payment_metadata, $0.02):
+ * the method becomes POST and the call needs a `{ metadata }` body. That change is deliberately not
+ * made blind, because it moves real money and cannot be verified without a funded wallet.
+ *
+ * The stop lives beside the entry point rather than inside `main`, so the body below stays ordinary
+ * reachable code that the type checker still reads.
+ */
+console.error(
+  "[stopped] this proof buys /ping_untch, which is now free — repoint it at PROOF_OF_RAIL_ROUTE " +
+    "(POST /redact_payment_metadata, $0.02) and re-verify with a funded wallet before running",
+);
+process.exit(2);
+
 main().catch((err) => {
   console.error(err);
   fail(1, `unexpected error: ${(err as Error).message}`);
