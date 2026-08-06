@@ -81,16 +81,16 @@
       "endpoint": "https://asp.untch.xyz/ping_untch",
       "method": "GET",
       "pricing": {
-        "kind": "paid",
-        "price": "$0.01",
-        "amountBaseUnits": "10000"
+        "kind": "free",
+        "price": null,
+        "amountBaseUnits": null
       },
       "maturity": "live",
       "schemaVersion": "1.0.0",
       "description": {
-        "what": "Confirms that a paid call to this host settles end to end. For an integrator proving their x402 client can pay this host before wiring anything expensive.",
+        "what": "Reports that this host is up and answering. For any agent checking whether this service is reachable before it decides to spend.",
         "provide": "You provide: Nothing. This service takes no parameters.",
-        "receive": "You receive: a timestamped acknowledgement, after a real settled payment of $0.01."
+        "receive": "You receive: a timestamped acknowledgement. It is a health check, not a purchase."
       },
       "input": {
         "type": "object",
@@ -2117,16 +2117,16 @@
       "endpoint": "https://asp.untch.xyz/cafe/order/latte",
       "method": "POST",
       "pricing": {
-        "kind": "paid",
-        "price": "$0.04",
-        "amountBaseUnits": "40000"
+        "kind": "free",
+        "price": null,
+        "amountBaseUnits": null
       },
       "maturity": "demo",
       "schemaVersion": "1.0.0",
       "description": {
-        "what": "Buys a demonstration coffee voucher, to show a real payment against a real policy. For anyone evaluating what a governed agent purchase feels like without spending much.",
+        "what": "Simulates a coffee order so a caller can see the shape of a governed purchase. Nothing is bought and nothing is delivered. For anyone evaluating what a governed agent purchase looks like before wiring a real provider.",
         "provide": "You provide: Any one of: buyerRef.",
-        "receive": "You receive: an order id and a pickup code. The fulfilment is a demonstration, not a real coffee."
+        "receive": "You receive: a simulated order id and pickup code. No merchant is contacted, no order is placed and no coffee exists."
       },
       "input": {
         "type": "object",

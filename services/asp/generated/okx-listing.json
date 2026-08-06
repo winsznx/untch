@@ -21,8 +21,8 @@
       "endpoint": "https://asp.untch.xyz/ping_untch",
       "method": "GET",
       "protocol": "A2MCP",
-      "pricing": "$0.01 per call",
-      "description": "Confirms that a paid call to this host settles end to end. For an integrator proving their x402 client can pay this host before wiring anything expensive.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: a timestamped acknowledgement, after a real settled payment of $0.01.",
+      "pricing": "free",
+      "description": "Reports that this host is up and answering. For any agent checking whether this service is reachable before it decides to spend.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: a timestamped acknowledgement. It is a health check, not a purchase.",
       "schemaUrl": "https://asp.untch.xyz/schema/ping_untch",
       "schemaVersion": "1.0.0"
     },
@@ -142,8 +142,8 @@
       "endpoint": "https://asp.untch.xyz/cafe/order/latte",
       "method": "POST",
       "protocol": "A2MCP",
-      "pricing": "$0.04 per call",
-      "description": "Buys a demonstration coffee voucher, to show a real payment against a real policy. For anyone evaluating what a governed agent purchase feels like without spending much.\n\nYou provide: Any one of: buyerRef.\n\nYou receive: an order id and a pickup code. The fulfilment is a demonstration, not a real coffee.",
+      "pricing": "free",
+      "description": "Simulates a coffee order so a caller can see the shape of a governed purchase. Nothing is bought and nothing is delivered. For anyone evaluating what a governed agent purchase looks like before wiring a real provider.\n\nYou provide: Any one of: buyerRef.\n\nYou receive: a simulated order id and pickup code. No merchant is contacted, no order is placed and no coffee exists.",
       "schemaUrl": "https://asp.untch.xyz/schema/cafe_order_latte",
       "schemaVersion": "1.0.0"
     },

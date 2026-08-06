@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, readFileSync, chmodSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { NETWORK, PING_PRICE, SETTLEMENT_TOKEN } from "./config";
+import { NETWORK, PROOF_OF_RAIL_PRICE, SETTLEMENT_TOKEN } from "./config";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(here, "..", ".env");
@@ -31,7 +31,7 @@ function printFundingInstructions(address: `0x${string}`, reused: boolean): void
   console.log("");
   console.log(" FUND THIS WALLET BEFORE THE PAID CALL CAN SETTLE:");
   console.log(`   Token   : ${t.symbol} (${t.address})`);
-  console.log(`   Amount  : at least ${PING_PRICE} — send ~$0.05 worth to cover one call + margin`);
+  console.log(`   Amount  : at least ${PROOF_OF_RAIL_PRICE} — send ~$0.05 worth to cover one call + margin`);
   console.log(`   Network : X Layer Mainnet (${NETWORK}, chainId 196)`);
   console.log(`   Gas     : none needed on the buyer — EIP-3009 transferWithAuthorization is`);
   console.log(`             gasless for the signer; the facilitator submits + pays gas.`);

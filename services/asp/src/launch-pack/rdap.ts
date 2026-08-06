@@ -14,19 +14,41 @@ export type DomainResult = {
   readonly detail?: string;
 };
 
+/**
+ * Direct registry endpoints, and only the ones that were checked against a known-registered and a
+ * known-unregistered name.
+ *
+ * Four entries were removed because they do not work. `xyz` (CentralNic) answers 400 to everything.
+ * `io`, `dev` and `app` did not connect at all. Each of those now falls through to the bootstrap
+ * below, which follows IANA's registry map to whichever server is actually authoritative and was
+ * verified returning 200 for a registered name and 404 for a free one across every TLD here.
+ *
+ * A direct base is kept only where it is both correct and closer to the registry than the bootstrap.
+ */
 const TLD_RDAP: Record<string, string> = {
   com: "https://rdap.verisign.com/com/v1/domain/",
   net: "https://rdap.verisign.com/net/v1/domain/",
   org: "https://rdap.publicinterestregistry.org/rdap/domain/",
-  xyz: "https://rdap.centralnic.com/xyz/v1/domain/",
-  io: "https://rdap.nic.io/domain/",
   ai: "https://rdap.identitydigital.services/rdap/domain/",
-  dev: "https://rdap.nic.google/domain/",
-  app: "https://rdap.nic.google/domain/",
 };
 
 /** Bootstrap fallback when TLD has no dedicated base. */
 const RDAP_BOOTSTRAP = "https://rdap.org/domain/";
+
+/**
+ * The TLDs whose RDAP answer is trusted, and nothing else.
+ *
+ * The reason this list has to exist is `.io`. Its registry publishes no usable RDAP, so every `.io`
+ * lookup — registered or not — comes back 404. A 404 is the signal for "no such registration", so an
+ * unfiltered reading reports `google.io` as available. The failure is not that the server is wrong;
+ * it is that a 404 means two different things depending on whether the TLD is served at all, and
+ * nothing in the response distinguishes them.
+ *
+ * Each entry below was checked against a known-registered and a known-unregistered name and answered
+ * 200 and 404 respectively. Anything absent is reported UNKNOWN, which is the true answer: this
+ * service does not know, and saying so is the only thing it can do that is not a guess.
+ */
+const TRUSTED_TLDS: ReadonlySet<string> = new Set(["com", "net", "org", "xyz", "ai", "dev", "app"]);
 
 function splitDomain(domain: string): { sld: string; tld: string } | null {
   const d = domain.toLowerCase().replace(/\.$/, "").trim();
@@ -47,6 +69,17 @@ async function rdapLookup(domain: string, timeoutMs: number): Promise<DomainResu
       source: "rdap",
       checkedAt,
       detail: "invalid domain",
+    };
+  }
+
+  if (!TRUSTED_TLDS.has(split.tld)) {
+    return {
+      domain,
+      available: null,
+      status: "UNKNOWN",
+      source: "rdap",
+      checkedAt,
+      detail: `no trusted RDAP source for .${split.tld}`,
     };
   }
 
@@ -74,19 +107,18 @@ async function rdapLookup(domain: string, timeoutMs: number): Promise<DomainResu
       }
       return { domain, available: false, status: "TAKEN", source: "rdap", checkedAt };
     }
-    if (res.status >= 400 && res.status < 500) {
-      // 400-ish often means not registered on some RDAP servers
-      if (res.status === 400 || res.status === 422) {
-        return {
-          domain,
-          available: true,
-          status: "AVAILABLE",
-          source: "rdap",
-          checkedAt,
-          detail: `rdap ${res.status}`,
-        };
-      }
-    }
+    /**
+     * A 400 is NOT an answer, and reading it as one produced a false claim.
+     *
+     * This branch used to return AVAILABLE for 400 and 422 on the theory that some registries answer
+     * an unregistered name that way. Checked against the real servers, that is false: CentralNic's
+     * `.xyz` endpoint returns 400 for a REGISTERED domain and 400 for an unregistered one alike, so
+     * the rule reported every `.xyz` in existence as available. `untch.xyz` — this project's own
+     * live domain — came back AVAILABLE.
+     *
+     * 404 is the RDAP signal for "no such registration". Everything else in the 4xx range means the
+     * server did not answer the question, which is exactly what UNKNOWN is for.
+     */
     return {
       domain,
       available: null,
@@ -143,4 +175,5 @@ export async function checkDomainsLive(
   );
 }
 
-export const DEFAULT_TLDS = [".com", ".xyz", ".ai", ".dev", ".io"] as const;
+/** `.io` was here and is gone: no trusted RDAP source, so it could only ever answer UNKNOWN. */
+export const DEFAULT_TLDS = [".com", ".xyz", ".ai", ".dev", ".app"] as const;

@@ -9,7 +9,7 @@ from — so there is no version of this page that can disagree with the service.
 | Tool | Price | Maturity | Contract |
 | --- | --- | --- | --- |
 | `catalog` | free | live | [/schema/catalog](https://asp.untch.xyz/schema/catalog) |
-| `ping_untch` | $0.01 | live | [/schema/ping_untch](https://asp.untch.xyz/schema/ping_untch) |
+| `ping_untch` | free | live | [/schema/ping_untch](https://asp.untch.xyz/schema/ping_untch) |
 | `preflight_payment` | $0.05 | demo | [/schema/preflight_payment](https://asp.untch.xyz/schema/preflight_payment) |
 | `verify_delivery` | $0.10 | demo | [/schema/verify_delivery](https://asp.untch.xyz/schema/verify_delivery) |
 | `create_spend_intent` | free | demo | [/schema/create_spend_intent](https://asp.untch.xyz/schema/create_spend_intent) |
@@ -24,7 +24,7 @@ from — so there is no version of this page that can disagree with the service.
 | `generate_dispute_packet` | $0.50 | blocked | [/schema/generate_dispute_packet](https://asp.untch.xyz/schema/generate_dispute_packet) |
 | `reconcile_agent_spend` | $0.25 | blocked | [/schema/reconcile_agent_spend](https://asp.untch.xyz/schema/reconcile_agent_spend) |
 | `cafe_menu` | free | demo | [/schema/cafe_menu](https://asp.untch.xyz/schema/cafe_menu) |
-| `cafe_order_latte` | $0.04 | demo | [/schema/cafe_order_latte](https://asp.untch.xyz/schema/cafe_order_latte) |
+| `cafe_order_latte` | free | demo | [/schema/cafe_order_latte](https://asp.untch.xyz/schema/cafe_order_latte) |
 | `suggest_names` | $0.01 | demo | [/schema/suggest_names](https://asp.untch.xyz/schema/suggest_names) |
 | `rank_options` | free | blocked | [/schema/rank_options](https://asp.untch.xyz/schema/rank_options) |
 | `check_domains` | free | blocked | [/schema/check_domains](https://asp.untch.xyz/schema/check_domains) |
@@ -69,13 +69,13 @@ null
 
 ## Rail ping — `ping_untch`
 
-`GET /ping_untch` · $0.01 per call · schema v1.0.0
+`GET /ping_untch` · free · schema v1.0.0
 
-Confirms that a paid call to this host settles end to end. For an integrator proving their x402 client can pay this host before wiring anything expensive.
+Reports that this host is up and answering. For any agent checking whether this service is reachable before it decides to spend.
 
 You provide: Nothing. This service takes no parameters.
 
-You receive: a timestamped acknowledgement, after a real settled payment of $0.01.
+You receive: a timestamped acknowledgement. It is a health check, not a purchase.
 
 **Must already exist**
 
@@ -732,13 +732,13 @@ null
 
 ## Café order — `cafe_order_latte`
 
-`POST /cafe/order/latte` · $0.04 per call · schema v1.0.0
+`POST /cafe/order/latte` · free · schema v1.0.0
 
-Buys a demonstration coffee voucher, to show a real payment against a real policy. For anyone evaluating what a governed agent purchase feels like without spending much.
+Simulates a coffee order so a caller can see the shape of a governed purchase. Nothing is bought and nothing is delivered. For anyone evaluating what a governed agent purchase looks like before wiring a real provider.
 
 You provide: Any one of: buyerRef.
 
-You receive: an order id and a pickup code. The fulfilment is a demonstration, not a real coffee.
+You receive: a simulated order id and pickup code. No merchant is contacted, no order is placed and no coffee exists.
 
 **What it changes**
 
