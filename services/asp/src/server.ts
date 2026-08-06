@@ -1,6 +1,7 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { privateKeyToAccount } from "viem/accounts";
 import { paymentMiddleware, x402ResourceServer } from "@okxweb3/x402-express";
+import type { RouteConfig } from "@okxweb3/x402-core/server";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import {
@@ -93,6 +94,7 @@ import {
 } from "./erc8004/constants";
 import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes";
 import { registerConsumerCapabilityGate } from "./consumer/capability-gate";
+import { PAYMENT_SDK_HEALTH_ROUTE, assertPaidRoutesProtected, paymentSdkHealth } from "./payment-sdk-health";
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
 import { registerAgenticLinkRoutes } from "./consumer/agentic-link-routes";
@@ -354,106 +356,121 @@ export function createSellerApp(
     authConfig: () => loadConsumerAuthConfig(),
   });
 
-  // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
-  app.use(
-    paymentMiddleware(
-      {
-        // Some marketplace validators probe a listed endpoint with GET/HEAD even when
-        // the service is invoked with POST. Keep those probes paid and explicit rather
-        // than letting Express turn them into an unhelpful 404.
-        [`GET ${PREFLIGHT_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
-          description: challengeDescription("preflight_payment", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`HEAD ${PREFLIGHT_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
-          description: challengeDescription("preflight_payment", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${PREFLIGHT_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
-          description: challengeDescription("preflight_payment", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`GET ${VERIFY_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
-          description: challengeDescription("verify_delivery", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`HEAD ${VERIFY_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
-          description: challengeDescription("verify_delivery", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${VERIFY_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
-          description: challengeDescription("verify_delivery", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${SCORE_VENDOR_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SCORE_PRICE },
-          description: challengeDescription("score_vendor", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${SCORE_BUYER_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SCORE_PRICE },
-          description: challengeDescription("score_buyer", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${DISPUTE_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: DISPUTE_PRICE },
-          description: challengeDescription("generate_dispute_packet", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${RECONCILE_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: RECONCILE_PRICE },
-          description: challengeDescription("reconcile_agent_spend", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${SUGGEST_NAMES_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SUGGEST_NAMES_PRICE },
-          description: challengeDescription("suggest_names", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${BRAND_PACK_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
-          description: challengeDescription("brand_pack", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`GET ${BRAND_PACK_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
-          description: challengeDescription("brand_pack", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`HEAD ${BRAND_PACK_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
-          description: challengeDescription("brand_pack", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${DETECT_DUP_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: DETECT_DUP_PRICE },
-          description: challengeDescription("detect_duplicate", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        [`POST ${REDACT_META_ROUTE}`]: {
-          accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: REDACT_META_PRICE },
-          description: challengeDescription("redact_payment_metadata", publicBaseUrl),
-          mimeType: "application/json",
-        },
-        // ── Consumer Pack ──────────────────────────────────────────────────
-        // Fixed prices are the ORCHESTRATION fee. The variable purchase value is a separate leg:
-        // POST /consumer/fund/:intentId carries a DynamicPrice function that resolves each intent's
-        // own exact authorised amount at request time.
-        //
-        // Every path here is also gated above, so only a caller with a proven session bound to a
-        // policy they own ever reaches this table. The prices stay because that caller is a real
-        // buyer of a real orchestration; what changed is that a stranger is refused for free.
-        ...consumerRouteTable,
+  /**
+   * The one route table, built before it is used and read three times.
+   *
+   * `paymentMiddleware` is configured from it, the SDK health probe is computed from it, and the
+   * boot assertion refuses to start from it. Handing the probe a separately-assembled copy would
+   * make it a test of the copy — which is exactly the drift it exists to catch.
+   */
+  const paidRouteTable: Record<string, RouteConfig> = {
+      // Some marketplace validators probe a listed endpoint with GET/HEAD even when
+      // the service is invoked with POST. Keep those probes paid and explicit rather
+      // than letting Express turn them into an unhelpful 404.
+      [`GET ${PREFLIGHT_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
+        description: challengeDescription("preflight_payment", publicBaseUrl),
+        mimeType: "application/json",
       },
-      resourceServer,
-    ),
-  );
+      [`HEAD ${PREFLIGHT_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
+        description: challengeDescription("preflight_payment", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${PREFLIGHT_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: PREFLIGHT_PRICE },
+        description: challengeDescription("preflight_payment", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`GET ${VERIFY_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
+        description: challengeDescription("verify_delivery", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`HEAD ${VERIFY_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
+        description: challengeDescription("verify_delivery", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${VERIFY_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: VERIFY_PRICE },
+        description: challengeDescription("verify_delivery", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${SCORE_VENDOR_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SCORE_PRICE },
+        description: challengeDescription("score_vendor", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${SCORE_BUYER_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SCORE_PRICE },
+        description: challengeDescription("score_buyer", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${DISPUTE_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: DISPUTE_PRICE },
+        description: challengeDescription("generate_dispute_packet", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${RECONCILE_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: RECONCILE_PRICE },
+        description: challengeDescription("reconcile_agent_spend", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${SUGGEST_NAMES_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: SUGGEST_NAMES_PRICE },
+        description: challengeDescription("suggest_names", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${BRAND_PACK_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
+        description: challengeDescription("brand_pack", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`GET ${BRAND_PACK_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
+        description: challengeDescription("brand_pack", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`HEAD ${BRAND_PACK_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: BRAND_PACK_PRICE },
+        description: challengeDescription("brand_pack", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${DETECT_DUP_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: DETECT_DUP_PRICE },
+        description: challengeDescription("detect_duplicate", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      [`POST ${REDACT_META_ROUTE}`]: {
+        accepts: { scheme: "exact", network: NETWORK, payTo: config.payTo, price: REDACT_META_PRICE },
+        description: challengeDescription("redact_payment_metadata", publicBaseUrl),
+        mimeType: "application/json",
+      },
+      // ── Consumer Pack ──────────────────────────────────────────────────
+      // Fixed prices are the ORCHESTRATION fee. The variable purchase value is a separate leg:
+      // POST /consumer/fund/:intentId carries a DynamicPrice function that resolves each intent's
+      // own exact authorised amount at request time.
+      //
+      // Every path here is also gated above, so only a caller with a proven session bound to a
+      // policy they own ever reaches this table. The prices stay because that caller is a real
+      // buyer of a real orchestration; what changed is that a stranger is refused for free.
+    ...consumerRouteTable,
+  };
+
+  /**
+   * Whether the official SDK really is around every paid marketplace route, per route.
+   *
+   * A dependency in package.json proves nothing at runtime, and neither does a process-level
+   * boolean: a route absent from the table above is unprotected however many of its neighbours are
+   * protected. This refuses to start rather than serve a priced service for free, because there is
+   * no useful degraded mode between charging correctly and giving the product away.
+   */
+  const sdkHealth = paymentSdkHealth({ table: paidRouteTable, payTo: config.payTo });
+  assertPaidRoutesProtected(sdkHealth);
+
+  // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
+  app.use(paymentMiddleware(paidRouteTable, resourceServer));
 
   const intentRegistry = initIntentRegistry();
   const oracleSigner = initOracleSigner();
@@ -565,6 +582,20 @@ export function createSellerApp(
    * deliver — and reports the global execution flag BESIDE those answers rather than instead of them,
    * so a reader can see that the flag is true and the decision route is still inert.
    */
+  /**
+   * Per-route proof that the official SDK is in the paid path, published before the paywall.
+   *
+   * Registered here rather than behind the payment gate for the same reason the health routes are: a
+   * reviewer checking whether payments are correctly integrated cannot be asked to pay to find out.
+   *
+   * It names no secret. The payee address and the token contract it reports are already in every 402
+   * challenge this service emits, so a caller learns nothing here that one unpaid request would not
+   * already tell them.
+   */
+  app.get(PAYMENT_SDK_HEALTH_ROUTE, (_req, res) => {
+    res.json(sdkHealth);
+  });
+
   app.get(EXECUTION_MANIFEST_ROUTE, (_req, res) => {
     res.json(executionManifest(loadConsumerFlags().executionEnabled));
   });
