@@ -20,6 +20,8 @@ import {
   buildCustomId,
   parseCustomId,
   registerDiscordInteractionRoutes,
+  openSmokeCustomId,
+  sealSmokeCustomId,
   verifyDiscordSignature,
 } from "../src/consumer/discord-interactions";
 
@@ -455,6 +457,47 @@ describe("a native Discord button decides, once, and only for the person Discord
    * signature failure, because "Discord keeps sending bad signatures" is the wrong thing to go looking
    * for when the truth is that a parser upstream ate the bytes.
    */
+  /**
+   * The non-financial probe: a native button carrying a sealed BINDING and no action reference, so the
+   * branch that redeems it has nothing to resolve and nothing to decide.
+   */
+  describe("the non-financial native probe verifies identity and moves nothing", () => {
+    test("a sealed smoke id round-trips, and a forged one does not", () => {
+      const id = sealSmokeCustomId(SECRET, DISCORD_BINDING);
+      assert.ok(id.startsWith("v1:SMOKE:"));
+      assert.ok(id.length <= 100, "Discord caps a custom id at 100 characters");
+      assert.equal(openSmokeCustomId(SECRET, id), DISCORD_BINDING);
+      assert.equal(openSmokeCustomId("another-secret", id), null, "a foreign seal must not open");
+      assert.equal(openSmokeCustomId(SECRET, "v1:SMOKE:bm9wZQ.deadbeef"), null);
+      for (const secret of [ACCOUNT, OWNER_SUBJECT, SECRET]) {
+        assert.ok(!id.includes(secret), `the smoke id leaked ${secret}`);
+      }
+    });
+
+    test("the bound holder presses it and the message is edited in place, with nothing written", async () => {
+      const before = await counts();
+      const r = await post(componentBody(sealSmokeCustomId(SECRET, DISCORD_BINDING)));
+      assert.equal(r.status, 200);
+      const body = r.json as { type: number; data: Record<string, unknown> };
+      assert.equal(body.type, 7, "the message is updated in place");
+      assert.match(String(body.data.content), /Native Discord approval path verified/);
+      assert.deepEqual(body.data.components, [], "and the button is gone");
+      assert.deepEqual(await counts(), before, "the probe must move nothing");
+    });
+
+    test("a stranger pressing the probe is refused", async () => {
+      const before = await counts();
+      const r = await post(componentBody(sealSmokeCustomId(SECRET, DISCORD_BINDING), { subject: STRANGER }));
+      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+      assert.deepEqual(await counts(), before);
+    });
+
+    test("an unsigned probe id is refused", async () => {
+      const r = await post(componentBody("v1:SMOKE:forged.forged"));
+      assert.match(String((r.json as { data: Record<string, unknown> }).data.content), /Refused/);
+    });
+  });
+
   describe("a body parser above this route is refused by name", () => {
     test("a JSON parser mounted first produces a named refusal, not a signature failure", async () => {
       const wrong = express();

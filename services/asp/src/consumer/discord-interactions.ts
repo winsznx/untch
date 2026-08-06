@@ -1,4 +1,4 @@
-import { verify as ed25519Verify } from "node:crypto";
+import { createHmac, timingSafeEqual, verify as ed25519Verify } from "node:crypto";
 import type { Express, Request, Response } from "express";
 import express from "express";
 import {
@@ -75,6 +75,41 @@ export interface DiscordInteractionDeps {
  */
 export function buildCustomId(action: "APPROVE" | "DENY", actionReferenceId: string): string {
   return `v1:${action}:${actionReferenceId}`;
+}
+
+/**
+ * The non-financial probe button.
+ *
+ * A native button that carries NO action reference — so the branch that redeems it has no approval to
+ * resolve, no token to mint and no decision to reach. It exists because the only way to prove Discord
+ * accepts this endpoint, delivers a real interaction and lets the message be edited is to have a
+ * person press one, and doing that with a live approval would mean putting a payment in front of
+ * somebody to test a button.
+ *
+ * Sealed rather than plain, so a stranger cannot mint one for a binding they do not hold.
+ */
+export function sealSmokeCustomId(secret: string, channelBindingId: string): string {
+  const mac = createHmac("sha256", secret).update(`untch.discord.smoke.v1.${channelBindingId}`).digest("base64url").slice(0, 24);
+  return `v1:SMOKE:${Buffer.from(channelBindingId, "utf8").toString("base64url")}.${mac}`;
+}
+
+export function openSmokeCustomId(secret: string, raw: string): string | null {
+  const body = raw.slice("v1:SMOKE:".length);
+  const dot = body.lastIndexOf(".");
+  if (dot <= 0) return null;
+  let bindingId: string;
+  try {
+    bindingId = Buffer.from(body.slice(0, dot), "base64url").toString("utf8");
+  } catch {
+    return null;
+  }
+  const expected = Buffer.from(
+    createHmac("sha256", secret).update(`untch.discord.smoke.v1.${bindingId}`).digest("base64url").slice(0, 24),
+    "utf8",
+  );
+  const got = Buffer.from(body.slice(dot + 1), "utf8");
+  if (expected.length !== got.length || !timingSafeEqual(expected, got)) return null;
+  return bindingId;
 }
 
 export type ParsedCustomId =
@@ -249,6 +284,50 @@ export function registerDiscordInteractionRoutes(
       }
 
       const data = (interaction.data ?? {}) as Record<string, unknown>;
+      /**
+       * The probe branch, taken BEFORE the action path and returning from inside it. It reads a
+       * binding and a signed subject and touches nothing else — there is no approval reference in the
+       * custom id, so there is nothing here that could reach a decision.
+       */
+      if (typeof data.custom_id === "string" && data.custom_id.startsWith("v1:SMOKE:")) {
+        const bindingId = openSmokeCustomId(d.secret, data.custom_id);
+        const subjectForSmoke = typeof ((interaction.member as Record<string, unknown> | undefined)?.user as Record<string, unknown> | undefined)?.id === "string"
+          ? String((((interaction.member as Record<string, unknown>).user) as Record<string, unknown>).id)
+          : typeof (interaction.user as Record<string, unknown> | undefined)?.id === "string"
+            ? String((interaction.user as Record<string, unknown>).id)
+            : null;
+        if (!bindingId || !subjectForSmoke) {
+          res.status(200).json({ type: UPDATE_MESSAGE, data: resolvedMessage({ verdict: "Refused", detail: "This test button was not issued by this server." }) });
+          return;
+        }
+        const { rows } = await d.pool.query<{ channel_user_id: string; status: string }>(
+          `SELECT channel_user_id, status FROM untch_channel_bindings WHERE binding_id = $1`,
+          [bindingId],
+        );
+        const b = rows[0];
+        const ok = Boolean(b) && b!.status === "ACTIVE" && b!.channel_user_id === subjectForSmoke;
+        log(JSON.stringify({ stage: "smoke", matched: ok }));
+        res.status(200).json({
+          type: UPDATE_MESSAGE,
+          data: ok
+            ? {
+                content: "**Native Discord approval path verified.**",
+                embeds: [{
+                  title: "Native Discord approval path verified",
+                  description:
+                    "Discord signed this button press, the server verified the signature, matched your " +
+                    "Discord identity to the approval channel on this account, and edited this message " +
+                    "in place — without opening a browser.\n\n" +
+                    "Nothing was approved, denied or paid. This test carried no approval request, no " +
+                    "payment, no action token and no authority.",
+                }],
+                components: [],
+              }
+            : resolvedMessage({ verdict: "Refused", detail: "This identity does not hold the named approval channel." }),
+        });
+        return;
+      }
+
       const parsed = parseCustomId(data.custom_id);
       if (!parsed.ok) {
         res.status(200).json({ type: UPDATE_MESSAGE, data: resolvedMessage({ verdict: "Refused", detail: "This button is not one this server issued." }) });
