@@ -190,11 +190,21 @@ export class DeploymentLifecycle {
    * simply passes one through. A deployed process never supplies it, so the search still begins at
    * this module and still walks up to the uploaded tree's root — the attestation cannot be pointed
    * somewhere else by configuration, which is the property that makes it worth trusting.
+   *
+   * `attestationSource` is how the SAME guarantee is kept on a runtime with no filesystem.
+   *
+   * Cloudflare Workers cannot walk a directory, so the Worker entry passes a reader that returns the
+   * attestation COMPILED INTO ITS BUNDLE. That preserves the property this whole mechanism exists for
+   * — the attestation travelled with the code and cannot drift from it — while removing the only
+   * reason this file needed `node:fs`. What is deliberately NOT done is reading the commit from a
+   * deploy-time variable: variables outlive the deployment that set them, so one saying "commit X"
+   * after the build for X failed is a lie of exactly the shape that caused the 2026-07-29 incident.
    */
   constructor(
     private readonly env: NodeJS.ProcessEnv = process.env,
     nowIso?: string,
     private readonly attestationDir?: string,
+    private readonly attestationSource?: () => BuildAttestation | null,
   ) {
     this.startedAtIso = nowIso ?? new Date().toISOString();
   }
@@ -232,7 +242,9 @@ export class DeploymentLifecycle {
   }
 
   snapshot(): DeploymentInfo {
-    const attestation = readBuildAttestation(this.attestationDir);
+    const attestation = this.attestationSource
+      ? this.attestationSource()
+      : readBuildAttestation(this.attestationDir);
     return {
       app: "untch-asp",
       phase: this.phase,
