@@ -47,6 +47,10 @@ You provide: Nothing. This service takes no parameters.
 
 You receive: a JSON catalog of every route, its price, and what it is for.
 
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified PUBLIC_SUPPORT: The free index of what this service serves. Discovery, not a product — nobody buys a list of things they could buy.
+
 **Repeating an identical request:** read-only.
 
 **Refusals**
@@ -76,6 +80,10 @@ Reports that this host is up and answering. For any agent checking whether this 
 You provide: Nothing. This service takes no parameters.
 
 You receive: a timestamped acknowledgement. It is a health check, not a purchase.
+
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified PUBLIC_SUPPORT: A health check. It used to cost $0.01, which billed a buyer to prove that x402 works rather than to receive anything. Free, useful, and not a deliverable.
 
 **Must already exist**
 
@@ -238,6 +246,10 @@ You provide: policyId (string); intent, containing all 16 of: owner, buyerAgentI
 
 You receive: the canonical form of the intent and its intentHash.
 
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It writes an intent into this host's store against a policy the caller must own. Free, correct, and part of operating an Untch account rather than something a stranger buys.
+
 **Must already exist**
 
 - A registered spend policy, and its numeric policyId. Every decision this service makes is a comparison against a policy. Without one there is nothing to compare to, and the request is refused rather than judged. Obtain it with: POST /consumer/policies/draft to build the unsigned registration, send that transaction from your own wallet, then POST /consumer/policies/sync. The policy's owner is whoever sent it — Untch does not relay the call and cannot..
@@ -300,6 +312,10 @@ Returns the recent spend window this instance is holding for one policy. For an 
 You provide: policyId (string).
 
 You receive: the spend-so-far, the call count in the last hour, and the most recent intents.
+
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It reads this host's ledger window for a policy the caller must own. Exposing an account's own spend history as an open marketplace service would be publishing private state.
 
 **Must already exist**
 
@@ -422,6 +438,10 @@ You provide: receiptId (string).
 
 You receive: the receipt's current state, and its anchoring transaction once it has one.
 
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It appends to this host's receipt store for a policy the caller must own. Writing into somebody's account is account control, whatever it costs.
+
 **Must already exist**
 
 - A receiptRef from an earlier paid call. There is nothing to look up until something has written a receipt. Obtain it with: the receiptRef field of a preflight_payment or verify_delivery response.
@@ -460,6 +480,10 @@ You provide: Nothing. This service takes no parameters.
 
 You receive: the receipt's state and its anchoring transaction once it has one.
 
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It resolves a receiptId that only a prior account-bound write produces. A stranger has no receiptId to ask about, so being free does not make it a service anyone could use.
+
 **Must already exist**
 
 - A receiptRef from an earlier paid call. There is nothing to poll until something has written a receipt. Obtain it with: the receiptRef field of a preflight_payment or verify_delivery response.
@@ -493,6 +517,10 @@ Reports whether a payment that was escalated to a human has been approved or den
 You provide: Nothing. This service takes no parameters.
 
 You receive: the pending, approved or denied state of one escalation.
+
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It resolves an opaque pollRef issued by a prior escalation on this host. Same shape as receipt status: without the reference there is nothing to poll, and the reference is account-bound.
 
 **Must already exist**
 
@@ -528,6 +556,7 @@ You receive: a score with its uncertainty, a lower-confidence bound, and the per
 
 > **Not listable.** This service cannot be completed by a caller who does not already
 > hold something no public route produces:
+> - classified INTERNAL_OR_WITHHELD: It scores a vendor from receipt history held by this host. A stranger's vendor has no history here, so the answer cannot exist. The route now refuses before any payment challenge is emitted rather than charging for a question it cannot answer.
 > - Receipt history for that vendor, held by this host.
 
 **Must already exist**
@@ -576,6 +605,7 @@ You receive: a score with its uncertainty and the per-feature breakdown behind i
 
 > **Not listable.** This service cannot be completed by a caller who does not already
 > hold something no public route produces:
+> - classified INTERNAL_OR_WITHHELD: It scores a buyer from receipt history held by this host, and refuses before any payment challenge for the same reason vendor scoring does.
 > - Receipt history for that buyer, held by this host.
 
 **Must already exist**
@@ -620,6 +650,7 @@ You receive: the assembled packet, its hash, and — where a writer key is wired
 
 > **Not listable.** This service cannot be completed by a caller who does not already
 > hold something no public route produces:
+> - classified INTERNAL_OR_WITHHELD: It assembles a dispute packet from an intentHash this host has history for. Without that history there is nothing to assemble, so it refuses before a challenge rather than after settlement.
 > - An intentHash this host has history for.
 
 **Must already exist**
@@ -665,6 +696,7 @@ You receive: the period report, its hash, and — where a writer key is wired �
 
 > **Not listable.** This service cannot be completed by a caller who does not already
 > hold something no public route produces:
+> - classified INTERNAL_OR_WITHHELD: It reconciles receipt and ledger history for an agent over a period, all of which is held here. A caller with no history gets a refusal before any payment challenge.
 > - Receipt and ledger history for that agent in that period.
 
 **Must already exist**
@@ -712,6 +744,10 @@ You provide: Nothing. This service takes no parameters.
 
 You receive: the items, their prices, and how long a quote holds.
 
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified PUBLIC_SUPPORT: The menu for the cafe demonstration. Free, public, and part of a simulation rather than a service.
+
 **Repeating an identical request:** read-only.
 
 **Refusals**
@@ -739,6 +775,10 @@ Simulates a coffee order so a caller can see the shape of a governed purchase. N
 You provide: Any one of: buyerRef.
 
 You receive: a simulated order id and pickup code. No merchant is contacted, no order is placed and no coffee exists.
+
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified PRODUCTION_DISABLED: It simulates a coffee order. No merchant is contacted, no order is placed and no coffee exists. It used to cost $0.04, which made a demonstration look like a purchase. Kept as a free, clearly labelled simulation and excluded from the marketplace, because a listing that sells a simulated latte is a listing that misrepresents what a payment buys.
 
 **What it changes**
 
@@ -960,6 +1000,10 @@ You provide: Any one of: requestedScopes, marketplace, marketplaceAgentId, marke
 
 You receive: a link request id, a one-time code shown exactly once, the message the wallet must sign, and the URL to sign it at.
 
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It begins binding a wallet to an Untch account. This is this project's own sign-in, and listing it would be advertising account setup as a purchasable service.
+
 **What it changes**
 
 - Creates a pending link request holding a hashed one-time code.
@@ -1005,6 +1049,10 @@ Verifies a wallet signature and binds the wallet, and any marketplace identity, 
 You provide: linkRequestId (string); code (string); message (string); signature (string).
 
 You receive: the account id, the wallet binding, any marketplace binding, and a session token.
+
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It completes a wallet binding against a signature. The other half of sign-in, and not a product.
 
 **Must already exist**
 
@@ -1061,6 +1109,10 @@ Turns human spending limits into the exact unsigned transaction that registers t
 You provide: name (string); currency (string); perActionLimit (string); dailyLimit (string); autoApproveAtOrBelow (string); hardCap (string); allowedCapabilities (array); expiry (string).
 
 You receive: the canonical ruleset, its policy hash, the unsigned registerPolicy transaction, and the addresses permitted to send it.
+
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It builds an unsigned policy registration for the caller to send from their own wallet. A setup step for an account, correctly free, and not something a stranger buys.
 
 **Must already exist**
 
@@ -1128,6 +1180,10 @@ You provide: policyDraftId (string); txHash (string).
 
 You receive: the numeric policyId, the on-chain owner, and whether the policy became this account's default.
 
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It records a policy registration the caller already sent from their own wallet. The second half of setup, and account control for the same reason the first half is.
+
 **Must already exist**
 
 - An Untch account, established by proving a wallet. Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to. Obtain it with: POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete.
@@ -1176,6 +1232,10 @@ You provide: policyId (string).
 
 You receive: the chosen default, after checking the account can actually sign for it.
 
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: It sets which policy an account uses by default. Configuration of somebody's account.
+
 **Must already exist**
 
 - An Untch account, established by proving a wallet. Authority here is a verified wallet and nothing else. Without one there is no owner for a policy, no subject for an approval, and no account a marketplace identity can be bound to. Obtain it with: POST /consumer/account/link/start, sign the message, then POST /consumer/account/link/complete.
@@ -1220,6 +1280,10 @@ Approves or rejects one escalated action, naming the exact payment it authorises
 You provide: decision (string); approvalDigest (string).
 
 You receive: the resolved state, and an explicit statement of whether anything was paid.
+
+> **Not listable.** This service cannot be completed by a caller who does not already
+> hold something no public route produces:
+> - classified ACCOUNT_CONTROL: A legacy human control route, replaced by the bound-action path for service-call-backed approvals. It requires account state and refuses a modern paid approval request that has no bound action, so a stranger calling it can only ever be refused. Kept mounted for compatibility, marked deprecated, and removed from the listing where it was advertised as a free marketplace service.
 
 **Must already exist**
 

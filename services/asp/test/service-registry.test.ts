@@ -6,6 +6,7 @@ import { assertNoPrivateReferences, buildListingPayload, listingVerdict, threePa
 import { buildOpenApi, buildWellKnownX402 } from "../src/registry/openapi";
 import { publicSchemaFor, validateAgainstRegistry } from "../src/registry/routes";
 import { buildRegistrationCard } from "../src/erc8004/registration-card";
+import { handleCatalog } from "../src/consumer-handlers";
 
 const BASE = "https://asp.untch.xyz";
 
@@ -306,6 +307,192 @@ describe("the generated machine-readable surfaces", () => {
     }
     for (const service of card.services) {
       assert.ok(!/§\s*\d/.test(service.description ?? ""), `${service.endpoint} cites a private section number`);
+    }
+  });
+});
+
+describe("every route is classified, and the class decides the listing", () => {
+  /**
+   * The listing used to be a predecessor check and nothing else.
+   *
+   * That check catches routes that are BROKEN for a stranger. It says nothing about routes that work
+   * perfectly and are still not products, so twenty-four entries were published including wallet
+   * linking, policy drafting, a default-policy setter, an approval-decision route, a health ping and
+   * a coffee simulation. Nothing about any of them is broken. The class is what refuses them.
+   */
+  test("no service is missing a class or a reason", () => {
+    for (const s of SERVICES) {
+      assert.ok(s.classification, `${s.toolId} has no classification`);
+      assert.ok(
+        s.classification.reason.trim().length >= 40,
+        `${s.toolId} has no real reason recorded for its class`,
+      );
+    }
+  });
+
+  /** A listable service a stranger cannot complete is the exact failure this whole pass exists for. */
+  test("everything listed is marketplace-classified and stranger-callable", () => {
+    const listing = buildListingPayload({ baseUrl: BASE, network: "eip155:196", name: "Untch" });
+    for (const entry of listing.service) {
+      const service = serviceById(entry.toolId)!;
+      assert.equal(service.classification.serviceClass, "MARKETPLACE_LISTABLE", entry.toolId);
+      assert.equal(service.classification.strangerCallable, true, entry.toolId);
+    }
+  });
+
+  test("nothing outside MARKETPLACE_LISTABLE reaches the listing", () => {
+    const listing = buildListingPayload({ baseUrl: BASE, network: "eip155:196", name: "Untch" });
+    const listed = new Set(listing.service.map((s) => s.toolId));
+    for (const s of SERVICES) {
+      if (s.classification.serviceClass === "MARKETPLACE_LISTABLE") continue;
+      assert.equal(listed.has(s.toolId), false, `${s.toolId} is ${s.classification.serviceClass} and was listed`);
+    }
+  });
+
+  /**
+   * The specific routes the relisting pass named, pinned by id.
+   *
+   * A count assertion would pass if one of these were swapped for another; naming them is what makes
+   * the test say the thing it means.
+   */
+  test("the routes that must never be listed are not listed", () => {
+    const listing = buildListingPayload({ baseUrl: BASE, network: "eip155:196", name: "Untch" });
+    const listed = new Set(listing.service.map((s) => s.toolId));
+    const forbidden = [
+      "approval_decide",
+      "account_link_start",
+      "account_link_complete",
+      "policy_draft",
+      "policy_sync",
+      "set_default_policy",
+      "catalog",
+      "ping_untch",
+      "cafe_menu",
+      "cafe_order_latte",
+      "receipt_status",
+      "escalation_status",
+      "create_spend_intent",
+      "get_ledger",
+      "log_receipt",
+      "score_vendor",
+      "score_buyer",
+      "generate_dispute_packet",
+      "reconcile_agent_spend",
+    ];
+    for (const id of forbidden) {
+      assert.ok(serviceById(id), `${id} is no longer a service — update this list deliberately`);
+      assert.equal(listed.has(id), false, `${id} must not be a marketplace service`);
+    }
+  });
+
+  /** Charging for a health check or a simulation is what got them declassified. Free is the fix. */
+  test("the health check and the cafe simulation are free", () => {
+    for (const id of ["ping_untch", "cafe_menu", "cafe_order_latte", "catalog"]) {
+      assert.equal(serviceById(id)?.pricing.kind, "free", `${id} must not carry a price`);
+    }
+  });
+
+  /**
+   * The candidate set, exactly.
+   *
+   * Pinned as a set rather than a count so that adding a service is a deliberate edit to this list
+   * with an argument attached, which is the only thing that stops a listing drifting back to
+   * twenty-four entries.
+   */
+  test("the marketplace listing is exactly the nine argued-for services", () => {
+    const listing = buildListingPayload({ baseUrl: BASE, network: "eip155:196", name: "Untch" });
+    assert.deepEqual(
+      listing.service.map((s) => s.toolId).sort(),
+      [
+        "brand_pack",
+        "check_domains",
+        "detect_duplicate",
+        "preflight_payment",
+        "rank_options",
+        "redact_payment_metadata",
+        "seo_tips",
+        "suggest_names",
+        "verify_delivery",
+      ],
+    );
+  });
+
+  /** A free entry that 402s, or a paid entry that does not, is a listing that lies about its price. */
+  test("every listed price matches the registry, and free means free", () => {
+    const listing = buildListingPayload({ baseUrl: BASE, network: "eip155:196", name: "Untch" });
+    for (const entry of listing.service) {
+      const service = serviceById(entry.toolId)!;
+      if (service.pricing.kind === "free") {
+        assert.equal(entry.pricing, "free", entry.toolId);
+        assert.equal(service.pricing.price, null, entry.toolId);
+        assert.equal(service.pricing.amountBaseUnits, null, entry.toolId);
+        continue;
+      }
+      assert.equal(entry.pricing, `${service.pricing.price} per call`, entry.toolId);
+      // The display price and the base units are set separately and must describe one amount.
+      const dollars = Number(service.pricing.price!.replace("$", ""));
+      assert.equal(
+        String(Math.round(dollars * 1_000_000)),
+        service.pricing.amountBaseUnits,
+        `${entry.toolId}: ${service.pricing.price} is not ${service.pricing.amountBaseUnits} base units`,
+      );
+    }
+  });
+});
+
+describe("the public catalog is a projection, not a second opinion", () => {
+  /**
+   * The catalog used to be a hand-written array of `{ path, price, role }` literals beside the
+   * registry, and it had already drifted: it advertised `GET /ping_untch` at `0.01` and
+   * `POST /cafe/order/latte` at `0.04` after both were made free, and the four Bureau tools at full
+   * price after they were gated to refuse before any payment. A caller reading it was told to expect
+   * a bill that no longer existed for services that no longer charged.
+   */
+  test("every catalog entry names a real service at the registry's price", () => {
+    const body = handleCatalog().body as {
+      surfaces: Record<string, { toolId: string; path: string; price: string }[]>;
+    };
+    const seen = new Set<string>();
+    for (const [surface, entries] of Object.entries(body.surfaces)) {
+      for (const entry of entries) {
+        const service = serviceById(entry.toolId);
+        assert.ok(service, `${surface}: ${entry.toolId} is not a registered service`);
+        assert.equal(entry.path, `${service.method} ${service.path}`, entry.toolId);
+        if (service.pricing.kind === "free") {
+          assert.equal(entry.price, "free", entry.toolId);
+        } else {
+          // Either the real price, or an explicit statement that it cannot be charged.
+          assert.ok(
+            entry.price === service.pricing.price || entry.price === "not payable",
+            `${entry.toolId}: catalog says ${entry.price}, registry says ${service.pricing.price}`,
+          );
+        }
+        assert.equal(seen.has(entry.toolId), false, `${entry.toolId} appears in two surfaces`);
+        seen.add(entry.toolId);
+      }
+    }
+  });
+
+  test("every service marked catalog-visible actually appears, and nothing else does", () => {
+    const body = handleCatalog().body as { surfaces: Record<string, { toolId: string }[]> };
+    const listed = new Set(Object.values(body.surfaces).flat().map((e) => e.toolId));
+    for (const s of SERVICES) {
+      assert.equal(
+        listed.has(s.toolId),
+        s.classification.catalogVisible,
+        `${s.toolId}: catalogVisible=${s.classification.catalogVisible} but catalog ${listed.has(s.toolId) ? "shows" : "omits"} it`,
+      );
+    }
+  });
+
+  /** Advertising a price nobody can pay is a subtler version of charging for a simulation. */
+  test("a route that refuses before payment does not advertise a price", () => {
+    const body = handleCatalog().body as {
+      surfaces: Record<string, { toolId: string; price: string; refusesWith?: string }[]>;
+    };
+    for (const entry of body.surfaces.internalOrWithheld ?? []) {
+      assert.equal(entry.price, "not payable", entry.toolId);
+      assert.match(entry.refusesWith ?? "", /before any payment challenge/, entry.toolId);
     }
   });
 });
