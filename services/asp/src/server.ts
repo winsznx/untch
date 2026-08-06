@@ -94,6 +94,7 @@ import {
   DEFAULT_WELL_KNOWN_PATH,
 } from "./erc8004/constants";
 import { consumerPricedRoutes, registerConsumerRoutes } from "./consumer/routes";
+import { registerConsumerCapabilityGate } from "./consumer/capability-gate";
 import { PgNonceStore, describeAuthMode, loadConsumerAuthConfig, makeSiweVerifier } from "./consumer/auth";
 import { makeAccountRoutesDeps, registerAccountRoutes } from "./consumer/account-routes";
 import { registerAgenticLinkRoutes } from "./consumer/agentic-link-routes";
@@ -327,6 +328,34 @@ export function createSellerApp(
     })(req, res, next);
   });
 
+  /**
+   * The Consumer Pack priced table, built ONCE and read twice.
+   *
+   * The capability gate below needs to know exactly which paths can charge, and the payment
+   * middleware needs to know exactly what to charge for them. Deriving both from this single object
+   * is the point: a second hand-maintained list of paid paths is the drift that let twenty-six
+   * account-bound routes bill strangers who could never be served.
+   */
+  const consumerRouteTable = consumerPricedRoutes({
+    network: NETWORK,
+    payTo: config.payTo,
+    fundingPrice: consumerWiring?.fundingPrice ?? null,
+  });
+
+  /**
+   * Refusal BEFORE the paywall, for routes that cannot serve the caller who would be charged.
+   *
+   * Registered above `paymentMiddleware` deliberately: a check inside a handler is late by exactly
+   * one settlement, because the middleware verifies and settles on the way to the handler. From here
+   * a refusal emits no 402, requests no authorization, calls no facilitator and reserves nothing —
+   * there is no code path from this response to a charge.
+   */
+  registerConsumerCapabilityGate(app, {
+    pricedConsumerPaths: Object.keys(consumerRouteTable).map((key) => key.slice(key.indexOf(" ") + 1)),
+    executionEnabled: () => loadConsumerFlags().executionEnabled,
+    authConfig: () => loadConsumerAuthConfig(),
+  });
+
   // Payment gate FIRST: an unpaid request to a priced route 402s here without touching the body.
   app.use(
     paymentMiddleware(
@@ -443,11 +472,11 @@ export function createSellerApp(
         // Fixed prices are the ORCHESTRATION fee. The variable purchase value is a separate leg:
         // POST /consumer/fund/:intentId carries a DynamicPrice function that resolves each intent's
         // own exact authorised amount at request time.
-        ...consumerPricedRoutes({
-          network: NETWORK,
-          payTo: config.payTo,
-          fundingPrice: consumerWiring?.fundingPrice ?? null,
-        }),
+        //
+        // Every path here is also gated above, so only a caller with a proven session bound to a
+        // policy they own ever reaches this table. The prices stay because that caller is a real
+        // buyer of a real orchestration; what changed is that a stranger is refused for free.
+        ...consumerRouteTable,
       },
       resourceServer,
     ),
