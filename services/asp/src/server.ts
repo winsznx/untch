@@ -117,7 +117,9 @@ import {
 import { registerPolicyRoutes } from "./consumer/policy-routes";
 import { makeApprovalRoutesDeps, registerApprovalRoutes } from "./consumer/approval-routes";
 import { flagOn } from "@untch/consumer-core";
-import { registerDiscordInteractionRoutes } from "./consumer/discord-interactions";
+import { registerDiscordInteractionRoutes, sealSmokeCustomId } from "./consumer/discord-interactions";
+
+export const DISCORD_NATIVE_SMOKE_ROUTE = "/internal/consumer/discord-native-smoke" as const;
 import {
   APPROVAL_OAUTH_SMOKE_ROUTE,
   mintOAuthSmokeUrl,
@@ -1026,6 +1028,86 @@ export function createSellerApp(
         actionToken: null,
         authority: "none — this state names no action reference",
       },
+    });
+  });
+
+  /**
+   * The non-financial NATIVE button probe.
+   *
+   * The OAuth probe proved Discord would accept the registered redirect URI. This proves the other
+   * half: that Discord delivers a signed interaction to the endpoint and that the message can be
+   * edited in place. Neither is establishable from a test suite, and doing it with a live approval
+   * would mean putting a real payment in front of somebody to check a button.
+   *
+   * The button carries a sealed BINDING and no action reference, so the branch that redeems it has
+   * nothing to resolve and nothing to decide.
+   */
+  app.post(DISCORD_NATIVE_SMOKE_ROUTE, (req, res) => {
+    const auth = authenticateOperator(req, { route: DISCORD_NATIVE_SMOKE_ROUTE, env: process.env });
+    if (!auth.ok) {
+      res.status(auth.status).json({ code: auth.code, message: auth.message, retryable: false, docsUrl: null });
+      return;
+    }
+    void (async () => {
+      const bindingId = typeof req.query.channelBindingId === "string" ? req.query.channelBindingId : null;
+      const bot = process.env.DISCORD_BOT_TOKEN?.trim();
+      if (!bindingId || !consumerWiring || !consumerAuthConfig.secret || !bot) {
+        res.status(400).json({ code: "SMOKE_NOT_CONFIGURABLE", message: "name channelBindingId on a wired instance", retryable: false, docsUrl: null });
+        return;
+      }
+      const { rows } = await consumerWiring.pool.query<{ channel_user_id: string; status: string }>(
+        `SELECT channel_user_id, status FROM untch_channel_bindings WHERE binding_id = $1 AND channel = 'discord'`,
+        [bindingId],
+      );
+      const b = rows[0];
+      if (!b || b.status !== "ACTIVE") {
+        res.status(404).json({ code: "SMOKE_BINDING_NOT_ACTIVE", message: "no such active Discord binding", retryable: false, docsUrl: null });
+        return;
+      }
+
+      const post = async (url: string, body: unknown): Promise<{ ok: boolean; id: string | null; status: number }> => {
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { authorization: `Bot ${bot}`, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const text = await r.text();
+        let id: string | null = null;
+        try { id = (JSON.parse(text) as { id?: string }).id ?? null; } catch { id = null; }
+        return { ok: r.ok, id, status: r.status };
+      };
+
+      const dm = await post("https://discord.com/api/v10/users/@me/channels", { recipient_id: b.channel_user_id });
+      if (!dm.ok || !dm.id) {
+        res.status(502).json({ code: "SMOKE_DM_OPEN_FAILED", message: `discord ${dm.status}`, retryable: false, docsUrl: null });
+        return;
+      }
+      const sent = await post(`https://discord.com/api/v10/channels/${dm.id}/messages`, {
+        content: "**UNTCH NATIVE APPROVAL DELIVERY TEST**",
+        embeds: [{
+          title: "Press the button below",
+          description:
+            "This is a NON-FINANCIAL test of the native Discord approval path.\n\n" +
+            "No payment request. No financial approval. No authority can be created from this message.\n\n" +
+            "Pressing it should update this message in place, without opening a browser.",
+        }],
+        components: [{
+          type: 1,
+          components: [{ type: 2, style: 1, label: "Verify native approval path", custom_id: sealSmokeCustomId(consumerAuthConfig.secret, bindingId) }],
+        }],
+      });
+      if (!sent.ok) {
+        res.status(502).json({ code: "SMOKE_SEND_FAILED", message: `discord ${sent.status}`, retryable: false, docsUrl: null });
+        return;
+      }
+      res.status(200).json({
+        probe: "NON_FINANCIAL_NATIVE_INTERACTION_SMOKE",
+        externalMessageId: sent.id,
+        dmChannelResolved: dm.id !== b.channel_user_id,
+        carries: { approvalRequest: null, actionReference: null, actionToken: null, authority: "none" },
+      });
+    })().catch(() => {
+      if (!res.headersSent) res.status(500).json({ code: "SMOKE_FAILED", message: "the probe could not be sent", retryable: false, docsUrl: null });
     });
   });
 
