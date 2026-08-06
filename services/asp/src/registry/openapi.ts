@@ -22,11 +22,22 @@ interface OpenApiOperation {
   readonly summary: string;
   readonly description: string;
   readonly tags: readonly string[];
+  /**
+   * OpenAPI's own word for "still here, do not build on it".
+   *
+   * `approval_decide` is the reason this field exists: it is a legacy human control route that the
+   * bound-action path replaced, it refuses any modern paid approval request that has no bound
+   * action, and it was nonetheless advertised as a free marketplace service. Removing it from the
+   * listing stops it being sold; marking it deprecated stops a reader of the spec from adopting it.
+   */
+  readonly deprecated?: boolean;
   readonly requestBody?: unknown;
   readonly parameters?: readonly unknown[];
   readonly responses: Record<string, unknown>;
   readonly "x-untch-pricing": unknown;
   readonly "x-untch-maturity": string;
+  /** The service class, published so a spec reader can see what is on offer and what is not. */
+  readonly "x-untch-class": string;
   readonly "x-untch-predecessors": unknown;
   readonly "x-untch-side-effects": unknown;
   readonly "x-untch-idempotency": string;
@@ -73,6 +84,7 @@ function operationFor(service: ServiceDefinition): OpenApiOperation {
     summary: service.summary,
     description: description.text,
     tags: [service.protocol],
+    ...(service.deprecated ? { deprecated: true } : {}),
     ...(service.method === "POST"
       ? {
           requestBody: {
@@ -96,6 +108,7 @@ function operationFor(service: ServiceDefinition): OpenApiOperation {
     responses: responsesFor(service),
     "x-untch-pricing": service.pricing,
     "x-untch-maturity": service.maturity,
+    "x-untch-class": service.classification.serviceClass,
     "x-untch-predecessors": service.predecessors,
     "x-untch-side-effects": service.sideEffects,
     "x-untch-idempotency": service.idempotency,

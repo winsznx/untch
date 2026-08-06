@@ -32,6 +32,79 @@
 export type ServiceProtocol = "A2MCP" | "A2A";
 
 /**
+ * What kind of thing a route IS, which is a different question from whether it works.
+ *
+ * WHY A CLASS AND NOT A BOOLEAN
+ *
+ * The listing generator already refused to publish a service whose predecessors could not be
+ * obtained. That check is necessary and it is not sufficient, because it only catches the routes
+ * that are BROKEN for a stranger. It says nothing about the routes that work perfectly and are still
+ * not products: `POST /consumer/account/link/start` is reachable, documented, free and correct, and
+ * listing it on a marketplace would be advertising this project's own account setup as a service
+ * somebody could buy.
+ *
+ * Twenty-four entries were published on that basis. Among them were wallet linking, policy drafting,
+ * a default-policy setter and an approval-decision route, none of which a stranger's agent has any
+ * reason to call, plus a health ping and a coffee simulation. The count looked like breadth; it was
+ * a classification that had never been made.
+ *
+ * Exactly one class per route, and `reason` is required, so the answer to "why is this listed" is
+ * always a sentence somebody wrote rather than an inference from what the code happens to do.
+ */
+export type ServiceClass =
+  /**
+   * A stranger's agent can call it with the documented input and receive the exact promised result.
+   * A paid entry must produce a real standalone deliverable after settlement; a free entry must
+   * return the real result directly, with no payment involved.
+   */
+  | "MARKETPLACE_LISTABLE"
+  /**
+   * Discovery, health or documentation. Free and public, and not a product — nobody buys a catalog.
+   */
+  | "PUBLIC_SUPPORT"
+  /**
+   * Configures or operates an existing Untch account. A real product API, and not a marketplace
+   * product: it expects authentication, an account binding, or prior state that belongs to a
+   * specific person. Being free is not what disqualifies it. Being somebody's account is.
+   */
+  | "ACCOUNT_CONTROL"
+  /**
+   * Answers from private host history, operator access, a known buyer or a known vendor. A stranger
+   * cannot supply what it needs, so a stranger cannot buy the result — at any price.
+   */
+  | "INTERNAL_OR_WITHHELD"
+  /**
+   * Incomplete, unsafe, or unable to deliver what it would charge for. Mounted or not, it is not on
+   * offer.
+   */
+  | "PRODUCTION_DISABLED";
+
+/** Only one class is ever published to the marketplace. The rest are stated so they are not guessed. */
+export const MARKETPLACE_CLASS: ServiceClass = "MARKETPLACE_LISTABLE";
+
+export interface ServiceClassification {
+  readonly serviceClass: ServiceClass;
+  /**
+   * Why this route is in this class, in a sentence a reviewer can check against the code.
+   *
+   * Required for every class including the listable one. "Why is this NOT listed" and "why is this
+   * SAFE to list" are the same question asked from two sides, and only recording one of them is how
+   * a listing comes to contain routes nobody ever argued for.
+   */
+  readonly reason: string;
+  /**
+   * Whether an arbitrary external buyer — no account here, no prior state — can complete this call.
+   *
+   * This is the single fact the whole classification turns on, so it is recorded separately rather
+   * than left implicit in the class. A MARKETPLACE_LISTABLE service with this false is a
+   * contradiction, and a test says so.
+   */
+  readonly strangerCallable: boolean;
+  /** Whether the route appears in the free, public `/catalog`. Independent of being listable. */
+  readonly catalogVisible: boolean;
+}
+
+/**
  * How honest the service is about its own readiness.
  *
  * `blocked` is the load-bearing value. It means the contract is correct and the service still cannot
@@ -103,6 +176,18 @@ export interface ServiceDefinition {
   readonly path: string;
   readonly pricing: ServicePricing;
   readonly maturity: ServiceMaturity;
+  /**
+   * What this route is, and why. Required — a service with no stated class is one nobody decided
+   * about, and the listing generator refuses to publish a decision that was never made.
+   */
+  readonly classification: ServiceClassification;
+  /**
+   * Still served, and nobody should build on it.
+   *
+   * Distinct from the class: ACCOUNT_CONTROL says "this is not a marketplace product", deprecated
+   * says "this is on its way out". `approval_decide` is both, and a reader needs to be told both.
+   */
+  readonly deprecated?: boolean;
   /** One sentence. What it does — not how. */
   readonly summary: string;
   /** Who this is for, in their own terms. Part one of the OKX three-part description. */

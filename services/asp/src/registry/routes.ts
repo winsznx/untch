@@ -45,6 +45,13 @@ export function publicSchemaFor(service: ServiceDefinition, baseUrl: string): Re
     method: service.method,
     pricing: service.pricing,
     maturity: service.maturity,
+    /**
+     * Published, not just used internally.
+     *
+     * A caller reading a free ACCOUNT_CONTROL route's contract should be able to see that it is not
+     * on offer as a marketplace service, without having to deduce it from its absence somewhere else.
+     */
+    classification: service.classification,
     schemaVersion: service.schemaVersion,
     description: { what: description.what, provide: description.provide, receive: description.receive },
     input: service.input,

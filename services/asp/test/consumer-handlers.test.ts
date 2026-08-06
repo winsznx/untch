@@ -15,22 +15,46 @@ import { rankBrandNames } from "../src/launch-pack/rank";
 import { loadLlmConfig } from "../src/launch-pack/llm";
 import { isBannedBrand } from "../src/launch-pack/anti-slop";
 
-test("catalog lists control + lifestyle + builder surfaces including brand_pack", () => {
+/**
+ * The catalog groups by CLASS now, not by topic.
+ *
+ * It used to group by control / lifestyle / builder, which describes what a service is about. A
+ * caller deciding whether to spend needs to know what it IS: something they can buy, something only
+ * useful once they have an account here, or something this host will refuse them.
+ */
+test("catalog groups services by class and reaches every surface from the registry", () => {
   const r = handleCatalog();
   assert.equal(r.status, 200);
   const body = r.body as {
     type: string;
     baseUrl: string;
-    surfaces: { control: unknown[]; lifestyle: unknown[]; builder: { path: string }[] };
+    surfaces: Record<string, { toolId: string; path: string; price: string }[]>;
     launchPack: { hireFlow: string[] };
   };
   assert.equal(body.type, "A2MCP");
   assert.equal(body.baseUrl, "https://asp.untch.xyz");
-  assert.ok(body.surfaces.control.length >= 6);
-  assert.ok(body.surfaces.lifestyle.length >= 2);
-  assert.ok(body.surfaces.builder.length >= 5);
-  assert.ok(body.surfaces.builder.some((b) => b.path.includes("brand_pack")));
+
+  assert.deepEqual(Object.keys(body.surfaces).sort(), [
+    "accountControl",
+    "internalOrWithheld",
+    "marketplace",
+    "productionDisabled",
+    "publicSupport",
+  ]);
+
+  // The nine argued-for marketplace services, brand_pack among them.
+  assert.equal(body.surfaces.marketplace?.length, 9);
+  assert.ok(body.surfaces.marketplace?.some((b) => b.path.includes("brand_pack")));
   assert.ok(body.launchPack.hireFlow.length >= 1);
+});
+
+/** Both used to carry a price here after they had been made free. */
+test("catalog reports the health check and the cafe simulation as free", () => {
+  const body = handleCatalog().body as { surfaces: Record<string, { toolId: string; price: string }[]> };
+  const all = Object.values(body.surfaces).flat();
+  for (const toolId of ["ping_untch", "cafe_menu", "cafe_order_latte", "catalog"]) {
+    assert.equal(all.find((e) => e.toolId === toolId)?.price, "free", toolId);
+  }
 });
 
 test("cafe menu is free and machine-readable", () => {
