@@ -64,9 +64,10 @@
     "promote:capability": "tsx scripts/promote-capability.ts",
     "gen:chains": "tsx scripts/gen-chain-registry.ts",
     "lint:surface": "tsx scripts/lint-production-surface.ts",
+    "lint:listing-asset": "tsx scripts/check-listing-asset.ts",
     "test:chain-truth": "node --import tsx --test packages/shared/test/*.test.ts scripts/test/production-surface.test.ts",
     "gen:schemas": "tsx scripts/gen-service-schemas.ts",
-    "test:schemas": "node --import tsx --test services/asp/test/service-registry.test.ts scripts/test/service-schema-drift.test.ts",
+    "test:schemas": "node --import tsx --test services/asp/test/service-registry.test.ts services/asp/test/relisting-payload.test.ts services/asp/test/listing-runtime-parity.test.ts services/asp/test/payment-sdk-health.test.ts scripts/test/service-schema-drift.test.ts",
     "test:accounts": "node --import tsx --test packages/consumer-core/test/accounts.test.ts packages/consumer-core/test/accounts-pg.test.ts",
     "test:owned-work": "node --import tsx --test packages/owned-work/test/*.test.ts",
     "account:status": "tsx scripts/account-status.ts"
