@@ -113,14 +113,14 @@
     "/ping_untch": {
       "get": {
         "operationId": "ping_untch",
-        "summary": "Confirms that a paid call to this host settles end to end.",
-        "description": "Confirms that a paid call to this host settles end to end. For an integrator proving their x402 client can pay this host before wiring anything expensive.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: a timestamped acknowledgement, after a real settled payment of $0.01.",
+        "summary": "Reports that this host is up and answering.",
+        "description": "Reports that this host is up and answering. For any agent checking whether this service is reachable before it decides to spend.\n\nYou provide: Nothing. This service takes no parameters.\n\nYou receive: a timestamped acknowledgement. It is a health check, not a purchase.",
         "tags": [
           "A2MCP"
         ],
         "responses": {
           "200": {
-            "description": "a timestamped acknowledgement, after a real settled payment of $0.01",
+            "description": "a timestamped acknowledgement. It is a health check, not a purchase",
             "content": {
               "application/json": {
                 "schema": {
@@ -197,9 +197,9 @@
           }
         },
         "x-untch-pricing": {
-          "kind": "paid",
-          "price": "$0.01",
-          "amountBaseUnits": "10000"
+          "kind": "free",
+          "price": null,
+          "amountBaseUnits": null
         },
         "x-untch-maturity": "live",
         "x-untch-predecessors": [
@@ -3644,8 +3644,8 @@
     "/cafe/order/latte": {
       "post": {
         "operationId": "cafe_order_latte",
-        "summary": "Buys a demonstration coffee voucher, to show a real payment against a real policy.",
-        "description": "Buys a demonstration coffee voucher, to show a real payment against a real policy. For anyone evaluating what a governed agent purchase feels like without spending much.\n\nYou provide: Any one of: buyerRef.\n\nYou receive: an order id and a pickup code. The fulfilment is a demonstration, not a real coffee.",
+        "summary": "Simulates a coffee order so a caller can see the shape of a governed purchase. Nothing is bought and nothing is delivered.",
+        "description": "Simulates a coffee order so a caller can see the shape of a governed purchase. Nothing is bought and nothing is delivered. For anyone evaluating what a governed agent purchase looks like before wiring a real provider.\n\nYou provide: Any one of: buyerRef.\n\nYou receive: a simulated order id and pickup code. No merchant is contacted, no order is placed and no coffee exists.",
         "tags": [
           "A2MCP"
         ],
@@ -3682,7 +3682,7 @@
         },
         "responses": {
           "200": {
-            "description": "an order id and a pickup code. The fulfilment is a demonstration, not a real coffee",
+            "description": "a simulated order id and pickup code. No merchant is contacted, no order is placed and no coffee exists",
             "content": {
               "application/json": {
                 "schema": {
@@ -3779,9 +3779,9 @@
           }
         },
         "x-untch-pricing": {
-          "kind": "paid",
-          "price": "$0.04",
-          "amountBaseUnits": "40000"
+          "kind": "free",
+          "price": null,
+          "amountBaseUnits": null
         },
         "x-untch-maturity": "demo",
         "x-untch-predecessors": [],
