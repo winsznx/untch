@@ -71,7 +71,8 @@
     "test:accounts": "node --import tsx --test packages/consumer-core/test/accounts.test.ts packages/consumer-core/test/accounts-pg.test.ts",
     "test:owned-work": "node --import tsx --test packages/owned-work/test/*.test.ts",
     "account:status": "tsx scripts/account-status.ts",
-    "gen:attestation": "tsx scripts/gen-workers-attestation.ts"
+    "gen:attestation": "tsx scripts/gen-workers-attestation.ts",
+    "migrate:all": "tsx scripts/migrate-all.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
