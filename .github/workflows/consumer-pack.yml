@@ -100,9 +100,17 @@ jobs:
     # has to be dismissed, and every dismissal makes the next finding cheaper to dismiss. Removing the
     # credential removes the finding and the thing it was pointing at, which is better than annotating
     # it as safe.
+    # Pinned to the version production actually runs.
+    #
+    # This was postgres:16-alpine while production was Postgres 18 on Railway, so the one machine that
+    # gates merges tested a version nothing ran. That gap is not theoretical: the database moved to
+    # Supabase Postgres 17.6, and a suite green on 16 says nothing about 17 until it is run there.
+    # Pinning the minor rather than `17-alpine` is deliberate — a floating tag would silently change
+    # the thing under test on an unrelated day, which is how a version regression arrives with no
+    # commit to blame it on. Bump this in the same commit that bumps the target.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17.6-alpine
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: untch_test
