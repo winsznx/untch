@@ -47,9 +47,20 @@ const DECIDE_SCOPE = "policy-approval" as const;
 const PING = 1;
 const MESSAGE_COMPONENT = 3;
 
-/** Discord response types. */
+/**
+ * Discord response types, from the official interactions documentation.
+ *
+ * `DEFERRED_UPDATE_MESSAGE` (6) is the one that matters here: it ACKs a COMPONENT interaction and
+ * lets the original message be edited later, WITHOUT showing the person a loading state. Discord gives
+ * three seconds for that first response and invalidates the token if it is missed; the token then
+ * stays usable for fifteen minutes, which is the window the edit has to land in.
+ */
 const PONG = 1;
+const DEFERRED_UPDATE_MESSAGE = 6;
 const UPDATE_MESSAGE = 7;
+
+/** Discord's hard deadline for the FIRST response. Everything slow must happen after it. */
+export const DISCORD_ACK_DEADLINE_MS = 3_000;
 
 export interface DiscordInteractionDeps {
   readonly pool: Pool;
@@ -59,6 +70,21 @@ export interface DiscordInteractionDeps {
   readonly publicKey: string | null;
   /** Whether native buttons are advertised as working. False keeps the endpoint honest while it beds in. */
   readonly nativeReady: boolean;
+  /** Needed to edit the original message after deferring: PATCH /webhooks/{applicationId}/{token}/messages/@original */
+  readonly applicationId: string | null;
+  /** Injected so a test can drive the edit without a network, and so retries are observable. */
+  readonly editOriginal?: (applicationId: string, interactionToken: string, body: unknown) => Promise<{ ok: boolean; status: number }>;
+  /** Awaited by tests so the post-ACK work can be observed; production leaves it unset. */
+  readonly onSettled?: (outcome: { verdict: string; edited: boolean }) => void;
+  /** A deliberate delay on the NON-FINANCIAL probe only, so the early ACK can be proven live. */
+  readonly smokeDelayMs?: number;
+  /**
+   * A deliberate delay INSIDE the decision, for tests only.
+   *
+   * The property under test is that the acknowledgement is already sent while the transaction is still
+   * running, and the only way to observe that is to make the transaction slow on purpose.
+   */
+  readonly resolveDecisionDelayMs?: () => number;
   readonly resolvePolicy: (policyId: string) => Promise<{ status: string; expiresAtMs: number | null; dailyLimit: string | null } | null>;
   readonly now?: () => number;
   readonly log?: (line: string) => void;
@@ -196,6 +222,49 @@ export function resolvedMessage(args: {
  * route can sit where the raw bytes are still intact and still see the configuration that arrives
  * later.
  */
+/**
+ * Edit the original message after deferring.
+ *
+ * PATCH /webhooks/{applicationId}/{interactionToken}/messages/@original, which is the documented way
+ * to replace a deferred component response. The interaction token is good for fifteen minutes.
+ *
+ * RETRIED, AND NEVER ROLLED BACK.
+ *
+ * By the time this runs the decision is committed. A failed edit is a display problem and a committed
+ * decision is a financial fact, so the two must not be able to argue: this retries a few times and
+ * then gives up, and the caller treats "not edited" as a message that stayed as it was — never as a
+ * reason to undo anything.
+ *
+ * A 404 or 401 means the token is stale or already consumed; those are not retried, because repeating
+ * them cannot succeed and the decision stands regardless.
+ */
+async function editOriginalMessage(
+  d: DiscordInteractionDeps,
+  interactionToken: string | null,
+  body: unknown,
+): Promise<boolean> {
+  if (!interactionToken || !d.applicationId) return false;
+  const send =
+    d.editOriginal ??
+    (async (appId: string, token: string, payload: unknown) => {
+      const res = await fetch(`https://discord.com/api/v10/webhooks/${appId}/${token}/messages/@original`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return { ok: res.ok, status: res.status };
+    });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const out = await send(d.applicationId, interactionToken, body).catch(() => ({ ok: false, status: 0 }));
+    if (out.ok) return true;
+    /** A stale or unknown token cannot be fixed by trying again. */
+    if (out.status === 404 || out.status === 401) return false;
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+  }
+  return false;
+}
+
 export function registerDiscordInteractionRoutes(
   app: Express,
   deps: DiscordInteractionDeps | null | (() => DiscordInteractionDeps | null),
@@ -307,9 +376,18 @@ export function registerDiscordInteractionRoutes(
         const b = rows[0];
         const ok = Boolean(b) && b!.status === "ACTIVE" && b!.channel_user_id === subjectForSmoke;
         log(JSON.stringify({ stage: "smoke", matched: ok }));
-        res.status(200).json({
-          type: UPDATE_MESSAGE,
-          data: ok
+
+        /**
+         * The probe defers exactly as the real path does, then waits, then edits. The wait is the
+         * whole point: if the ACK were not early, a delay past three seconds would show "This
+         * interaction failed" — so a probe that edits successfully AFTER a deliberate delay is proof
+         * the acknowledgement really is separate from the work.
+         */
+        const smokeToken = typeof interaction.token === "string" ? interaction.token : null;
+        res.status(200).json({ type: DEFERRED_UPDATE_MESSAGE });
+        const delayMs = d.smokeDelayMs ?? 0;
+        if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+        const smokeEdited = await editOriginalMessage(d, smokeToken, ok
             ? {
                 content: "**Native Discord approval path verified.**",
                 embeds: [{
@@ -323,8 +401,9 @@ export function registerDiscordInteractionRoutes(
                 }],
                 components: [],
               }
-            : resolvedMessage({ verdict: "Refused", detail: "This identity does not hold the named approval channel." }),
-        });
+            : resolvedMessage({ verdict: "Refused", detail: "This identity does not hold the named approval channel." }));
+        log(JSON.stringify({ stage: "smoke-edit", matched: ok, delayedMs: delayMs, edited: smokeEdited }));
+        d.onSettled?.({ verdict: ok ? "Verified" : "Refused", edited: smokeEdited });
         return;
       }
 
@@ -354,6 +433,30 @@ export function registerDiscordInteractionRoutes(
         ? String((interaction.message as Record<string, unknown>).id)
         : null;
 
+      /**
+       * ── ACKNOWLEDGE FIRST, DECIDE AFTER ────────────────────────────────────
+       *
+       * Discord allows THREE SECONDS for the first response and invalidates the token if it is missed.
+       * The decision below takes a transaction that locks the approval request — and another web or
+       * OAuth action holding that row is exactly the case where the wait can outlast the deadline.
+       * Answering afterwards would show the person "This interaction failed" over a decision that
+       * committed perfectly.
+       *
+       * So the ACK is sent here, before any database work, as `DEFERRED_UPDATE_MESSAGE` — which ACKs a
+       * component press without showing a loading state, leaving the original message exactly as it
+       * was until there is a true terminal state to replace it with.
+       */
+      const interactionToken = typeof interaction.token === "string" ? interaction.token : null;
+      res.status(200).json({ type: DEFERRED_UPDATE_MESSAGE });
+      log(JSON.stringify({ stage: "ack", deferred: true }));
+
+      /**
+       * Everything past the ACK is a separate lifetime. It cannot reach `res`, so a slow transaction,
+       * a failed edit or an unexpected throw changes what the person SEES and never what the database
+       * decided.
+       */
+      const decisionDelay = d.resolveDecisionDelayMs?.() ?? 0;
+      if (decisionDelay > 0) await new Promise((r) => setTimeout(r, decisionDelay));
       const outcome = await decideFromInteraction(d, {
         actionReferenceId: parsed.actionReferenceId,
         action: parsed.action,
@@ -363,19 +466,18 @@ export function registerDiscordInteractionRoutes(
       });
       log(JSON.stringify({ stage: "decide", verdict: outcome.verdict, refusal: outcome.refusal ?? null }));
 
-      /**
-       * The message is edited only from the outcome the DATABASE produced. A transaction that failed
-       * reaches here as a refusal, so a rolled-back decision can never leave "Approved" on screen.
-       */
-      res.status(200).json({
-        type: UPDATE_MESSAGE,
-        data: resolvedMessage({ verdict: outcome.verdict, detail: outcome.detail, amount: outcome.amount, asset: outcome.asset }),
+      const edited = await editOriginalMessage(d, interactionToken, {
+        ...resolvedMessage({ verdict: outcome.verdict, detail: outcome.detail, amount: outcome.amount, asset: outcome.asset }),
       });
-    })().catch(() => {
-      /** Even an unexpected throw must not claim success on the message. */
-      if (!res.headersSent) {
-        res.status(200).json({ type: UPDATE_MESSAGE, data: resolvedMessage({ verdict: "Refused", detail: "Something went wrong and nothing was decided. Try the browser link." }) });
-      }
+      log(JSON.stringify({ stage: "edit", verdict: outcome.verdict, edited }));
+      d.onSettled?.({ verdict: outcome.verdict, edited });
+    })().catch((err: unknown) => {
+      /**
+       * The ACK has already gone, so there is no response left to change. A throw here means the
+       * decision could not be reached — never that it succeeded — and the message keeps its buttons
+       * rather than being edited into a claim nothing supports.
+       */
+      resolve()?.log?.(`[discord-interactions] ${JSON.stringify({ stage: "failed", error: (err as Error).message.slice(0, 80) })}`);
     });
   });
 }
