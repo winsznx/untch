@@ -476,7 +476,25 @@ export class PgAccountStore implements AccountStore {
              proof_ref = EXCLUDED.proof_ref,
              proof_chain_id = EXCLUDED.proof_chain_id,
              wallet_provider = EXCLUDED.wallet_provider,
-             scopes = EXCLUDED.scopes,
+             -- ── SCOPES ARE UNIONED, NEVER REPLACED ──────────────────────────────────────
+             --
+             -- This read "scopes = EXCLUDED.scopes", and on 2026-08-05 a relink that asked for
+             -- identity only -- because the caller used "scopes" where the route reads
+             -- "requestedScopes", and the server defaulted -- silently stripped policy-authority from
+             -- an ACTIVE binding. The account kept its wallet and quietly lost the authority to
+             -- approve a payment.
+             --
+             -- Removing authority is a thing somebody must ASK for, in its own audited operation with
+             -- its own signed challenge. A relink is not that operation: it proves who holds the
+             -- wallet, and proving it again must never be able to take something away. So the result
+             -- is the union, and omitting a scope means "I did not mention it", never "remove it".
+             --
+             -- array_agg(DISTINCT ... ORDER BY ...) so the stored order is canonical rather than
+             -- whichever side of the union happened to be written first.
+             scopes = (
+               SELECT array_agg(DISTINCT s ORDER BY s)
+                 FROM unnest(untch_wallet_bindings.scopes || EXCLUDED.scopes) AS s
+             ),
              verified_at = EXCLUDED.verified_at,
              binding_kind = EXCLUDED.binding_kind,
              agentic_account_ref = EXCLUDED.agentic_account_ref,
