@@ -44,10 +44,10 @@ const ALLOWED_LISTING_HOSTS: readonly string[] = ["asp.untch.xyz", "docs.untch.x
 
 /** Substrings that mark a URL as temporary regardless of which host it claims to be. */
 const TEMPORARY_HOST_MARKERS: readonly string[] = [
-  // production-surface-allow: localhost — a denylist entry, not a served URL. These strings exist to
-  // REFUSE a listing that names them, so removing them from this file would remove the check.
-  "localhost",
-  "127.0.0.1",
+  // These two are DENYLIST entries, not served URLs. They exist to refuse a listing that names them,
+  // so removing them from this file would remove the check rather than satisfy it.
+  "localhost", // production-surface-allow: localhost — a denylist entry that refuses this host, not one that serves it
+  "127.0.0.1", // production-surface-allow: localhost — same: refused, never served
   "0.0.0.0",
   ".railway.app",
   ".up.railway.app",
