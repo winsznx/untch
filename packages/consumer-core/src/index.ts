@@ -584,6 +584,17 @@ export {
   type ResolvedActionRef,
 } from "./approval-action-ref";
 export {
+  DOWNGRADE_CHALLENGE_TTL_MS,
+  UNREMOVABLE_SCOPE,
+  completeScopeDowngrade,
+  downgradeMessage,
+  startScopeDowngrade,
+  type ScopeDowngradeChallenge,
+  type ScopeDowngradeRefusal,
+  type ScopeDowngradeResult,
+  type ScopeDowngradeStart,
+} from "./wallet-scope-downgrade";
+export {
   APPROVAL_CASE_PROJECTION_VERSION,
   NEVER_PUBLIC_CASE_FIELDS,
   approvalCaseProjection,
