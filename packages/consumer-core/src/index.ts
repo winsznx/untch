@@ -237,6 +237,16 @@ export { SupersedingReceiptConflictError } from "./repo";
 export { InMemoryConsumerStore } from "./repo-memory";
 export { PgConsumerStore } from "./repo-pg";
 export { createPool, runMigrations, readSchemaState, type Pool, type SchemaState } from "./db";
+/**
+ * Schema VERIFICATION, which is all a Worker is allowed to do. `runMigrations` above stays Node-only:
+ * it reads .sql off disk, and applying migrations from request-serving code was the wrong shape even
+ * where it was possible.
+ */
+export {
+  verifySchemaVersion,
+  type SchemaVerdict,
+  type SchemaVersionQuery,
+} from "./schema-version";
 
 export {
   type ExecutionPolicyConfig,

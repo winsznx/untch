@@ -11,6 +11,14 @@ import {
   type Pool,
 } from "@untch/consumer-core";
 import { discordApprovalGateway, discordDeliveryRoute } from "../src/consumer/discord-approval-gateway";
+import {
+  createOwnedAccount,
+  createOwnedBinding,
+  deliveriesForRequest,
+  deliveryFor,
+  deliveryOwnership,
+  dropOwnedFixtures,
+} from "./fixtures/delivery-ownership";
 
 /**
  * A user id is not a channel.
@@ -155,21 +163,32 @@ describe("a Discord approval reaches a person, or the delivery is not sent", { s
       );
     });
 
+    /**
+     * On its OWN account, and cleaned up afterwards.
+     *
+     * This binding used to be created on the shared ACCOUNT and left there. It stayed ACTIVE, so when
+     * a later test projected a request on that same account `projectDeliveries` correctly produced a
+     * delivery for THIS binding as well as the intended one — and the later assertion, which read
+     * `rows[0]` from an unordered SELECT, then depended on which row PostgreSQL happened to return
+     * first. Green on one build, red on another, and never actually asserting what it claimed.
+     */
     test("a genuinely verified guild channel is left alone", async () => {
-      await pool.query(
-        `INSERT INTO untch_channel_bindings
-           (binding_id, account_id, channel, channel_user_id, channel_chat_id, can_decide, status,
-            verified_at, scopes, verification_method, account_ref_hash, created_at, created_by, updated_at, updated_by)
-         VALUES ('cbnd_dm_guild',$1,'discord',$2,'998877665544332211',true,'ACTIVE', now(),
-                 ARRAY['notify','policy-approval'],'discord_guild_member','arh_dm', now(),'test', now(),'test')`,
-        /** A DIFFERENT verified identity: one account may not hold two ACTIVE bindings for one user. */
-        [ACCOUNT, "424242424242424242"],
-      );
-      await pool.query(readFileSync(join(MIGRATIONS, "034_discord_dm_binding_repair.sql"), "utf8"));
-      const { rows } = await pool.query<{ channel_chat_id: string | null }>(
-        `SELECT channel_chat_id FROM untch_channel_bindings WHERE binding_id = 'cbnd_dm_guild'`,
-      );
-      assert.equal(rows[0]!.channel_chat_id, "998877665544332211", "the repair is scoped, not a sweep");
+      const own = deliveryOwnership("dm repair: a genuinely verified guild channel");
+      try {
+        await createOwnedAccount(pool, own);
+        const guild = await createOwnedBinding(pool, own, {
+          channelChatId: "998877665544332211",
+          verificationMethod: "discord_guild_member",
+        });
+        await pool.query(readFileSync(join(MIGRATIONS, "034_discord_dm_binding_repair.sql"), "utf8"));
+        const { rows } = await pool.query<{ channel_chat_id: string | null }>(
+          `SELECT channel_chat_id FROM untch_channel_bindings WHERE binding_id = $1`,
+          [guild],
+        );
+        assert.equal(rows[0]!.channel_chat_id, "998877665544332211", "the repair is scoped, not a sweep");
+      } finally {
+        await dropOwnedFixtures(pool, own);
+      }
     });
   });
 
@@ -381,13 +400,23 @@ describe("a Discord approval reaches a person, or the delivery is not sent", { s
       assert.equal(report.sent, 0, "a 404 is not a send");
       assert.ok(report.terminal >= 1, "and it is terminal, not retried forever");
 
-      const { rows } = await pool.query<{ status: string; external_delivery_id: string | null; sent_at: string | null }>(
-        `SELECT status, external_delivery_id, sent_at::text FROM untch_approval_deliveries WHERE approval_request_id = $1`,
-        [id],
-      );
-      assert.equal(rows[0]!.status, "FAILED_TERMINAL");
-      assert.equal(rows[0]!.external_delivery_id, null);
-      assert.equal(rows[0]!.sent_at, null, "nothing may look like a sent message");
+      /**
+       * Selected by BINDING, not by position.
+       *
+       * `rows[0]` from an unordered SELECT is only correct while the account happens to hold exactly
+       * one eligible binding, and it stops being correct silently. Naming the binding states which
+       * delivery is being asserted, so the test cannot be satisfied by a different row that sorts
+       * first — and `deliveryFor` throws outright if the pair ever produces two rows, which would be
+       * a product defect rather than a fixture problem.
+       */
+      const all = await deliveriesForRequest(pool, id);
+      assert.equal(all.length, 1, "this account owns exactly one eligible binding");
+
+      const row = await deliveryFor(pool, id, BINDING);
+      assert.ok(row, "the delivery for the bound Discord channel exists");
+      assert.equal(row!.status, "FAILED_TERMINAL");
+      assert.equal(row!.external_delivery_id, null);
+      assert.equal(row!.sent_at, null, "nothing may look like a sent message");
     });
   });
 });
