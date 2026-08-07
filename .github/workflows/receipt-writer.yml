@@ -39,9 +39,11 @@ jobs:
     # PgReceiptsRepo is the SQL the hermetic tests never touch: FOR UPDATE SKIP LOCKED claiming, the
     # bigint and numeric round-trip, the QUEUED → BATCHED → SUBMITTED → CONFIRMED walk. It skipped on
     # every CI run this workflow has ever done, because there was no database for it to find.
+    # Pinned to the version production runs (Supabase Postgres 17.6). See consumer-pack.yml for why
+    # the minor is pinned rather than a floating `17-alpine`.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17.6-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
