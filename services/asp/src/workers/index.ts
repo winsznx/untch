@@ -180,7 +180,14 @@ const worker = buildWorker({
 });
 
 export default {
-  fetch: (request: Request, env: WorkerEnv, ctx: ExecutionContext) => worker.fetch(request, env, ctx),
+  /**
+   * `ctx` is Cloudflare's execution context, typed structurally rather than pulled from
+   * `@cloudflare/workers-types`. The ambient global is not in this package's tsconfig, and naming it
+   * compiled locally only because the ROOT tsconfig covers `packages/**` and `scripts/**` but not
+   * `services/**` — so the failure surfaced in CI rather than here. Only `waitUntil` is used.
+   */
+  fetch: (request: Request, env: WorkerEnv, ctx: { waitUntil(p: Promise<unknown>): void }) =>
+    worker.fetch(request, env, ctx),
   queue: (batch: never, env: WorkerEnv) => worker.queue(batch, env),
   scheduled: (event: { cron: string }, env: WorkerEnv) => worker.scheduled(event, env),
 };
