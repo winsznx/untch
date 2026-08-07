@@ -1,0 +1,139 @@
+# Next session: run the paid calls
+
+Everything that can be verified without spending money has been. What is left needs
+a wallet, which is why it is a separate session.
+
+Paste the block under **Prompt** into a new Claude session, from `/Users/mac/untch-v3`.
+
+---
+
+## Where things stand
+
+Live: `https://asp.untch.xyz`, Cloudflare Worker, branch `feat/production-cutover` (PR #107).
+Nothing runs on Railway. Postgres is Supabase, reached through Hyperdrive.
+
+`/readyz` should report `attested: true`, `financiallyArmed: true`, `armingRefusals: []`.
+**If it does not, stop and read the deploy section below — nothing will settle.**
+
+Verified without spending:
+
+- All 28 registry routes answer, and every refusal names its reason. No unexplained 503s.
+- All 6 paid services challenge at the listed price to the listed payee, on **both**
+  discovery paths OKX uses: direct URL and MCP JSON-RPC.
+- 43/43 live acceptance checks, 777 tests, both typechecks.
+- The account chain works end to end up to the signature:
+  `link/start` → real SIWE message → `link/complete` refuses a bad signature with 401
+  (which proves EIP-1271 verification reaches X Layer from the Worker).
+
+**Never verified: a real settlement on Cloudflare.** Production was silently unarmed
+for most of the cutover, so no payment has ever completed on this deployment. That is
+the single most important thing to establish.
+
+## The one thing that must be proven
+
+A paid call that settles, and a row in `untch_marketplace_sales`.
+
+The recorder is wired and unit-tested, but has never fired against production. If the
+settlement succeeds and the table stays empty, the recorder is the bug, not the gate.
+`recordSale` deliberately swallows its own failure — a buyer must not lose paid work to
+a bookkeeping error — so a failure appears in `wrangler tail` as
+`FAILED TO RECORD A SETTLED SALE`, carrying enough to rebuild the row by hand.
+
+Cheapest proof is `suggest_names` at $0.01.
+
+## Prompt
+
+```
+Read NEXT-SESSION.md, then run the paid-call verification it describes.
+
+Context you need:
+- Live ASP: https://asp.untch.xyz — Cloudflare Worker, branch feat/production-cutover.
+- The OKX CLI is `onchainos`, already installed and logged in. `payment quote` never
+  signs, so it is safe to probe with. `payment pay` spends real money.
+- No settlement has ever completed on the Cloudflare deployment. Everything else is
+  verified. Proving one settlement end to end is the goal.
+
+Do this in order:
+
+1. Confirm the deployment can settle at all:
+   curl -s https://asp.untch.xyz/readyz
+   attested must be true, financiallyArmed must be true, armingRefusals must be empty.
+   If not, run `pnpm deploy:worker` from the repo root and check again. Do NOT run a
+   bare `wrangler deploy` — it ships an unattested bundle that refuses every payment
+   while looking completely healthy.
+
+2. Check the payer wallet has USDT0 on X Layer:
+   onchainos wallet status
+
+3. Buy the cheapest service ($0.01) and keep the full output:
+   onchainos payment quote "https://asp.untch.xyz/builder/suggest_names"
+   then pay it. Ask me before spending if anything about the quote looks wrong.
+
+4. Confirm the money moved AND was recorded. The sale should appear in
+   untch_marketplace_sales with the tx hash, the payer, the amount in base units and
+   the tool id. If the settlement worked but the table is empty, check `wrangler tail`
+   for "FAILED TO RECORD A SETTLED SALE" — the recorder logs loudly and swallows, by
+   design, so the buyer never loses paid work to a bookkeeping failure.
+
+5. Repeat once through MCP rather than the direct URL, since that is the path the OKX
+   marketplace client actually takes:
+   onchainos payment quote "https://asp.untch.xyz/mcp" --tool suggest_names
+
+6. Then the full pipeline, which is the real product and has never run end to end on
+   Cloudflare: create_spend_intent (free) → preflight_payment ($0.05) →
+   verify_delivery ($0.10). This needs a registered policy, or `useDefaultPolicy` with
+   a default set. Getting there means the account chain:
+   POST /consumer/account/link/start with my address → sign the returned SIWE message
+   with my wallet → POST /consumer/account/link/complete → POST /consumer/policies/draft
+   → send the unsigned tx from my own wallet → POST /consumer/policies/sync →
+   PUT /consumer/account/default-policy.
+   Stop and hand me each thing that needs my wallet to sign. Never ask me for a private
+   key and never sign on my behalf.
+
+Report what settled, what was recorded, and anything that failed, with the actual
+output. Do not paper over a failure — an honest gap here is worth more than a clean
+summary, because the next step after this is resubmitting to OKX.
+```
+
+## If something is wrong
+
+**`financiallyArmed: false`, `armingRefusals: ["UNATTESTED"]`** — a bare `wrangler deploy`
+was run somewhere. The attestation is compiled into the bundle by `gen:attestation`;
+without it the gate refuses every request carrying an authorization while discovery,
+pricing and health all look perfect. Fix: `pnpm deploy:worker`.
+
+**A 402 loop that never settles** — the challenge is issued before the arming check by
+design (a 402 states a price and moves nothing). Only a request carrying `x-payment`
+reaches `assertArmed`. So an endless 402 with a valid authorization means unarmed.
+
+**`policy_draft` returns 401** — no session. Run the account chain from `link/start`.
+
+**A Cloudflare 403 with `error code: 1010`** — the WAF is refusing the client's user
+agent, not our code. Some default agents (Python `urllib`) are blocked. Set any
+ordinary `user-agent` header.
+
+## Not done, deliberately
+
+- `get_ledger` refuses by name. It reports reserved authority from a process-local
+  ledger, and a Worker serves each request from a different isolate — a ported version
+  would return near-zero without being able to say why. Not served from
+  `untch_marketplace_sales` instead, because what buyers paid Untch is not what a policy
+  permits them to spend elsewhere.
+- `escalation_status` refuses. The status read alone is servable, but nothing here can
+  CREATE an escalation (fan-out needs the channel registry, the timeout worker needs
+  Redis), so a poll would answer PENDING forever about an approval that is not coming.
+- `approval_decide` refuses. It predates the paid approval model and already 409s every
+  service-call-backed request.
+- The XMTP `a2a-agent-chat` task channel is not built. A Worker cannot hold a persistent
+  connection. This is how OKX delivers `jobId`, so it matters for marketplace task
+  delivery, and it needs a different runtime.
+
+## Relisting ASP 6086
+
+Do not register a new ASP. Do not use ERC-8004 agent 6047 as the ASP id.
+
+The listing payload is the 9 MARKETPLACE_LISTABLE services: 6 paid
+(preflight_payment 0.05, verify_delivery 0.10, detect_duplicate 0.02,
+redact_payment_metadata 0.02, suggest_names 0.01, brand_pack 0.05) and 3 free
+(rank_options, check_domains, seo_tips). Everything else is withheld, account-control,
+or production-disabled on purpose.
