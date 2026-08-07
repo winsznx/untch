@@ -95,13 +95,20 @@ jobs:
 
       # Both environments, because a config valid for preview can be broken for production and the
       # difference is exactly the one that matters at cutover.
+      #
+      # Run from services/asp, not services/asp/workers: that directory holds the config but is not a
+      # package, and `pnpm exec` there falls back
+      # to workspace-RECURSIVE mode: it ran in every package and failed in the first one without
+      # wrangler, with "Command not found". Locally it had found a globally installed copy instead, so
+      # the workflow that exists to prove the Worker bundles had never bundled it here. Wrangler
+      # resolves `main` relative to the config file, so --config keeps the same build.
       - name: Wrangler dry run (preview)
-        working-directory: services/asp/workers
-        run: pnpm exec wrangler deploy --dry-run --env="" --outdir /tmp/worker-preview
+        working-directory: services/asp
+        run: pnpm exec wrangler deploy --dry-run --env="" --config workers/wrangler.jsonc --outdir /tmp/worker-preview
 
       - name: Wrangler dry run (production)
-        working-directory: services/asp/workers
-        run: pnpm exec wrangler deploy --dry-run --env production --outdir /tmp/worker-production
+        working-directory: services/asp
+        run: pnpm exec wrangler deploy --dry-run --env production --config workers/wrangler.jsonc --outdir /tmp/worker-production
 
       # Workers has a hard compressed-size limit. Checked against the uncompressed bundle with wide
       # headroom, so this fails on a dependency that doubles the bundle rather than on normal growth.
@@ -121,7 +128,7 @@ jobs:
           set -e
           for env_name in preview production; do
             flag=$([ "$env_name" = production ] && echo "--env production" || echo '--env=""')
-            out=$(cd services/asp/workers && eval pnpm exec wrangler deploy --dry-run $flag --outdir /tmp/chk 2>&1)
+            out=$(cd services/asp && eval pnpm exec wrangler deploy --dry-run $flag --config workers/wrangler.jsonc --outdir /tmp/chk 2>&1)
             echo "$out" | grep -q 'UNTCH_FINANCIAL_ARMED ("0")' \
               || { echo "::error::$env_name does not ship financially disarmed"; exit 1; }
             echo "$out" | grep -q 'UNTCH_PRODUCTION_WRITER_ACTIVE ("0")' \

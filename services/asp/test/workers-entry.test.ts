@@ -241,7 +241,12 @@ describe("the fetch handler", () => {
     const text = await res.text();
     assert.ok(!text.includes("postgres://"), "an unhandled error must not echo a connection string");
     assert.match(text, /INTERNAL_ERROR/);
-    assert.ok(text.includes(res.headers.get("x-request-id") ?? " "), "the id ties the response to the log line");
+    // Asserted, not defaulted. This wrote a literal NUL as an impossible fallback, which made Git
+    // treat the whole file as binary — and a `?? sentinel` would let a missing header pass silently
+    // anyway. The header is the only thing tying this 500 to the log line that says what broke.
+    const requestId = res.headers.get("x-request-id");
+    assert.ok(requestId, "a 500 without a request id cannot be traced to its log line");
+    assert.ok(text.includes(requestId), "the id ties the response to the log line");
   });
 
   test("a missing binding refuses to serve rather than failing deep in a handler", async () => {
