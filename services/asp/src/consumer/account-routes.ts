@@ -48,8 +48,14 @@ import { openAccountSession, mintAccountSession, verifyWalletProof, buildLinkMes
 import { rolesOf, SIGNIN_CHAIN_IDS } from "@untch/shared";
 import type { SiweVerifier } from "./auth";
 
-export const ACCOUNT_LINK_START_ROUTE = "/consumer/account/link/start" as const;
-export const ACCOUNT_LINK_COMPLETE_ROUTE = "/consumer/account/link/complete" as const;
+import {
+  ACCOUNT_LINK_COMPLETE_ROUTE,
+  ACCOUNT_LINK_START_ROUTE,
+  handleLinkComplete,
+  handleLinkStart,
+  type AccountLinkDeps,
+} from "./account-link";
+export { ACCOUNT_LINK_COMPLETE_ROUTE, ACCOUNT_LINK_START_ROUTE };
 export const ACCOUNT_ROUTE = "/consumer/account" as const;
 export const ACCOUNT_WALLET_REVOKE_ROUTE = "/consumer/account/wallets/:bindingId/revoke" as const;
 export const ACCOUNT_MARKETPLACE_REVOKE_ROUTE = "/consumer/account/marketplace/:bindingId/revoke" as const;
@@ -88,10 +94,15 @@ export function makeAccountRoutesDeps(args: {
     domain: args.domain,
     publicBaseUrl: args.publicBaseUrl.replace(/\/+$/, ""),
     secret: args.secret,
+    /**
+     * A returnUrl is where a browser is sent holding a fresh session, so this list is an open-redirect
+     * surface. The Railway host that used to be here has been released; a domain this project no
+     * longer controls is one whoever registers it next would inherit.
+     */
     allowedReturnOrigins: args.allowedReturnOrigins ?? [
       `https://${args.domain}`,
       "https://www.untch.xyz",
-      "https://untch-web-production.up.railway.app",
+      "https://untch.xyz",
     ],
   };
 }
@@ -181,6 +192,18 @@ export function registerAccountRoutes(
     return fn(session.accountId, session.bindingId);
   };
 
+  /** The shared handlers' view of this instance. `now` is resolved here so tests can still inject one. */
+  const linkDeps = (): AccountLinkDeps => ({
+    accounts: d.accounts,
+    links: d.links,
+    verifier: d.verifier,
+    domain: d.domain,
+    publicBaseUrl: d.publicBaseUrl,
+    allowedReturnOrigins: d.allowedReturnOrigins,
+    secret,
+    now,
+  });
+
   const post = (path: string, handler: (req: Request) => Promise<HandlerResult>): void => {
     app.post(path, (req: Request, res: Response, next: NextFunction) => {
       handler(req)
@@ -232,343 +255,18 @@ function roleCollision(address: string, scopes: readonly BindingScope[]): Handle
 
   // ── start ──────────────────────────────────────────────────────────────────
 
-  post(ACCOUNT_LINK_START_ROUTE, async (req) => {
-    const b = (req.body ?? {}) as Record<string, unknown>;
-
-    const requested = Array.isArray(b.requestedScopes) ? (b.requestedScopes as unknown[]) : ["identity"];
-    const scopes: BindingScope[] = [];
-    for (const s of requested) {
-      if (typeof s !== "string" || !KNOWN_SCOPES.has(s as BindingScope)) {
-        return refuse(
-          400,
-          "UNKNOWN_SCOPE",
-          `requestedScopes may contain only ${[...KNOWN_SCOPES].join(", ")}; received ${JSON.stringify(s)}`,
-        );
-      }
-      scopes.push(s as BindingScope);
-    }
-    if (scopes.length === 0) scopes.push("identity");
-
-    const returnUrl = typeof b.returnUrl === "string" ? b.returnUrl : null;
-    if (returnUrl !== null && !returnUrlAllowed(returnUrl, d.allowedReturnOrigins)) {
-      // An attacker-chosen return URL turns this into an open redirect with a session at the end of it.
-      return refuse(
-        400,
-        "RETURN_URL_NOT_ALLOWED",
-        `returnUrl must be an exact origin match for one of: ${d.allowedReturnOrigins.join(", ")}`,
-      );
-    }
-
-    /**
-     * The message the server will verify, composed by the server.
-     *
-     * `buildLinkMessage` was exported and every caller was expected to reproduce it: the domain, the
-     * scope Resources lines, the issued/expiry stamps, the exact wording. A client that formats one
-     * line differently produces a signature over a message this server never authored, and the
-     * failure surfaces as an opaque signature rejection rather than as the drift it is.
-     *
-     * So when the caller names the address it is about to sign with, the server returns the finished
-     * message. `address` stays optional, because a caller may legitimately not know it yet (a
-     * marketplace starting a link for a wallet that will open the page later), and that path still
-     * gets the nonce and the domain to build one with.
-     */
-    const addressForMessage = typeof b.address === "string" && ADDRESS_RE.test(b.address) ? b.address : null;
-    const chainForMessage =
-      typeof b.chainId === "number" && SIGNABLE_CHAINS.includes(b.chainId) ? b.chainId : SIGNABLE_CHAINS[0];
-
-    /**
-     * An operational address is refused at START when it is named, so the user is told before their
-     * wallet ever opens a prompt rather than after they have signed. The authoritative check is at
-     * COMPLETE, against the address recovered from the signature, because that is the only address
-     * this server did not take somebody's word for.
-     *
-     * It runs BEFORE the link request is created. The first version checked after `links.create`, so
-     * every refused probe left a PENDING row that expired unused. Harmless — the one-time code is never
-     * disclosed on the refusal path — but a refusal that still writes a row is a refusal that can be
-     * used to fill a table.
-     */
-    if (addressForMessage !== null) {
-      const collision = roleCollision(addressForMessage, scopes);
-      if (collision) return collision;
-    }
-
-
-    const marketplace = typeof b.marketplace === "string" ? b.marketplace : b.marketplaceAgentId ? "okx" : null;
-    const nonce = randomBytes(16).toString("hex");
-    const { request, code } = await d.links.create({
-      requestedScopes: scopes,
-      context: {
-        marketplace,
-        marketplaceAgentId: typeof b.marketplaceAgentId === "string" ? b.marketplaceAgentId : null,
-        marketplaceBuyerId: typeof b.marketplaceBuyerId === "string" ? b.marketplaceBuyerId : null,
-        taskRef: typeof b.taskRef === "string" ? b.taskRef : null,
-        serviceOrderRef: typeof b.serviceOrderRef === "string" ? b.serviceOrderRef : null,
-      },
-      returnUrl,
-      siweNonce: nonce,
-      sourceRequestId: req.header("x-request-id") ?? null,
-      nowMs: now(),
-      by: marketplace ? `marketplace:${marketplace}` : "web",
-    });
-
-    const siweMessage =
-      addressForMessage === null
-        ? null
-        : buildLinkMessage({
-            domain: d.domain,
-            uri: d.publicBaseUrl,
-            address: addressForMessage,
-            chainId: chainForMessage as number,
-            nonce: request.siweNonce,
-            issuedAt: new Date(now()).toISOString(),
-            expiresAt: request.expiresAt,
-            scopes: request.requestedScopes,
-          });
-
-    return {
-      status: 200,
-      body: {
-        linkRequestId: request.linkRequestId,
-        // Returned exactly once. It is stored hashed, so no later read of any kind can produce it.
-        oneTimeCode: code,
-        expiresAt: request.expiresAt,
-        proofMethod: "siwe-personal-sign",
-        // Null when no address was named. Never a template with a placeholder in it: a message that
-        // looks signable and is not is worse than an absent one.
-        siweMessage,
-        /** Exactly what this one signature will establish, for a UI to show before prompting. */
-        authorityRequested: {
-          signatures: 1,
-          format: "SIWE (EIP-4361) over personal_sign (EIP-191)",
-          address: addressForMessage,
-          chainId: chainForMessage,
-          domain: d.domain,
-          scopes: request.requestedScopes,
-          expiresAt: request.expiresAt,
-          creates: [
-            "an UntchAccount, or resolves the one this wallet already is",
-            "an ACTIVE WalletBinding with proofKind=siwe and role=primary",
-            ...(request.requestedScopes.includes("policy-authority" as BindingScope)
-              ? ["permission for this wallet to own and register spend policies"]
-              : []),
-          ],
-          doesNotCreate: [
-            "any payment, approval or spending authority",
-            "any on-chain transaction",
-            "any marketplace binding that is proven rather than claimed",
-          ],
-        },
-        // What the wallet is asked for, named precisely. `wallet sign-message --type personal` is the
-        // documented Agentic Wallet capability this consumes; no transaction and no new contract.
-        walletAction: {
-          kind: "sign-message",
-          signatureAlgorithm: "personal_sign (EIP-191)",
-          chains: [196, 1952],
-          nonce: request.siweNonce,
-          domain: d.domain,
-        },
-        walletActionUrl: `${d.publicBaseUrl}/link/${request.linkRequestId}`,
-        requestedScopes: request.requestedScopes,
-        marketplaceContext: {
-          ...request.context,
-          // Said out loud on the way out, so nothing downstream can mistake the echo for a fact.
-          note: "Recorded as context only. A marketplace identity authorises nothing until a wallet signs for it.",
-        },
-        instructions: [
-          `1. Open ${d.publicBaseUrl}/link/${request.linkRequestId} with the wallet you want this account to be.`,
-          "2. Sign the message shown there. It proves who you are and approves no payment.",
-          "3. The page completes the link for you. If you are driving this by API, POST the message, the " +
-            "signature and the one-time code to /consumer/account/link/complete.",
-        ],
-        note: "This code binds an identity. It cannot approve a payment: no route reachable from it takes an amount.",
-      },
-    };
-  });
-
-  // ── complete ───────────────────────────────────────────────────────────────
-
-  post(ACCOUNT_LINK_COMPLETE_ROUTE, async (req) => {
-    const b = (req.body ?? {}) as Record<string, unknown>;
-    const linkRequestId = typeof b.linkRequestId === "string" ? b.linkRequestId : null;
-    const code = typeof b.code === "string" ? b.code : typeof b.oneTimeCode === "string" ? b.oneTimeCode : null;
-    const message = typeof b.message === "string" ? b.message : null;
-    const signature = typeof b.signature === "string" ? b.signature : null;
-
-    if (!linkRequestId || !code || !message || !signature) {
-      return refuse(
-        400,
-        "LINK_BAD_REQUEST",
-        "linkRequestId, code, message (the SIWE message) and signature are all required",
-      );
-    }
-
-    const request = await d.links.get(linkRequestId);
-    if (!request) return refuse(404, "LINK_REQUEST_NOT_FOUND", `no link request ${linkRequestId}`);
-    if (request.status !== "PENDING") {
-      return refuse(409, "LINK_REQUEST_NOT_PENDING", `link request ${linkRequestId} is ${request.status}`);
-    }
-
-    /**
-     * The signature is verified BEFORE the code is redeemed.
-     *
-     * Redemption is what consumes the request, and a wrong signature must not consume it — otherwise a
-     * caller who intercepted the code could burn the honest user's request by submitting garbage, and
-     * the user would be told their own valid signature came too late. The attempt counter is what
-     * bounds guessing at the code; the signature check is what decides whether this is the right
-     * person at all, and it costs nothing to be wrong about.
-     */
-    const proof = await verifyWalletProof(
-      {
-        message,
-        signature: signature as Hex,
-        expectedNonce: request.siweNonce,
-        domain: d.domain,
-        nowMs: now(),
-      },
-      d.verifier,
-    );
-    if (!proof.ok) return refuse(401, proof.code, proof.reason);
-
-    /**
-     * The authoritative refusal, on the address the SIGNATURE produced.
-     *
-     * A start-time check reads an address the caller typed. This one reads the address that actually
-     * signed, which is the only address this server has not taken somebody's word for. It runs after
-     * verification and before any account or binding is created, so a refused operational key leaves
-     * nothing behind.
-     */
-    const collision = roleCollision(proof.proof.address, request.requestedScopes as readonly BindingScope[]);
-    if (collision) return collision;
-
-    // The account this wallet ALREADY is, if any. This is what makes the flow a restoration rather
-    // than an account factory: signing in twice with the same wallet reaches the same account.
-    const existing = await d.accounts.accountForWallet("evm", proof.proof.address);
-    const account =
-      existing ??
-      (await d.accounts.createAccount({ by: `siwe:${request.context.marketplace ?? "web"}` }));
-
-    if (account.status !== "ACTIVE") {
-      return refuse(403, "ACCOUNT_NOT_ACTIVE", `account ${account.accountId} is ${account.status}`);
-    }
-
-    const redeemed = await d.links.redeem({
-      linkRequestId,
-      code,
-      accountId: account.accountId,
-      nowMs: now(),
-      by: `siwe:${proof.proof.address}`,
-    });
-    if (!redeemed.ok) {
-      const status = redeemed.reason === "NOT_FOUND" ? 404 : redeemed.reason === "CODE_MISMATCH" ? 401 : 409;
-      return refuse(status, `LINK_${redeemed.reason}`, describeRedeemFailure(redeemed.reason));
-    }
-
-    const bindingId = existing?.primaryWalletBindingId ?? newWalletBindingId();
-    const { bound } = await d.accounts.linkWallet({
-      bindingId,
-      accountId: account.accountId,
-      chainKind: "evm",
-      address: proof.proof.address,
-      role: "primary",
-      proofKind: "siwe",
-      proofRef: request.siweNonce,
-      proofChainId: proof.proof.chainId,
-      walletProvider: typeof b.walletProvider === "string" ? b.walletProvider : "okx-agentic-wallet",
-      scopes: request.requestedScopes as readonly BindingScope[],
-      verifiedAt: new Date(now()).toISOString(),
-      by: "siwe",
-    });
-    if (!bound) {
-      // The address is bound to a DIFFERENT account. Moving it is a recovery operation with a human in
-      // it, never a side effect of signing in.
-      return refuse(
-        409,
-        "WALLET_BOUND_ELSEWHERE",
-        `${proof.proof.address} is already the authority of another Untch account; moving a wallet ` +
-          "between accounts is a recovery operation and is not performed by signing in",
-      );
-    }
-
-    await d.accounts.setPrimaryWallet({ accountId: account.accountId, bindingId, by: "siwe" });
-    await d.accounts.recordAuthentication({ accountId: account.accountId, by: "siwe" });
-
-    // ── the marketplace binding, now that a wallet has actually signed ───────
-    let marketplaceBinding: MarketplaceBinding | null = null;
-    const ctx = request.context;
-    if (ctx.marketplace && ctx.marketplaceAgentId) {
-      const result = await d.accounts.linkMarketplace({
-        accountId: account.accountId,
-        marketplace: ctx.marketplace,
-        agentId: ctx.marketplaceAgentId,
-        buyerId: ctx.marketplaceBuyerId,
-        taskRef: ctx.taskRef,
-        serviceOrderRef: ctx.serviceOrderRef,
-        bindingMethod: "wallet-signature",
-        provenBy: "wallet-signature",
-        verifiedAt: new Date(now()).toISOString(),
-        by: "siwe",
-      });
-      if (!result.bound) {
-        return refuse(
-          409,
-          "MARKETPLACE_IDENTITY_BOUND_ELSEWHERE",
-          `${ctx.marketplace} agent ${ctx.marketplaceAgentId} is already bound to a different Untch ` +
-            "account; one marketplace identity cannot silently belong to two",
-        );
-      }
-      marketplaceBinding =
-        (await d.accounts.marketplaceBindingsFor(account.accountId)).find(
-          (m) => m.marketplace === ctx.marketplace && m.agentId === ctx.marketplaceAgentId,
-        ) ?? null;
-
-      if (ctx.taskRef) {
-        await d.accounts.recordJob({
-          marketplace: ctx.marketplace,
-          jobId: ctx.taskRef,
-          accountId: account.accountId,
-          agentId: ctx.marketplaceAgentId,
-          by: "siwe",
-        });
-      }
-    }
-
-    const binding = await d.accounts.walletBinding(bindingId);
-    const { token } = mintAccountSession({
-      secret,
-      accountId: account.accountId,
-      address: proof.proof.address as Address,
-      bindingId,
-      scopes: binding?.scopes ?? ["identity"],
-      nowMs: now(),
-    });
-
-    const fresh = await d.accounts.getAccount(account.accountId);
-    return {
-      status: 200,
-      body: {
-        accountId: account.accountId,
-        accountCreated: existing === null,
-        wallet: binding ? publicWallet(binding) : null,
-        marketplaceBinding: marketplaceBinding ? publicMarketplace(marketplaceBinding) : null,
-        session: { token, expiresIn: 1800, tokenType: "Bearer" },
-        defaultPolicy: {
-          policyId: fresh?.defaultPolicyId ?? null,
-          // The honest next step, computed rather than assumed. An account with no policy cannot
-          // preflight anything, and saying so here is cheaper than a refusal three calls later.
-          status: fresh?.defaultPolicyId ? "SET" : "NOT_SET",
-        },
-        nextAction: fresh?.defaultPolicyId
-          ? { code: "READY", message: "This account can preflight actions against its default policy." }
-          : {
-              code: "POLICY_REQUIRED",
-              message:
-                "This account holds no policy yet. POST /consumer/policies/draft to build one, then " +
-                "register it from your own wallet — the owner of a policy must be the person it governs.",
-            },
-        returnUrl: request.returnUrl,
-      },
-    };
-  });
+  /**
+   * Both link handlers now live in `account-link.ts`, with no transport in them.
+   *
+   * They are the head of the account chain and the Cloudflare Worker needs the same ones — it cannot
+   * import this file, because Express drags `iconv-lite` into a bundle where its module-scope
+   * `require_streams(...)` is not a function. Calling one shared implementation is what keeps the two
+   * transports from disagreeing about what a single signature establishes.
+   */
+  post(ACCOUNT_LINK_START_ROUTE, (req) =>
+    handleLinkStart(req.body, linkDeps(), req.header("x-request-id") ?? null),
+  );
+  post(ACCOUNT_LINK_COMPLETE_ROUTE, (req) => handleLinkComplete(req.body, linkDeps()));
 
   // ── read ───────────────────────────────────────────────────────────────────
 

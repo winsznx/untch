@@ -216,29 +216,13 @@ export { tenantForPolicy };
 
 // ── SIWE verification ─────────────────────────────────────────────────────────
 
-export interface SiweVerifier {
-  verify(args: {
-    message: string;
-    signature: Hex;
-    nonce: string;
-    domain: string;
-  }): Promise<boolean>;
-}
-
-/** The real one. EOA ecrecover, or EIP-1271 for a contract wallet, via an X Layer RPC. */
-export function makeSiweVerifier(rpcUrl: string): SiweVerifier {
-  const client = createPublicClient({ transport: http(rpcUrl) });
-  return {
-    async verify(args) {
-      return client.verifySiweMessage({
-        message: args.message,
-        signature: args.signature,
-        nonce: args.nonce,
-        domain: args.domain,
-      });
-    },
-  };
-}
+/**
+ * Moved to `siwe-verifier.ts` so the Cloudflare account-link routes can import the verifier without
+ * dragging this module — the config loader, the nonce store and `tenantForPolicy` — into a Worker
+ * bundle. Re-exported so every existing caller is unchanged and there is still one definition.
+ */
+import type { SiweVerifier } from "./siwe-verifier";
+export { makeSiweVerifier, type SiweVerifier } from "./siwe-verifier";
 
 function resourceValue(resources: readonly string[] | undefined, re: RegExp): string | null {
   for (const r of resources ?? []) {

@@ -36,7 +36,7 @@ import { loadDemoPolicyRef } from "./demo-policy";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(here, "..", "..", "..", "internal", "day0", "D0.1-evidence");
-const DEFAULT_SELLER = "https://untch-asp-production.up.railway.app";
+const DEFAULT_SELLER = "https://asp.untch.xyz";
 const RECEIPTS_CONTRACT = (process.env.RECEIPTS_CONTRACT?.trim() ||
   "0x0c64997277b7d94d2999dea22a123cac56334863") as Hex;
 const TESTNET_RPC = process.env.RPC_URL?.trim() || "https://testrpc.xlayer.tech";

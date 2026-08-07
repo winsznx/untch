@@ -13,6 +13,7 @@
 import pg from "pg";
 import { NETWORK, SETTLEMENT_TOKEN } from "../config";
 import { buildWorker, type RouteContext } from "./entry";
+import { accountLinkRoutes } from "./account-link-routes";
 import { agentCardRoutes } from "./agent-card";
 import { consumerReadRoutes } from "./consumer-reads";
 import { discordRoutes } from "./discord-routes";
@@ -129,6 +130,17 @@ function consumerRoutes(ctx: RouteContext): readonly Route[] {
   const secret = ctx.env.CONSUMER_AUTH_SECRET?.trim();
   if (!secret) return [];
   return [
+    /**
+     * The head of the chain, first because everything below it needs the session it mints. Without it
+     * the reads and the policy routes answered 401 to a caller with no way to stop being anonymous.
+     */
+    ...accountLinkRoutes({
+      pool: ctx.pool,
+      secret,
+      baseUrl: ctx.baseUrl,
+      rpcUrl: ctx.env.RPC_URL?.trim() || "https://rpc.xlayer.tech",
+      gate: ctx.gate,
+    }),
     ...consumerReadRoutes({ pool: ctx.pool, secret, gate: ctx.gate, executionEnabled: false }),
     /**
      * Policy registration shares the session secret, and it is the HEAD of the pipeline: without it a
