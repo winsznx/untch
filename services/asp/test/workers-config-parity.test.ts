@@ -4,8 +4,11 @@ import { dirname, join } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { buildJobs, requiredCrons } from "../src/workers/jobs";
-import { OPTIONAL_BINDINGS, REQUIRED_BINDINGS } from "../src/workers/env";
+import { OPTIONAL_BINDINGS, REQUIRED_BINDINGS, REQUIRED_VARS } from "../src/workers/env";
 import { writerGate } from "../src/workers/writer-gate";
+
+/** The committed seller role address. Not retyped: packages/shared owns it. */
+const ROLE_PAY_TO = "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba";
 
 /**
  * The wrangler config and the code must agree, and a comment saying so is not a mechanism.
@@ -108,6 +111,24 @@ describe("both environments ship in the safe posture", () => {
         envConfig.vars?.UNTCH_PRODUCTION_WRITER_ACTIVE,
         "0",
         `${name} must not claim production writes — Railway owns them until cutover`,
+      );
+    }
+  });
+
+  /**
+   * A var whose absence stops the Worker serving at all, so its absence must fail here rather than at
+   * the first request after a deploy. The value is checked too: the x402 document publishes it as the
+   * payee, and a wrong address there sends USDT0 somewhere Untch does not control.
+   */
+  test("both environments declare the committed payee", () => {
+    for (const [name, envConfig] of environments) {
+      for (const required of REQUIRED_VARS) {
+        assert.ok(envConfig.vars?.[required]?.trim(), `${name} must declare ${required}`);
+      }
+      assert.equal(
+        envConfig.vars?.PAY_TO_ADDRESS,
+        ROLE_PAY_TO,
+        `${name} publishes a payee that is not the committed role address`,
       );
     }
   });

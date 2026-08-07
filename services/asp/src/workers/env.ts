@@ -31,6 +31,8 @@ export interface WorkerEnv {
 
   // ── identity ───────────────────────────────────────────────────────────────
   readonly ASP_PUBLIC_URL?: string;
+  /** The published payee for every priced route. Public, and required: see REQUIRED_VARS. */
+  readonly PAY_TO_ADDRESS?: string;
   readonly DISCORD_PUBLIC_KEY?: string;
   readonly DISCORD_APPLICATION_ID?: string;
 
@@ -54,6 +56,17 @@ export const REQUIRED_BINDINGS = ["HYPERDRIVE", "APPROVAL_DELIVERY"] as const;
  */
 export const OPTIONAL_BINDINGS = [] as const;
 
+/**
+ * Plain vars the Worker cannot serve without.
+ *
+ * `PAY_TO_ADDRESS` is here because the x402 discovery document names a payee, and there is no safe
+ * default for one. Falling back to a zero address would publish "send USDT0 into a burn"; falling back
+ * to a hardcoded literal would let the deployed payee and the committed one drift apart silently. So
+ * it is required, and a deployment missing it refuses by name rather than serving a document that
+ * misdirects money.
+ */
+export const REQUIRED_VARS = ["PAY_TO_ADDRESS"] as const;
+
 export class MissingBindingError extends Error {
   constructor(readonly binding: string) {
     super(`binding ${binding} is not present — the Worker cannot serve without it`);
@@ -70,6 +83,9 @@ export class MissingBindingError extends Error {
 export function assertBindings(env: Partial<WorkerEnv>): void {
   for (const name of REQUIRED_BINDINGS) {
     if (env[name] === undefined || env[name] === null) throw new MissingBindingError(name);
+  }
+  for (const name of REQUIRED_VARS) {
+    if (!env[name]?.trim()) throw new MissingBindingError(name);
   }
 }
 

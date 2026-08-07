@@ -32,6 +32,14 @@ export interface EntryDeps {
   readonly expectedMigrations: readonly string[];
   readonly jobDeps: (pool: Pool, gate: WriterGate) => JobDeps;
   readonly routes: (ctx: RouteContext) => readonly Route[];
+  /**
+   * What answers a path the route table does not claim.
+   *
+   * Injected rather than fixed at 404, because during the migration "not in this table" and "does not
+   * exist" are different facts. A route Express serves that has not landed here yet must say so, and
+   * only the caller knows which routes those are.
+   */
+  readonly onUnmatched?: (request: Request) => Response;
   readonly log?: (line: string) => void;
 }
 
@@ -196,7 +204,7 @@ export function buildWorker(deps: EntryDeps) {
       }
 
       try {
-        const res = await dispatch(router, request);
+        const res = await dispatch(router, request, deps.onUnmatched ? { onNotFound: deps.onUnmatched } : {});
         return withHeaders(res, { ...securityHeaders(id), ...corsHeaders(origin) });
       } catch (err) {
         if (err instanceof DisarmedError) return withHeaders(disarmedResponse(err), securityHeaders(id));

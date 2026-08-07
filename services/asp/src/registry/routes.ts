@@ -75,6 +75,33 @@ export function publicSchemaFor(service: ServiceDefinition, baseUrl: string): Re
   };
 }
 
+/**
+ * The schema index, as a value rather than as something only Express can produce.
+ *
+ * Extracted because the Cloudflare Worker serves the same four discovery documents, and the way a
+ * discovery document silently diverges between two transports is by being written twice. The other
+ * three were already pure builders (`buildOpenApi`, `buildWellKnownX402`, `publicSchemaFor`); this
+ * one was inline in the handler, which made it the only one that could drift.
+ */
+export function buildSchemaIndex(config: Pick<RegistryRouteConfig, "baseUrl" | "network">): Record<string, unknown> {
+  return {
+    baseUrl: config.baseUrl,
+    network: config.network,
+    count: SERVICES.length,
+    note: "Every contract this host enforces. Nothing here requires payment to read.",
+    tools: SERVICES.map((s) => ({
+      toolId: s.toolId,
+      name: s.publicName,
+      method: s.method,
+      endpoint: `${config.baseUrl}${s.path}`,
+      pricing: s.pricing,
+      maturity: s.maturity,
+      schema: `${config.baseUrl}/schema/${s.toolId}`,
+      schemaVersion: s.schemaVersion,
+    })),
+  };
+}
+
 export function registerRegistryRoutes(app: Express, config: RegistryRouteConfig): void {
   const cache = (res: Response): void => {
     res.setHeader("cache-control", "public, max-age=60");
@@ -83,22 +110,7 @@ export function registerRegistryRoutes(app: Express, config: RegistryRouteConfig
 
   app.get(SCHEMA_INDEX_ROUTE, (_req: Request, res: Response) => {
     cache(res);
-    res.json({
-      baseUrl: config.baseUrl,
-      network: config.network,
-      count: SERVICES.length,
-      note: "Every contract this host enforces. Nothing here requires payment to read.",
-      tools: SERVICES.map((s) => ({
-        toolId: s.toolId,
-        name: s.publicName,
-        method: s.method,
-        endpoint: `${config.baseUrl}${s.path}`,
-        pricing: s.pricing,
-        maturity: s.maturity,
-        schema: `${config.baseUrl}/schema/${s.toolId}`,
-        schemaVersion: s.schemaVersion,
-      })),
-    });
+    res.json(buildSchemaIndex(config));
   });
 
   app.get(SCHEMA_ROUTE, (req: Request, res: Response) => {

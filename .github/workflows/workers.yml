@@ -21,6 +21,11 @@ on:
       - "services/asp/src/workers/**"
       - "services/asp/workers/**"
       - "services/asp/test/workers-*.test.ts"
+      # The Worker serves the registry's discovery documents from the same builders Express uses,
+      # so a change to either can break parity without touching a Workers file.
+      - "services/asp/src/registry/**"
+      - "services/asp/src/consumer-handlers.ts"
+      - "services/asp/src/erc8004/**"
       - "packages/consumer-core/src/db.ts"
       - "packages/consumer-core/src/schema-version.ts"
       - "packages/consumer-providers/src/workers-guard.ts"
@@ -34,6 +39,11 @@ on:
       - "services/asp/src/workers/**"
       - "services/asp/workers/**"
       - "services/asp/test/workers-*.test.ts"
+      # The Worker serves the registry's discovery documents from the same builders Express uses,
+      # so a change to either can break parity without touching a Workers file.
+      - "services/asp/src/registry/**"
+      - "services/asp/src/consumer-handlers.ts"
+      - "services/asp/src/erc8004/**"
       - "packages/consumer-core/src/db.ts"
       - "packages/consumer-core/src/schema-version.ts"
       - "packages/consumer-providers/src/workers-guard.ts"
@@ -63,6 +73,11 @@ jobs:
 
       # The suites that cover the router, arming, writer gate, Queues, scheduled jobs, entry, config
       # parity, the x402 adapter and the Discord signature path. None needs a database.
+      #
+      # `workers-stage1-routes` is the one that starts a real Express server and compares its discovery
+      # documents against the Worker's, byte for byte. It needs no database either — the registry
+      # documents are built from committed definitions — but it does need the port it binds, so it runs
+      # here rather than in a suite that might be sharded.
       - name: Workers suites
         run: node --import tsx --test --test-reporter=spec services/asp/test/workers-*.test.ts services/asp/test/x402-workers-adapter.test.ts services/asp/test/discord-signature-workers.test.ts
 

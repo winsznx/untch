@@ -1,18 +1,19 @@
 /**
  * The module wrangler points at.
  *
- * Deliberately thin. Everything decidable lives in `entry.ts` and the canonical business modules, so
- * this file is the one place where a Cloudflare-shaped export meets them — and there is nothing here
- * worth testing that is not already tested there.
+ * Deliberately thin. Everything decidable lives in `entry.ts`, `stage1-routes.ts` and the canonical
+ * business modules, so this file is the one place where a Cloudflare-shaped export meets them.
  *
- * The route table is not populated yet: the 114 Express routes are ported in their own change, and a
- * half-ported table serving some routes and 404ing others would be worse than one that serves only
- * health. What IS wired is the posture — bindings, schema verification, arming, the writer gate — so a
- * preview deployment can be verified against the real runtime before any route is moved.
+ * The route table is the Stage 1 subset: health, readiness, deployment posture, and the discovery
+ * documents a marketplace reviewer reads. The other Express routes are ported in their own changes and
+ * answer 503 until they land — see `stage1Fallback` for why that is three different answers and not
+ * one.
  */
 
 import pg from "pg";
-import { buildWorker, healthBody, type RouteContext } from "./entry";
+import { NETWORK, SETTLEMENT_TOKEN } from "../config";
+import { buildWorker, type RouteContext } from "./entry";
+import { stage1Fallback, stage1Routes, type Stage1Settlement } from "./stage1-routes";
 import type { Route } from "./router";
 import type { WorkerEnv } from "./env";
 import type { JobDeps } from "./jobs";
@@ -55,26 +56,33 @@ const noopJobDeps = (_pool: pg.Pool, gate: WriterGate): JobDeps => ({
   snapshotOperationalHealth: async () => 0,
 });
 
-const json = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body, null, 2), { status, headers: { "content-type": "application/json" } });
-
-function routes(ctx: RouteContext): readonly Route[] {
-  return [
-    { method: "GET", pattern: "/healthz", bodyMode: "none", handler: () => json(healthBody(ctx)) },
-    {
-      method: "GET",
-      pattern: "/internal/deployment",
-      bodyMode: "none",
-      handler: () => json({ ...healthBody(ctx), crons: worker.crons() }),
+/**
+ * What the x402 document publishes as the settlement target.
+ *
+ * `PAY_TO_ADDRESS` is read from the environment rather than hardcoded, and its absence is fatal to
+ * the discovery documents rather than papered over with a zero address: publishing `0x000…0` as the
+ * payee would tell a paying client to send USDT0 into a burn.
+ */
+function settlement(env: WorkerEnv): Stage1Settlement {
+  const payTo = (env as unknown as { PAY_TO_ADDRESS?: string }).PAY_TO_ADDRESS?.trim();
+  if (!payTo) throw new Error("PAY_TO_ADDRESS is not configured; the x402 document would name no payee");
+  return {
+    network: NETWORK,
+    payTo,
+    asset: {
+      symbol: SETTLEMENT_TOKEN.symbol,
+      address: SETTLEMENT_TOKEN.address,
+      decimals: SETTLEMENT_TOKEN.decimals,
     },
-  ];
+  };
 }
 
 const worker = buildWorker({
   makePool: (connectionString) => new pg.Pool({ connectionString, max: 5 }) as never,
   expectedMigrations: MIGRATIONS,
   jobDeps: noopJobDeps as never,
-  routes,
+  routes: (ctx: RouteContext): readonly Route[] => stage1Routes(ctx, settlement(ctx.env)),
+  onUnmatched: stage1Fallback,
 });
 
 export default {

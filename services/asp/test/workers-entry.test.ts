@@ -6,6 +6,7 @@ import {
   environmentOf,
   publicBaseUrl,
   REQUIRED_BINDINGS,
+  REQUIRED_VARS,
   type WorkerEnv,
 } from "../src/workers/env";
 import { __resetSchemaCache, buildWorker, healthBody, verifySchemaCached } from "../src/workers/entry";
@@ -23,6 +24,7 @@ function env(over: Partial<WorkerEnv> = {}): WorkerEnv {
   return {
     HYPERDRIVE: { connectionString: "postgres://u@h/db" },
     APPROVAL_DELIVERY: { async send() {}, async sendBatch() {} },
+    PAY_TO_ADDRESS: "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
     ...over,
   } as WorkerEnv;
 }
@@ -59,6 +61,25 @@ describe("bindings are checked before anything uses one", () => {
 
   test("a complete set passes", () => {
     assert.doesNotThrow(() => assertBindings(env()));
+  });
+
+  /**
+   * A required VAR is checked the same way a binding is.
+   *
+   * `PAY_TO_ADDRESS` earns this because the x402 document names a payee and there is no safe default
+   * for one — a zero address would publish "send USDT0 into a burn". Refusing to serve is the correct
+   * answer; serving a document that misdirects money is not.
+   */
+  test("a missing required var is named, not defaulted", () => {
+    for (const name of REQUIRED_VARS) {
+      const partial = { ...env() } as Record<string, unknown>;
+      delete partial[name];
+      assert.throws(() => assertBindings(partial as Partial<WorkerEnv>), MissingBindingError, `${name} must be required`);
+    }
+  });
+
+  test("a required var present but blank is still missing", () => {
+    assert.throws(() => assertBindings(env({ PAY_TO_ADDRESS: "   " })), MissingBindingError);
   });
 
   test("an optional binding may be absent", () => {
