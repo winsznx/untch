@@ -40,8 +40,16 @@ import {
 import type { Route, RouteRequest } from "./router";
 import { assertOwnsWrites, type WriterGate } from "./writer-gate";
 
+/**
+ * `JSON.stringify` throws outright on a BigInt, and this response carries one: `unsignedTx.args` is
+ * `[agent, policyHash, expiry]` where the uint64 expiry is a bigint. Serialising it as a decimal
+ * string is what a caller needs anyway — they re-encode it to send the transaction — and it is the
+ * only lossless JSON form. The third place in this port where an unhandled BigInt became a 500.
+ */
+const bigintSafe = (_k: string, v: unknown): unknown => (typeof v === "bigint" ? v.toString() : v);
+
 const json = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body, null, 2), {
+  new Response(JSON.stringify(body, bigintSafe, 2), {
     status,
     headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*" },
   });
