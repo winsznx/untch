@@ -73,3 +73,37 @@ describe("policy_sync makes the policy reachable from the account", () => {
     );
   });
 });
+
+/**
+ * DRAFT → SUBMITTED, the transition the port dropped.
+ *
+ * `markDraftConfirmed` refuses anything that is not SUBMITTED, deliberately — a draft with no
+ * broadcast transaction has nothing to confirm. Express moves the draft there first; the Worker did
+ * not, so a real registration against a real confirmed transaction threw that refusal as an unhandled
+ * error and answered 500. Found by registering a policy on X Layer and trying to sync it: gas paid,
+ * policy on chain, and no way to record which transaction carried it.
+ *
+ * Asserted against the source for the same reason as the writes above — the defect was an omission,
+ * and ORDER matters here: marking it submitted after the confirm attempt would be no fix at all.
+ */
+describe("a freshly broadcast draft can be confirmed", () => {
+  test("the draft is marked submitted, carrying the transaction that registered it", () => {
+    assert.match(
+      SYNC,
+      /markDraftSubmitted\(\{[^}]*registerTx:\s*txHash/s,
+      "sync must record which transaction carried the registration",
+    );
+  });
+
+  test("it happens BEFORE syncRegistration, or the confirm still refuses", () => {
+    const submitted = SYNC.indexOf("markDraftSubmitted");
+    const sync = SYNC.indexOf("syncRegistration");
+    assert.ok(submitted > -1 && sync > -1);
+    assert.ok(submitted < sync, "marking it submitted after the confirm attempt would fix nothing");
+  });
+
+  /** Only a DRAFT. Re-marking a SUBMITTED or CONFIRMED draft would rewrite which tx registered it. */
+  test("only a DRAFT is moved", () => {
+    assert.match(SYNC, /status\s*===\s*"DRAFT"/, "an already-submitted draft must not be re-stamped");
+  });
+});

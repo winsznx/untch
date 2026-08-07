@@ -321,6 +321,20 @@ export function policyRoutes(deps: PolicyRouteDeps): readonly Route[] {
         }
 
         assertOwnsWrites(deps.gate, "approval-expiry-mutation");
+
+        /**
+         * DRAFT → SUBMITTED before anything tries to confirm it.
+         *
+         * `markDraftConfirmed` refuses a draft that is not SUBMITTED — deliberately, since a draft with
+         * no broadcast transaction has nothing to confirm. Express moves it here and the port did not,
+         * so a real registration synced against a real confirmed transaction threw that refusal as an
+         * unhandled error and answered 500. The user had already paid gas and had a policy on chain;
+         * the only thing missing was a row saying which transaction carried it.
+         */
+        if ((draft as { status?: string }).status === "DRAFT") {
+          await accounts.markDraftSubmitted({ draftId, registerTx: txHash, by: `account:${accountId}` });
+        }
+
         const synced = await registration!.syncRegistration({
           txHash: txHash as `0x${string}`,
           rules: (draft as { rules?: unknown }).rules,
