@@ -7,6 +7,7 @@ import {
   handleLinkStart,
 } from "../src/consumer/account-link";
 import { accountLinkRoutes } from "../src/workers/account-link-routes";
+import { handleLinkMessage } from "../src/consumer/account-link";
 
 /**
  * The head of the account chain, on Workers.
@@ -29,11 +30,13 @@ const deps = (over: Partial<Parameters<typeof accountLinkRoutes>[0]> = {}) =>
   });
 
 describe("the Worker can mint a session at all", () => {
-  test("both link routes are served, so the chain has a head", () => {
+  test("the whole browser journey is served, not just the API halves", () => {
     const patterns = deps().map((r) => `${r.method} ${r.pattern}`);
     assert.deepEqual(patterns, [
       `POST ${ACCOUNT_LINK_START_ROUTE}`,
+      "POST /consumer/account/link/:linkRequestId/message",
       `POST ${ACCOUNT_LINK_COMPLETE_ROUTE}`,
+      "GET /link/:linkRequestId",
     ]);
   });
 
@@ -49,7 +52,14 @@ describe("the Worker can mint a session at all", () => {
    */
   test("a deployment without write ownership refuses rather than issuing a dead code", async () => {
     const routes = deps({ gate: { ownsWrites: false, reason: "preview" } as never });
-    for (const r of routes) {
+    /**
+     * The two that RECORD something. The message endpoint and the page read and render — gating those
+     * would refuse to show a user the text of a message on a deployment that simply cannot mint the
+     * session, which tells them nothing and helps no one.
+     */
+    const writing = routes.filter((r) => r.pattern === ACCOUNT_LINK_START_ROUTE || r.pattern === ACCOUNT_LINK_COMPLETE_ROUTE);
+    assert.equal(writing.length, 2);
+    for (const r of writing) {
       await assert.rejects(
         () => Promise.resolve(r.handler({ body: {}, request: new Request("https://x/y", { method: "POST" }), params: {} } as never)),
         "a preview must not record link state",
@@ -187,5 +197,157 @@ describe("the return-origin allow-list", () => {
     const res = await start("https://evil.example/steal");
     assert.equal(res.status, 400);
     assert.equal(((await res.json()) as { code: string }).code, "RETURN_URL_NOT_ALLOWED");
+  });
+});
+
+/**
+ * THE BUG A RANDOM USER WOULD HAVE HIT FIRST.
+ *
+ * `link/start` has always answered with `walletActionUrl: {base}/link/{id}` and instructions whose
+ * first step is "Open that URL with the wallet you want this account to be." Nothing served it — not
+ * the Worker, not Express, and there is no such page in apps/web. So step one of account setup was a
+ * 404, and everything behind it (policy registration, default policy, preflight against your own
+ * rules) was unreachable to anyone not driving the raw API by hand.
+ *
+ * These assert the property that was actually missing: whatever the service ADVERTISES, it serves.
+ */
+describe("the page link/start tells everyone to open", () => {
+  const started = async () => {
+    const r = await handleLinkStart({ address: "0x57a3660e8d10a89dfaee9c130a73c9bcc76e8950" }, linkDeps);
+    return r.body as { walletActionUrl: string; instructions: string[]; oneTimeCode: string };
+  };
+
+  const linkDeps = {
+    accounts: {} as never,
+    links: {
+      async create() {
+        return {
+          request: {
+            linkRequestId: "ulnk_abc",
+            siweNonce: "n".repeat(32),
+            expiresAt: "2099-01-01T00:00:00.000Z",
+            requestedScopes: ["identity"],
+            context: {},
+            returnUrl: null,
+          },
+          code: "s3cr3t",
+        };
+      },
+      async get() {
+        return {
+          linkRequestId: "ulnk_abc",
+          status: "PENDING",
+          siweNonce: "n".repeat(32),
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          requestedScopes: ["identity"],
+          context: {},
+          returnUrl: null,
+        };
+      },
+    } as never,
+    verifier: { async verify() { return true; } },
+    domain: "asp.untch.xyz",
+    publicBaseUrl: "https://asp.untch.xyz",
+    allowedReturnOrigins: ["https://asp.untch.xyz"],
+    secret: "s".repeat(32),
+    now: () => 1_760_000_000_000,
+  };
+
+  test("the advertised walletActionUrl matches a route this host serves", async () => {
+    const { walletActionUrl } = await started();
+    const path = new URL(walletActionUrl).pathname;
+    const served = deps().find(
+      (r) => r.method === "GET" && /^\/link\/:[A-Za-z]+$/.test(r.pattern),
+    );
+    assert.ok(served, "nothing serves /link/:id, so the URL we hand every user is a 404");
+    assert.match(path, /^\/link\/ulnk_abc$/);
+  });
+
+  /**
+   * The code is returned once and stored hashed, so the page cannot look it up. In the fragment it
+   * reaches the page's JavaScript and never our access logs or `Referer`.
+   */
+  test("the one-time code travels in the fragment, never the path or query", async () => {
+    const { walletActionUrl, oneTimeCode } = await started();
+    const url = new URL(walletActionUrl);
+    assert.equal(url.hash, `#${oneTimeCode}`, "the page cannot complete a link without the code");
+    assert.ok(!url.pathname.includes(oneTimeCode), "a single-use credential must not enter access logs");
+    assert.ok(!url.search.includes(oneTimeCode), "nor the query string");
+  });
+
+  test("every URL the instructions name is one the host serves", async () => {
+    const { instructions } = await started();
+    const urls = instructions.flatMap((line) => line.match(/https:\/\/[^\s]+/g) ?? []);
+    assert.ok(urls.length > 0, "the instructions should name the page");
+    for (const u of urls) {
+      assert.match(new URL(u).pathname, /^\/link\/ulnk_abc$/, `${u} is advertised but not served`);
+    }
+  });
+
+  test("the page is self-contained — a signing page must load no third-party code", async () => {
+    const route = deps().find((r) => r.method === "GET" && r.pattern.startsWith("/link/"))!;
+    const html = await (await Promise.resolve(
+      route.handler({ params: { linkRequestId: "ulnk_abc" }, request: new Request("https://asp.untch.xyz/link/ulnk_abc"), body: undefined } as never),
+    ) as Response).text();
+    assert.ok(!/src\s*=\s*["']https?:/i.test(html), "no external script may run on a page that signs");
+    assert.ok(!/<link[^>]+href\s*=\s*["']https?:/i.test(html), "no external stylesheet either");
+  });
+});
+
+describe("the message a connecting wallet is asked to sign", () => {
+  const base = {
+    accounts: {} as never,
+    verifier: { async verify() { return true; } },
+    domain: "asp.untch.xyz",
+    publicBaseUrl: "https://asp.untch.xyz",
+    allowedReturnOrigins: [],
+    secret: "s".repeat(32),
+    now: () => 1_760_000_000_000,
+  };
+  const withRequest = (over: Record<string, unknown> = {}) => ({
+    ...base,
+    links: {
+      async get() {
+        return {
+          linkRequestId: "ulnk_abc",
+          status: "PENDING",
+          siweNonce: "n".repeat(32),
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          requestedScopes: ["identity"],
+          ...over,
+        };
+      },
+    } as never,
+  });
+
+  /**
+   * The server authors it because `buildLinkMessage` composes the exact wording and stamps it will
+   * later verify. A browser copy is a second implementation, and drift shows up as an unexplained
+   * signature rejection rather than as the drift it is.
+   */
+  test("it carries the stored nonce, so the signature verifies against this request", async () => {
+    const r = await handleLinkMessage("ulnk_abc", { address: "0x57a3660e8d10a89dfaee9c130a73c9bcc76e8950" }, withRequest() as never);
+    assert.equal(r.status, 200);
+    const msg = (r.body as { siweMessage: string }).siweMessage;
+    assert.match(msg, /Nonce: n{32}/);
+    assert.match(msg, /asp\.untch\.xyz wants you to sign in/);
+    assert.match(msg, /does not approve any payment/i);
+  });
+
+  test("a spent request cannot be re-presented as live", async () => {
+    const r = await handleLinkMessage("ulnk_abc", { address: "0x57a3660e8d10a89dfaee9c130a73c9bcc76e8950" }, withRequest({ status: "COMPLETED" }) as never);
+    assert.equal(r.status, 409);
+  });
+
+  test("an expired request is refused rather than signed against", async () => {
+    const r = await handleLinkMessage("ulnk_abc", { address: "0x57a3660e8d10a89dfaee9c130a73c9bcc76e8950" }, withRequest({ expiresAt: "2020-01-01T00:00:00.000Z" }) as never);
+    assert.equal(r.status, 410);
+  });
+
+  test("an unknown request is a 404, not an empty message", async () => {
+    const r = await handleLinkMessage("nope", { address: "0x57a3660e8d10a89dfaee9c130a73c9bcc76e8950" }, {
+      ...base, links: { async get() { return null; } } as never,
+    } as never);
+    assert.equal(r.status, 404);
   });
 });

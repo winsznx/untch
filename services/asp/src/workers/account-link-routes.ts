@@ -28,9 +28,11 @@ import {
   ACCOUNT_LINK_COMPLETE_ROUTE,
   ACCOUNT_LINK_START_ROUTE,
   handleLinkComplete,
+  handleLinkMessage,
   handleLinkStart,
   type AccountLinkDeps,
 } from "../consumer/account-link";
+import { linkPageRoute, LINK_PAGE_ROUTE } from "./link-page";
 import { makeSiweVerifier } from "../consumer/siwe-verifier";
 import type { HandlerResult } from "../handlers";
 import type { Route, RouteRequest } from "./router";
@@ -53,6 +55,9 @@ export interface AccountLinkRouteDeps {
   readonly rpcUrl: string;
   readonly gate: WriterGate;
 }
+
+/** The server-authored message for a wallet that has just connected. */
+export const LINK_MESSAGE_ROUTE = "/consumer/account/link/:linkRequestId/message" as const;
 
 export function accountLinkRoutes(deps: AccountLinkRouteDeps): readonly Route[] {
   /**
@@ -105,6 +110,19 @@ export function accountLinkRoutes(deps: AccountLinkRouteDeps): readonly Route[] 
       },
     },
     {
+      /**
+       * The message the connecting wallet should sign, authored here rather than in the browser.
+       *
+       * A read, so it does not ask the writer gate: it records nothing. It is also unauthenticated,
+       * because the nonce it reveals authorises nothing without the one-time code.
+       */
+      method: "POST",
+      pattern: LINK_MESSAGE_ROUTE,
+      bodyMode: "json",
+      handler: async (req: RouteRequest) =>
+        send(await handleLinkMessage(req.params.linkRequestId ?? "", req.body, linkDeps())),
+    },
+    {
       /** Verifies the signature, resolves or creates the account, and mints the session. */
       method: "POST",
       pattern: ACCOUNT_LINK_COMPLETE_ROUTE,
@@ -114,8 +132,18 @@ export function accountLinkRoutes(deps: AccountLinkRouteDeps): readonly Route[] 
         return send(await handleLinkComplete(req.body, linkDeps()));
       },
     },
+    /**
+     * The page `link/start` has always told callers to open. Served from this host so the page and the
+     * API it calls share an origin — no CORS, and nothing to keep in sync across two deployments.
+     */
+    linkPageRoute(),
   ];
 }
 
 /** The paths this module serves, so the route classifier reads truth rather than a guess. */
-export const ACCOUNT_LINK_PATHS = [ACCOUNT_LINK_START_ROUTE, ACCOUNT_LINK_COMPLETE_ROUTE] as const;
+export const ACCOUNT_LINK_PATHS = [
+  ACCOUNT_LINK_START_ROUTE,
+  ACCOUNT_LINK_COMPLETE_ROUTE,
+  LINK_MESSAGE_ROUTE,
+  LINK_PAGE_ROUTE,
+] as const;

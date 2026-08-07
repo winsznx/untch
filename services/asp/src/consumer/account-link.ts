@@ -284,7 +284,15 @@ export async function handleLinkStart(
           nonce: request.siweNonce,
           domain: deps.domain,
         },
-        walletActionUrl: `${deps.publicBaseUrl}/link/${request.linkRequestId}`,
+        /**
+         * The code rides in the FRAGMENT, which browsers never send to a server.
+         *
+         * The page needs it to complete the link, and cannot look it up — the code is returned exactly
+         * once and stored hashed. Putting it in the path or query would place a single-use credential
+         * into our access logs and into `Referer` on every subsequent navigation. In the fragment it
+         * reaches the page's JavaScript and nothing else.
+         */
+        walletActionUrl: `${deps.publicBaseUrl}/link/${request.linkRequestId}#${code}`,
         requestedScopes: request.requestedScopes,
         marketplaceContext: {
           ...request.context,
@@ -520,4 +528,75 @@ export async function handleLinkComplete(body: unknown, deps: AccountLinkDeps): 
         returnUrl: request.returnUrl,
       },
     };
+}
+
+/**
+ * The message this wallet should sign, authored by the server.
+ *
+ * WHY THIS ENDPOINT HAS TO EXIST
+ *
+ * `link/start` returns a finished message only when the caller already knows the address. A browser
+ * does not: the wallet is chosen after the page loads. The page cannot build the message itself
+ * either — `buildLinkMessage` composes the exact wording, the Resources lines and the stamps, and a
+ * client that formats one line differently produces a signature over a message this server never
+ * authored, surfacing as an opaque signature rejection rather than as the drift it is.
+ *
+ * WHY IT NEEDS NO SECRET
+ *
+ * It reveals the nonce, which authorises nothing on its own. Completing a link additionally requires
+ * the one-time code, which is returned exactly once and stored hashed. So the worst an anonymous
+ * caller gets is the text of a message they cannot use, for a request they cannot redeem.
+ *
+ * It does refuse a request that is not PENDING, so a spent or cancelled link cannot be re-presented
+ * to a user as though it were still live.
+ */
+export async function handleLinkMessage(
+  linkRequestId: string,
+  body: unknown,
+  deps: AccountLinkDeps,
+): Promise<HandlerResult> {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const address = typeof b.address === "string" ? checksummed(b.address) : null;
+  if (address === null) {
+    return refuse(
+      400,
+      "ADDRESS_INVALID",
+      "address must be 20 hex bytes, and if it carries mixed case that case must be a correct EIP-55 checksum",
+    );
+  }
+
+  const request = await deps.links.get(linkRequestId);
+  if (!request) return refuse(404, "LINK_REQUEST_NOT_FOUND", `no link request ${linkRequestId}`);
+  if (request.status !== "PENDING") {
+    return refuse(409, "LINK_REQUEST_NOT_PENDING", `link request ${linkRequestId} is ${request.status}`);
+  }
+  if (Date.parse(request.expiresAt) <= deps.now()) {
+    return refuse(410, "LINK_REQUEST_EXPIRED", "that link request has expired; start a new one");
+  }
+
+  const collision = roleCollision(address, request.requestedScopes as readonly BindingScope[]);
+  if (collision) return collision;
+
+  const chainId =
+    typeof b.chainId === "number" && SIGNABLE_CHAINS.includes(b.chainId) ? b.chainId : SIGNABLE_CHAINS[0];
+
+  return {
+    status: 200,
+    body: {
+      siweMessage: buildLinkMessage({
+        domain: deps.domain,
+        uri: deps.publicBaseUrl,
+        address,
+        chainId: chainId as number,
+        nonce: request.siweNonce,
+        issuedAt: new Date(deps.now()).toISOString(),
+        expiresAt: request.expiresAt,
+        scopes: request.requestedScopes,
+      }),
+      address,
+      chainId,
+      expiresAt: request.expiresAt,
+      requestedScopes: request.requestedScopes,
+    },
+  };
 }
