@@ -1,0 +1,156 @@
+/**
+ * The six paid marketplace services on Workers, and the exact line between charging and writing.
+ *
+ * WHY A 402 IS SAFE WHILE `financiallyArmed` IS FALSE
+ *
+ * Issuing a payment challenge is not executing a payment. A 402 states a price and a payee and asks
+ * the caller to decide; nothing of ours moves, and no row is written. The gates that must stay closed
+ * are the ones that follow: settling an authorization, enqueueing a receipt, escalating to a human,
+ * anchoring a decision on chain. So the challenge is live and the write paths are simply not wired —
+ * `receiptEnqueuer`, `escalationGateway`, `intentRegistry` and `oracleSigner` are absent here rather
+ * than present-and-refusing, because a dependency that does not exist cannot be called by mistake.
+ *
+ * THE CONSEQUENCE, STATED PLAINLY
+ *
+ * A preflight decision served from this deployment is a real decision against real stored policy, and
+ * it does not leave a receipt or an on-chain anchor behind. That is the correct behaviour for a
+ * deployment that does not own production writes, and it is why `productionWriter` is reported on
+ * every health response — a caller can tell which deployment answered them.
+ *
+ * WHY THE ROUTE TABLE IS NOT RESTATED
+ *
+ * `buildPaidRouteTable` is the same function `createSellerApp` calls. Prices, payees, networks and
+ * resource bindings therefore cannot differ between the two transports, which matters more here than
+ * anywhere else in the port: the caller who discovers a mismatch is the one holding the bill.
+ */
+
+import { OKXFacilitatorClient } from "@okxweb3/x402-core";
+import type { RouteConfig } from "@okxweb3/x402-core/server";
+import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
+import { x402ResourceServer } from "@okxweb3/x402-express";
+import { PolicyProvider } from "@untch/policy-store";
+import { PgPolicyRepo } from "@untch/policy-store";
+import type { Pool } from "@untch/consumer-core";
+import {
+  BRAND_PACK_ROUTE,
+  DETECT_DUP_ROUTE,
+  PREFLIGHT_ROUTE,
+  REDACT_META_ROUTE,
+  SUGGEST_NAMES_ROUTE,
+  VERIFY_ROUTE,
+} from "../config";
+import { handleBrandPack, handleSuggestNames } from "../consumer-handlers";
+import type { HandlerResult } from "../handlers";
+import { handlePreflightPayment, handleVerifyDelivery } from "../handlers";
+import { handleDetectDuplicate, handleRedactPaymentMetadata } from "../s11-handlers";
+import { createLedgerState } from "../ledger-state";
+import { buildPaidRouteTable } from "../paid-route-table";
+import type { Route } from "./router";
+import { workersPaymentGate, type WorkersPaymentGate } from "./x402-adapter";
+
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
+  new Response(JSON.stringify(body, null, 2), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", ...headers },
+  });
+
+const fromResult = (r: HandlerResult): Response => json(r.body, r.status, { ...(r.headers ?? {}) });
+
+export interface PaidSurfaceArgs {
+  readonly pool: Pool;
+  readonly payTo: string;
+  readonly publicBaseUrl: string;
+  readonly okx: { readonly apiKey: string; readonly secretKey: string; readonly passphrase: string };
+  readonly facilitatorUrl?: string;
+}
+
+export interface PaidSurface {
+  readonly gate: WorkersPaymentGate;
+  readonly routes: readonly Route[];
+  readonly table: Record<string, RouteConfig>;
+}
+
+/**
+ * The policy read path, and only the read path.
+ *
+ * `initPolicyWiring` builds a repo, a registry reader and — when an operator key is present — a
+ * SIGNER, and runs migrations on the way. A deployment that does not own production writes has no
+ * business holding any of those. `PolicyProvider` over `PgPolicyRepo` is what preflight and verify
+ * actually read, so it is what gets built, and there is no signer in this module to reach for.
+ */
+export const policyReader = (pool: Pool): PolicyProvider =>
+  new PolicyProvider(new PgPolicyRepo(pool as never));
+
+export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
+  const table = buildPaidRouteTable({ payTo: args.payTo, publicBaseUrl: args.publicBaseUrl });
+
+  const facilitator = new OKXFacilitatorClient({
+    apiKey: args.okx.apiKey,
+    secretKey: args.okx.secretKey,
+    passphrase: args.okx.passphrase,
+    ...(args.facilitatorUrl ? { baseUrl: args.facilitatorUrl } : {}),
+    syncSettle: true,
+  } as never);
+
+  const server = new x402ResourceServer(facilitator).register("eip155:196", new ExactEvmScheme());
+  const gate = workersPaymentGate(table, server);
+
+  const policyProvider = policyReader(args.pool);
+  /**
+   * In-memory, exactly as Express builds it per process.
+   *
+   * The ledger and intent store here are request-scoped working state for a decision, not the durable
+   * record — that lives in Postgres and is written by whichever deployment owns production writes.
+   * An isolate holding its own is the same shape Express has, not a divergence.
+   */
+  const ledgerState = createLedgerState();
+
+  /**
+   * Deliberately missing: `receiptEnqueuer`, `escalationGateway`, `intentRegistry`, `oracleSigner`.
+   *
+   * Each is a WRITE — a durable receipt, a message to a human, an on-chain anchor, a signed oracle
+   * attestation. Railway owns those until the writer transfer. Omitted rather than stubbed so there is
+   * nothing here to accidentally call.
+   */
+  const preflightDeps = {
+    policyProvider,
+    ledger: ledgerState.ledger,
+    intentStore: ledgerState.intentStore,
+    intentRegistry: null,
+    oracleSigner: null,
+    scoreDataSource: null,
+  };
+
+  const priced = (pattern: string, run: (body: unknown) => Promise<HandlerResult> | HandlerResult): Route => ({
+    method: "POST",
+    pattern,
+    bodyMode: "json",
+    priced: true,
+    handler: async (req) => fromResult(await run(req.body)),
+  });
+
+  return {
+    gate,
+    table,
+    routes: [
+      priced(PREFLIGHT_ROUTE, (body) => handlePreflightPayment(body, preflightDeps as never)),
+      priced(VERIFY_ROUTE, (body) =>
+        handleVerifyDelivery(body, { policyProvider, intentStore: ledgerState.intentStore } as never),
+      ),
+      priced(DETECT_DUP_ROUTE, (body) => handleDetectDuplicate(body, ledgerState.ledger)),
+      priced(REDACT_META_ROUTE, (body) => handleRedactPaymentMetadata(body)),
+      priced(SUGGEST_NAMES_ROUTE, (body) => handleSuggestNames(body)),
+      priced(BRAND_PACK_ROUTE, (body) => handleBrandPack(body)),
+    ],
+  };
+}
+
+/** The six paths this module serves. Named once so the Stage table and the tests cannot disagree. */
+export const PAID_PATHS = [
+  PREFLIGHT_ROUTE,
+  VERIFY_ROUTE,
+  DETECT_DUP_ROUTE,
+  REDACT_META_ROUTE,
+  SUGGEST_NAMES_ROUTE,
+  BRAND_PACK_ROUTE,
+] as const;

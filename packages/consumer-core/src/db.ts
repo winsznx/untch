@@ -14,7 +14,19 @@ import pg from "pg";
 const { Pool } = pg;
 export type Pool = pg.Pool;
 
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
+/**
+ * Resolved WHEN A MIGRATION RUNS, never at import.
+ *
+ * This was a module-scope constant, which meant `fileURLToPath(import.meta.url)` executed on import —
+ * including in a Cloudflare Worker that only ever wanted `createPool` and `readSchemaState`, and never
+ * intended to run a migration at all. The Worker died at startup validation with
+ * `The "path" argument must be of type string` before serving a single request.
+ *
+ * The wrangler dry run did not catch it, because bundling never executes module scope. Only a real
+ * deploy did. Making it lazy leaves Node behaviour identical and removes the import-time filesystem
+ * call from every consumer of this module.
+ */
+const migrationsDir = (): string => join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 
 export function createPool(databaseUrl: string): Pool {
   const needsSsl = /[?&]sslmode=require/.test(databaseUrl) || process.env.PGSSL === "1";
@@ -88,7 +100,8 @@ export async function runMigrations(pool: Pool): Promise<string[]> {
        )`,
     );
 
-    const files = readdirSync(MIGRATIONS_DIR)
+    const dir = migrationsDir();
+    const files = readdirSync(dir)
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
@@ -97,7 +110,7 @@ export async function runMigrations(pool: Pool): Promise<string[]> {
       const { rowCount } = await client.query("SELECT 1 FROM schema_migrations WHERE name = $1", [file]);
       if (rowCount && rowCount > 0) continue;
 
-      const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
+      const sql = readFileSync(join(dir, file), "utf8");
       await client.query("BEGIN");
       try {
         await client.query(sql);

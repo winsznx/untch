@@ -73,7 +73,8 @@
     "account:status": "tsx scripts/account-status.ts",
     "gen:attestation": "tsx scripts/gen-workers-attestation.ts",
     "migrate:all": "tsx scripts/migrate-all.ts",
-    "demo:record": "pnpm --dir scripts/demo-video record"
+    "demo:record": "pnpm --dir scripts/demo-video record",
+    "gen:routes": "tsx scripts/gen-route-manifest.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
