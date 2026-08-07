@@ -4,6 +4,7 @@ import {
   ACCOUNT_LINK_COMPLETE_ROUTE,
   ACCOUNT_LINK_START_ROUTE,
   handleLinkComplete,
+  handleLinkStart,
 } from "../src/consumer/account-link";
 import { accountLinkRoutes } from "../src/workers/account-link-routes";
 
@@ -85,6 +86,80 @@ describe("a link cannot be consumed by a deployment that cannot complete it", ()
     assert.equal(result.status, 503);
     assert.equal((result.body as { code: string }).code, "ACCOUNT_LINK_UNAVAILABLE");
     assert.match((result.body as { message: string }).message, /unused/);
+  });
+});
+
+/**
+ * Found by pointing a hand-typed address at the live service and getting an INTERNAL_ERROR back at the
+ * LAST step of the flow — after the user would already have signed.
+ *
+ * Driven through `handleLinkStart` with fake stores rather than through the route, so a refusal is
+ * distinguishable from a database that was never reached.
+ */
+describe("a bad address is refused before anyone signs", () => {
+  let created = 0;
+  const linkDeps = {
+    accounts: {} as never,
+    links: {
+      async create() {
+        created += 1;
+        return {
+          request: {
+            linkRequestId: "ulnk_x",
+            siweNonce: "n".repeat(32),
+            expiresAt: "2099-01-01T00:00:00.000Z",
+            requestedScopes: ["identity"],
+            context: {},
+            returnUrl: null,
+          },
+          code: "code",
+        };
+      },
+    } as never,
+    verifier: { async verify() { return true; } },
+    domain: "asp.untch.xyz",
+    publicBaseUrl: "https://asp.untch.xyz",
+    allowedReturnOrigins: ["https://asp.untch.xyz"],
+    secret: "s".repeat(32),
+    now: () => 1_760_000_000_000,
+  };
+
+  const start = (address: string) => {
+    created = 0;
+    return handleLinkStart({ address, chainId: 196 }, linkDeps);
+  };
+
+  test("mixed case that fails EIP-55 is refused at start, not at complete", async () => {
+    // Correct: 0x57a3660e8D10a89DFaee9C130a73c9BCC76e8950. This one is uppercase-mangled in the middle.
+    const r = await start("0x57a3660e8D10a89DfAeE9c130a73c9bcC76e8950");
+    assert.equal(r.status, 400);
+    assert.equal((r.body as { code: string }).code, "ADDRESS_INVALID");
+    assert.equal(created, 0, "a refused address must not leave a PENDING link request behind");
+  });
+
+  /**
+   * All-lowercase and all-uppercase carry no checksum, so there is nothing there to be wrong. Refusing
+   * them would be a papercut with no safety behind it.
+   */
+  for (const [label, addr] of [
+    ["all-lowercase", "0x57a3660e8d10a89dfaee9c130a73c9bcc76e8950"],
+    ["all-uppercase", "0x57A3660E8D10A89DFAEE9C130A73C9BCC76E8950"],
+  ] as const) {
+    test(`an ${label} address is accepted and normalised into the message`, async () => {
+      const r = await start(addr);
+      assert.equal(r.status, 200);
+      const msg = (r.body as { siweMessage: string }).siweMessage;
+      assert.ok(
+        msg.includes("0x57a3660e8D10a89DFaee9C130a73c9BCC76e8950"),
+        "the message must carry the checksummed form, which is what viem will parse at complete",
+      );
+    });
+  }
+
+  test("a non-address is refused", async () => {
+    const r = await start("not-an-address");
+    assert.equal(r.status, 400);
+    assert.equal((r.body as { code: string }).code, "ADDRESS_INVALID");
   });
 });
 

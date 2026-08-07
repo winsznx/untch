@@ -20,7 +20,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import type { Address, Hex } from "viem";
+import { getAddress, isAddress, type Address, type Hex } from "viem";
 import {
   newWalletBindingId,
   returnUrlAllowed,
@@ -43,6 +43,33 @@ export const ACCOUNT_LINK_COMPLETE_ROUTE = "/consumer/account/link/complete" as 
 const KNOWN_SCOPES = new Set<BindingScope>(["identity", "policy-authority"]);
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * The canonical form of an address, or null if it should not be accepted.
+ *
+ * A hex-shape test alone is not enough. viem parses the SIWE message at COMPLETE and rejects an
+ * address whose mixed case is not a valid EIP-55 checksum, so one that passes `start` gets baked into
+ * a message the user is told to sign and then throws inside verification — surfacing as an opaque 500
+ * at the last step of a flow they had already committed a signature to.
+ *
+ * The rule follows what the case actually means:
+ *
+ *   • all-lowercase or all-uppercase carries NO checksum, so there is nothing to be wrong. Normalised,
+ *     because a caller pasting a lowercase address has made no mistake.
+ *   • mixed case IS a checksum, and one that fails is the signal EIP-55 exists to give: some digit is
+ *     probably mistyped. Refused rather than normalised — case-correcting it would produce a
+ *     valid-looking address while silently discarding the only evidence that it was wrong.
+ *
+ * `getAddress` cannot do this alone: it never throws for well-formed hex, it just recases. Reading it
+ * as a validator is the mistake that made the first version of this function accept everything.
+ */
+function checksummed(value: string): Address | null {
+  if (!ADDRESS_RE.test(value)) return null;
+  const body = value.slice(2);
+  const carriesChecksum = body !== body.toLowerCase() && body !== body.toUpperCase();
+  if (carriesChecksum && !isAddress(value, { strict: true })) return null;
+  return getAddress(value);
+}
 /** The chains this deployment will verify a sign-in against, in preference order. */
 const SIGNABLE_CHAINS: readonly number[] = SIGNIN_CHAIN_IDS;
 
@@ -154,7 +181,15 @@ export async function handleLinkStart(
      * marketplace starting a link for a wallet that will open the page later), and that path still
      * gets the nonce and the domain to build one with.
      */
-    const addressForMessage = typeof b.address === "string" && ADDRESS_RE.test(b.address) ? b.address : null;
+    const addressForMessage = typeof b.address === "string" ? checksummed(b.address) : null;
+    if (typeof b.address === "string" && addressForMessage === null) {
+      return refuse(
+        400,
+        "ADDRESS_INVALID",
+        `${b.address} is not a valid address. It must be 20 hex bytes, and if it carries mixed case ` +
+          "that case must be a correct EIP-55 checksum.",
+      );
+    }
     const chainForMessage =
       typeof b.chainId === "number" && SIGNABLE_CHAINS.includes(b.chainId) ? b.chainId : SIGNABLE_CHAINS[0];
 
@@ -317,16 +352,33 @@ export async function handleLinkComplete(body: unknown, deps: AccountLinkDeps): 
      * bounds guessing at the code; the signature check is what decides whether this is the right
      * person at all, and it costs nothing to be wrong about.
      */
-    const proof = await verifyWalletProof(
-      {
-        message,
-        signature: signature as Hex,
-        expectedNonce: request.siweNonce,
-        domain: deps.domain,
-        nowMs: now(),
-      },
-      deps.verifier,
-    );
+    /**
+     * A message that cannot even be parsed is a refusal, not a crash.
+     *
+     * `verifyWalletProof` reaches viem, which throws on a malformed address or an unparseable SIWE
+     * body rather than returning a verdict. Letting that escape turned "your message is wrong" into an
+     * INTERNAL_ERROR with a request id, which tells the one person who could fix it nothing. The link
+     * request is left PENDING either way — nothing is consumed until a signature actually verifies.
+     */
+    let proof: Awaited<ReturnType<typeof verifyWalletProof>>;
+    try {
+      proof = await verifyWalletProof(
+        {
+          message,
+          signature: signature as Hex,
+          expectedNonce: request.siweNonce,
+          domain: deps.domain,
+          nowMs: now(),
+        },
+        deps.verifier,
+      );
+    } catch (err) {
+      return refuse(
+        400,
+        "SIWE_MESSAGE_UNPARSEABLE",
+        `that message could not be read as a SIWE message: ${(err as Error).message.split("\n")[0]}`,
+      );
+    }
     if (!proof.ok) return refuse(401, proof.code, proof.reason);
 
     /**
