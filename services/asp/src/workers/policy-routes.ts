@@ -308,15 +308,81 @@ export function policyRoutes(deps: PolicyRouteDeps): readonly Route[] {
           return refuse(404, "DRAFT_NOT_FOUND", `no policy draft ${draftId} on this account`);
         }
 
-        const already = await policies.loadStored((draft as { policyId: string }).policyId);
-        if (already) return json({ policy: already, alreadySynced: true });
+        /**
+         * A draft that has already been confirmed carries the policy id the chain issued. A fresh one
+         * does not — `policyId` is absent until `markDraftConfirmed` fills it — so this must read the
+         * draft's own field rather than assume one is there. The first version passed `undefined` to
+         * `loadStored` on every genuine sync.
+         */
+        const confirmedId = (draft as { policyId?: string | null }).policyId ?? null;
+        if (confirmedId) {
+          const already = await policies.loadStored(confirmedId);
+          if (already) return json({ policy: already, policyId: confirmedId, alreadySynced: true });
+        }
 
         assertOwnsWrites(deps.gate, "approval-expiry-mutation");
         const synced = await registration!.syncRegistration({
           txHash: txHash as `0x${string}`,
           rules: (draft as { rules?: unknown }).rules,
         });
-        return json(synced);
+
+        /**
+         * The transaction must be the one this draft described.
+         *
+         * Without this a caller could sync ANY registration transaction against their own draft and
+         * have the resulting policy linked to their account — including one whose rules they never
+         * drafted and whose hash nobody here ever agreed to.
+         */
+        const draftHash = (draft as { policyHash?: string }).policyHash;
+        if (draftHash && draftHash !== synced.policyHash) {
+          return refuse(
+            409,
+            "POLICY_HASH_MISMATCH",
+            `the draft hashes to ${draftHash} but the transaction anchored ${synced.policyHash}`,
+          );
+        }
+
+        /**
+         * WITHOUT THE THREE WRITES BELOW, A REGISTERED POLICY IS INVISIBLE TO ITS OWN ACCOUNT.
+         *
+         * This route used to stop at `syncRegistration`, which stores the policy in the policy repo and
+         * nothing more. The account never learned it owned one: `GET /consumer/policies` returned an
+         * empty list, `defaultPolicyId` stayed null, and setting it as the default answered
+         * POLICY_NOT_FOUND — for a policy that was registered on chain, in a confirmed transaction,
+         * owned by the caller's own wallet. Sync reported success the whole time.
+         */
+        await accounts.markDraftConfirmed({ draftId, policyId: synced.policyId, by: `account:${accountId}` });
+        await accounts.linkPolicy({
+          accountId,
+          policyId: synced.policyId,
+          linkedBy: "registered",
+          by: `account:${accountId}`,
+        });
+
+        /**
+         * The FIRST policy an account registers becomes its default, because an account with exactly
+         * one policy and no default is an account whose next preflight fails for no reason a user can
+         * act on. A second policy does not silently displace it — that is a choice, not a fact.
+         */
+        const fresh = await accounts.getAccount(accountId);
+        let becameDefault = false;
+        if (!fresh?.defaultPolicyId) {
+          await accounts.setDefaultPolicy({ accountId, policyId: synced.policyId, by: "first-policy" });
+          becameDefault = true;
+        }
+
+        const stored = await policies.loadStored(synced.policyId);
+        return json({
+          policyId: synced.policyId,
+          owner: synced.owner,
+          policyHash: synced.policyHash,
+          version: synced.version,
+          registerTx: synced.txHash,
+          registerBlock: synced.blockNumber,
+          alreadySynced: synced.alreadyStored,
+          becameDefault,
+          policy: stored,
+        });
       }),
     },
   ];

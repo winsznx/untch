@@ -136,13 +136,26 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
    * the deny-list names. Refusing here rather than inside the SDK keeps the SDK unmodified and puts
    * the posture check where a reader looking for it would expect it.
    */
-  const gate: WorkersPaymentGate = async (request, body, run) => {
+  /**
+   * `onSettled` is forwarded, and its absence here cost two real settlements.
+   *
+   * This wrapper took THREE parameters and called `rawGate(request, body, run)`. The caller in
+   * `index.ts` passes a fourth — the hook that writes the sale down — and it was silently discarded,
+   * so `recordSale` was unreachable in production. Two paid calls settled on chain, returned correct
+   * results, and left `untch_marketplace_sales` empty.
+   *
+   * TypeScript could not catch it: a function of three parameters is assignable to a type of four.
+   * The adapter's own hook tests passed because they exercised `rawGate` directly, below this wrapper.
+   * So the guard is behavioural — `a settled sale survives the arming wrapper` in
+   * `x402-workers-adapter.test.ts` calls the gate the way the Worker actually calls it.
+   */
+  const gate: WorkersPaymentGate = async (request, body, run, onSettled) => {
     const carriesAuthorization =
       request.headers.has("x-payment") || request.headers.has("payment") || request.headers.has("x-payment-signature");
     // Read per request, not captured: the surface is memoised per isolate, and a captured state would
     // keep answering from the posture the isolate happened to start in.
     if (carriesAuthorization) assertArmed(args.arming(), "settle-payment");
-    return rawGate(request, body, run);
+    return rawGate(request, body, run, onSettled);
   };
 
 

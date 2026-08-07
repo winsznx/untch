@@ -29,6 +29,31 @@ Verified without spending:
 for most of the cutover, so no payment has ever completed on this deployment. That is
 the single most important thing to establish.
 
+### What is already proven about the facilitator
+
+Research raised two worries about OKX's hosted facilitator. Both are checked and neither
+blocks the paid call.
+
+*The base URL is right.* The concern was that `@okxweb3/x402-core` hardcodes
+`https://web3.okx.com/facilitator`, a path that 404s — the canonical one has no
+`/facilitator` prefix. That string does exist in the package, but it is not what we use:
+`OKXFacilitatorClient` defaults to `baseUrl: "https://web3.okx.com"`, and nothing here
+passes `facilitatorUrl`, so the default stands. Our calls go to
+`https://web3.okx.com/api/v6/pay/x402/*`, which is the canonical path.
+
+*OKX is reachable from Cloudflare, and our keys authenticate.* This is not inference from
+config — every 402 we serve proves it. On the first priced request the resource server
+calls `initialize()`, which fetches supported kinds from the facilitator. It warns per
+facilitator on failure but then **throws** if no facilitator supplied any kinds, and our
+adapter turns that into a 502. Three live priced requests returned 402, with zero
+`Failed to fetch supported kinds` warnings and zero 5xx in `wrangler tail`. So the
+authenticated HMAC round trip to OKX succeeded from Cloudflare's egress.
+
+That matters because OKX hosts are unreachable from Nigerian residential/VPN egress
+(TCP SYN dropped, HTTP 000). Cloudflare's egress is not affected. **Run the paid call
+from a network that can reach `web3.okx.com`, or expect the client side to fail even
+though the server side is fine.**
+
 ## The one thing that must be proven
 
 A paid call that settles, and a row in `untch_marketplace_sales`.
@@ -127,6 +152,31 @@ ordinary `user-agent` header.
 - The XMTP `a2a-agent-chat` task channel is not built. A Worker cannot hold a persistent
   connection. This is how OKX delivers `jobId`, so it matters for marketplace task
   delivery, and it needs a different runtime.
+
+## Two research findings worth acting on later, deliberately not done now
+
+**`evm_version = "paris"` in foundry.toml is more conservative than it needs to be.**
+It was chosen as a zkEVM-safe guess by someone who could not reach X Layer's docs. X Layer
+has since migrated from Polygon CDK zkEVM to an OP Stack rollup running `xlayer-reth`, and
+OKX documents every hardfork through Isthmus as active from genesis — so Shanghai (`PUSH0`)
+and Cancun (`TSTORE`/`MCOPY`) are both supported. No X Layer-specific deployment failure on
+a newer target was found anywhere public.
+
+Not changed here on purpose. It alters bytecode for future deploys only, fixes nothing
+live, and recompiling contracts days before a marketplace resubmission is risk with no
+payoff. Do it when the contracts are next touched for a real reason.
+
+**The ERC-8004 Reputation registry is live and populated on X Layer mainnet**, at
+`0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`, pointing at the same Identity registry
+(`0x8004A169...539a432`) our agent is registered in. It has real feedback: agent 936 has 72
+records, 963 has 52, 796 has 11. Read interface is `getClients(agentId)`,
+`readFeedback(agentId, client, index)`, `readAllFeedback(...)` and `getSummary(...)`.
+
+That is a genuine opportunity for the §12 Trust Bureau, which currently scores from our own
+data and cold-start heuristics — real on-chain counterparty reputation is exactly the input
+it lacks. It is a feature, not a gap, so it is not in the relisting path. Note the registry
+is absent on testnet 1952, and QuickNode's ERC-8004 API does not list X Layer, so reads
+would have to go direct to `rpc.xlayer.tech`.
 
 ## Relisting ASP 6086
 

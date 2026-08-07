@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { buildPaidSurface } from "../src/workers/paid-routes";
 import {
   WorkersHTTPAdapter,
   workersPaymentGateFromHTTPServer,
@@ -355,5 +356,53 @@ describe("the response is buffered before settlement, not streamed past it", () 
 
     assert.equal(res.status, 402);
     assert.deepEqual(await res.json(), {});
+  });
+});
+
+/**
+ * THE BUG THAT COST TWO REAL SETTLEMENTS.
+ *
+ * `buildPaidSurface` wraps the raw gate to check arming before a settlement. That wrapper was written
+ * with THREE parameters and forwarded three, so the fourth — the hook that records the sale — was
+ * silently dropped. Two paid calls settled on chain, returned correct results, and left
+ * `untch_marketplace_sales` empty.
+ *
+ * TypeScript cannot catch this: a function of three parameters is assignable to a type of four. The
+ * adapter's existing hook tests passed throughout, because they call `workersPaymentGate` directly —
+ * one layer BELOW the wrapper that was dropping the argument.
+ *
+ * So the check is on the shipped object itself. A function's `length` is its declared parameter
+ * count, which is exactly the property that was wrong, and it cannot drift out of sync with the source
+ * the way a text match can.
+ */
+describe("a settled sale survives the arming wrapper", () => {
+  const surface = () =>
+    buildPaidSurface({
+      payTo: "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
+      publicBaseUrl: "https://asp.untch.xyz",
+      // Never used: constructing the facilitator client performs no I/O, and no request is made here.
+      okx: { apiKey: "k", secretKey: "s", passphrase: "p" },
+      arming: () => ({ armed: true, refusals: [], attested: true, schemaOk: true, operatorArmed: true }),
+    });
+
+  test("the arming wrapper accepts the settlement hook rather than dropping it", () => {
+    assert.equal(
+      surface().gate.length,
+      4,
+      "the gate must declare all four parameters. Declaring three silently discards the recorder the " +
+        "Worker passes as the fourth, and money moves with nothing written down.",
+    );
+  });
+
+  test("it forwards the hook rather than merely accepting it", async () => {
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("../src/workers/paid-routes.ts", import.meta.url), "utf8"),
+    );
+    const wrapper = src.slice(src.indexOf("const gate: WorkersPaymentGate"), src.indexOf("const ledgerState"));
+    assert.match(
+      wrapper,
+      /rawGate\(request, body, run, onSettled\)/,
+      "accepting the hook and then not passing it on is the same silent failure with an extra step",
+    );
   });
 });
