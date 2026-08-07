@@ -95,7 +95,16 @@ function settlement(env: WorkerEnv): Stage1Settlement {
  */
 let paidSurface: ReturnType<typeof buildPaidSurface> | null | undefined;
 
+/**
+ * The pool of the request in flight.
+ *
+ * Updated on every invocation and read through the accessor the memoised paid surface holds, so that
+ * surface never performs I/O on a pool belonging to an earlier request.
+ */
+let currentPool: Parameters<typeof buildPaidSurface>[0]["pool"] extends () => infer P ? P : never;
+
 function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
+  currentPool = ctx.pool as never;
   if (paidSurface !== undefined) return paidSurface;
   const env = ctx.env;
   const apiKey = env.OKX_API_KEY?.trim();
@@ -106,7 +115,7 @@ function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
     return null;
   }
   paidSurface = buildPaidSurface({
-    pool: ctx.pool,
+    pool: () => currentPool,
     payTo: settlement(ctx.env).payTo,
     publicBaseUrl: ctx.baseUrl,
     okx: { apiKey, secretKey, passphrase },

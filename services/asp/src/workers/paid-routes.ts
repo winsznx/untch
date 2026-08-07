@@ -62,7 +62,18 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
 const fromResult = (r: HandlerResult): Response => json(r.body, r.status, { ...(r.headers ?? {}) });
 
 export interface PaidSurfaceArgs {
-  readonly pool: Pool;
+  /**
+   * The CURRENT request's pool, not a captured one.
+   *
+   * This surface is memoised per isolate so the facilitator client and resource server are built once.
+   * Taking a `Pool` value meant it also captured the pool belonging to the FIRST request that built it,
+   * and every later request then performed I/O on another request's object — which workerd forbids.
+   * The symptom was `create_spend_intent` failing intermittently with a Cloudflare HTML 500 that never
+   * reached the Worker's own logs, and failing almost always once those pools started being closed.
+   *
+   * An accessor, so the memoised surface reads the pool that belongs to the request in flight.
+   */
+  readonly pool: () => Pool;
   readonly payTo: string;
   readonly publicBaseUrl: string;
   readonly okx: { readonly apiKey: string; readonly secretKey: string; readonly passphrase: string };
@@ -115,7 +126,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
    * facilitator confirms, so nothing refused or failed can be recorded as revenue.
    */
   const rawGate = workersPaymentGate(table, server, {
-    onSettled: (facts) => recordSale(args.pool, facts),
+    onSettled: (facts) => recordSale(args.pool(), facts),
   });
 
   /**
@@ -136,7 +147,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     return rawGate(request, body, run);
   };
 
-  const policyProvider = policyReader(args.pool);
+  const policyProvider = () => policyReader(args.pool());
   /**
    * In-memory, exactly as Express builds it per process.
    *
@@ -153,16 +164,16 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
    * attestation. Railway owns those until the writer transfer. Omitted rather than stubbed so there is
    * nothing here to accidentally call.
    */
-  const preflightDeps = {
-    policyProvider,
+  const preflightDeps = () => ({
+    policyProvider: policyProvider(),
     ledger: ledgerState.ledger,
     intentStore: ledgerState.intentStore,
     intentRegistry: null,
     oracleSigner: null,
     scoreDataSource: null,
-  };
+  });
 
-  const intents = new PgIntentStore(args.pool);
+  const intents = () => new PgIntentStore(args.pool());
 
   /**
    * Bridge the durable store to the in-memory one the canonical handlers take.
@@ -176,7 +187,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
   const hydrate = async (body: unknown): Promise<void> => {
     const hash = (body as Record<string, unknown> | null)?.intentHash;
     if (typeof hash !== "string") return;
-    const stored = await intents.get(hash);
+    const stored = await intents().get(hash);
     if (stored) ledgerState.intentStore.put(hash as `0x${string}`, stored as never);
   };
 
@@ -185,7 +196,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     const hash = (result.body as Record<string, unknown> | undefined)?.intentHash;
     if (typeof hash !== "string") return;
     const stored = ledgerState.intentStore.get(hash);
-    if (stored) await intents.put(hash, stored);
+    if (stored) await intents().put(hash, stored);
   };
 
   const priced = (pattern: string, run: (body: unknown) => Promise<HandlerResult> | HandlerResult): Route => ({
@@ -214,7 +225,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     handler: async (req) => {
       const result = await handleCreateSpendIntent(coerceObjectParams(req.body), {
         intentStore: ledgerState.intentStore,
-        policyProvider,
+        policyProvider: policyProvider(),
         intentRegistry: null,
       } as never);
       await persist(req.body, result);
@@ -227,9 +238,9 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     table,
     routes: [
       freeIntent,
-      priced(PREFLIGHT_ROUTE, (body) => handlePreflightPayment(body, preflightDeps as never)),
+      priced(PREFLIGHT_ROUTE, (body) => handlePreflightPayment(body, preflightDeps() as never)),
       priced(VERIFY_ROUTE, (body) =>
-        handleVerifyDelivery(body, { policyProvider, intentStore: ledgerState.intentStore } as never),
+        handleVerifyDelivery(body, { policyProvider: policyProvider(), intentStore: ledgerState.intentStore } as never),
       ),
       priced(DETECT_DUP_ROUTE, (body) => handleDetectDuplicate(body, ledgerState.ledger)),
       priced(REDACT_META_ROUTE, (body) => handleRedactPaymentMetadata(body)),
