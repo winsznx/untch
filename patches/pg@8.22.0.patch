@@ -1,0 +1,28 @@
+diff --git a/lib/stream.js b/lib/stream.js
+index edc3018332d999139e6b6573230e8c0553650bc0..ea9f67ec9d6f32469af27b64a62984ec667a1a76 100644
+--- a/lib/stream.js
++++ b/lib/stream.js
+@@ -38,7 +38,22 @@ function getNodejsStreamFuncs() {
+  */
+ function getCloudflareStreamFuncs() {
+   function getStream(ssl) {
+-    const { CloudflareSocket } = require('pg-cloudflare')
++    // Resolved lazily and defensively.
++    //
++    // OpenNext copies this package into .open-next/ and esbuilds it there, outside pnpm's symlink
++    // layout, so the optional dependency cannot be resolved from the copy and the bundle fails to
++    // build at all. pg itself treats pg-cloudflare as optional everywhere else; this makes the
++    // Cloudflare path agree, and a deployment that genuinely needs the socket still fails loudly at
++    // the point of use rather than silently opening the wrong kind of connection.
++    let CloudflareSocket
++    try {
++      ;({ CloudflareSocket } = require('pg-cloudflare'))
++    } catch (err) {
++      throw new Error(
++        'pg-cloudflare is required to open a Postgres socket on Cloudflare Workers but could not be resolved: ' +
++          (err && err.message ? err.message : String(err))
++      )
++    }
+     return new CloudflareSocket(ssl)
+   }
+ 

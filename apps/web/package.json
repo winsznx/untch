@@ -9,7 +9,9 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:deploy": "opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "^2.2.11",
@@ -27,16 +29,19 @@
     "@untch/trust-bureau": "workspace:*",
     "@untch/x402-guard": "workspace:*",
     "next": "16.2.10",
+    "pg-cloudflare": "^1.4.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "wagmi": "^2.19.5"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.2",
     "@tailwindcss/postcss": "4.3.2",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "tailwindcss": "4.3.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "wrangler": "4.119.0"
   }
 }

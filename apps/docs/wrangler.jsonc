@@ -1,0 +1,12 @@
+{
+  "name": "untch-docs",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./out",
+    // The export writes `quickstart.html`, not `quickstart/index.html`, so the serving mode has to
+    // map an extensionless request onto the sibling .html file rather than look for a directory.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "observability": { "enabled": true }
+}
