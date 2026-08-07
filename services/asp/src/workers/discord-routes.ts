@@ -25,7 +25,7 @@
  * could claim this path.
  */
 
-import { DISCORD_INTERACTIONS_ROUTE } from "../consumer/discord-interactions";
+import { DISCORD_INTERACTIONS_PATH as DISCORD_INTERACTIONS_ROUTE } from "../consumer/account-view";
 import { verifyDiscordSignatureWorkers } from "./discord-signature";
 import type { Route } from "./router";
 

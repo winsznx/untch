@@ -117,76 +117,16 @@ const refuse = (
  * treat it as something to present. `verifiedAt` and `proofKind` say everything a user needs to answer
  * "is this really proven, and when".
  */
-function publicWallet(w: WalletBinding): Record<string, unknown> {
-  return {
-    bindingId: w.bindingId,
-    chain: w.chainKind,
-    network: w.proofChainId === null ? null : `eip155:${w.proofChainId}`,
-    address: w.address,
-    role: w.role,
-    walletProvider: w.walletProvider,
-    proofMethod: w.proofKind === "siwe" ? "siwe-personal-sign" : "declared",
-    scopes: w.scopes,
-    status: w.status,
-    verifiedAt: w.verifiedAt,
-    revokedAt: w.revokedAt,
-  };
-}
-
-function publicMarketplace(m: MarketplaceBinding): Record<string, unknown> {
-  return {
-    bindingId: m.bindingId,
-    marketplace: m.marketplace,
-    agentId: m.agentId,
-    buyerId: m.buyerId,
-    marketplaceUserRef: m.marketplaceUserRef,
-    serviceOrderRef: m.serviceOrderRef,
-    taskRef: m.taskRef,
-    bindingMethod: m.bindingMethod,
-    // Named rather than implied. A binding that authorises nothing must SAY it authorises nothing,
-    // because a client that sees only `status: ACTIVE` will reasonably assume otherwise.
-    carriesAuthority: m.provenBy === "wallet-signature",
-    status: m.status,
-    verifiedAt: m.verifiedAt,
-    expiresAt: m.expiresAt,
-    revokedAt: m.revokedAt,
-  };
-}
-
-function publicChannel(c: ChannelBinding): Record<string, unknown> {
-  return {
-    bindingId: c.bindingId,
-    channel: c.channel,
-    // The platform identity is truncated. It is enough to recognise which of your own accounts this
-    // is, and not enough for a leaked read to become a target list.
-    identity: c.displayLabel ?? `${c.channelUserId.slice(0, 4)}…`,
-    canDecide: c.canDecide,
-    status: c.status,
-    verifiedAt: c.verifiedAt,
-    revokedAt: c.revokedAt,
-  };
-}
-
-/** The published shape of an account. Exported so the Worker projects it identically to Express. */
-export function publicAccount(
-  account: UntchAccount,
-  wallets: readonly WalletBinding[],
-  marketplace: readonly MarketplaceBinding[],
-  channels: readonly ChannelBinding[],
-): Record<string, unknown> {
-  return {
-    accountId: account.accountId,
-    status: account.status,
-    displayName: account.displayName,
-    defaultPolicyId: account.defaultPolicyId,
-    primaryWalletBindingId: account.primaryWalletBindingId,
-    createdAt: account.createdAt,
-    lastAuthenticatedAt: account.lastAuthenticatedAt,
-    wallets: wallets.map(publicWallet),
-    marketplaceBindings: marketplace.map(publicMarketplace),
-    channelBindings: channels.map(publicChannel),
-  };
-}
+/**
+ * The projections moved to `account-view.ts`, which imports no transport.
+ *
+ * The Cloudflare Worker serves the same account read and cannot import this module: Express drags
+ * `raw-body` and `iconv-lite` into the bundle, and `iconv-lite` calls `require_streams(...)` at
+ * module scope, which is not a function under workerd. Re-exported so this file's callers are
+ * unchanged and there is still exactly one definition.
+ */
+import { publicAccount, publicChannel, publicMarketplace, publicWallet } from "./account-view";
+export { publicAccount, publicChannel, publicMarketplace, publicWallet };
 
 // ── the routes ───────────────────────────────────────────────────────────────
 

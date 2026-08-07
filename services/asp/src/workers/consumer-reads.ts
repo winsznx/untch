@@ -23,7 +23,7 @@
 import { PgAccountStore, PgApprovalStore, type Pool } from "@untch/consumer-core";
 import { PgPolicyRepo, PolicyProvider } from "@untch/policy-store";
 import { openAccountSession } from "../consumer/account-auth";
-import { publicAccount } from "../consumer/account-routes";
+import { publicAccount } from "../consumer/account-view";
 import type { HandlerResult } from "../handlers";
 import type { Route, RouteRequest } from "./router";
 import { assertOwnsWrites, type WriterGate } from "./writer-gate";
