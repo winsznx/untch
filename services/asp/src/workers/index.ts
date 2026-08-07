@@ -13,6 +13,7 @@
 import pg from "pg";
 import { NETWORK, SETTLEMENT_TOKEN } from "../config";
 import { buildWorker, type RouteContext } from "./entry";
+import { agentCardRoutes } from "./agent-card";
 import { consumerReadRoutes } from "./consumer-reads";
 import { discordRoutes } from "./discord-routes";
 import { realJobDeps } from "./job-wiring";
@@ -37,7 +38,7 @@ const MIGRATIONS: readonly string[] = [
   "028_x402_service_calls_and_approval_activation.sql", "029_approval_channels_actions_lineage.sql",
   "030_bound_approval_actions.sql", "031_requote_lineage.sql", "032_approval_oauth_state.sql",
   "033_approval_oauth_smoke.sql", "034_discord_dm_binding_repair.sql",
-  "035_wallet_scope_downgrade.sql",
+  "035_wallet_scope_downgrade.sql", "036_marketplace_sales.sql", "037_spend_intents.sql",
 ];
 
 /**
@@ -153,6 +154,7 @@ const worker = buildWorker({
     ...(paid(ctx)?.routes ?? []),
     ...consumerRoutes(ctx),
     ...discord(ctx),
+    ...agentCardRoutes(ctx.baseUrl),
   ],
   onUnmatched: stage1Fallback,
   paymentGate: (ctx) => paid(ctx)?.gate,

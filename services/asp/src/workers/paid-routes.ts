@@ -34,6 +34,7 @@ import { PgPolicyRepo } from "@untch/policy-store";
 import type { Pool } from "@untch/consumer-core";
 import {
   BRAND_PACK_ROUTE,
+  CREATE_INTENT_ROUTE,
   DETECT_DUP_ROUTE,
   PREFLIGHT_ROUTE,
   REDACT_META_ROUTE,
@@ -42,11 +43,14 @@ import {
 } from "../config";
 import { handleBrandPack, handleSuggestNames } from "../consumer-handlers";
 import type { HandlerResult } from "../handlers";
-import { handlePreflightPayment, handleVerifyDelivery } from "../handlers";
+import { handleCreateSpendIntent, handlePreflightPayment, handleVerifyDelivery } from "../handlers";
 import { handleDetectDuplicate, handleRedactPaymentMetadata } from "../s11-handlers";
 import { createLedgerState } from "../ledger-state";
 import { buildPaidRouteTable } from "../paid-route-table";
 import type { Route } from "./router";
+import { coerceObjectParams } from "./coerce-params";
+import { PgIntentStore } from "./intent-store";
+import { recordSale } from "./sales";
 import { workersPaymentGate, type WorkersPaymentGate } from "./x402-adapter";
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
@@ -103,7 +107,16 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
   } as never);
 
   const server = new x402ResourceServer(facilitator).register("eip155:196", new ExactEvmScheme());
-  const rawGate = workersPaymentGate(table, server);
+  /**
+   * Every confirmed settlement is written down before the buyer gets their bytes back.
+   *
+   * Four real sales settled on chain with no record of any kind, which left the seller unable to say
+   * what it had sold and the buyer unable to prove a purchase. The hook fires only after the
+   * facilitator confirms, so nothing refused or failed can be recorded as revenue.
+   */
+  const rawGate = workersPaymentGate(table, server, {
+    onSettled: (facts) => recordSale(args.pool, facts),
+  });
 
   /**
    * The arming check sits between the challenge and the settlement.
@@ -149,18 +162,71 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     scoreDataSource: null,
   };
 
+  const intents = new PgIntentStore(args.pool);
+
+  /**
+   * Bridge the durable store to the in-memory one the canonical handlers take.
+   *
+   * `resolveIntent` and `resolveIntentForVerify` read the store synchronously and are typed against
+   * `InMemoryIntentStore` concretely. Making them async would mean editing the engine that decides
+   * whether money may move, to solve a storage problem — the wrong place to take that risk. Instead the
+   * intent is loaded from Postgres BEFORE the handler runs and written back AFTER, so the handler sees
+   * exactly the store it expects and the durability lives out here.
+   */
+  const hydrate = async (body: unknown): Promise<void> => {
+    const hash = (body as Record<string, unknown> | null)?.intentHash;
+    if (typeof hash !== "string") return;
+    const stored = await intents.get(hash);
+    if (stored) ledgerState.intentStore.put(hash as `0x${string}`, stored as never);
+  };
+
+  /** Persist whatever the handler just created, so the next request finds it on another isolate. */
+  const persist = async (body: unknown, result: HandlerResult): Promise<void> => {
+    const hash = (result.body as Record<string, unknown> | undefined)?.intentHash;
+    if (typeof hash !== "string") return;
+    const stored = ledgerState.intentStore.get(hash);
+    if (stored) await intents.put(hash, stored);
+  };
+
   const priced = (pattern: string, run: (body: unknown) => Promise<HandlerResult> | HandlerResult): Route => ({
     method: "POST",
     pattern,
     bodyMode: "json",
     priced: true,
-    handler: async (req) => fromResult(await run(req.body)),
+    handler: async (req) => {
+      await hydrate(req.body);
+      return fromResult(await run(coerceObjectParams(req.body)));
+    },
   });
+
+  /**
+   * The free prerequisite, served here because it shares the paid routes' wiring.
+   *
+   * It was never ported, and two of the six paid services depend on it — an independent buyer found
+   * `preflight_payment` and `verify_delivery` unusable because the intent they need could not be
+   * created. It is free, so it carries no `priced` flag and never reaches the payment gate; what makes
+   * it belong in this module is the policy provider and the intent store, not a price.
+   */
+  const freeIntent: Route = {
+    method: "POST",
+    pattern: CREATE_INTENT_ROUTE,
+    bodyMode: "json",
+    handler: async (req) => {
+      const result = await handleCreateSpendIntent(coerceObjectParams(req.body), {
+        intentStore: ledgerState.intentStore,
+        policyProvider,
+        intentRegistry: null,
+      } as never);
+      await persist(req.body, result);
+      return fromResult(result);
+    },
+  };
 
   return {
     gate,
     table,
     routes: [
+      freeIntent,
       priced(PREFLIGHT_ROUTE, (body) => handlePreflightPayment(body, preflightDeps as never)),
       priced(VERIFY_ROUTE, (body) =>
         handleVerifyDelivery(body, { policyProvider, intentStore: ledgerState.intentStore } as never),

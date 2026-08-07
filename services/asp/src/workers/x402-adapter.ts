@@ -152,6 +152,44 @@ export interface WorkersPaymentGateOptions {
    * wait on the facilitator even for free routes.
    */
   readonly syncFacilitatorOnStart?: boolean;
+  /**
+   * Called after a settlement the facilitator confirmed, with the facts of the transfer.
+   *
+   * A hook rather than a database call inside the adapter, because this module deliberately knows
+   * nothing about storage — the same reason it takes a route table instead of reading one. It fires
+   * only on confirmed success, so a refused or failed settlement can never be recorded as a sale.
+   */
+  readonly onSettled?: (facts: SettlementFacts) => void | Promise<void>;
+}
+
+/** What the seller needs to reconcile a sale, taken from what the SDK already verified. */
+export interface SettlementFacts {
+  readonly route: string;
+  readonly payer: string;
+  readonly payTo: string;
+  readonly token: string;
+  readonly network: string;
+  readonly amountBaseUnits: string;
+  readonly transactionHash: string | null;
+  readonly facilitatorStatus: string | null;
+  readonly responseStatus: number;
+  readonly responseBytes: number;
+  readonly authorizationNonce: string | null;
+}
+
+/** Dig a value out of the SDK payload without assuming one shape across versions. */
+function pick(o: unknown, ...keys: readonly string[]): string | null {
+  if (!o || typeof o !== "object") return null;
+  for (const k of keys) {
+    const v = (o as Record<string, unknown>)[k];
+    if (typeof v === "string" && v.length > 0) return v;
+    if (typeof v === "number") return String(v);
+    if (v && typeof v === "object") {
+      const nested = pick(v, ...keys);
+      if (nested) return nested;
+    }
+  }
+  return null;
 }
 
 export interface WorkersPaymentGate {
@@ -307,6 +345,32 @@ export function workersPaymentGateFromHTTPServer(
     }
 
     for (const [k, v] of Object.entries(settleResult.headers)) responseHeaders.set(k, v);
+
+    /**
+     * Recorded only here — after the facilitator confirmed, and only on success.
+     *
+     * Everything above this line either refused, failed or never charged, so nothing above it is a
+     * sale. Awaited rather than fired and forgotten: a Worker isolate can be frozen the moment the
+     * response is returned, and an un-awaited write is a write that may simply not happen.
+     */
+    if (options.onSettled) {
+      const settleBody = (settleResult as unknown as { response?: { body?: unknown } }).response?.body;
+      await options.onSettled({
+        route: adapter.getPath(),
+        payer: pick(paymentPayload, "payer", "from", "sender") ?? "unknown",
+        payTo: pick(paymentRequirements, "payTo", "recipient") ?? "unknown",
+        token: pick(paymentRequirements, "asset", "token", "currency") ?? "unknown",
+        network: pick(paymentRequirements, "network", "chain") ?? "unknown",
+        amountBaseUnits:
+          pick(paymentRequirements, "amount", "maxAmountRequired", "amountBaseUnits") ?? "unknown",
+        transactionHash: pick(settleBody, "transaction", "transactionHash", "txHash", "hash"),
+        facilitatorStatus: pick(settleBody, "status", "settleStatus"),
+        responseStatus: handlerResponse.status,
+        responseBytes: responseBytes.byteLength,
+        authorizationNonce: pick(paymentPayload, "nonce", "authorizationNonce"),
+      });
+    }
+
     return new Response(responseBytes, {
       status: handlerResponse.status,
       statusText: handlerResponse.statusText,

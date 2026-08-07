@@ -2,8 +2,8 @@
   "generatedFrom": "route-manifest.generated.json, classified against the Worker's own route tables",
   "totalRoutes": 126,
   "byState": {
-    "PORTED": 36,
-    "DEFERRED_AFTER_RELIST": 77,
+    "PORTED": 37,
+    "DEFERRED_AFTER_RELIST": 76,
     "NODE_ADMIN_ONLY": 13
   },
   "blockingRelisting": [],
@@ -451,13 +451,6 @@
     },
     {
       "method": "POST",
-      "path": "/create_spend_intent",
-      "classification": "marketplace",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "public path with no rule claiming it — treated as blocking until reviewed"
-    },
-    {
-      "method": "POST",
       "path": "/create_spend_policy",
       "classification": "marketplace",
       "state": "DEFERRED_AFTER_RELIST",
@@ -782,6 +775,13 @@
       "method": "GET",
       "path": "/consumer/policies/:policyId",
       "classification": "account",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "POST",
+      "path": "/create_spend_intent",
+      "classification": "marketplace",
       "state": "PORTED",
       "why": "the Worker route table declares this path"
     },
