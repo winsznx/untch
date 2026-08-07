@@ -55,6 +55,15 @@ export interface PolicyRouteDeps {
   readonly gate: WriterGate;
 }
 
+/** `pdft_` plus 26 base32 characters, matching the id shape the rest of the schema uses. */
+const DRAFT_BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
+function newDraftId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(26));
+  let out = "";
+  for (const b of bytes) out += DRAFT_BASE32[b % 32];
+  return `pdft_${out}`;
+}
+
 const SESSION_REQUIRED =
   "policy registration is account-scoped: POST /consumer/account/link/start, sign the message with " +
   "your wallet, then POST /consumer/account/link/complete to obtain a session";
@@ -165,16 +174,33 @@ export function policyRoutes(deps: PolicyRouteDeps): readonly Route[] {
          * a real transaction and then find nothing here to sync it against.
          */
         assertOwnsWrites(deps.gate, "approval-expiry-mutation");
-        await accounts.createDraft({
+        /**
+         * `PolicyDraft` omits `policyId` on create by design: the id only exists once the chain has
+         * confirmed the registration, and inventing one here would let a draft claim an identity no
+         * contract had issued. `markDraftConfirmed` fills it during sync.
+         */
+        const draft = await accounts.createDraft({
+          draftId: newDraftId(),
           accountId,
-          policyDraftId: (built as { policyDraftId?: string }).policyDraftId ?? (built as { policyId?: string }).policyId ?? "",
-          policyId: (built as { policyId?: string }).policyId ?? "",
-          policyHash: (built as { policyHash?: string }).policyHash ?? "",
-          agentId: agent,
+          rules: derived.rules as unknown as Record<string, unknown>,
+          policyHash: built.policyHash,
+          agentId: built.agentId,
+          chainId: built.chainId,
           by: "policy-draft",
         } as never);
 
-        return json({ ...built, registry: registration!.registry, chainId: registration!.chainId });
+        return json({
+          policyDraftId: draft.draftId,
+          policyHash: built.policyHash,
+          agentId: built.agentId,
+          expiry: built.expiry,
+          registry: built.registry,
+          chainId: built.chainId,
+          unsignedTx: built.unsignedTx,
+          nextStep:
+            "send unsignedTx from the policy-authority wallet, then POST /consumer/policies/sync with " +
+            "{ policyDraftId, txHash }",
+        });
       }),
     },
 
