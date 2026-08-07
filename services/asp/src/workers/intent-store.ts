@@ -13,6 +13,36 @@
 
 import type { Pool } from "@untch/consumer-core";
 
+/**
+ * The canonical intent holds bigints — `buyerAgentId`, `workerAgentId`, `maxAmount`, `deadline` and
+ * `nonce` are all uint256 — and `JSON.stringify` throws outright on a BigInt rather than coercing it.
+ * A first cut of this store hit that as a 500 on every `create_spend_intent`.
+ *
+ * They are tagged on the way out and restored on the way back, because the alternative — writing them
+ * as plain strings — would round-trip a bigint into a string and change the intent's hash. An intent
+ * that hashes differently after a database round trip is an intent that can no longer be spent.
+ */
+const BIGINT_TAG = "$bigint";
+
+function encode(value: unknown): unknown {
+  if (typeof value === "bigint") return { [BIGINT_TAG]: value.toString() };
+  if (Array.isArray(value)) return value.map(encode);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, encode(v)]));
+  }
+  return value;
+}
+
+function decode(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(decode);
+  if (value && typeof value === "object") {
+    const tagged = (value as Record<string, unknown>)[BIGINT_TAG];
+    if (typeof tagged === "string") return BigInt(tagged);
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, decode(v)]));
+  }
+  return value;
+}
+
 export class PgIntentStore {
   constructor(private readonly pool: Pool) {}
 
@@ -28,7 +58,7 @@ export class PgIntentStore {
        ON CONFLICT (intent_hash) DO UPDATE
          SET intent = EXCLUDED.intent, created_at = now(),
              expires_at = now() + interval '24 hours'`,
-      [intentHash.toLowerCase(), JSON.stringify(intent)],
+      [intentHash.toLowerCase(), JSON.stringify(encode(intent))],
     );
   }
 
@@ -44,7 +74,7 @@ export class PgIntentStore {
         WHERE intent_hash = $1 AND expires_at > now()`,
       [intentHash.toLowerCase()],
     );
-    return rows[0]?.intent ?? undefined;
+    return rows[0] ? decode(rows[0].intent) : undefined;
   }
 
   /** Drop what nobody spent in time. Returns the count so the scheduled job can report it. */
