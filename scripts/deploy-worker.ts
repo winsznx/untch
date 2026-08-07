@@ -37,6 +37,9 @@ const env = process.argv.includes("--preview") ? "" : "production";
 const run = (cmd: string, args: string[], cwd: string): string =>
   execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: ["inherit", "pipe", "inherit"] });
 
+/** The commit this run is uploading, so the health check can insist on seeing THAT one. */
+const expected = run("git", ["rev-parse", "HEAD"], ROOT).trim();
+
 let generated = false;
 try {
   run("pnpm", ["gen:attestation"], ROOT);
@@ -67,22 +70,39 @@ if (env !== "production") process.exit(0);
  * authority on which code is running.
  */
 const BASE = process.env.ASP_PUBLIC_URL ?? "https://asp.untch.xyz";
-const deadline = Date.now() + 90_000;
+const deadline = Date.now() + 120_000;
 let health: Record<string, never> | undefined;
 
+/**
+ * Waits for THIS commit, not for any attested build.
+ *
+ * Breaking on `attested === true` alone accepts the deployment that was already live: Cloudflare keeps
+ * serving the previous version from warm isolates for a while after an upload, so the first healthy
+ * response is routinely the old one. That check passed while reporting a commit that was two commits
+ * behind the tree it had just uploaded — a green deploy for code that was not live yet.
+ */
 while (Date.now() < deadline) {
   const res = await fetch(`${BASE}/readyz`, { cache: "no-store" });
   health = (await res.json()) as never;
-  if ((health as { attested?: boolean }).attested) break;
+  if ((health as { commit?: string }).commit === expected) break;
   await new Promise((r) => setTimeout(r, 5_000));
 }
 
 const h = health as unknown as {
   attested?: boolean;
+  commit?: string;
   commitShort?: string;
   armingRefusals?: string[];
   posture?: { financiallyArmed?: boolean };
 };
+
+if (h?.commit !== expected) {
+  console.error(
+    `DEPLOY UNCONFIRMED: uploaded ${expected.slice(0, 7)}, but the live Worker still reports ` +
+      `${h?.commitShort ?? "no commit"} after two minutes. Do not treat this as deployed.`,
+  );
+  process.exit(1);
+}
 
 if (!h?.attested) {
   console.error(
