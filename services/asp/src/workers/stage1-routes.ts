@@ -27,8 +27,26 @@
  * not exist would invite a caller to buy work this deployment cannot perform.
  */
 
-import { CAFE_LATTE_ROUTE, CATALOG_ROUTE, PING_ROUTE } from "../config";
-import { handleCatalog } from "../consumer-handlers";
+import { loadConsumerFlags } from "@untch/consumer-core";
+import {
+  CAFE_LATTE_ROUTE,
+  CAFE_MENU_ROUTE,
+  CATALOG_ROUTE,
+  CHECK_DOMAINS_ROUTE,
+  PING_ROUTE,
+  RANK_OPTIONS_ROUTE,
+  SEO_TIPS_ROUTE,
+} from "../config";
+import {
+  handleCafeMenu,
+  handleCafeOrderLatte,
+  handleCatalog,
+  handleCheckDomains,
+  handleRankOptions,
+  handleSeoTips,
+} from "../consumer-handlers";
+import type { HandlerResult } from "../handlers";
+import { EXECUTION_MANIFEST_ROUTE, executionManifest } from "../route-profiles";
 import { AGENT_REGISTRATION_PATH, DEFAULT_WELL_KNOWN_PATH } from "../erc8004/constants";
 import { buildRegistrationCard } from "../erc8004/registration-card";
 import { ERC8004_AGENT_ID } from "../registry/marketplace-identity";
@@ -66,6 +84,18 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 const discovery = (body: unknown): Response => json(body, 200, { "cache-control": CACHE_DISCOVERY });
 
 /**
+ * A `HandlerResult` as a `Response`, carrying the headers the handler asked for.
+ *
+ * The handlers return `{ status, body, headers? }` because the body is the contract and the transport
+ * is not their concern. `headers` is rare and load-bearing where it appears — a refusal that wants a
+ * backoff hint and must never be cached — so dropping it here would quietly change behaviour Express
+ * has.
+ */
+function fromResult(result: HandlerResult): Response {
+  return json(result.body, result.status, { ...(result.headers ?? {}) });
+}
+
+/**
  * The paths this deployment actually answers.
  *
  * Adding an entry is the deliberate act of claiming the handler exists and works. Everything absent
@@ -84,6 +114,12 @@ export const STAGE1_SERVED: ReadonlySet<string> = new Set<string>([
   AGENT_REGISTRATION_PATH,
   DEFAULT_WELL_KNOWN_PATH,
   CAFE_LATTE_ROUTE,
+  CAFE_MENU_ROUTE,
+  EXECUTION_MANIFEST_ROUTE,
+  // The three free marketplace tools. Free is what makes them portable ahead of the payment gate.
+  RANK_OPTIONS_ROUTE,
+  SEO_TIPS_ROUTE,
+  CHECK_DOMAINS_ROUTE,
 ]);
 
 /**
@@ -159,6 +195,52 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
       pattern: PING_ROUTE,
       bodyMode: "none",
       handler: () => json({ ok: true, tool: "ping_untch", ts: new Date().toISOString() }),
+    },
+
+    /**
+     * The free surface, served by the same handlers Express calls.
+     *
+     * Free is exactly what makes these portable ahead of the payment gate: there is no authorization
+     * to verify, nothing to settle, and no service-call row to write — so the closed writer gate does
+     * not change any answer. The six paid tools stay on the 503 until their gate is wired, because a
+     * paid handler this deployment cannot settle for must not be reachable at all.
+     */
+    { method: "GET", pattern: CAFE_MENU_ROUTE, bodyMode: "none", handler: () => fromResult(handleCafeMenu()) },
+    {
+      method: "POST",
+      pattern: CAFE_LATTE_ROUTE,
+      bodyMode: "json",
+      handler: (req) => fromResult(handleCafeOrderLatte(req.body)),
+    },
+    {
+      method: "POST",
+      pattern: RANK_OPTIONS_ROUTE,
+      bodyMode: "json",
+      handler: (req) => fromResult(handleRankOptions(req.body)),
+    },
+    {
+      method: "POST",
+      pattern: SEO_TIPS_ROUTE,
+      bodyMode: "json",
+      handler: (req) => fromResult(handleSeoTips(req.body)),
+    },
+    {
+      /**
+       * Live RDAP, so this one reaches the public internet from the Worker. It uses global `fetch`
+       * and no Node-only transport, and it is the same call Express makes — a registry lookup against
+       * public RDAP endpoints, with no credential and nothing written down.
+       */
+      method: "POST",
+      pattern: CHECK_DOMAINS_ROUTE,
+      bodyMode: "json",
+      handler: async (req) => fromResult(await handleCheckDomains(req.body)),
+    },
+
+    {
+      method: "GET",
+      pattern: EXECUTION_MANIFEST_ROUTE,
+      bodyMode: "none",
+      handler: () => json(executionManifest(loadConsumerFlags().executionEnabled)),
     },
 
     { method: "GET", pattern: "/healthz", bodyMode: "none", handler: () => json(healthBody(ctx)) },

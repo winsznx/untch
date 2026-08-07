@@ -227,9 +227,21 @@ describe("the table serves exactly what it claims to serve", () => {
     }
   });
 
-  test("no Stage 1 route reads a request body", () => {
+  /**
+   * `raw` is reserved for the one route whose bytes carry a signature — Discord interactions, not yet
+   * ported. Any other route declaring `raw` would be claiming it needs unparsed bytes when it does
+   * not, and `assertRawBodyRoutesFirst` would then start constraining the table for no reason.
+   */
+  test("no Stage 1 route claims raw bytes", () => {
     for (const route of routerFor().allRoutes()) {
-      assert.equal(route.bodyMode, "none", `${route.pattern} takes no input, so it must not touch the stream`);
+      assert.notEqual(route.bodyMode, "raw", `${route.pattern} does not verify a signature over its bytes`);
+    }
+  });
+
+  test("a route that takes no input never touches the stream", () => {
+    for (const route of routerFor().allRoutes()) {
+      if (route.method !== "GET") continue;
+      assert.equal(route.bodyMode, "none", `GET ${route.pattern} must not read a body`);
     }
   });
 
@@ -293,6 +305,74 @@ describe("a marketplace validator probing a listed service gets the Express answ
     const { ts: _e, ...expected } = (await fromExpress.json()) as Record<string, unknown>;
     const { ts: _w, ...actual } = (await fromWorker.json()) as Record<string, unknown>;
     assert.deepEqual(actual, expected);
+  });
+});
+
+describe("the free tools answer identically on both transports", () => {
+  const post = async (path: string, body: unknown) => {
+    const init = { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } };
+    const [fromExpress, fromWorker] = await Promise.all([
+      fetch(`${expressBase}${path}`, init),
+      dispatch(routerFor(), new Request(`${BASE}${path}`, init), { onNotFound: stage1Fallback }),
+    ]);
+    return { fromExpress, fromWorker };
+  };
+
+  test("GET /cafe/menu", async () => {
+    const [e, w] = await Promise.all([expressGet("/cafe/menu"), workerGet("/cafe/menu")]);
+    assert.equal(e.status, 200);
+    assert.equal(w.status, 200);
+    assert.deepEqual(await w.json(), await e.json());
+  });
+
+  test("GET /execution-manifest", async () => {
+    const [e, w] = await Promise.all([expressGet("/execution-manifest"), workerGet("/execution-manifest")]);
+    assert.equal(e.status, 200);
+    assert.equal(w.status, 200);
+    assert.deepEqual(await w.json(), await e.json());
+  });
+
+  test("POST /builder/rank_options ranks the same options the same way", async () => {
+    const { fromExpress, fromWorker } = await post("/builder/rank_options", {
+      names: ["untch", "spendguard", "ledgerly"],
+    });
+    assert.equal(fromExpress.status, 200);
+    assert.equal(fromWorker.status, 200);
+    assert.deepEqual(await fromWorker.json(), await fromExpress.json());
+  });
+
+  test("POST /builder/seo_tips", async () => {
+    const { fromExpress, fromWorker } = await post("/builder/seo_tips", { name: "untch", tld: ".xyz" });
+    assert.equal(fromExpress.status, 200);
+    assert.equal(fromWorker.status, 200);
+    assert.deepEqual(await fromWorker.json(), await fromExpress.json());
+  });
+
+  test("POST /cafe/order/latte", async () => {
+    const { fromExpress, fromWorker } = await post("/cafe/order/latte", { size: "large", milk: "oat" });
+    assert.equal(fromWorker.status, fromExpress.status);
+    // The demo mints an order id per call, so only the shape and the fixed fields can be compared.
+    const e = (await fromExpress.json()) as Record<string, unknown>;
+    const w = (await fromWorker.json()) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(w).sort(), Object.keys(e).sort());
+  });
+
+  /**
+   * A malformed body must be refused the same way, or a caller learns one contract from Express and
+   * a different one here. Checked on the route with the strictest input validation.
+   */
+  test("a refusal on a free tool is identical, code and status", async () => {
+    const { fromExpress, fromWorker } = await post("/builder/check_domains", {});
+    assert.equal(fromExpress.status, 400);
+    assert.equal(fromWorker.status, 400);
+    assert.deepEqual(await fromWorker.json(), await fromExpress.json());
+  });
+
+  test("no free tool is priced, and none emits a challenge", async () => {
+    for (const path of ["/builder/rank_options", "/builder/seo_tips", "/builder/check_domains"]) {
+      const { fromWorker } = await post(path, {});
+      assert.notEqual(fromWorker.status, 402, `${path} must never ask for payment`);
+    }
   });
 });
 
