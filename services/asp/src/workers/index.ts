@@ -155,7 +155,16 @@ function discord(ctx: RouteContext): readonly Route[] {
 }
 
 const worker = buildWorker({
-  makePool: (connectionString) => new pg.Pool({ connectionString, max: 5 }) as never,
+  /**
+   * Three connections, not five.
+   *
+   * The pool is per-request — a Worker cannot reuse an I/O object across request contexts — so `max`
+   * multiplies by concurrency rather than bounding the process. At five, fifteen concurrent requests
+   * could ask the origin for seventy-five connections against a Hyperdrive budget of sixty, and three
+   * of fifteen failed. Three is enough for the widest fan-out any single handler does (the account read
+   * runs three queries together) and keeps a burst inside the budget.
+   */
+  makePool: (connectionString) => new pg.Pool({ connectionString, max: 3 }) as never,
   expectedMigrations: MIGRATIONS,
   jobDeps: realJobDeps as never,
   routes: (ctx: RouteContext): readonly Route[] => [
