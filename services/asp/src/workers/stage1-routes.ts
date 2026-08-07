@@ -35,8 +35,10 @@ import {
   CHECK_DOMAINS_ROUTE,
   PING_ROUTE,
   RANK_OPTIONS_ROUTE,
+  RECEIPT_STATUS_ROUTE,
   SEO_TIPS_ROUTE,
 } from "../config";
+import { receiptReader, receiptStatusRoute } from "./receipt-reads";
 import {
   handleCafeMenu,
   handleCafeOrderLatte,
@@ -120,6 +122,8 @@ export const STAGE1_SERVED: ReadonlySet<string> = new Set<string>([
   RANK_OPTIONS_ROUTE,
   SEO_TIPS_ROUTE,
   CHECK_DOMAINS_ROUTE,
+  // A read. It answers from Postgres and holds nothing that could enqueue a receipt.
+  RECEIPT_STATUS_ROUTE,
 ]);
 
 /**
@@ -242,6 +246,12 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
       bodyMode: "none",
       handler: () => json(executionManifest(loadConsumerFlags().executionEnabled)),
     },
+
+    /**
+     * The §7.4 receipt poll. Unpriced, unauthenticated, and read-only — a caller holding a receipt id
+     * got it from this service and is entitled to know what happened to it.
+     */
+    receiptStatusRoute(receiptReader(ctx.pool)),
 
     { method: "GET", pattern: "/healthz", bodyMode: "none", handler: () => json(healthBody(ctx)) },
 

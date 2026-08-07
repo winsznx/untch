@@ -13,6 +13,7 @@
 import pg from "pg";
 import { NETWORK, SETTLEMENT_TOKEN } from "../config";
 import { buildWorker, type RouteContext } from "./entry";
+import { buildPaidSurface } from "./paid-routes";
 import { stage1Fallback, stage1Routes, type Stage1Settlement } from "./stage1-routes";
 import type { Route } from "./router";
 import type { WorkerEnv } from "./env";
@@ -77,12 +78,48 @@ function settlement(env: WorkerEnv): Stage1Settlement {
   };
 }
 
+/**
+ * The paid surface, built only when this deployment can actually settle.
+ *
+ * The OKX facilitator credentials are wrangler secrets. Without them the resource server cannot
+ * verify an authorization or settle one, so the six paid routes are not registered at all and fall to
+ * the 503 — which says the endpoint is real and unavailable. Registering them anyway would emit a 402
+ * this deployment could never honour, inviting a caller to pay for work it cannot complete.
+ *
+ * Memoised per isolate: the facilitator client and the resource server are the same for every request
+ * an isolate serves, and rebuilding them per request would add a handshake to each paid call.
+ */
+let paidSurface: ReturnType<typeof buildPaidSurface> | null | undefined;
+
+function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
+  if (paidSurface !== undefined) return paidSurface;
+  const env = ctx.env;
+  const apiKey = env.OKX_API_KEY?.trim();
+  const secretKey = env.OKX_SECRET_KEY?.trim();
+  const passphrase = env.OKX_PASSPHRASE?.trim();
+  if (!apiKey || !secretKey || !passphrase) {
+    paidSurface = null;
+    return null;
+  }
+  paidSurface = buildPaidSurface({
+    pool: ctx.pool,
+    payTo: settlement(ctx.env).payTo,
+    publicBaseUrl: ctx.baseUrl,
+    okx: { apiKey, secretKey, passphrase },
+  });
+  return paidSurface;
+}
+
 const worker = buildWorker({
   makePool: (connectionString) => new pg.Pool({ connectionString, max: 5 }) as never,
   expectedMigrations: MIGRATIONS,
   jobDeps: noopJobDeps as never,
-  routes: (ctx: RouteContext): readonly Route[] => stage1Routes(ctx, settlement(ctx.env)),
+  routes: (ctx: RouteContext): readonly Route[] => [
+    ...stage1Routes(ctx, settlement(ctx.env)),
+    ...(paid(ctx)?.routes ?? []),
+  ],
   onUnmatched: stage1Fallback,
+  paymentGate: (ctx) => paid(ctx)?.gate,
 });
 
 export default {

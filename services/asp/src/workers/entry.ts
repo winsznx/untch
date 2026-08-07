@@ -40,6 +40,16 @@ export interface EntryDeps {
    * only the caller knows which routes those are.
    */
   readonly onUnmatched?: (request: Request) => Response;
+  /**
+   * Wraps any route declaring `priced: true`.
+   *
+   * Built per request context rather than once, because it needs the payee and the published base URL
+   * — both of which come from the environment this invocation was handed, and both of which appear in
+   * the challenge a caller is asked to pay.
+   */
+  readonly paymentGate?: (ctx: RouteContext) =>
+    | ((request: Request, body: unknown, run: () => Promise<Response>) => Promise<Response>)
+    | undefined;
   readonly log?: (line: string) => void;
 }
 
@@ -204,7 +214,11 @@ export function buildWorker(deps: EntryDeps) {
       }
 
       try {
-        const res = await dispatch(router, request, deps.onUnmatched ? { onNotFound: deps.onUnmatched } : {});
+        const paymentGate = deps.paymentGate?.(ctx);
+        const res = await dispatch(router, request, {
+          ...(deps.onUnmatched ? { onNotFound: deps.onUnmatched } : {}),
+          ...(paymentGate ? { paymentGate } : {}),
+        });
         return withHeaders(res, { ...securityHeaders(id), ...corsHeaders(origin) });
       } catch (err) {
         if (err instanceof DisarmedError) return withHeaders(disarmedResponse(err), securityHeaders(id));
