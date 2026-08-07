@@ -14,7 +14,14 @@ import pg from "pg";
 const { Pool } = pg;
 export type Pool = pg.Pool;
 
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
+/**
+ * Resolved WHEN A MIGRATION RUNS, never at import — the same fix as consumer-core's.
+ *
+ * A module-scope `fileURLToPath(import.meta.url)` executes on import, so any bundle that merely wants
+ * `createPool` drags a filesystem call into startup. On Workers that is fatal before the first
+ * request, and a wrangler dry run does not catch it because bundling never runs module scope.
+ */
+const migrationsDir = (): string => join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 
 export function createPool(databaseUrl: string): Pool {
   const needsSsl = /[?&]sslmode=require/.test(databaseUrl) || process.env.PGSSL === "1";
@@ -39,7 +46,7 @@ export async function runMigrations(pool: Pool): Promise<string[]> {
        )`,
     );
 
-    const files = readdirSync(MIGRATIONS_DIR)
+    const files = readdirSync(migrationsDir())
       .filter((f) => f.endsWith(".sql"))
       .sort();
 
@@ -50,7 +57,7 @@ export async function runMigrations(pool: Pool): Promise<string[]> {
       ]);
       if (rowCount && rowCount > 0) continue;
 
-      const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
+      const sql = readFileSync(join(migrationsDir(), file), "utf8");
       await client.query("BEGIN");
       try {
         await client.query(sql);

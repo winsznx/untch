@@ -1,0 +1,165 @@
+# The Cloudflare Worker: bundle, bindings, posture and the gates that keep it inert before cutover.
+#
+# WHY THIS WORKFLOW EXISTS SEPARATELY
+#
+# The Workers code lives under `services/asp/src/workers/**`, which `consumer-pack` already matches —
+# so it was not uncovered by path filter. What it lacked was any check of the things that are only
+# meaningful for a Worker: that it BUNDLES, that the wrangler config declares the bindings the code
+# reads, that both environments ship disarmed and writer-disabled, and that a preview URL never
+# reaches a public descriptor. `pnpm test` cannot see any of that.
+#
+# The bundle check earns its place specifically. A `wrangler deploy --dry-run` passes while a module
+# executes `fileURLToPath(import.meta.url)` at import scope, because bundling never runs module scope —
+# that exact defect shipped a Worker that died at startup validation before serving a request. The dry
+# run proves a Worker BUILDS. Only a deploy proves one STARTS, so the dry run is the floor and not the
+# ceiling.
+name: workers
+
+on:
+  push:
+    paths:
+      - "services/asp/src/workers/**"
+      - "services/asp/workers/**"
+      - "services/asp/test/workers-*.test.ts"
+      # The Worker serves the registry's discovery documents from the same builders Express uses,
+      # so a change to either can break parity without touching a Workers file.
+      - "services/asp/src/registry/**"
+      - "services/asp/src/consumer-handlers.ts"
+      - "services/asp/src/erc8004/**"
+      - "packages/consumer-core/src/db.ts"
+      - "packages/consumer-core/src/schema-version.ts"
+      - "packages/consumer-providers/src/workers-guard.ts"
+      - "scripts/gen-route-manifest.ts"
+      - "scripts/gen-workers-attestation.ts"
+      - ".github/workflows/workers.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+  pull_request:
+    paths:
+      - "services/asp/src/workers/**"
+      - "services/asp/workers/**"
+      - "services/asp/test/workers-*.test.ts"
+      # The Worker serves the registry's discovery documents from the same builders Express uses,
+      # so a change to either can break parity without touching a Workers file.
+      - "services/asp/src/registry/**"
+      - "services/asp/src/consumer-handlers.ts"
+      - "services/asp/src/erc8004/**"
+      - "packages/consumer-core/src/db.ts"
+      - "packages/consumer-core/src/schema-version.ts"
+      - "packages/consumer-providers/src/workers-guard.ts"
+      - "scripts/gen-route-manifest.ts"
+      - "scripts/gen-workers-attestation.ts"
+      - ".github/workflows/workers.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+
+jobs:
+  worker:
+    name: bundle + bindings + disarmed posture
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # BOTH typechecks, because they cover different files and the gap between them shipped a break.
+      #
+      # The ASP tsconfig does not include `scripts/`, so a type error in the route-manifest generator
+      # passed the filtered check and then failed the root one — taking every other workflow in the
+      # repo down with it, since they all run `pnpm typecheck` first. The filtered check stays for the
+      # sharper error messages; the root check is the one that matches what CI actually enforces.
+      - name: Typecheck the ASP, including every Workers module
+        run: pnpm --filter @untch/asp exec tsc --noEmit
+
+      - name: Typecheck the repository root, which also covers scripts/
+        run: pnpm exec tsc --noEmit
+
+      # The suites that cover the router, arming, writer gate, Queues, scheduled jobs, entry, config
+      # parity, the x402 adapter and the Discord signature path. None needs a database.
+      #
+      # `workers-stage1-routes` is the one that starts a real Express server and compares its discovery
+      # documents against the Worker's, byte for byte. It needs no database either — the registry
+      # documents are built from committed definitions — but it does need the port it binds, so it runs
+      # here rather than in a suite that might be sharded.
+      - name: Workers suites
+        run: node --import tsx --test --test-reporter=spec services/asp/test/workers-*.test.ts services/asp/test/x402-workers-adapter.test.ts services/asp/test/discord-signature-workers.test.ts
+
+      - name: Outbound-request guard
+        run: node --import tsx --test --test-reporter=spec packages/consumer-providers/test/workers-guard.test.ts
+
+      # Both environments, because a config valid for preview can be broken for production and the
+      # difference is exactly the one that matters at cutover.
+      #
+      # Run from services/asp, not services/asp/workers: that directory holds the config but is not a
+      # package, and `pnpm exec` there falls back
+      # to workspace-RECURSIVE mode: it ran in every package and failed in the first one without
+      # wrangler, with "Command not found". Locally it had found a globally installed copy instead, so
+      # the workflow that exists to prove the Worker bundles had never bundled it here. Wrangler
+      # resolves `main` relative to the config file, so --config keeps the same build.
+      - name: Wrangler dry run (preview)
+        working-directory: services/asp
+        run: pnpm exec wrangler deploy --dry-run --env="" --config workers/wrangler.jsonc --outdir /tmp/worker-preview
+
+      - name: Wrangler dry run (production)
+        working-directory: services/asp
+        run: pnpm exec wrangler deploy --dry-run --env production --config workers/wrangler.jsonc --outdir /tmp/worker-production
+
+      # Workers has a hard compressed-size limit. Checked against the uncompressed bundle with wide
+      # headroom, so this fails on a dependency that doubles the bundle rather than on normal growth.
+      - name: Bundle size
+        run: |
+          size=$(stat -c %s /tmp/worker-production/index.js)
+          echo "bundle: ${size} bytes"
+          if [ "$size" -gt 3000000 ]; then
+            echo "::error::bundle is ${size} bytes, over the 3 MB guard"
+            exit 1
+          fi
+
+      # The gates are the reason a preview may point at staged production data at all. A config that
+      # ships armed or writer-active is the one mistake that cannot be undone by a rollback.
+      - name: Both environments ship disarmed and writer-disabled
+        run: |
+          set -e
+          for env_name in preview production; do
+            flag=$([ "$env_name" = production ] && echo "--env production" || echo '--env=""')
+            out=$(cd services/asp && eval pnpm exec wrangler deploy --dry-run $flag --config workers/wrangler.jsonc --outdir /tmp/chk 2>&1)
+            echo "$out" | grep -q 'UNTCH_FINANCIAL_ARMED ("0")' \
+              || { echo "::error::$env_name does not ship financially disarmed"; exit 1; }
+            echo "$out" | grep -q 'UNTCH_PRODUCTION_WRITER_ACTIVE ("0")' \
+              || { echo "::error::$env_name claims production writes"; exit 1; }
+            echo "$env_name: disarmed and writer-disabled"
+          done
+
+      # A preview URL in a public descriptor tells a reviewer the preview IS the listed endpoint.
+      - name: No preview URL in production config, no secret committed
+        run: |
+          set -e
+          if grep -q "workers.dev" services/asp/workers/wrangler.jsonc; then
+            echo "::error::a workers.dev URL must never appear in the deployed config"
+            exit 1
+          fi
+          for secret in OKX_API_KEY OKX_SECRET_KEY OKX_PASSPHRASE CONSUMER_SESSION_SECRET \
+                        APPROVAL_ACTION_TOKEN_SECRET DISCORD_BOT_TOKEN "postgres://" "postgresql://"; do
+            if grep -q "$secret" services/asp/workers/wrangler.jsonc; then
+              echo "::error::$secret must be a wrangler secret, never a committed var"
+              exit 1
+            fi
+          done
+          echo "no preview URL, no committed secret"
+
+      # The committed attestation must stay null. One committed to a branch describes a deployment
+      # that no longer exists, and an unattested build is refused arming by design.
+      - name: The committed build attestation is null
+        run: |
+          if ! grep -q "GENERATED_ATTESTATION: BuildAttestation | null = null" \
+               services/asp/src/workers/build-attestation.generated.ts; then
+            echo "::error::a real attestation was committed; it describes one deployment, not a branch"
+            exit 1
+          fi
+          echo "attestation placeholder intact"
