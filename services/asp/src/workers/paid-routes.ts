@@ -48,7 +48,8 @@ import { handleDetectDuplicate, handleRedactPaymentMetadata } from "../s11-handl
 import { createLedgerState } from "../ledger-state";
 import { buildPaidRouteTable } from "../paid-route-table";
 import type { Route } from "./router";
-import { coerceObjectParams } from "./coerce-params";
+import { coerceObjectParams, type ParamSchema } from "./coerce-params";
+import { SERVICES } from "../registry/services";
 import { PgIntentStore } from "./intent-store";
 import { recordSale } from "./sales";
 import { workersPaymentGate, type WorkersPaymentGate } from "./x402-adapter";
@@ -252,6 +253,16 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
         ),
     });
 
+  /**
+   * The tool's own declared input shape, looked up by route.
+   *
+   * `--param` can only produce strings, so a contract's `boolean` or `number` arrives as text and is
+   * dropped by a handler checking `typeof`. Handing the schema to the coercion is what turns that from
+   * a guess into honouring what we published.
+   */
+  const schemaFor = (pattern: string): ParamSchema | undefined =>
+    SERVICES.find((svc) => svc.path === pattern)?.input as ParamSchema | undefined;
+
   const priced = (pattern: string, run: (body: unknown) => Promise<HandlerResult> | HandlerResult): Route => ({
     method: "POST",
     pattern,
@@ -259,7 +270,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     priced: true,
     handler: async (req) => {
       await hydrate(req.body);
-      return fromResult(await run(coerceObjectParams(req.body)));
+      return fromResult(await run(coerceObjectParams(req.body, schemaFor(pattern))));
     },
   });
 
@@ -276,7 +287,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     pattern: CREATE_INTENT_ROUTE,
     bodyMode: "json",
     handler: async (req) => {
-      const result = await handleCreateSpendIntent(coerceObjectParams(req.body), {
+      const result = await handleCreateSpendIntent(coerceObjectParams(req.body, schemaFor(CREATE_INTENT_ROUTE)), {
         intentStore: ledgerState.intentStore,
         policyProvider,
         intentRegistry: null,
