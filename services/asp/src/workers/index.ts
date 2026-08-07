@@ -145,8 +145,32 @@ function discord(ctx: RouteContext): readonly Route[] {
   return discordRoutes({ publicKeyHex, log: (line) => console.log(line) });
 }
 
+/**
+ * One pool per isolate, not one per request.
+ *
+ * `context()` runs on every invocation and called this each time, so each request opened a fresh pool
+ * of five connections against Hyperdrive and left the previous one to be collected. Health checks
+ * tolerated it because they hold a connection briefly; once the paid routes started writing — a policy
+ * read, an intent write, a settlement record — concurrent requests began exhausting the origin's
+ * connection budget and Cloudflare answered with its own HTML 500, intermittently, roughly one request
+ * in three.
+ *
+ * A pool is exactly the object that is supposed to outlive a request. Keyed by connection string so a
+ * config change still produces a new pool rather than silently reusing one pointed at the old origin.
+ */
+const pools = new Map<string, pg.Pool>();
+
+function memoisedPool(connectionString: string): never {
+  let pool = pools.get(connectionString);
+  if (!pool) {
+    pool = new pg.Pool({ connectionString, max: 5 });
+    pools.set(connectionString, pool);
+  }
+  return pool as never;
+}
+
 const worker = buildWorker({
-  makePool: (connectionString) => new pg.Pool({ connectionString, max: 5 }) as never,
+  makePool: memoisedPool,
   expectedMigrations: MIGRATIONS,
   jobDeps: realJobDeps as never,
   routes: (ctx: RouteContext): readonly Route[] => [
