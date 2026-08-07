@@ -161,7 +161,7 @@ const worker = buildWorker({
 });
 
 export default {
-  fetch: (request: Request, env: WorkerEnv) => worker.fetch(request, env),
+  fetch: (request: Request, env: WorkerEnv, ctx: ExecutionContext) => worker.fetch(request, env, ctx),
   queue: (batch: never, env: WorkerEnv) => worker.queue(batch, env),
   scheduled: (event: { cron: string }, env: WorkerEnv) => worker.scheduled(event, env),
 };

@@ -160,9 +160,10 @@ export function buildWorker(deps: EntryDeps) {
   const log = deps.log ?? ((line: string) => console.log(line));
 
   /** Built once per invocation: bindings can differ between preview and production. */
-  async function context(env: WorkerEnv): Promise<RouteContext> {
+  async function context(env: WorkerEnv, opened?: Pool[]): Promise<RouteContext> {
     assertBindings(env);
     const pool = deps.makePool(env.HYPERDRIVE.connectionString);
+    opened?.push(pool);
     let schema: SchemaVerdict | null = null;
     try {
       schema = await verifySchemaCached(pool, deps.expectedMigrations);
@@ -179,8 +180,22 @@ export function buildWorker(deps: EntryDeps) {
   }
 
   return {
-    async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+    async fetch(request: Request, env: WorkerEnv, execCtx?: { waitUntil?: (p: Promise<unknown>) => void }): Promise<Response> {
       const id = requestId();
+      /**
+       * Every pool this invocation opens, closed when the response is on its way.
+       *
+       * A Worker cannot reuse an I/O object across request contexts, so the pool genuinely has to be
+       * per-request — memoising one across invocations fails with "Cannot perform I/O on behalf of a
+       * different request". But a per-request pool that is never closed leaks up to `max` connections
+       * per call, and Hyperdrive's origin budget is finite: after roughly a dozen database-touching
+       * requests the origin refused new connections and Cloudflare answered with its own HTML 500,
+       * before the Worker ran at all — which is why nothing appeared in the Worker's own logs.
+       *
+       * Closing through `waitUntil` rather than inline keeps the buyer's response on the fast path
+       * while still guaranteeing the connections go back.
+       */
+      const opened: Pool[] = [];
       const origin = request.headers.get("origin");
 
       if (request.method === "OPTIONS") {
@@ -189,7 +204,7 @@ export function buildWorker(deps: EntryDeps) {
 
       let ctx: RouteContext;
       try {
-        ctx = await context(env);
+        ctx = await context(env, opened);
       } catch (err) {
         log(`[entry] ${id} could not build context: ${(err as Error).message}`);
         return withHeaders(errorResponse(503, "DEPLOYMENT_NOT_READY", "this deployment cannot serve"), securityHeaders(id));
@@ -213,16 +228,27 @@ export function buildWorker(deps: EntryDeps) {
         );
       }
 
+      const release = (): void => {
+        // Guarded: a pool that cannot be closed must not turn a served response into a 500, and a
+        // stub without `end` is a legitimate shape for a caller that injects its own.
+        const closing = Promise.allSettled(
+          opened.map((p) => (typeof p?.end === "function" ? p.end() : Promise.resolve())),
+        ).then(() => undefined);
+        if (execCtx?.waitUntil) execCtx.waitUntil(closing);
+      };
+
       try {
         const paymentGate = deps.paymentGate?.(ctx);
         const res = await dispatch(router, request, {
           ...(deps.onUnmatched ? { onNotFound: deps.onUnmatched } : {}),
           ...(paymentGate ? { paymentGate } : {}),
         });
+        release();
         return withHeaders(res, { ...securityHeaders(id), ...corsHeaders(origin) });
       } catch (err) {
-        if (err instanceof DisarmedError) return withHeaders(disarmedResponse(err), securityHeaders(id));
+        if (err instanceof DisarmedError) { release(); return withHeaders(disarmedResponse(err), securityHeaders(id)); }
         if (err instanceof WriterGateClosedError) {
+          release();
           return withHeaders(
             errorResponse(503, "NOT_PRODUCTION_WRITER", "another deployment owns production writes"),
             securityHeaders(id),
@@ -233,6 +259,7 @@ export function buildWorker(deps: EntryDeps) {
          * row, and a 500 that leaks one is worse than a 500 that says nothing.
          */
         log(`[entry] ${id} unhandled: ${(err as Error).message}`);
+        release();
         return withHeaders(errorResponse(500, "INTERNAL_ERROR", `unexpected error (${id})`), securityHeaders(id));
       }
     },
