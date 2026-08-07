@@ -73,7 +73,17 @@
         // flipped. Preview stays "0": one writer, and it is this one.
         "UNTCH_PRODUCTION_WRITER_ACTIVE": "1",
         "ASP_PUBLIC_URL": "https://asp.untch.xyz",
-        "PAY_TO_ADDRESS": "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba"
+        "PAY_TO_ADDRESS": "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
+        // Policy registry config. All public: two contract addresses, the chain, and a public RPC.
+        // `loadRegistryConfig` throws without them, which made policy_draft and policy_sync refuse
+        // with POLICY_REGISTRY_UNCONFIGURED — a correctly-named refusal, but still the head of the
+        // pipeline being down. Never guess a registry address: a stale one anchors policies against
+        // the wrong contract.
+        "POLICY_REGISTRY": "0xa2177e6d8682367637a3c2af53e2cf8088efa954",
+        "POLICY_REGISTRY_ADDRESS": "0xa2177e6d8682367637a3c2af53e2cf8088efa954",
+        "CHAIN_ID": "196",
+        "NETWORK": "eip155:196",
+        "RPC_URL": "https://rpc.xlayer.tech"
       },
       "observability": { "enabled": true, "head_sampling_rate": 1 },
       "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "14c781385e4e40759d958fed8a6852c0" }],
