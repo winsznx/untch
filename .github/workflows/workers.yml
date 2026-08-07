@@ -68,8 +68,17 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # BOTH typechecks, because they cover different files and the gap between them shipped a break.
+      #
+      # The ASP tsconfig does not include `scripts/`, so a type error in the route-manifest generator
+      # passed the filtered check and then failed the root one — taking every other workflow in the
+      # repo down with it, since they all run `pnpm typecheck` first. The filtered check stays for the
+      # sharper error messages; the root check is the one that matches what CI actually enforces.
       - name: Typecheck the ASP, including every Workers module
         run: pnpm --filter @untch/asp exec tsc --noEmit
+
+      - name: Typecheck the repository root, which also covers scripts/
+        run: pnpm exec tsc --noEmit
 
       # The suites that cover the router, arming, writer gate, Queues, scheduled jobs, entry, config
       # parity, the x402 adapter and the Discord signature path. None needs a database.

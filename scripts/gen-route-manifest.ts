@@ -23,6 +23,8 @@ import { fileURLToPath } from "node:url";
 import { createSellerApp } from "../services/asp/src/server";
 import { initPolicyWiring } from "../services/asp/src/policy-wiring";
 import { initConsumerWiring } from "../services/asp/src/consumer/wiring";
+import { makeConsumerEscalationGateway, makeConsumerReceiptSink } from "../services/asp/src/consumer/bridges";
+import { createLedgerState } from "../services/asp/src/ledger-state";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..");
@@ -111,10 +113,26 @@ process.env.BUYER_PRIVATE_KEY ??= `0x${"11".repeat(32)}`;
  * So the manifest is generated against real wiring, and `stubbedDuringGeneration` stays as the
  * honest signal if any group still fails to mount.
  */
-const [policyWiring, consumerWiring] = await Promise.all([
-  initPolicyWiring().catch(() => null),
-  initConsumerWiring({ log: () => {} }).catch(() => null),
-]);
+/**
+ * Composed the way the real boot composes it.
+ *
+ * The Consumer Pack borrows the real policy provider, ledger, escalation gateway and receipt sink
+ * rather than owning its own, and it is only constructed when a policy wiring exists — see the
+ * `initConsumerWiring` call in `server.ts`. An earlier version here passed `{ log }` alone, which the
+ * ASP's own tsconfig accepted because it does not include `scripts/`; the ROOT typecheck rejected it
+ * and took every workflow down with it. Mirroring production is both the type-correct fix and the
+ * only version that generates the route table production actually serves.
+ */
+const policyWiring = await initPolicyWiring().catch(() => null);
+const consumerWiring = policyWiring
+  ? await initConsumerWiring({
+      policyProvider: policyWiring.provider,
+      ledger: createLedgerState().ledger,
+      escalation: makeConsumerEscalationGateway(null, null),
+      receipts: makeConsumerReceiptSink(null),
+      log: () => {},
+    }).catch(() => null)
+  : null;
 
 const app = createSellerApp(undefined, null, policyWiring, null, null, null, consumerWiring);
 const stack = ((app as unknown as { _router?: { stack: Layer[] }; router?: { stack: Layer[] } })._router
