@@ -24,6 +24,17 @@ Verified without spending:
 - The account chain works end to end up to the signature:
   `link/start` → real SIWE message → `link/complete` refuses a bad signature with 401
   (which proves EIP-1271 verification reaches X Layer from the Worker).
+- The browser journey exists as of 2026-08-07. `link/start` had always advertised
+  `walletActionUrl: {base}/link/{id}` and told users to open it; nothing served that page
+  on any transport, so step one of account setup was a 404 and everything behind it was
+  reachable only by driving the raw API by hand. There is now a real self-contained signing
+  page there, plus `POST /consumer/account/link/:id/message` so the server authors the SIWE
+  message once a wallet reveals its address. The one-time code rides in the URL fragment,
+  which browsers never send to a server.
+
+  **Still unproven: a GOOD signature.** We have only ever shown a bad one is refused.
+  Opening `walletActionUrl` in a browser with your wallet is the cheapest way to close
+  that, and it costs nothing.
 
 **Settlement is proven.** Two real paid calls went through on 2026-08-07, one by direct
 URL and one through MCP:
