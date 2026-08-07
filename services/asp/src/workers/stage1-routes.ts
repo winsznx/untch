@@ -38,6 +38,7 @@ import {
   RECEIPT_STATUS_ROUTE,
   SEO_TIPS_ROUTE,
 } from "../config";
+import { coerceObjectParams } from "./coerce-params";
 import { receiptReader, receiptStatusRoute } from "./receipt-reads";
 import {
   handleCafeMenu,
@@ -214,19 +215,19 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
       method: "POST",
       pattern: CAFE_LATTE_ROUTE,
       bodyMode: "json",
-      handler: (req) => fromResult(handleCafeOrderLatte(req.body)),
+      handler: (req) => fromResult(handleCafeOrderLatte(coerceObjectParams(req.body))),
     },
     {
       method: "POST",
       pattern: RANK_OPTIONS_ROUTE,
       bodyMode: "json",
-      handler: (req) => fromResult(handleRankOptions(req.body)),
+      handler: (req) => fromResult(handleRankOptions(coerceObjectParams(req.body))),
     },
     {
       method: "POST",
       pattern: SEO_TIPS_ROUTE,
       bodyMode: "json",
-      handler: (req) => fromResult(handleSeoTips(req.body)),
+      handler: (req) => fromResult(handleSeoTips(coerceObjectParams(req.body))),
     },
     {
       /**
@@ -237,7 +238,7 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
       method: "POST",
       pattern: CHECK_DOMAINS_ROUTE,
       bodyMode: "json",
-      handler: async (req) => fromResult(await handleCheckDomains(req.body)),
+      handler: async (req) => fromResult(await handleCheckDomains(coerceObjectParams(req.body))),
     },
 
     {
