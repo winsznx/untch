@@ -32,7 +32,6 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 const ASP = join(ROOT, "services", "asp");
-const GENERATED = "services/asp/src/workers/build-attestation.generated.ts";
 
 const env = process.argv.includes("--preview") ? "" : "production";
 const run = (cmd: string, args: string[], cwd: string): string =>
@@ -56,7 +55,7 @@ try {
    * would let the NEXT command — a test run, a commit, someone else's deploy — pick up a claim about a
    * deployment that never shipped.
    */
-  if (generated) run("git", ["checkout", "--", GENERATED], ROOT);
+  if (generated) run("pnpm", ["gen:attestation", "--reset"], ROOT);
 }
 
 if (env !== "production") process.exit(0);
