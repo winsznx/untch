@@ -212,10 +212,33 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
      */
     { method: "GET", pattern: CAFE_MENU_ROUTE, bodyMode: "none", handler: () => fromResult(handleCafeMenu()) },
     {
+      /**
+       * PRODUCTION_DISABLED, and now actually disabled.
+       *
+       * The registry classifies this `PRODUCTION_DISABLED` and the catalog said so, but the route was
+       * ported alongside the free tools and kept fulfilling: an empty unpaid POST returned an order id
+       * and `"amountPaid":"4.00"`, describing a payment that never happened for coffee that does not
+       * exist. A label is not a gate — the same failure the arming fix corrected, on the disable side.
+       *
+       * Refused with its own code rather than the migration 503, because "deliberately off" and "not
+       * ported yet" are different facts and a caller deciding whether to retry needs to tell them apart.
+       */
       method: "POST",
       pattern: CAFE_LATTE_ROUTE,
-      bodyMode: "json",
-      handler: (req) => fromResult(handleCafeOrderLatte(coerceObjectParams(req.body))),
+      bodyMode: "none",
+      handler: () =>
+        json(
+          {
+            code: "SERVICE_PRODUCTION_DISABLED",
+            message:
+              "the cafe order simulation is disabled in production. It contacted no merchant, placed no " +
+              "order and produced no coffee, and returning a paid-looking receipt for it misrepresented " +
+              "what a payment buys.",
+            retryable: false,
+            docsUrl: "https://docs.untch.xyz",
+          },
+          410,
+        ),
     },
     {
       method: "POST",

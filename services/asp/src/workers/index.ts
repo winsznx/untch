@@ -16,6 +16,7 @@ import { buildWorker, type RouteContext } from "./entry";
 import { agentCardRoutes } from "./agent-card";
 import { consumerReadRoutes } from "./consumer-reads";
 import { discordRoutes } from "./discord-routes";
+import { policyRoutes } from "./policy-routes";
 import { realJobDeps } from "./job-wiring";
 import { buildPaidSurface } from "./paid-routes";
 import { recordSale } from "./sales";
@@ -126,12 +127,15 @@ function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
 function consumerRoutes(ctx: RouteContext): readonly Route[] {
   const secret = ctx.env.CONSUMER_AUTH_SECRET?.trim();
   if (!secret) return [];
-  return consumerReadRoutes({
-    pool: ctx.pool,
-    secret,
-    gate: ctx.gate,
-    executionEnabled: false,
-  });
+  return [
+    ...consumerReadRoutes({ pool: ctx.pool, secret, gate: ctx.gate, executionEnabled: false }),
+    /**
+     * Policy registration shares the session secret, and it is the HEAD of the pipeline: without it a
+     * caller can never obtain the registered policy that `create_spend_intent`, `preflight_payment`
+     * and `verify_delivery` all require.
+     */
+    ...policyRoutes({ pool: ctx.pool, secret, gate: ctx.gate }),
+  ];
 }
 
 /**

@@ -2,8 +2,8 @@
   "generatedFrom": "route-manifest.generated.json, classified against the Worker's own route tables",
   "totalRoutes": 126,
   "byState": {
-    "PORTED": 37,
-    "DEFERRED_AFTER_RELIST": 76,
+    "PORTED": 39,
+    "DEFERRED_AFTER_RELIST": 74,
     "NODE_ADMIN_ONLY": 13
   },
   "blockingRelisting": [],
@@ -362,20 +362,6 @@
       "method": "POST",
       "path": "/consumer/notify/receipt",
       "classification": "marketplace",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "Consumer Pack surface, refuses by name until ported"
-    },
-    {
-      "method": "POST",
-      "path": "/consumer/policies/draft",
-      "classification": "account",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "Consumer Pack surface, refuses by name until ported"
-    },
-    {
-      "method": "POST",
-      "path": "/consumer/policies/sync",
-      "classification": "account",
       "state": "DEFERRED_AFTER_RELIST",
       "why": "Consumer Pack surface, refuses by name until ported"
     },
@@ -774,6 +760,20 @@
     {
       "method": "GET",
       "path": "/consumer/policies/:policyId",
+      "classification": "account",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/policies/draft",
+      "classification": "account",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/policies/sync",
       "classification": "account",
       "state": "PORTED",
       "why": "the Worker route table declares this path"
