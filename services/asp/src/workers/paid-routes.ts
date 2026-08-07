@@ -208,6 +208,37 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
       if (stored) await intents.put(hash, stored);
     };
 
+    /**
+     * The GET compatibility probe on a POST-only business route.
+     *
+     * Marketplace validators GET-probe a listed endpoint to check it is alive. Express registers these
+     * and prices them — the shared route table already carries `GET` and `HEAD` entries for each — so a
+     * probe gets a 402 proving the endpoint is real and priced, and only a PAID probe reaches the 405.
+     *
+     * They were left to the 503 fallback while the paid surface could not settle, which was right at
+     * the time: a 402 this deployment could not honour would have invited payment for nothing. Now that
+     * it settles, Express's answer is the honest one.
+     *
+     * The GET executes no business logic. Query parameters are not an acceptable transport for a
+     * SpendIntent — proxies and access logs keep them — so real calls stay POST-only on both transports.
+     */
+    const getProbe = (pattern: string): Route => ({
+      method: "GET",
+      pattern,
+      bodyMode: "none",
+      priced: true,
+      handler: () =>
+        json(
+          {
+            code: "USE_POST",
+            message: "this endpoint is POST-only; GET is accepted only as a paid compatibility probe",
+            retryable: false,
+            docsUrl: null,
+          },
+          405,
+        ),
+    });
+
   const priced = (pattern: string, run: (body: unknown) => Promise<HandlerResult> | HandlerResult): Route => ({
     method: "POST",
     pattern,
@@ -252,6 +283,14 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
       priced(REDACT_META_ROUTE, (body) => handleRedactPaymentMetadata(body)),
       priced(SUGGEST_NAMES_ROUTE, (body) => handleSuggestNames(body)),
       priced(BRAND_PACK_ROUTE, (body) => handleBrandPack(body)),
+      /**
+       * Only the routes Express also probes. `detect_duplicate`, `redact_payment_metadata` and
+       * `suggest_names` carry no GET entry in the shared route table, so adding one here would price a
+       * method the table does not cover.
+       */
+      getProbe(PREFLIGHT_ROUTE),
+      getProbe(VERIFY_ROUTE),
+      getProbe(BRAND_PACK_ROUTE),
     ];
   };
 
