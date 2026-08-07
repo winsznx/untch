@@ -137,14 +137,25 @@ describe("both environments ship in the safe posture", () => {
     }
   });
 
-  test("production write ownership is off in every environment", () => {
-    for (const [name, envConfig] of environments) {
-      assert.equal(
-        envConfig.vars?.UNTCH_PRODUCTION_WRITER_ACTIVE,
-        "0",
-        `${name} must not claim production writes — Railway owns them until cutover`,
-      );
-    }
+  /**
+   * EXACTLY ONE DEPLOYMENT OWNS PRODUCTION WRITES.
+   *
+   * Before cutover that was Railway and both environments shipped "0". Railway is now frozen — its
+   * deployments removed, zero row growth verified, all 74 tables byte-identical — so production claims
+   * writes and preview must not. Two writers against one database is worse than none: a preview
+   * sweeping expiries against production rows would expire real approvals.
+   */
+  test("production owns writes and preview never does", () => {
+    assert.equal(
+      production.vars?.UNTCH_PRODUCTION_WRITER_ACTIVE,
+      "1",
+      "production owns production writes after cutover",
+    );
+    assert.equal(
+      config.vars?.UNTCH_PRODUCTION_WRITER_ACTIVE,
+      "0",
+      "a preview must never claim production writes — it shares the production database",
+    );
   });
 
   /**

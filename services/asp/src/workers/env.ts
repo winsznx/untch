@@ -41,6 +41,7 @@ export interface WorkerEnv {
   readonly OKX_SECRET_KEY?: string;
   readonly OKX_PASSPHRASE?: string;
   readonly CONSUMER_SESSION_SECRET?: string;
+  readonly CONSUMER_AUTH_SECRET?: string;
   readonly APPROVAL_ACTION_TOKEN_SECRET?: string;
 }
 

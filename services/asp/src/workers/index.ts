@@ -13,6 +13,8 @@
 import pg from "pg";
 import { NETWORK, SETTLEMENT_TOKEN } from "../config";
 import { buildWorker, type RouteContext } from "./entry";
+import { consumerReadRoutes } from "./consumer-reads";
+import { realJobDeps } from "./job-wiring";
 import { buildPaidSurface } from "./paid-routes";
 import { stage1Fallback, stage1Routes, type Stage1Settlement } from "./stage1-routes";
 import type { Route } from "./router";
@@ -110,13 +112,32 @@ function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
   return paidSurface;
 }
 
+/**
+ * The account-scoped reads, wired only when this deployment can verify a session.
+ *
+ * Without `CONSUMER_AUTH_SECRET` no bearer token can be opened, so every one of these routes would
+ * answer 401 to a legitimate caller. Leaving them unregistered lets the fallback say the honest thing
+ * instead — the endpoint is real and this deployment cannot serve it.
+ */
+function consumerRoutes(ctx: RouteContext): readonly Route[] {
+  const secret = ctx.env.CONSUMER_AUTH_SECRET?.trim();
+  if (!secret) return [];
+  return consumerReadRoutes({
+    pool: ctx.pool,
+    secret,
+    gate: ctx.gate,
+    executionEnabled: false,
+  });
+}
+
 const worker = buildWorker({
   makePool: (connectionString) => new pg.Pool({ connectionString, max: 5 }) as never,
   expectedMigrations: MIGRATIONS,
-  jobDeps: noopJobDeps as never,
+  jobDeps: realJobDeps as never,
   routes: (ctx: RouteContext): readonly Route[] => [
     ...stage1Routes(ctx, settlement(ctx.env)),
     ...(paid(ctx)?.routes ?? []),
+    ...consumerRoutes(ctx),
   ],
   onUnmatched: stage1Fallback,
   paymentGate: (ctx) => paid(ctx)?.gate,
