@@ -159,7 +159,18 @@ export async function handleCheckDomains(body: unknown): Promise<HandlerResult> 
       results,
       currency: "USDT0",
       source: "rdap",
-      note: "Live RDAP lookup. AVAILABLE/TAKEN when the registry answers; UNKNOWN on timeout or ambiguous response. Not a purchase or reservation.",
+      /**
+       * "timeout or ambiguous response" was no longer the whole truth.
+       *
+       * The `.xyz` registry answers 403 to this host's network, so every `.xyz` row comes back UNKNOWN
+       * for a reason that is neither a timeout nor an ambiguity — it is a refusal to answer us at all.
+       * Each row carries the endpoints tried and their status in `detail`, and a `reason` token, so a
+       * caller can tell the cases apart without reading prose.
+       */
+      note:
+        "Live RDAP lookup against the registry IANA names authoritative for each TLD. AVAILABLE/TAKEN " +
+        "when the registry answers; UNKNOWN when no source answers, with the endpoints tried and their " +
+        "status in `detail`. Not a purchase or reservation.",
     },
   };
 }

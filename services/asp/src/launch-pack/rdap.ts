@@ -137,10 +137,26 @@ async function rdapLookup(domain: string, timeoutMs: number): Promise<DomainResu
   }
 
   /**
+   * Why each source declined, kept so a failure is diagnosable from the response.
+   *
+   * Without this a total failure reported only "no source answered", which is true and useless: a
+   * registry returning 403 to one network is a completely different operational problem from a
+   * timeout, and the difference decides whether the fix is a new endpoint or a retry.
+   */
+  const attempts: string[] = [];
+
+  /**
    * One attempt against one server. Returns null when the server did not answer the question, so the
    * caller can try the next source rather than reporting a transport failure as a registration fact.
    */
   const attempt = async (base: string): Promise<DomainResult | null> => {
+    const host = (() => {
+      try {
+        return new URL(base).host;
+      } catch {
+        return base;
+      }
+    })();
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
@@ -174,8 +190,10 @@ async function rdapLookup(domain: string, timeoutMs: number): Promise<DomainResu
        * 404 is the RDAP signal for "no such registration". Everything else means the server did not
        * answer, which is what the next source is for.
        */
+      attempts.push(`${host}:${res.status}`);
       return null;
-    } catch {
+    } catch (err) {
+      attempts.push(`${host}:${err instanceof Error ? err.name : "error"}`);
       return null;
     } finally {
       clearTimeout(timer);
@@ -221,7 +239,7 @@ async function rdapLookup(domain: string, timeoutMs: number): Promise<DomainResu
      * a different fact from a malformed name or an unsupported TLD, both of which return above.
      */
     reason: "NO_RDAP_SOURCE_ANSWERED",
-    detail: `no RDAP source answered for .${split.tld} (tried ${[direct, discovered, RDAP_PROXY].filter(Boolean).length} endpoints)`,
+    detail: `no RDAP source answered for .${split.tld} — ${attempts.join(", ")}`,
   };
 }
 
