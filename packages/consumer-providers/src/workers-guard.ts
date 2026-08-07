@@ -173,6 +173,14 @@ export function isBlockedAddress(ip: string): boolean {
 // Hostname rules
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Suffixes that resolve inside the machine or the local network.
+ *
+ * The surface lint flags these names wherever they appear, which is the right default — a served URL
+ * pointing at the reader's own machine is a broken document. Here they are the DENY list, so the names
+ * have to be written down to be refused.
+ */
+// production-surface-allow: localhost — the deny list of local-network suffixes, not a served URL.
 const LOCAL_SUFFIXES = [".localhost", ".local", ".internal", ".localdomain", ".home.arpa"] as const;
 
 /**
@@ -184,6 +192,8 @@ const LOCAL_SUFFIXES = [".localhost", ".local", ".internal", ".localdomain", ".h
 export function isBlockedHostname(hostname: string): string | null {
   const h = hostname.toLowerCase().replace(/\.$/, "");
   if (h === "") return "empty hostname";
+  // Delete this name and a redirect walks an outbound request onto the loopback.
+  // production-surface-allow: localhost — the refusal itself, not a served URL.
   if (h === "localhost") return "localhost is not a permitted target";
   if (LOCAL_SUFFIXES.some((s) => h.endsWith(s))) return `${h} is a local-network name`;
   if (!h.includes(".") && isIP(h) === 0) return "dotless hostnames resolve through search domains";
