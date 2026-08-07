@@ -43,8 +43,10 @@ deployed but **neither yet confirmed against a live payment**:
 
 ### What is already proven about the facilitator
 
-Research raised two worries about OKX's hosted facilitator. Both are checked and neither
-blocks the paid call.
+Research raised two worries about OKX's hosted facilitator. Both were checked before the
+paid calls ran, and the settlements above have since confirmed the conclusion from the
+other direction. Kept because it explains WHY a client-side failure can look like a
+server-side one.
 
 *The base URL is right.* The concern was that `@okxweb3/x402-core` hardcodes
 `https://web3.okx.com/facilitator`, a path that 404s — the canonical one has no
@@ -97,8 +99,11 @@ Context you need:
 - Live ASP: https://asp.untch.xyz — Cloudflare Worker, branch feat/production-cutover.
 - The OKX CLI is `onchainos`, already installed and logged in. `payment quote` never
   signs, so it is safe to probe with. `payment pay` spends real money.
-- No settlement has ever completed on the Cloudflare deployment. Everything else is
-  verified. Proving one settlement end to end is the goal.
+- Settlement itself is already proven — two real paid calls went through on 2026-08-07,
+  by direct URL and through MCP. What is NOT yet proven is the two fixes that run went
+  on to find: the sale recorder now reaching the settlement layer, and policy_sync
+  linking a policy to the account that registered it. Both are deployed and tested;
+  neither has been confirmed against a live payment. Confirming them is the goal.
 
 Do this in order:
 
