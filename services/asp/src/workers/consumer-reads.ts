@@ -20,8 +20,10 @@
  * id from the request, because "unguessable" is not an authorisation model.
  */
 
-import { PgApprovalStore, type Pool } from "@untch/consumer-core";
+import { PgAccountStore, PgApprovalStore, type Pool } from "@untch/consumer-core";
+import { PgPolicyRepo, PolicyProvider } from "@untch/policy-store";
 import { openAccountSession } from "../consumer/account-auth";
+import { publicAccount } from "../consumer/account-routes";
 import type { HandlerResult } from "../handlers";
 import type { Route, RouteRequest } from "./router";
 import { assertOwnsWrites, type WriterGate } from "./writer-gate";
@@ -58,6 +60,8 @@ const SESSION_REQUIRED = [
 
 export function consumerReadRoutes(deps: ConsumerReadDeps): readonly Route[] {
   const approvals = new PgApprovalStore(deps.pool as never);
+  const accounts = new PgAccountStore(deps.pool as never);
+  const policies = new PolicyProvider(new PgPolicyRepo(deps.pool as never));
 
   const authed = (
     handler: (accountId: string, req: RouteRequest) => Promise<Response>,
@@ -82,7 +86,7 @@ export function consumerReadRoutes(deps: ConsumerReadDeps): readonly Route[] {
          * that into a 503 naming the reason. That is the correct answer: a list that could not sweep
          * cannot promise its PENDING rows are actionable, so it must not serve them as if it could.
          */
-        assertOwnsWrites(deps.gate, "approval-expiry");
+        assertOwnsWrites(deps.gate, "approval-expiry-mutation");
         await approvals.expire(Date.now());
 
         const requests = await approvals.listForAccount(accountId, {
@@ -123,7 +127,72 @@ export function consumerReadRoutes(deps: ConsumerReadDeps): readonly Route[] {
         return json(request);
       }),
     },
+
+    {
+      method: "GET",
+      pattern: "/consumer/account",
+      bodyMode: "none",
+      /**
+       * Projected by the same `publicAccount` Express calls. It decides which binding fields are
+       * publishable and which stay internal, and a second copy here would be the place those two
+       * answers quietly diverge.
+       */
+      handler: authed(async (accountId) => {
+        const account = await accounts.getAccount(accountId);
+        if (!account) return refuse(404, "ACCOUNT_NOT_FOUND", `no account ${accountId}`);
+        const [wallets, marketplace, channels] = await Promise.all([
+          accounts.walletsFor(accountId),
+          accounts.marketplaceBindingsFor(accountId),
+          accounts.channelsFor(accountId),
+        ]);
+        return json(publicAccount(account, wallets, marketplace, channels));
+      }),
+    },
+
+    {
+      method: "GET",
+      pattern: "/consumer/policies",
+      bodyMode: "none",
+      handler: authed(async (accountId) => {
+        const ids = await accounts.policiesFor(accountId);
+        const loaded = await Promise.all(ids.map((id) => policies.loadStored(id)));
+        return json({
+          accountId,
+          count: ids.length,
+          policies: loaded.filter(Boolean),
+        });
+      }),
+    },
+
+    {
+      method: "GET",
+      pattern: "/consumer/policies/:policyId",
+      bodyMode: "none",
+      /**
+       * Ownership is re-read at the moment it is used, not inferred from the id being hard to guess.
+       * The session says who is asking; `policiesFor` says which policies that account owns.
+       */
+      handler: authed(async (accountId, req) => {
+        const policyId = req.params.policyId ?? "";
+        const owned = await accounts.policiesFor(accountId);
+        if (!owned.includes(policyId)) {
+          return refuse(404, "POLICY_NOT_FOUND", `no policy ${policyId} on this account`);
+        }
+        const policy = await policies.loadStored(policyId);
+        if (!policy) return refuse(404, "POLICY_NOT_FOUND", `no policy ${policyId}`);
+        return json(policy);
+      }),
+    },
   ];
 }
 
 export { fromResult };
+
+/** The paths this module serves. Named once so the route classifier reads truth, not a guess. */
+export const CONSUMER_READ_PATHS = [
+  "/consumer/approvals",
+  "/consumer/approvals/:approvalRequestId",
+  "/consumer/account",
+  "/consumer/policies",
+  "/consumer/policies/:policyId",
+] as const;

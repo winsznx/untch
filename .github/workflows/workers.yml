@@ -110,31 +110,36 @@ jobs:
         working-directory: services/asp
         run: pnpm exec wrangler deploy --dry-run --env production --config workers/wrangler.jsonc --outdir /tmp/worker-production
 
-      # Workers has a hard compressed-size limit. Checked against the uncompressed bundle with wide
-      # headroom, so this fails on a dependency that doubles the bundle rather than on normal growth.
-      - name: Bundle size
+      # Cloudflare's limit is on the COMPRESSED bundle, so that is what this measures.
+      #
+      # It previously checked the uncompressed size against 3 MB as a proxy. Porting the paid surface,
+      # the account reads and the Discord endpoint took the raw bundle past that while the compressed
+      # size stayed near 670 KB — the guard would have failed on legitimate growth while telling us
+      # nothing about the limit that actually exists. Measuring gzip against 2 MB keeps wide headroom
+      # under the 10 MB ceiling and still fails loudly on a dependency that doubles the bundle.
+      - name: Bundle size (compressed, which is what Cloudflare limits)
         run: |
-          size=$(stat -c %s /tmp/worker-production/index.js)
-          echo "bundle: ${size} bytes"
-          if [ "$size" -gt 3000000 ]; then
-            echo "::error::bundle is ${size} bytes, over the 3 MB guard"
+          raw=$(stat -c %s /tmp/worker-production/index.js)
+          gz=$(gzip -c /tmp/worker-production/index.js | wc -c)
+          echo "bundle: ${raw} bytes raw, ${gz} bytes gzipped"
+          if [ "$gz" -gt 2000000 ]; then
+            echo "::error::compressed bundle is ${gz} bytes, over the 2 MB guard"
             exit 1
           fi
 
-      # The gates are the reason a preview may point at staged production data at all. A config that
-      # ships armed or writer-active is the one mistake that cannot be undone by a rollback.
-      - name: Both environments ship disarmed and writer-disabled
+      # The preview shares production's database AND its facilitator credentials. Production owning
+      # writes and being armed is the deliberate post-cutover posture; a preview doing either is the
+      # accident this exists to stop — an armed preview could settle a real buyer's authorization from
+      # an unreviewed branch, and that is the one mistake a rollback cannot undo.
+      - name: The preview can neither write nor settle
         run: |
           set -e
-          for env_name in preview production; do
-            flag=$([ "$env_name" = production ] && echo "--env production" || echo '--env=""')
-            out=$(cd services/asp && eval pnpm exec wrangler deploy --dry-run $flag --config workers/wrangler.jsonc --outdir /tmp/chk 2>&1)
-            echo "$out" | grep -q 'UNTCH_FINANCIAL_ARMED ("0")' \
-              || { echo "::error::$env_name does not ship financially disarmed"; exit 1; }
-            echo "$out" | grep -q 'UNTCH_PRODUCTION_WRITER_ACTIVE ("0")' \
-              || { echo "::error::$env_name claims production writes"; exit 1; }
-            echo "$env_name: disarmed and writer-disabled"
-          done
+          out=$(cd services/asp && pnpm exec wrangler deploy --dry-run --env="" --config workers/wrangler.jsonc --outdir /tmp/chk 2>&1)
+          echo "$out" | grep -q 'UNTCH_FINANCIAL_ARMED ("0")' \
+            || { echo "::error::preview ships armed — it could settle a real authorization"; exit 1; }
+          echo "$out" | grep -q 'UNTCH_PRODUCTION_WRITER_ACTIVE ("0")' \
+            || { echo "::error::preview claims production writes"; exit 1; }
+          echo "preview: disarmed and writer-disabled"
 
       # A preview URL in a public descriptor tells a reviewer the preview IS the listed endpoint.
       - name: No preview URL in production config, no secret committed

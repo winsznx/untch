@@ -167,7 +167,8 @@ function publicChannel(c: ChannelBinding): Record<string, unknown> {
   };
 }
 
-function publicAccount(
+/** The published shape of an account. Exported so the Worker projects it identically to Express. */
+export function publicAccount(
   account: UntchAccount,
   wallets: readonly WalletBinding[],
   marketplace: readonly MarketplaceBinding[],

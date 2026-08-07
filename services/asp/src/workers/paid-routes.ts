@@ -25,6 +25,7 @@
  */
 
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
+import { assertArmed, type ArmingState } from "./arming";
 import type { RouteConfig } from "@okxweb3/x402-core/server";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { x402ResourceServer } from "@okxweb3/x402-express";
@@ -62,6 +63,15 @@ export interface PaidSurfaceArgs {
   readonly publicBaseUrl: string;
   readonly okx: { readonly apiKey: string; readonly secretKey: string; readonly passphrase: string };
   readonly facilitatorUrl?: string;
+  /**
+   * The arming state, consulted before settlement rather than alongside it.
+   *
+   * `settle-payment` is on the financial deny-list and this path was not asking. That made the gate
+   * decorative exactly where it matters most: a deployment could take a buyer's authorization and
+   * settle it while reporting `financiallyArmed: false`. Issuing the challenge stays unarmed — a 402
+   * moves nothing — but turning an authorization into a transfer does not.
+   */
+  readonly arming: () => ArmingState;
 }
 
 export interface PaidSurface {
@@ -93,7 +103,25 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
   } as never);
 
   const server = new x402ResourceServer(facilitator).register("eip155:196", new ExactEvmScheme());
-  const gate = workersPaymentGate(table, server);
+  const rawGate = workersPaymentGate(table, server);
+
+  /**
+   * The arming check sits between the challenge and the settlement.
+   *
+   * A request with no payment header never reaches it: the SDK answers 402 and returns, which is
+   * correct unarmed because a challenge states a price and moves nothing. A request CARRYING an
+   * authorization is asking this deployment to convert it into a transfer, and that is the operation
+   * the deny-list names. Refusing here rather than inside the SDK keeps the SDK unmodified and puts
+   * the posture check where a reader looking for it would expect it.
+   */
+  const gate: WorkersPaymentGate = async (request, body, run) => {
+    const carriesAuthorization =
+      request.headers.has("x-payment") || request.headers.has("payment") || request.headers.has("x-payment-signature");
+    // Read per request, not captured: the surface is memoised per isolate, and a captured state would
+    // keep answering from the posture the isolate happened to start in.
+    if (carriesAuthorization) assertArmed(args.arming(), "settle-payment");
+    return rawGate(request, body, run);
+  };
 
   const policyProvider = policyReader(args.pool);
   /**

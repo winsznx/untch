@@ -14,6 +14,7 @@ import pg from "pg";
 import { NETWORK, SETTLEMENT_TOKEN } from "../config";
 import { buildWorker, type RouteContext } from "./entry";
 import { consumerReadRoutes } from "./consumer-reads";
+import { discordRoutes } from "./discord-routes";
 import { realJobDeps } from "./job-wiring";
 import { buildPaidSurface } from "./paid-routes";
 import { stage1Fallback, stage1Routes, type Stage1Settlement } from "./stage1-routes";
@@ -108,6 +109,7 @@ function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
     payTo: settlement(ctx.env).payTo,
     publicBaseUrl: ctx.baseUrl,
     okx: { apiKey, secretKey, passphrase },
+    arming: () => ctx.arming,
   });
   return paidSurface;
 }
@@ -130,6 +132,18 @@ function consumerRoutes(ctx: RouteContext): readonly Route[] {
   });
 }
 
+/**
+ * The Discord interaction endpoint, wired only with a public key to verify against.
+ *
+ * Without `DISCORD_PUBLIC_KEY` no signature can be checked, and an endpoint that cannot verify must
+ * not answer at all — Discord would take a 2xx as proof the endpoint is healthy.
+ */
+function discord(ctx: RouteContext): readonly Route[] {
+  const publicKeyHex = ctx.env.DISCORD_PUBLIC_KEY?.trim();
+  if (!publicKeyHex) return [];
+  return discordRoutes({ publicKeyHex, log: (line) => console.log(line) });
+}
+
 const worker = buildWorker({
   makePool: (connectionString) => new pg.Pool({ connectionString, max: 5 }) as never,
   expectedMigrations: MIGRATIONS,
@@ -138,6 +152,7 @@ const worker = buildWorker({
     ...stage1Routes(ctx, settlement(ctx.env)),
     ...(paid(ctx)?.routes ?? []),
     ...consumerRoutes(ctx),
+    ...discord(ctx),
   ],
   onUnmatched: stage1Fallback,
   paymentGate: (ctx) => paid(ctx)?.gate,

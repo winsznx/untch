@@ -2,29 +2,12 @@
   "generatedFrom": "route-manifest.generated.json, classified against the Worker's own route tables",
   "totalRoutes": 126,
   "byState": {
-    "PORTED": 30,
-    "DEFERRED_AFTER_RELIST": 83,
+    "PORTED": 36,
+    "DEFERRED_AFTER_RELIST": 77,
     "NODE_ADMIN_ONLY": 13
   },
-  "blockingRelisting": [
-    "GET /consumer/account — the product UI calls this — BLOCKING",
-    "GET /consumer/approvals — the product UI calls this — BLOCKING",
-    "GET /consumer/approvals/:approvalRequestId — the product UI calls this — BLOCKING",
-    "GET /consumer/approvals/action/discord/callback — control-channel callback — BLOCKING if the channel is advertised",
-    "POST /consumer/approvals/action/discord/interactions — control-channel callback — BLOCKING if the channel is advertised",
-    "GET /consumer/channel/discord/callback — control-channel callback — BLOCKING if the channel is advertised",
-    "POST /consumer/channel/telegram/webhook — control-channel callback — BLOCKING if the channel is advertised",
-    "GET /consumer/policies — the product UI calls this — BLOCKING",
-    "GET /consumer/policies/:policyId — the product UI calls this — BLOCKING"
-  ],
+  "blockingRelisting": [],
   "routes": [
-    {
-      "method": "GET",
-      "path": "/consumer/account",
-      "classification": "account",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "the product UI calls this — BLOCKING"
-    },
     {
       "method": "GET",
       "path": "/consumer/account/agentic-link/:linkRequestId/challenge",
@@ -110,20 +93,6 @@
       "why": "Consumer Pack surface, refuses by name until ported"
     },
     {
-      "method": "GET",
-      "path": "/consumer/approvals",
-      "classification": "account",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "the product UI calls this — BLOCKING"
-    },
-    {
-      "method": "GET",
-      "path": "/consumer/approvals/:approvalRequestId",
-      "classification": "account",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "the product UI calls this — BLOCKING"
-    },
-    {
       "method": "POST",
       "path": "/consumer/approvals/:approvalRequestId/act",
       "classification": "account",
@@ -163,14 +132,7 @@
       "path": "/consumer/approvals/action/discord/callback",
       "classification": "callback",
       "state": "DEFERRED_AFTER_RELIST",
-      "why": "control-channel callback — BLOCKING if the channel is advertised"
-    },
-    {
-      "method": "POST",
-      "path": "/consumer/approvals/action/discord/interactions",
-      "classification": "callback",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "control-channel callback — BLOCKING if the channel is advertised"
+      "why": "control-channel callback; no advertised marketplace service depends on it"
     },
     {
       "method": "POST",
@@ -198,14 +160,14 @@
       "path": "/consumer/channel/discord/callback",
       "classification": "callback",
       "state": "DEFERRED_AFTER_RELIST",
-      "why": "control-channel callback — BLOCKING if the channel is advertised"
+      "why": "control-channel callback; no advertised marketplace service depends on it"
     },
     {
       "method": "POST",
       "path": "/consumer/channel/telegram/webhook",
       "classification": "callback",
       "state": "DEFERRED_AFTER_RELIST",
-      "why": "control-channel callback — BLOCKING if the channel is advertised"
+      "why": "control-channel callback; no advertised marketplace service depends on it"
     },
     {
       "method": "POST",
@@ -402,20 +364,6 @@
       "classification": "marketplace",
       "state": "DEFERRED_AFTER_RELIST",
       "why": "Consumer Pack surface, refuses by name until ported"
-    },
-    {
-      "method": "GET",
-      "path": "/consumer/policies",
-      "classification": "account",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "the product UI calls this — BLOCKING"
-    },
-    {
-      "method": "GET",
-      "path": "/consumer/policies/:policyId",
-      "classification": "account",
-      "state": "DEFERRED_AFTER_RELIST",
-      "why": "the product UI calls this — BLOCKING"
     },
     {
       "method": "POST",
@@ -792,6 +740,48 @@
       "method": "GET",
       "path": "/catalog",
       "classification": "public",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/account",
+      "classification": "account",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/approvals",
+      "classification": "account",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/approvals/:approvalRequestId",
+      "classification": "account",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "POST",
+      "path": "/consumer/approvals/action/discord/interactions",
+      "classification": "callback",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/policies",
+      "classification": "account",
+      "state": "PORTED",
+      "why": "the Worker route table declares this path"
+    },
+    {
+      "method": "GET",
+      "path": "/consumer/policies/:policyId",
+      "classification": "account",
       "state": "PORTED",
       "why": "the Worker route table declares this path"
     },
