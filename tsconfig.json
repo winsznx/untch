@@ -3,8 +3,12 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022"],
-    "types": ["node"],
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -13,5 +17,16 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["packages/**/*.ts", "scripts/**/*.ts"]
+  "include": [
+    "packages/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "scripts/demo-video",
+    "apps/video",
+    "apps/launch-film",
+    "untch-hyperframes-film",
+    "untch-product-film"
+  ]
 }

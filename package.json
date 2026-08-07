@@ -72,7 +72,8 @@
     "test:owned-work": "node --import tsx --test packages/owned-work/test/*.test.ts",
     "account:status": "tsx scripts/account-status.ts",
     "gen:attestation": "tsx scripts/gen-workers-attestation.ts",
-    "migrate:all": "tsx scripts/migrate-all.ts"
+    "migrate:all": "tsx scripts/migrate-all.ts",
+    "demo:record": "pnpm --dir scripts/demo-video record"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
@@ -94,6 +95,9 @@
     "overrides": {
       "ioredis": "5.10.1",
       "postcss": "^8.5.16"
+    },
+    "patchedDependencies": {
+      "pg@8.22.0": "patches/pg@8.22.0.patch"
     }
   }
 }

@@ -7,6 +7,10 @@ const appDir = path.dirname(fileURLToPath(import.meta.url));
 const docsRoot = path.resolve(appDir, "../../docs");
 
 const nextConfig: NextConfig = {
+  // Docs read MDX from the repo at BUILD time and have no API routes, so a static export is the
+  // honest shape: nothing needs a server at request time.
+  output: "export",
+  images: { unoptimized: true },
   // Allow reading markdown outside the app directory at build time.
   outputFileTracingRoot: path.resolve(appDir, "../.."),
   experimental: {

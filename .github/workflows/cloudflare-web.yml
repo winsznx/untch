@@ -1,0 +1,103 @@
+# The two public sites: do they still BUILD for Cloudflare from a clean checkout?
+#
+# WHY THIS EXISTS
+#
+# untch.xyz and docs.untch.xyz were deployed from a temporary worktree with a hand-edited
+# `node_modules`. That worked exactly once, on one machine, and nothing in the repository recorded how.
+# A fresh clone could not have reproduced either site.
+#
+# The build is the check that matters, and it is genuinely load-bearing rather than ceremonial: the web
+# build fails outright on a clean tree without the `pg` patch, because OpenNext copies the package into
+# `.open-next/` and esbuilds it outside pnpm's symlink layout, where its optional `pg-cloudflare`
+# import cannot resolve. If the patch is ever dropped from `pnpm.patchedDependencies`, this job goes
+# red instead of the next deploy going missing.
+#
+# Deploys stay manual. This proves the artefact can be produced, not that it should be published.
+name: cloudflare-web
+
+on:
+  push:
+    paths:
+      - "apps/web/**"
+      - "apps/docs/**"
+      - "docs/**"
+      - "patches/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/cloudflare-web.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/docs/**"
+      - "docs/**"
+      - "patches/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/cloudflare-web.yml"
+
+jobs:
+  build:
+    name: web + docs build for Cloudflare
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      # `--frozen-lockfile` is the point: the patch is recorded in the lockfile, so an install that
+      # ignores it would not apply the patch and the build below would fail.
+      - run: pnpm install --frozen-lockfile
+
+      - name: The pg patch is registered, not just present on disk
+        run: |
+          set -e
+          test -f patches/pg@8.22.0.patch || { echo "::error::patches/pg@8.22.0.patch is missing"; exit 1; }
+          node -e "
+            const p = require('./package.json').pnpm?.patchedDependencies ?? {};
+            if (!p['pg@8.22.0']) { console.error('::error::pg@8.22.0 is not in pnpm.patchedDependencies'); process.exit(1); }
+            console.log('patch registered:', p['pg@8.22.0']);
+          "
+
+      - name: Build untch.xyz for Workers (OpenNext)
+        working-directory: apps/web
+        run: pnpm exec opennextjs-cloudflare build
+
+      - name: The Worker entry the wrangler config points at actually exists
+        run: |
+          set -e
+          test -f apps/web/.open-next/worker.js || { echo "::error::OpenNext produced no worker.js"; exit 1; }
+          test -d apps/web/.open-next/assets || { echo "::error::OpenNext produced no assets directory"; exit 1; }
+          echo "worker: $(stat -c %s apps/web/.open-next/worker.js) bytes"
+
+      - name: Build docs.untch.xyz (static export)
+        working-directory: apps/docs
+        run: pnpm exec next build
+
+      - name: The export produced the pages the docs site serves
+        run: |
+          set -e
+          for page in index quickstart what-untch-is; do
+            test -f "apps/docs/out/${page}.html" || { echo "::error::docs export is missing ${page}.html"; exit 1; }
+          done
+          echo "docs pages: $(ls apps/docs/out/*.html | wc -l)"
+
+      # A dry run needs no credentials and catches a config that names a missing entry or directory.
+      - name: Wrangler dry run (web)
+        working-directory: apps/web
+        run: pnpm exec wrangler deploy --dry-run --outdir /tmp/web-dry
+
+      - name: Neither site advertises a workers.dev or Railway URL
+        run: |
+          set -e
+          for f in apps/web/wrangler.jsonc apps/docs/wrangler.jsonc; do
+            if grep -qE "workers\.dev|railway\.app|up\.railway" "$f"; then
+              echo "::error::$f names a non-production host"
+              exit 1
+            fi
+          done
+          echo "no preview or Railway host in either config"

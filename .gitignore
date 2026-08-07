@@ -13,9 +13,26 @@ dist/
 
 # local-only Remotion: launch video app + installed skills/scratch (not product build)
 apps/video/
+apps/launch-film/
+
+# local-only HyperFrames Genesis film production (renders, fixtures, narration) — not product build
+untch-hyperframes-film/
 .agents/
 **/remotion-best-practices/
 **/remotion-*/
+
+# local-only earlier film attempts (superseded by hyperframes film)
+untch-product-film/
+scripts/demo-video/
+
+# local Claude/skills tooling state
+.claude/
+skills-lock.json
+
+# unused icon/avatar exports (untch-icon-440.png IS used — OKX listing icon — and stays tracked)
+untch-avatar-1024.png
+apps/docs/public/icon-440.png
+apps/web/public/brand/untch-icon-440-opaque.png
 
 # next.js build output (apps/web)
 .next/
@@ -26,3 +43,11 @@ next-env.d.ts
 # NOTE: for D0.1 we DO want the notes + evidence tracked locally; see below
 /internal/
 internal/*
+only-launch-video/
+# Cloudflare build outputs. Produced by `pnpm --filter @untch/web cf:build` and
+# `pnpm --filter @untch/docs build`; both are reproducible from a clean checkout, so neither belongs
+# in the repository.
+apps/web/.open-next/
+apps/web/.wrangler/
+apps/docs/out/
+apps/docs/.wrangler/
