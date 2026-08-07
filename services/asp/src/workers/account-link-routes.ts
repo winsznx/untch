@@ -33,6 +33,17 @@ import {
   type AccountLinkDeps,
 } from "../consumer/account-link";
 import { linkPageRoute, LINK_PAGE_ROUTE } from "./link-page";
+import {
+  AGENTIC_LINK_CHALLENGE_ROUTE,
+  AGENTIC_LINK_COMPLETE_ROUTE,
+  AGENTIC_LINK_START_ROUTE,
+  AGENTIC_LINK_STATUS_ROUTE,
+  handleAgenticChallenge,
+  handleAgenticComplete,
+  handleAgenticStart,
+  handleAgenticStatus,
+  type AgenticLinkDeps,
+} from "../consumer/agentic-link";
 import { makeSiweVerifier } from "../consumer/siwe-verifier";
 import type { HandlerResult } from "../handlers";
 import type { Route, RouteRequest } from "./router";
@@ -72,6 +83,21 @@ export function accountLinkRoutes(deps: AccountLinkRouteDeps): readonly Route[] 
   } catch {
     domain = "asp.untch.xyz";
   }
+
+  /**
+   * `webBaseUrl` is where a human is sent to watch a link complete. It is the marketing site rather
+   * than this API host, which serves no such page.
+   */
+  const agenticDeps = (): AgenticLinkDeps => ({
+    accounts: new PgAccountStore(deps.pool as never),
+    links: new PgLinkRequestStore(deps.pool as never),
+    verifier: makeSiweVerifier(deps.rpcUrl),
+    domain,
+    publicBaseUrl: deps.baseUrl.replace(/\/+$/, ""),
+    webBaseUrl: "https://untch.xyz",
+    secret: deps.secret,
+    now: () => Date.now(),
+  });
 
   const linkDeps = (): AccountLinkDeps => ({
     accounts: new PgAccountStore(deps.pool as never),
@@ -137,6 +163,60 @@ export function accountLinkRoutes(deps: AccountLinkRouteDeps): readonly Route[] 
      * API it calls share an origin — no CORS, and nothing to keep in sync across two deployments.
      */
     linkPageRoute(),
+
+    /**
+     * The Agentic Wallet path — the PRIMARY one, and the reason this port was inverted until now.
+     *
+     * The browser routes above assume an injected EIP-1193 provider, which reaches the OKX browser
+     * EXTENSION: a different wallet product with different keys. The Agentic Wallet is TEE-held and
+     * restored by email, Google or Apple login, so a page cannot call it — an agent fetches the
+     * challenge, signs inside the TEE, and posts the signature back while the browser polls.
+     *
+     * Shipping only the browser half meant the wallet Untch is actually for could not be linked here
+     * at all.
+     */
+    {
+      method: "POST",
+      pattern: AGENTIC_LINK_START_ROUTE,
+      bodyMode: "json",
+      handler: async (req: RouteRequest) => {
+        assertOwnsWrites(deps.gate, "approval-expiry-mutation");
+        return send(
+          await handleAgenticStart(req.body, agenticDeps(), req.request.headers.get("x-request-id")),
+        );
+      },
+    },
+    {
+      /** A read the agent may legitimately repeat, so the address arrives as a query parameter. */
+      method: "GET",
+      pattern: AGENTIC_LINK_CHALLENGE_ROUTE,
+      bodyMode: "none",
+      handler: async (req: RouteRequest) =>
+        send(
+          await handleAgenticChallenge(
+            req.params.linkRequestId ?? "",
+            req.url.searchParams.get("address"),
+            agenticDeps(),
+          ),
+        ),
+    },
+    {
+      method: "POST",
+      pattern: AGENTIC_LINK_COMPLETE_ROUTE,
+      bodyMode: "json",
+      handler: async (req: RouteRequest) => {
+        assertOwnsWrites(deps.gate, "approval-expiry-mutation");
+        return send(await handleAgenticComplete(req.params.linkRequestId ?? "", req.body, agenticDeps()));
+      },
+    },
+    {
+      /** What the waiting browser polls. A read, so it does not ask the writer gate. */
+      method: "GET",
+      pattern: AGENTIC_LINK_STATUS_ROUTE,
+      bodyMode: "none",
+      handler: async (req: RouteRequest) =>
+        send(await handleAgenticStatus(req.params.linkRequestId ?? "", agenticDeps())),
+    },
   ];
 }
 
@@ -146,4 +226,8 @@ export const ACCOUNT_LINK_PATHS = [
   ACCOUNT_LINK_COMPLETE_ROUTE,
   LINK_MESSAGE_ROUTE,
   LINK_PAGE_ROUTE,
+  AGENTIC_LINK_START_ROUTE,
+  AGENTIC_LINK_CHALLENGE_ROUTE,
+  AGENTIC_LINK_COMPLETE_ROUTE,
+  AGENTIC_LINK_STATUS_ROUTE,
 ] as const;

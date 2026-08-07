@@ -37,6 +37,11 @@ describe("the Worker can mint a session at all", () => {
       "POST /consumer/account/link/:linkRequestId/message",
       `POST ${ACCOUNT_LINK_COMPLETE_ROUTE}`,
       "GET /link/:linkRequestId",
+      // The PRIMARY wallet path. Shipping only the browser half inverted the design.
+      "POST /consumer/account/agentic-link/start",
+      "GET /consumer/account/agentic-link/:linkRequestId/challenge",
+      "POST /consumer/account/agentic-link/:linkRequestId/complete",
+      "GET /consumer/account/agentic-link/:linkRequestId/status",
     ]);
   });
 
@@ -349,5 +354,46 @@ describe("the message a connecting wallet is asked to sign", () => {
       ...base, links: { async get() { return null; } } as never,
     } as never);
     assert.equal(r.status, 404);
+  });
+});
+
+/**
+ * The wallet Untch is actually for.
+ *
+ * The port shipped `/consumer/account/link/*` — which assumes an injected EIP-1193 provider, and so
+ * reaches the OKX browser EXTENSION, a different wallet product with different keys — and left the
+ * Agentic Wallet routes refusing. That inverted the design: the fallback was the only path served,
+ * and the TEE-held wallet a user restores with email, Google or Apple login could not be linked here
+ * at all.
+ */
+describe("the Agentic Wallet path is served, and the page says which is which", () => {
+  test("all four agentic routes exist", () => {
+    const patterns = deps().map((r) => `${r.method} ${r.pattern}`);
+    for (const p of [
+      "POST /consumer/account/agentic-link/start",
+      "GET /consumer/account/agentic-link/:linkRequestId/challenge",
+      "POST /consumer/account/agentic-link/:linkRequestId/complete",
+      "GET /consumer/account/agentic-link/:linkRequestId/status",
+    ]) {
+      assert.ok(patterns.includes(p), `${p} must be served — it is the primary wallet path`);
+    }
+  });
+
+  /**
+   * The two are not interchangeable, and a user who picks the wrong one binds a wallet that holds
+   * none of their funds. The page has to say so before it offers a button.
+   */
+  test("the page names the Onchain OS wallet before offering the extension", async () => {
+    const route = deps().find((r) => r.method === "GET" && r.pattern.startsWith("/link/"))!;
+    const html = await (await Promise.resolve(
+      route.handler({ params: { linkRequestId: "ulnk_abc" }, request: new Request("https://asp.untch.xyz/link/ulnk_abc"), body: undefined } as never),
+    ) as Response).text();
+
+    const onchainOs = html.indexOf("Onchain OS wallet");
+    const button = html.indexOf("<button");
+    assert.ok(onchainOs > -1, "the page must name the wallet most users actually hold");
+    assert.ok(onchainOs < button, "it must say so BEFORE the extension button, not after");
+    assert.match(html, /agentic-link\/start/, "and it must show how that wallet is linked");
+    assert.match(html, /different wallet with different keys/i, "and say plainly that they differ");
   });
 });

@@ -74,6 +74,20 @@ function page(linkRequestId: string): string {
   <p>This proves which wallet you are. <strong>It approves no payment</strong> — nothing reachable from
   this page can move funds.</p>
 
+  <div id="which">
+    <p class="note"><strong>Using your OKX Onchain OS wallet</strong> — the one you restore with email,
+    Google or Apple? That wallet lives in OKX&#39;s TEE and is not injected into any web page, so it is
+    linked from your agent rather than from here:</p>
+    <pre id="agentic-steps">POST /consumer/account/agentic-link/start
+GET  /consumer/account/agentic-link/{id}/challenge?address=0x…
+POST /consumer/account/agentic-link/{id}/complete</pre>
+    <p class="note">Your <code>onchainos</code> session signs the challenge inside the TEE and posts it
+    back. Nothing about that flow passes through this page.</p>
+    <p class="note">The button below is for a <strong>browser extension wallet</strong> instead, which
+    is a different wallet with different keys. Use it only if that is deliberately the wallet you want
+    to own your policies.</p>
+  </div>
+
   <div id="need-code" class="hide">
     <p class="bad">This link is missing its one-time code.</p>
     <p class="note">Open the full <code>walletActionUrl</code> that <code>/consumer/account/link/start</code>
@@ -88,7 +102,7 @@ function page(linkRequestId: string): string {
     </dl>
     <pre id="message" class="hide"></pre>
     <p id="status" class="note"></p>
-    <button id="go">Connect wallet</button>
+    <button id="go">Use a browser extension wallet instead</button>
   </div>
 </main>
 <script>
