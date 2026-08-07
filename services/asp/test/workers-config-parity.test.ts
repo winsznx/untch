@@ -78,16 +78,48 @@ describe("bindings match the names the code reads", () => {
     }
   });
 
-  test("the queue consumer has bounded retries and a dead-letter queue", () => {
+  test("the queue consumer has bounded retries and its own dead-letter queue", () => {
     for (const [name, envConfig] of environments) {
       const consumer = (envConfig.queues?.consumers ?? [])[0];
       assert.ok(consumer, `${name} must consume the delivery queue`);
       assert.ok(consumer.max_retries > 0 && consumer.max_retries <= 10, `${name}: retries must be bounded`);
       assert.equal(
         consumer.dead_letter_queue,
-        "untch-approval-delivery-dlq",
+        `${consumer.queue}-dlq`,
         `${name}: without a dead-letter queue a poison message circulates forever`,
       );
+    }
+  });
+
+  /**
+   * THE ISOLATION THE WRITER GATE SHOULD NOT HAVE TO PROVIDE.
+   *
+   * A Cloudflare Queue accepts exactly one consumer. While both environments named the same queue, the
+   * preview held it and production's deploy was refused — and every approval delivery production
+   * enqueued would have been handed to the preview, with only the writer gate refusing each claim.
+   * Separate queues make a preview structurally unable to touch production's deliveries.
+   */
+  test("the two environments never share a queue", () => {
+    const queuesOf = (envConfig: Record<string, any>): string[] => [
+      ...(envConfig.queues?.producers ?? []).map((p: { queue: string }) => p.queue),
+      ...(envConfig.queues?.consumers ?? []).map((c: { queue: string }) => c.queue),
+      ...(envConfig.queues?.consumers ?? []).map((c: { dead_letter_queue: string }) => c.dead_letter_queue),
+    ];
+    const previewQueues = new Set(queuesOf(config));
+    for (const queue of queuesOf(production)) {
+      assert.ok(
+        !previewQueues.has(queue),
+        `both environments use ${queue}. One consumer per queue means one deploy wins, and the loser's ` +
+          "messages go to the wrong Worker.",
+      );
+    }
+  });
+
+  test("a queue and its consumer agree, in both environments", () => {
+    for (const [name, envConfig] of environments) {
+      const produced = (envConfig.queues?.producers ?? []).map((p: { queue: string }) => p.queue);
+      const consumed = (envConfig.queues?.consumers ?? []).map((c: { queue: string }) => c.queue);
+      assert.deepEqual(produced, consumed, `${name} produces into a queue it does not consume`);
     }
   });
 });

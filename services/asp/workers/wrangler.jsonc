@@ -27,17 +27,27 @@
     { "binding": "HYPERDRIVE", "id": "14c781385e4e40759d958fed8a6852c0" }
   ],
 
+  // The preview has its OWN queue, and that is a safety property rather than tidiness.
+  //
+  // A Cloudflare Queue accepts exactly one consumer, so while the preview consumed
+  // `untch-approval-delivery` the production Worker could not — the deploy that first tried it failed
+  // with "already has a consumer". Worse, both Workers were producing into the same queue, which meant
+  // the only thing stopping a preview from draining production's approval deliveries was the writer
+  // gate refusing each claim. That is a runtime check standing in for an isolation boundary.
+  //
+  // Separate queues make it structural: a preview deployment cannot enqueue into, or drain from, the
+  // queue production uses, whatever its gates say.
   "queues": {
-    "producers": [{ "binding": "APPROVAL_DELIVERY", "queue": "untch-approval-delivery" }],
+    "producers": [{ "binding": "APPROVAL_DELIVERY", "queue": "untch-approval-delivery-preview" }],
     "consumers": [
       {
-        "queue": "untch-approval-delivery",
+        "queue": "untch-approval-delivery-preview",
         "max_batch_size": 10,
         "max_batch_timeout": 5,
         // Bounded retries, then the dead-letter queue. Retrying forever is how a poison message
         // occupies a queue indefinitely.
         "max_retries": 5,
-        "dead_letter_queue": "untch-approval-delivery-dlq"
+        "dead_letter_queue": "untch-approval-delivery-preview-dlq"
       }
     ]
   },
