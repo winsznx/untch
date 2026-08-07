@@ -39,10 +39,12 @@ import {
   SEO_TIPS_ROUTE,
   LOG_RECEIPT_ROUTE,
   GET_LEDGER_ROUTE,
+  ESCALATION_STATUS_ROUTE,
+  APPROVAL_DECIDE_ROUTE,
 } from "../config";
 import { coerceObjectParams } from "./coerce-params";
 import { logReceiptRoute, receiptReader, receiptStatusRoute } from "./receipt-reads";
-import { getLedgerRoute } from "./ledger-route";
+import { approvalDecideRoute, escalationStatusRoute, getLedgerRoute } from "./ledger-route";
 import {
   handleCafeMenu,
   handleCafeOrderLatte,
@@ -128,6 +130,7 @@ export const STAGE1_SERVED: ReadonlySet<string> = new Set<string>([
   CHECK_DOMAINS_ROUTE,
   // A read. It answers from Postgres and holds nothing that could enqueue a receipt.
   RECEIPT_STATUS_ROUTE, LOG_RECEIPT_ROUTE, GET_LEDGER_ROUTE,
+  ESCALATION_STATUS_ROUTE, APPROVAL_DECIDE_ROUTE,
 ]);
 
 /**
@@ -287,6 +290,9 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
     logReceiptRoute(receiptReader(ctx.pool)),
     /** Refused by name, with the reason and the two routes that do answer. See `ledger-route.ts`. */
     getLedgerRoute(),
+    /** Both refused by name for stated reasons, rather than falling to a bare 503. */
+    escalationStatusRoute(),
+    approvalDecideRoute(),
 
     { method: "GET", pattern: "/healthz", bodyMode: "none", handler: () => json(healthBody(ctx)) },
 

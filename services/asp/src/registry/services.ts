@@ -1767,7 +1767,13 @@ export const SERVICES: readonly ServiceDefinition[] = [
     toolId: "set_default_policy",
     publicName: "Default policy",
     protocol: "A2MCP",
-    method: "POST",
+    /**
+     * PUT, which is what the route has always been. The registry said POST, so a caller following our
+     * own catalog or MCP tool list got a 405 naming the method they should have been told to use.
+     * `registry-serves-what-it-advertises.test.ts` now checks every entry against the generated route
+     * manifest so an advertised method cannot drift from the served one again.
+     */
+    method: "PUT",
     path: "/consumer/account/default-policy",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
     maturity: "live",

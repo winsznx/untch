@@ -23,7 +23,7 @@
  * nothing.
  */
 
-import { GET_LEDGER_ROUTE } from "../config";
+import { APPROVAL_DECIDE_ROUTE, ESCALATION_STATUS_ROUTE, GET_LEDGER_ROUTE } from "../config";
 import type { Route } from "./router";
 
 export function getLedgerRoute(): Route {
@@ -60,6 +60,67 @@ export function getLedgerRoute(): Route {
             "access-control-allow-origin": "*",
           },
         },
+      ),
+  };
+}
+
+/** The same envelope, so every named refusal on this host reads the same way. */
+const refusal = (code: string, message: string, insteadTry: Record<string, string>): Response =>
+  new Response(JSON.stringify({ code, message, retryable: true, docsUrl: null, insteadTry }, null, 2), {
+    status: 503,
+    headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*" },
+  });
+
+/**
+ * Escalation status, refused because there is nothing on this deployment to poll.
+ *
+ * A status read is servable from Postgres alone — `getState` reaches the repo and nothing else, the
+ * same shape that made `log_receipt` portable once it turned out Redis was only in the enqueue path.
+ * But CREATING an escalation is not: the fan-out needs the channel registry and the timeout worker
+ * needs Redis, and neither is wired here. A poll endpoint whose subject can never be created answers
+ * PENDING forever, which reads as "your approval is on its way" to a caller who will never receive one.
+ *
+ * So it refuses as a whole rather than serving the half that happens to be reachable.
+ */
+export function escalationStatusRoute(): Route {
+  return {
+    method: "GET",
+    pattern: ESCALATION_STATUS_ROUTE,
+    bodyMode: "none",
+    handler: async () =>
+      refusal(
+        "ESCALATION_NOT_CONFIGURED",
+        "this deployment does not run escalations. The status read alone would be servable, but nothing " +
+          "here can CREATE one — the fan-out needs the channel registry and the timeout worker needs " +
+          "Redis — so a poll would answer PENDING forever about an approval that is not coming.",
+        { "an approval raised through the account surface": "GET /consumer/approvals" },
+      ),
+  };
+}
+
+/**
+ * The legacy approval decision, refused by name.
+ *
+ * This route predates the paid approval model and already refuses every service-call-backed request
+ * with a 409, because deciding one here would write a terminal row with no action token, no consumed
+ * nonce, no FINALIZED check and no budget recheck — a second, weaker path to the same tables. What is
+ * left is pre-paid-model requests, and this deployment has none: those rows predate it.
+ *
+ * Named rather than left to the generic fallback so a caller is told the modern path exists rather
+ * than that the endpoint is temporarily down.
+ */
+export function approvalDecideRoute(): Route {
+  return {
+    method: "POST",
+    pattern: APPROVAL_DECIDE_ROUTE,
+    bodyMode: "json",
+    handler: async () =>
+      refusal(
+        "APPROVAL_DECIDE_LEGACY_ONLY",
+        "this endpoint only ever served approval requests raised before the paid model, and this " +
+          "deployment holds none. A paid request carries an action token that binds the answer to the " +
+          "exact amount and recipient, and deciding one without that token is refused by design.",
+        { "the approvals this account holds": "GET /consumer/approvals" },
       ),
   };
 }
