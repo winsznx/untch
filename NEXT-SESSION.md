@@ -25,9 +25,21 @@ Verified without spending:
   `link/start` → real SIWE message → `link/complete` refuses a bad signature with 401
   (which proves EIP-1271 verification reaches X Layer from the Worker).
 
-**Never verified: a real settlement on Cloudflare.** Production was silently unarmed
-for most of the cutover, so no payment has ever completed on this deployment. That is
-the single most important thing to establish.
+**Settlement is proven.** Two real paid calls went through on 2026-08-07, one by direct
+URL and one through MCP:
+
+- `suggest_names` 0.01 USDT — `0xf02189d0811f2c0fcf8baaa93410a7b2df7c5436e92fb4018620c741b920e247`
+- `suggest_names` 0.01 USDT via `/mcp` — `0xb8e4dd0b5b7c3ec56276a1e240f2c78389ddb8e27c1ec0f55f30563ff66fb91d`
+
+Both returned valid results. That run also found two real bugs, both now fixed and
+deployed but **neither yet confirmed against a live payment**:
+
+1. The sale was never recorded. The arming wrapper took three parameters and forwarded
+   three, silently dropping the recorder passed as the fourth. Both settlements left
+   `untch_marketplace_sales` empty.
+2. A registered policy was invisible to its own account. `policy_sync` stored the policy
+   and never linked it, so `GET /consumer/policies` was empty and setting the default
+   answered POLICY_NOT_FOUND — for a policy confirmed on chain.
 
 ### What is already proven about the facilitator
 
@@ -54,17 +66,27 @@ That matters because OKX hosts are unreachable from Nigerian residential/VPN egr
 from a network that can reach `web3.okx.com`, or expect the client side to fail even
 though the server side is fine.**
 
-## The one thing that must be proven
+## What must be proven now
 
-A paid call that settles, and a row in `untch_marketplace_sales`.
+Two things, both cheap.
 
-The recorder is wired and unit-tested, but has never fired against production. If the
-settlement succeeds and the table stays empty, the recorder is the bug, not the gate.
-`recordSale` deliberately swallows its own failure — a buyer must not lose paid work to
-a bookkeeping error — so a failure appears in `wrangler tail` as
-`FAILED TO RECORD A SETTLED SALE`, carrying enough to rebuild the row by hand.
+**One row in `untch_marketplace_sales`.** The recorder now reaches the settlement layer,
+but that has only been proven in tests. One `suggest_names` call at $0.01 settles it.
+If the payment succeeds and the table is still empty, `recordSale` itself is the
+problem: it deliberately swallows its own failure — a buyer must not lose paid work to
+a bookkeeping error — so look in `wrangler tail` for
+`FAILED TO RECORD A SETTLED SALE`, which carries enough to rebuild the row by hand.
 
-Cheapest proof is `suggest_names` at $0.01.
+**The existing policy, recovered without spending anything.** Policy
+`58712635805942247654024660654829183281006522701150087479245444894543448647169` is
+already registered on chain (`0x94de6bd08073b049fca5a242d7c4429bd4b0137f446c928b5018c1b7a059323c`,
+receipt `0x1`) and just was never linked. Re-run `POST /consumer/policies/sync` with the
+SAME `policyDraftId` and `txHash` — the fixed route will link it and make it the
+account's default. Nothing needs registering again, and no gas is needed. Confirm with
+`GET /consumer/policies` and a non-null `defaultPolicyId`.
+
+Only after both of those is it worth spending the 0.05 + 0.10 on
+`preflight_payment` → `verify_delivery`.
 
 ## Prompt
 
@@ -90,21 +112,27 @@ Do this in order:
 2. Check the payer wallet has USDT0 on X Layer:
    onchainos wallet status
 
-3. Buy the cheapest service ($0.01) and keep the full output:
+3. FIRST, spend nothing: recover the policy that is already registered on chain. Re-run
+   POST /consumer/policies/sync with the same policyDraftId and txHash from the last
+   session (see NEXT-SESSION.md). It should now link the policy and make it the default.
+   Confirm with GET /consumer/policies and a non-null defaultPolicyId. You need an
+   account session first, so run the link chain — I sign, you never do.
+
+4. Buy the cheapest service ($0.01) and keep the full output:
    onchainos payment quote "https://asp.untch.xyz/builder/suggest_names"
    then pay it. Ask me before spending if anything about the quote looks wrong.
 
-4. Confirm the money moved AND was recorded. The sale should appear in
+5. Confirm the money moved AND was recorded. The sale should appear in
    untch_marketplace_sales with the tx hash, the payer, the amount in base units and
    the tool id. If the settlement worked but the table is empty, check `wrangler tail`
    for "FAILED TO RECORD A SETTLED SALE" — the recorder logs loudly and swallows, by
    design, so the buyer never loses paid work to a bookkeeping failure.
 
-5. Repeat once through MCP rather than the direct URL, since that is the path the OKX
+6. Repeat once through MCP rather than the direct URL, since that is the path the OKX
    marketplace client actually takes:
    onchainos payment quote "https://asp.untch.xyz/mcp" --tool suggest_names
 
-6. Then the full pipeline, which is the real product and has never run end to end on
+7. Then the full pipeline, which is the real product and has never run end to end on
    Cloudflare: create_spend_intent (free) → preflight_payment ($0.05) →
    verify_delivery ($0.10). This needs a registered policy, or `useDefaultPolicy` with
    a default set. Getting there means the account chain:
