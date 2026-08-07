@@ -33,8 +33,22 @@ Verified without spending:
   which browsers never send to a server.
 
   **Still unproven: a GOOD signature.** We have only ever shown a bad one is refused.
-  Opening `walletActionUrl` in a browser with your wallet is the cheapest way to close
-  that, and it costs nothing.
+  Closing that costs nothing.
+
+- **Use the AGENTIC path, not the browser one.** `/consumer/account/link/*` assumes an
+  injected EIP-1193 provider, which reaches the OKX browser EXTENSION — a different wallet
+  product with different keys from the Onchain OS wallet you restore with email. Linking
+  the extension would bind a wallet holding none of your funds. All four agentic routes are
+  live as of 2026-08-07 and walked end to end (bad signature correctly refused at step 4):
+
+      POST /consumer/account/agentic-link/start
+      GET  /consumer/account/agentic-link/{id}/challenge?address=0x…
+      POST /consumer/account/agentic-link/{id}/complete   {address, message, signature}
+      GET  /consumer/account/agentic-link/{id}/status     -> WAITING_FOR_SIGNATURE
+
+  The challenge returns the message under `message` (not `siweMessage`), plus
+  `expectedAddress`, `nonce`, `signWith`, `creates` and `doesNotAuthorize`. Your `onchainos`
+  session signs it inside the TEE and posts it back; the browser polls `status`.
 
 **Settlement is proven.** Two real paid calls went through on 2026-08-07, one by direct
 URL and one through MCP:
@@ -152,8 +166,11 @@ Do this in order:
    Cloudflare: create_spend_intent (free) → preflight_payment ($0.05) →
    verify_delivery ($0.10). This needs a registered policy, or `useDefaultPolicy` with
    a default set. Getting there means the account chain:
-   POST /consumer/account/link/start with my address → sign the returned SIWE message
-   with my wallet → POST /consumer/account/link/complete → POST /consumer/policies/draft
+   POST /consumer/account/agentic-link/start → GET .../{id}/challenge?address=0x… →
+   I sign inside the TEE with my Onchain OS wallet → POST .../{id}/complete
+   {address, message, signature} → POST /consumer/policies/draft
+   (do NOT use /consumer/account/link/* — that path reaches the browser extension, which is
+   a different wallet with different keys)
    → send the unsigned tx from my own wallet → POST /consumer/policies/sync →
    PUT /consumer/account/default-policy.
    Stop and hand me each thing that needs my wallet to sign. Never ask me for a private
