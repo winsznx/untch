@@ -209,9 +209,9 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     };
 
     /**
-     * The GET compatibility probe on a POST-only business route.
+     * The GET and HEAD compatibility probes on a POST-only business route.
      *
-     * Marketplace validators GET-probe a listed endpoint to check it is alive. Express registers these
+     * Marketplace validators probe a listed endpoint with GET or HEAD to check it is alive. Express registers these
      * and prices them — the shared route table already carries `GET` and `HEAD` entries for each — so a
      * probe gets a 402 proving the endpoint is real and priced, and only a PAID probe reaches the 405.
      *
@@ -222,8 +222,8 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
      * The GET executes no business logic. Query parameters are not an acceptable transport for a
      * SpendIntent — proxies and access logs keep them — so real calls stay POST-only on both transports.
      */
-    const getProbe = (pattern: string): Route => ({
-      method: "GET",
+    const probe = (method: "GET" | "HEAD", pattern: string): Route => ({
+      method,
       pattern,
       bodyMode: "none",
       priced: true,
@@ -288,9 +288,18 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
        * `suggest_names` carry no GET entry in the shared route table, so adding one here would price a
        * method the table does not cover.
        */
-      getProbe(PREFLIGHT_ROUTE),
-      getProbe(VERIFY_ROUTE),
-      getProbe(BRAND_PACK_ROUTE),
+      probe("GET", PREFLIGHT_ROUTE),
+      probe("GET", VERIFY_ROUTE),
+      probe("GET", BRAND_PACK_ROUTE),
+      /**
+       * HEAD as well as GET. The shared table prices both, and a validator that probes with HEAD —
+       * the cheaper, more conventional liveness check — would otherwise get a 503 for an endpoint the
+       * listing says is live. A HEAD response carries no body by definition, so the 405 is the status
+       * and headers alone.
+       */
+      probe("HEAD", PREFLIGHT_ROUTE),
+      probe("HEAD", VERIFY_ROUTE),
+      probe("HEAD", BRAND_PACK_ROUTE),
     ];
   };
 
