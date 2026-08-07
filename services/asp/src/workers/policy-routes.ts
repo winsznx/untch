@@ -32,6 +32,11 @@ import {
 import { activeChain, activeRpcUrl } from "@untch/shared";
 import { openAccountSession } from "../consumer/account-auth";
 import { POLICY_DRAFT_ROUTE, POLICY_SYNC_ROUTE } from "../consumer/policy-routes";
+import {
+  derivePolicyRules,
+  PolicyShapeError,
+  type PolicyIntentInput,
+} from "../consumer/policy-shape";
 import type { Route, RouteRequest } from "./router";
 import { assertOwnsWrites, type WriterGate } from "./writer-gate";
 
@@ -129,9 +134,26 @@ export function policyRoutes(deps: PolicyRouteDeps): readonly Route[] {
 
         const agent = (typeof b.agentId === "string" ? b.agentId : authorities[0]) as `0x${string}`;
 
+        /**
+         * The friendly shape is DERIVED before it becomes rules.
+         *
+         * `/schema/policy_draft` publishes a human-facing body — name, currency, perActionLimit,
+         * dailyLimit — and `derivePolicyRules` turns that into the canonical rule structure the
+         * registry hashes. Passing the friendly body straight to `buildCreate` refused our own
+         * published example with "rules.budgets must be an object": the caller was blamed for the
+         * shape this transport forgot to convert.
+         */
+        let derived: ReturnType<typeof derivePolicyRules>;
+        try {
+          derived = derivePolicyRules(b as unknown as PolicyIntentInput);
+        } catch (err) {
+          if (err instanceof PolicyShapeError) return refuse(400, err.code, err.message);
+          throw err;
+        }
+
         let built;
         try {
-          built = registration!.buildCreate({ agent, rules: b.rules ?? b });
+          built = registration!.buildCreate({ agent, rules: derived.rules });
         } catch (err) {
           const e = err as { code?: string; message: string };
           return refuse(400, e.code ?? "POLICY_INVALID", e.message);
