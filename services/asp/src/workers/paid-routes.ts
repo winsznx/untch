@@ -284,22 +284,22 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
       priced(SUGGEST_NAMES_ROUTE, (body) => handleSuggestNames(body)),
       priced(BRAND_PACK_ROUTE, (body) => handleBrandPack(body)),
       /**
-       * Only the routes Express also probes. `detect_duplicate`, `redact_payment_metadata` and
-       * `suggest_names` carry no GET entry in the shared route table, so adding one here would price a
-       * method the table does not cover.
+       * Every LISTED tool, not the three that happened to be written out by hand.
+       *
+       * The shared table now generates GET, HEAD and POST together for each listed tool, so there is no
+       * longer a route whose GET is priced in one place and missing in the other. Before that,
+       * `payment quote https://asp.untch.xyz/detect_duplicate` failed on the GET probe while the same
+       * command against `preflight_payment` quoted a price — a buyer comparing two listed endpoints saw
+       * one working service and one broken one, with nothing to explain the difference.
        */
-      probe("GET", PREFLIGHT_ROUTE),
-      probe("GET", VERIFY_ROUTE),
-      probe("GET", BRAND_PACK_ROUTE),
+      ...PAID_PATHS.map((p) => probe("GET", p)),
       /**
        * HEAD as well as GET. The shared table prices both, and a validator that probes with HEAD —
        * the cheaper, more conventional liveness check — would otherwise get a 503 for an endpoint the
        * listing says is live. A HEAD response carries no body by definition, so the 405 is the status
        * and headers alone.
        */
-      probe("HEAD", PREFLIGHT_ROUTE),
-      probe("HEAD", VERIFY_ROUTE),
-      probe("HEAD", BRAND_PACK_ROUTE),
+      ...PAID_PATHS.map((p) => probe("HEAD", p)),
     ];
   };
 

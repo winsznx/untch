@@ -16,6 +16,7 @@ import { buildWorker, type RouteContext } from "./entry";
 import { agentCardRoutes } from "./agent-card";
 import { consumerReadRoutes } from "./consumer-reads";
 import { discordRoutes } from "./discord-routes";
+import { mcpJsonRpcRoutes } from "./mcp-jsonrpc";
 import { policyRoutes } from "./policy-routes";
 import { realJobDeps } from "./job-wiring";
 import { buildPaidSurface } from "./paid-routes";
@@ -150,6 +151,60 @@ function discord(ctx: RouteContext): readonly Route[] {
   return discordRoutes({ publicKeyHex, log: (line) => console.log(line) });
 }
 
+/**
+ * MCP JSON-RPC, which is how the OKX client discovers tools and their input schemas.
+ *
+ * `tools/call` re-enters the SAME route this Worker already serves — payment gate included — rather
+ * than calling a handler directly. A second path to a paid tool would be a second place for the
+ * payment decision to diverge.
+ */
+function mcp(ctx: RouteContext, routesOf: (c: RouteContext) => readonly Route[]): readonly Route[] {
+  return mcpJsonRpcRoutes({
+    baseUrl: ctx.baseUrl,
+    callTool: async (path, method, body, asTool, req) => {
+      const table = routesOf(ctx);
+      const target = table.find((r) => r.pattern === path && r.method === method);
+      if (!target) {
+        return new Response(
+          JSON.stringify({ code: "SERVICE_TEMPORARILY_UNAVAILABLE", message: `${method} ${path} is not served here yet` }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        );
+      }
+      const run = () => Promise.resolve(target.handler({ ...req, request: asTool, body, params: {} }));
+      const gate = target.priced ? paymentGateFor(ctx) : undefined;
+      return gate ? gate(asTool, body, run) : run();
+    },
+  });
+}
+
+/** The gate a priced tool must pass, built once here so the HTTP and MCP paths share it exactly. */
+function paymentGateFor(ctx: RouteContext) {
+  const gate = paid(ctx)?.gate;
+  if (!gate) return undefined;
+  return (request: Request, body: unknown, run: () => Promise<Response>) =>
+    gate(request, body, run, (facts) => recordSale(ctx.pool, facts));
+}
+
+function allRoutes(ctx: RouteContext): readonly Route[] {
+  return [
+    ...stage1Routes(ctx, settlement(ctx.env)),
+    ...(paid(ctx)?.routesFor(ctx.pool) ?? []),
+    ...consumerRoutes(ctx),
+    ...discord(ctx),
+    ...agentCardRoutes(ctx.baseUrl),
+    ...mcp(ctx, httpRoutes),
+  ];
+}
+
+/** The HTTP table WITHOUT the MCP routes, so tools/call cannot recurse into itself. */
+function httpRoutes(ctx: RouteContext): readonly Route[] {
+  return [
+    ...stage1Routes(ctx, settlement(ctx.env)),
+    ...(paid(ctx)?.routesFor(ctx.pool) ?? []),
+    ...consumerRoutes(ctx),
+  ];
+}
+
 const worker = buildWorker({
   /**
    * Three connections, not five.
@@ -163,24 +218,13 @@ const worker = buildWorker({
   makePool: (connectionString) => new pg.Pool({ connectionString, max: 3 }) as never,
   expectedMigrations: MIGRATIONS,
   jobDeps: realJobDeps as never,
-  routes: (ctx: RouteContext): readonly Route[] => [
-    ...stage1Routes(ctx, settlement(ctx.env)),
-    ...(paid(ctx)?.routesFor(ctx.pool) ?? []),
-    ...consumerRoutes(ctx),
-    ...discord(ctx),
-    ...agentCardRoutes(ctx.baseUrl),
-  ],
+  routes: allRoutes,
   onUnmatched: stage1Fallback,
   /**
    * The gate is memoised; where a sale is recorded is not. The pool belongs to the request in flight,
    * so it is handed to the gate per call rather than captured when the gate was built.
    */
-  paymentGate: (ctx) => {
-    const gate = paid(ctx)?.gate;
-    if (!gate) return undefined;
-    return (request, body, run) =>
-      gate(request, body, run, (facts) => recordSale(ctx.pool, facts));
-  },
+  paymentGate: paymentGateFor,
 });
 
 export default {

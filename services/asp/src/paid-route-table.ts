@@ -42,41 +42,45 @@ export interface PaidRouteTableArgs {
   readonly consumerRouteTable?: Record<string, RouteConfig>;
 }
 
+/**
+ * The methods a listed endpoint answers, priced identically.
+ *
+ * A marketplace validator — and the `onchainos payment quote <url>` a buyer runs before paying —
+ * probes a listed URL with GET before it ever POSTs. Only three of the six listed tools had GET and
+ * HEAD entries here, written out by hand, so `payment quote` on the other three failed with
+ * "endpoint returned HTTP 405 to the GET probe" while its neighbours quoted a price. Nothing
+ * distinguished the two groups except which blocks someone had remembered to copy.
+ *
+ * Generating all three methods from one declaration makes the omission unrepresentable. The probe is
+ * PRICED, not free: an unpaid probe gets a 402 that proves the endpoint is real and states its price,
+ * and only a paid probe reaches the 405 telling it to use POST.
+ */
+function listedTool(
+  args: PaidRouteTableArgs,
+  toolId: string,
+  route: string,
+  price: string,
+): Record<string, RouteConfig> {
+  const config: RouteConfig = {
+    accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price },
+    description: challengeDescription(toolId, args.publicBaseUrl),
+    mimeType: "application/json",
+  };
+  return { [`GET ${route}`]: config, [`HEAD ${route}`]: config, [`POST ${route}`]: config };
+}
+
 export function buildPaidRouteTable(args: PaidRouteTableArgs): Record<string, RouteConfig> {
   return {
-      // Some marketplace validators probe a listed endpoint with GET/HEAD even when
-      // the service is invoked with POST. Keep those probes paid and explicit rather
-      // than letting Express turn them into an unhelpful 404.
-      [`GET ${PREFLIGHT_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: PREFLIGHT_PRICE },
-        description: challengeDescription("preflight_payment", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`HEAD ${PREFLIGHT_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: PREFLIGHT_PRICE },
-        description: challengeDescription("preflight_payment", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`POST ${PREFLIGHT_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: PREFLIGHT_PRICE },
-        description: challengeDescription("preflight_payment", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`GET ${VERIFY_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: VERIFY_PRICE },
-        description: challengeDescription("verify_delivery", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`HEAD ${VERIFY_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: VERIFY_PRICE },
-        description: challengeDescription("verify_delivery", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`POST ${VERIFY_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: VERIFY_PRICE },
-        description: challengeDescription("verify_delivery", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
+      ...listedTool(args, "preflight_payment", PREFLIGHT_ROUTE, PREFLIGHT_PRICE),
+      ...listedTool(args, "verify_delivery", VERIFY_ROUTE, VERIFY_PRICE),
+      ...listedTool(args, "detect_duplicate", DETECT_DUP_ROUTE, DETECT_DUP_PRICE),
+      ...listedTool(args, "redact_payment_metadata", REDACT_META_ROUTE, REDACT_META_PRICE),
+      ...listedTool(args, "suggest_names", SUGGEST_NAMES_ROUTE, SUGGEST_NAMES_PRICE),
+      ...listedTool(args, "brand_pack", BRAND_PACK_ROUTE, BRAND_PACK_PRICE),
+      /**
+       * POST only, deliberately. These four are INTERNAL_OR_WITHHELD — they are not listed, so nothing
+       * probes them, and giving a withheld route a GET surface would widen it for no caller's benefit.
+       */
       [`POST ${SCORE_VENDOR_ROUTE}`]: {
         accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: SCORE_PRICE },
         description: challengeDescription("score_vendor", args.publicBaseUrl),
@@ -95,36 +99,6 @@ export function buildPaidRouteTable(args: PaidRouteTableArgs): Record<string, Ro
       [`POST ${RECONCILE_ROUTE}`]: {
         accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: RECONCILE_PRICE },
         description: challengeDescription("reconcile_agent_spend", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`POST ${SUGGEST_NAMES_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: SUGGEST_NAMES_PRICE },
-        description: challengeDescription("suggest_names", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`POST ${BRAND_PACK_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: BRAND_PACK_PRICE },
-        description: challengeDescription("brand_pack", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`GET ${BRAND_PACK_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: BRAND_PACK_PRICE },
-        description: challengeDescription("brand_pack", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`HEAD ${BRAND_PACK_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: BRAND_PACK_PRICE },
-        description: challengeDescription("brand_pack", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`POST ${DETECT_DUP_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: DETECT_DUP_PRICE },
-        description: challengeDescription("detect_duplicate", args.publicBaseUrl),
-        mimeType: "application/json",
-      },
-      [`POST ${REDACT_META_ROUTE}`]: {
-        accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price: REDACT_META_PRICE },
-        description: challengeDescription("redact_payment_metadata", args.publicBaseUrl),
         mimeType: "application/json",
       },
       // ── Consumer Pack ──────────────────────────────────────────────────
