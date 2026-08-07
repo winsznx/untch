@@ -199,7 +199,20 @@ export interface WorkersPaymentGate {
    * Returns the SDK's response when payment is required and absent or invalid, and otherwise calls
    * `handler` and returns its response — settled, when the route is priced and the handler succeeded.
    */
-  (request: Request, body: unknown, handler: PaidHandler): Promise<Response>;
+  (
+    request: Request,
+    body: unknown,
+    handler: PaidHandler,
+    /**
+     * Where to record a confirmed settlement, supplied PER CALL.
+     *
+     * The gate is memoised per isolate so the facilitator handshake happens once. The place a sale is
+     * written is not isolate state — it belongs to the request in flight — so it is passed in rather
+     * than captured at construction. Capturing it meant concurrent requests recorded against whichever
+     * request happened to write the shared reference last.
+     */
+    onSettled?: (facts: SettlementFacts) => void | Promise<void>,
+  ): Promise<Response>;
 }
 
 /**
@@ -247,7 +260,12 @@ export function workersPaymentGateFromHTTPServer(
     }
   }
 
-  return async function gate(request: Request, body: unknown, handler: PaidHandler): Promise<Response> {
+  return async function gate(
+    request: Request,
+    body: unknown,
+    handler: PaidHandler,
+    onSettled?: (facts: SettlementFacts) => void | Promise<void>,
+  ): Promise<Response> {
     const adapter = new WorkersHTTPAdapter(request, body);
     // Both spellings, in the SDK's own precedence order. Omitted entirely when absent rather than set
     // to undefined: `exactOptionalPropertyTypes` is on, and "no payment header" and "a payment header
@@ -353,9 +371,10 @@ export function workersPaymentGateFromHTTPServer(
      * sale. Awaited rather than fired and forgotten: a Worker isolate can be frozen the moment the
      * response is returned, and an un-awaited write is a write that may simply not happen.
      */
-    if (options.onSettled) {
+    const settledHook = onSettled ?? options.onSettled;
+    if (settledHook) {
       const settleBody = (settleResult as unknown as { response?: { body?: unknown } }).response?.body;
-      await options.onSettled({
+      await settledHook({
         route: adapter.getPath(),
         payer: pick(paymentPayload, "payer", "from", "sender") ?? "unknown",
         payTo: pick(paymentRequirements, "payTo", "recipient") ?? "unknown",

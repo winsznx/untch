@@ -18,6 +18,7 @@ import { consumerReadRoutes } from "./consumer-reads";
 import { discordRoutes } from "./discord-routes";
 import { realJobDeps } from "./job-wiring";
 import { buildPaidSurface } from "./paid-routes";
+import { recordSale } from "./sales";
 import { stage1Fallback, stage1Routes, type Stage1Settlement } from "./stage1-routes";
 import type { Route } from "./router";
 import type { WorkerEnv } from "./env";
@@ -95,16 +96,8 @@ function settlement(env: WorkerEnv): Stage1Settlement {
  */
 let paidSurface: ReturnType<typeof buildPaidSurface> | null | undefined;
 
-/**
- * The pool of the request in flight.
- *
- * Updated on every invocation and read through the accessor the memoised paid surface holds, so that
- * surface never performs I/O on a pool belonging to an earlier request.
- */
-let currentPool: Parameters<typeof buildPaidSurface>[0]["pool"] extends () => infer P ? P : never;
 
 function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
-  currentPool = ctx.pool as never;
   if (paidSurface !== undefined) return paidSurface;
   const env = ctx.env;
   const apiKey = env.OKX_API_KEY?.trim();
@@ -115,7 +108,6 @@ function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
     return null;
   }
   paidSurface = buildPaidSurface({
-    pool: () => currentPool,
     payTo: settlement(ctx.env).payTo,
     publicBaseUrl: ctx.baseUrl,
     okx: { apiKey, secretKey, passphrase },
@@ -169,13 +161,22 @@ const worker = buildWorker({
   jobDeps: realJobDeps as never,
   routes: (ctx: RouteContext): readonly Route[] => [
     ...stage1Routes(ctx, settlement(ctx.env)),
-    ...(paid(ctx)?.routes ?? []),
+    ...(paid(ctx)?.routesFor(ctx.pool) ?? []),
     ...consumerRoutes(ctx),
     ...discord(ctx),
     ...agentCardRoutes(ctx.baseUrl),
   ],
   onUnmatched: stage1Fallback,
-  paymentGate: (ctx) => paid(ctx)?.gate,
+  /**
+   * The gate is memoised; where a sale is recorded is not. The pool belongs to the request in flight,
+   * so it is handed to the gate per call rather than captured when the gate was built.
+   */
+  paymentGate: (ctx) => {
+    const gate = paid(ctx)?.gate;
+    if (!gate) return undefined;
+    return (request, body, run) =>
+      gate(request, body, run, (facts) => recordSale(ctx.pool, facts));
+  },
 });
 
 export default {

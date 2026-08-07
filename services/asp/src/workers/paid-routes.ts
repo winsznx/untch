@@ -62,18 +62,7 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
 const fromResult = (r: HandlerResult): Response => json(r.body, r.status, { ...(r.headers ?? {}) });
 
 export interface PaidSurfaceArgs {
-  /**
-   * The CURRENT request's pool, not a captured one.
-   *
-   * This surface is memoised per isolate so the facilitator client and resource server are built once.
-   * Taking a `Pool` value meant it also captured the pool belonging to the FIRST request that built it,
-   * and every later request then performed I/O on another request's object — which workerd forbids.
-   * The symptom was `create_spend_intent` failing intermittently with a Cloudflare HTML 500 that never
-   * reached the Worker's own logs, and failing almost always once those pools started being closed.
-   *
-   * An accessor, so the memoised surface reads the pool that belongs to the request in flight.
-   */
-  readonly pool: () => Pool;
+
   readonly payTo: string;
   readonly publicBaseUrl: string;
   readonly okx: { readonly apiKey: string; readonly secretKey: string; readonly passphrase: string };
@@ -90,8 +79,19 @@ export interface PaidSurfaceArgs {
 }
 
 export interface PaidSurface {
+  /**
+   * Everything below is bound to ONE request's pool.
+   *
+   * The expensive parts — facilitator client, resource server, route table — are memoised per isolate.
+   * The pool is not: a Worker forbids using an I/O object across request contexts, so anything that
+   * touches the database has to be created with the pool of the request in flight.
+   *
+   * An earlier version kept the pool in a module-scope variable that each request overwrote. Sequential
+   * traffic never noticed; ten concurrent requests clobbered each other's reference and roughly two in
+   * ten did their database work against a pool belonging to a different, possibly finished, request.
+   */
   readonly gate: WorkersPaymentGate;
-  readonly routes: readonly Route[];
+  readonly routesFor: (pool: Pool) => readonly Route[];
   readonly table: Record<string, RouteConfig>;
 }
 
@@ -125,9 +125,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
    * what it had sold and the buyer unable to prove a purchase. The hook fires only after the
    * facilitator confirms, so nothing refused or failed can be recorded as revenue.
    */
-  const rawGate = workersPaymentGate(table, server, {
-    onSettled: (facts) => recordSale(args.pool(), facts),
-  });
+  const rawGate = workersPaymentGate(table, server);
 
   /**
    * The arming check sits between the challenge and the settlement.
@@ -147,7 +145,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     return rawGate(request, body, run);
   };
 
-  const policyProvider = () => policyReader(args.pool());
+
   /**
    * In-memory, exactly as Express builds it per process.
    *
@@ -158,46 +156,57 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
   const ledgerState = createLedgerState();
 
   /**
-   * Deliberately missing: `receiptEnqueuer`, `escalationGateway`, `intentRegistry`, `oracleSigner`.
+   * Built per request, because everything in here touches the pool.
    *
-   * Each is a WRITE — a durable receipt, a message to a human, an on-chain anchor, a signed oracle
-   * attestation. Railway owns those until the writer transfer. Omitted rather than stubbed so there is
-   * nothing here to accidentally call.
+   * The policy reader, the durable intent store and the hydration bridge all perform I/O, and a Worker
+   * forbids reusing an I/O object across request contexts. The facilitator client, resource server and
+   * route table above are isolate state and stay memoised; this is the line between them.
    */
-  const preflightDeps = () => ({
-    policyProvider: policyProvider(),
-    ledger: ledgerState.ledger,
-    intentStore: ledgerState.intentStore,
-    intentRegistry: null,
-    oracleSigner: null,
-    scoreDataSource: null,
-  });
+  const routesFor = (pool: Pool): readonly Route[] => {
+    const policyProvider = policyReader(pool);
+    const intents = new PgIntentStore(pool);
 
-  const intents = () => new PgIntentStore(args.pool());
+    /**
+     * Deliberately missing: `receiptEnqueuer`, `escalationGateway`, `intentRegistry`, `oracleSigner`.
+     *
+     * Each is a WRITE — a durable receipt, a message to a human, an on-chain anchor, a signed oracle
+     * attestation. Railway owns those until the writer transfer. Omitted rather than stubbed so there is
+     * nothing here to accidentally call.
+     */
+    const preflightDeps = {
+      policyProvider,
+      ledger: ledgerState.ledger,
+      intentStore: ledgerState.intentStore,
+      intentRegistry: null,
+      oracleSigner: null,
+      scoreDataSource: null,
+    };
 
-  /**
-   * Bridge the durable store to the in-memory one the canonical handlers take.
-   *
-   * `resolveIntent` and `resolveIntentForVerify` read the store synchronously and are typed against
-   * `InMemoryIntentStore` concretely. Making them async would mean editing the engine that decides
-   * whether money may move, to solve a storage problem — the wrong place to take that risk. Instead the
-   * intent is loaded from Postgres BEFORE the handler runs and written back AFTER, so the handler sees
-   * exactly the store it expects and the durability lives out here.
-   */
-  const hydrate = async (body: unknown): Promise<void> => {
-    const hash = (body as Record<string, unknown> | null)?.intentHash;
-    if (typeof hash !== "string") return;
-    const stored = await intents().get(hash);
-    if (stored) ledgerState.intentStore.put(hash as `0x${string}`, stored as never);
-  };
 
-  /** Persist whatever the handler just created, so the next request finds it on another isolate. */
-  const persist = async (body: unknown, result: HandlerResult): Promise<void> => {
-    const hash = (result.body as Record<string, unknown> | undefined)?.intentHash;
-    if (typeof hash !== "string") return;
-    const stored = ledgerState.intentStore.get(hash);
-    if (stored) await intents().put(hash, stored);
-  };
+
+    /**
+     * Bridge the durable store to the in-memory one the canonical handlers take.
+     *
+     * `resolveIntent` and `resolveIntentForVerify` read the store synchronously and are typed against
+     * `InMemoryIntentStore` concretely. Making them async would mean editing the engine that decides
+     * whether money may move, to solve a storage problem — the wrong place to take that risk. Instead the
+     * intent is loaded from Postgres BEFORE the handler runs and written back AFTER, so the handler sees
+     * exactly the store it expects and the durability lives out here.
+     */
+    const hydrate = async (body: unknown): Promise<void> => {
+      const hash = (body as Record<string, unknown> | null)?.intentHash;
+      if (typeof hash !== "string") return;
+      const stored = await intents.get(hash);
+      if (stored) ledgerState.intentStore.put(hash as `0x${string}`, stored as never);
+    };
+
+    /** Persist whatever the handler just created, so the next request finds it on another isolate. */
+    const persist = async (body: unknown, result: HandlerResult): Promise<void> => {
+      const hash = (result.body as Record<string, unknown> | undefined)?.intentHash;
+      if (typeof hash !== "string") return;
+      const stored = ledgerState.intentStore.get(hash);
+      if (stored) await intents.put(hash, stored);
+    };
 
   const priced = (pattern: string, run: (body: unknown) => Promise<HandlerResult> | HandlerResult): Route => ({
     method: "POST",
@@ -225,7 +234,7 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     handler: async (req) => {
       const result = await handleCreateSpendIntent(coerceObjectParams(req.body), {
         intentStore: ledgerState.intentStore,
-        policyProvider: policyProvider(),
+        policyProvider,
         intentRegistry: null,
       } as never);
       await persist(req.body, result);
@@ -233,21 +242,20 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     },
   };
 
-  return {
-    gate,
-    table,
-    routes: [
+  return [
       freeIntent,
-      priced(PREFLIGHT_ROUTE, (body) => handlePreflightPayment(body, preflightDeps() as never)),
+      priced(PREFLIGHT_ROUTE, (body) => handlePreflightPayment(body, preflightDeps as never)),
       priced(VERIFY_ROUTE, (body) =>
-        handleVerifyDelivery(body, { policyProvider: policyProvider(), intentStore: ledgerState.intentStore } as never),
+        handleVerifyDelivery(body, { policyProvider, intentStore: ledgerState.intentStore } as never),
       ),
       priced(DETECT_DUP_ROUTE, (body) => handleDetectDuplicate(body, ledgerState.ledger)),
       priced(REDACT_META_ROUTE, (body) => handleRedactPaymentMetadata(body)),
       priced(SUGGEST_NAMES_ROUTE, (body) => handleSuggestNames(body)),
       priced(BRAND_PACK_ROUTE, (body) => handleBrandPack(body)),
-    ],
+    ];
   };
+
+  return { gate, table, routesFor };
 }
 
 /** The six paths this module serves. Named once so the Stage table and the tests cannot disagree. */
