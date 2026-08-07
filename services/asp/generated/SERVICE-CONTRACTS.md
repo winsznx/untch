@@ -1224,7 +1224,7 @@ You receive: the numeric policyId, the on-chain owner, and whether the policy be
 
 ## Default policy — `set_default_policy`
 
-`POST /consumer/account/default-policy` · free · schema v1.0.0
+`PUT /consumer/account/default-policy` · free · schema v1.0.0
 
 Chooses which policy answers when a request names none. For an account owner holding more than one policy.
 

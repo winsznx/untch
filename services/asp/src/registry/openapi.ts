@@ -85,7 +85,15 @@ function operationFor(service: ServiceDefinition): OpenApiOperation {
     description: description.text,
     tags: [service.protocol],
     ...(service.deprecated ? { deprecated: true } : {}),
-    ...(service.method === "POST"
+    /**
+     * Any method that carries a body, not POST specifically.
+     *
+     * `set_default_policy` is a PUT, and this read `=== "POST"` — so the moment the registry started
+     * telling the truth about its method, the published OpenAPI silently dropped its request body and
+     * described a PUT that takes no input. A caller generating a client from it would have sent an
+     * empty body to a route whose first check is `policyId is required`.
+     */
+    ...(service.method !== "GET"
       ? {
           requestBody: {
             required: (service.input.required ?? []).length > 0,

@@ -5770,7 +5770,7 @@
       }
     },
     "/consumer/account/default-policy": {
-      "post": {
+      "put": {
         "operationId": "set_default_policy",
         "summary": "Chooses which policy answers when a request names none.",
         "description": "Chooses which policy answers when a request names none. For an account owner holding more than one policy.\n\nYou provide: policyId (string).\n\nYou receive: the chosen default, after checking the account can actually sign for it.",

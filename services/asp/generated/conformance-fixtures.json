@@ -621,7 +621,7 @@
       "toolId": "set_default_policy",
       "kind": "valid",
       "title": "Choose a default",
-      "method": "POST",
+      "method": "PUT",
       "path": "/consumer/account/default-policy",
       "request": {
         "policyId": "9001"
@@ -631,7 +631,7 @@
       "toolId": "set_default_policy",
       "kind": "refused",
       "title": "Choose an expired policy",
-      "method": "POST",
+      "method": "PUT",
       "path": "/consumer/account/default-policy",
       "request": {
         "policyId": "9001"

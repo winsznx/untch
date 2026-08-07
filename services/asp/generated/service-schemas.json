@@ -3588,7 +3588,7 @@
       "name": "Default policy",
       "protocol": "A2MCP",
       "endpoint": "https://asp.untch.xyz/consumer/account/default-policy",
-      "method": "POST",
+      "method": "PUT",
       "pricing": {
         "kind": "free",
         "price": null,
