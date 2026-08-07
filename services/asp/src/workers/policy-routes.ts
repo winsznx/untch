@@ -23,12 +23,13 @@
 
 import { PgAccountStore, type Pool } from "@untch/consumer-core";
 import {
-  loadRegistryConfig,
   PgPolicyRepo,
   PolicyProvider,
   PolicyRegistrationService,
+  resolvePolicyRegistry,
   ViemRegistryReader,
 } from "@untch/policy-store";
+import { activeChain, activeRpcUrl } from "@untch/shared";
 import { openAccountSession } from "../consumer/account-auth";
 import { POLICY_DRAFT_ROUTE, POLICY_SYNC_ROUTE } from "../consumer/policy-routes";
 import type { Route, RouteRequest } from "./router";
@@ -59,18 +60,26 @@ export function policyRoutes(deps: PolicyRouteDeps): readonly Route[] {
   const policies = new PolicyProvider(repo);
 
   /**
-   * Built lazily and tolerantly.
+   * The chain, RPC and registry — assembled from the three pieces, not from `loadRegistryConfig`.
    *
-   * `loadRegistryConfig` throws when the chain or registry address is unset, and a deployment missing
-   * them should refuse these two routes by name rather than fail every request in the table.
+   * That helper spreads in `loadStorageConfig()`, which requires `DATABASE_URL`. A Worker reaches
+   * Postgres through Hyperdrive and never sets it, so calling the helper failed with
+   * "Missing required environment variable: DATABASE_URL" — a storage variable, refusing a route that
+   * only needed to know which contract to read. The narrower functions ask for exactly what a reader
+   * needs and nothing more.
+   *
+   * Built tolerantly: a deployment without this config should refuse these two routes by name rather
+   * than take down every request in the table.
    */
   let registration: PolicyRegistrationService | null = null;
   let registryError: string | null = null;
   try {
-    const cfg = loadRegistryConfig();
+    const chain = activeChain(process.env);
+    const rpcUrl = activeRpcUrl(process.env);
+    const registry = resolvePolicyRegistry(chain.id, process.env.POLICY_REGISTRY);
     registration = new PolicyRegistrationService(
       repo,
-      new ViemRegistryReader({ chain: cfg.chain, rpcUrl: cfg.rpcUrl, registry: cfg.registry }),
+      new ViemRegistryReader({ chain, rpcUrl, registry }),
     );
   } catch (err) {
     registryError = (err as Error).message;

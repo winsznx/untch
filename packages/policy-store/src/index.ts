@@ -13,6 +13,9 @@ export {
   loadOperatorConfig,
   MissingEnvError,
   POLICY_REGISTRY_DEFAULT,
+  // Exported so a consumer that already has a pool can build a registry reader without
+  // `loadRegistryConfig`, which demands DATABASE_URL a Worker does not use.
+  resolvePolicyRegistry,
   X_LAYER_TESTNET_ID,
   X_LAYER_MAINNET_ID,
   xLayerTestnet,
