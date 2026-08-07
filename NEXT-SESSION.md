@@ -93,6 +93,34 @@ That matters because OKX hosts are unreachable from Nigerian residential/VPN egr
 from a network that can reach `web3.okx.com`, or expect the client side to fail even
 though the server side is fine.**
 
+## THE OPEN GAP: preflight and verify serve the wrong handler
+
+Both headline paid services answer a marketplace buyer with the protocol handler
+instead of the published one. Express branches on the body shape:
+
+    app.post(PREFLIGHT_ROUTE, ...)  ->  looksPublic(body)      ? handlePublicPreflight : handlePreflightPayment
+    app.post(VERIFY_ROUTE, ...)     ->  looksPublicVerify(body) ? handlePublicVerify    : handleVerifyDelivery
+
+The Worker calls only the second of each. So a buyer sending the shape we PUBLISH —
+`{policyId, provider, capability, task, maxSpend, currency, deadline}`, the one whose
+description promises "every protocol value is derived server-side" — reaches a handler that
+demands `intentHash` or an inline §8.1 struct and answers INTENT_REQUIRED.
+
+Proven live on 2026-08-08 with a real registered policy and a real payment:
+
+    preflight_payment, policyId=2120285619…972  ->  INTENT_REQUIRED
+
+Not charged (the failing-handler guard held), but the service is unusable as advertised.
+This is why preflight and verify have never worked end to end on Cloudflare, and it is the
+single most important thing left before relisting.
+
+The fix is real wiring, not a line: `publicPreflightDeps` needs accounts, the policy
+provider, an owned-service lookup, the settlement network config, the session secret,
+chainId, the registry address, and a two-table store for the escalated branch that runs on
+the decision's own transaction. `handlePublicPreflight` also takes the VERIFIED payment
+authorization, parsed from the x402 header the gate already checked. Do it carefully — it
+is a payment decision path — not as a quick port.
+
 ## What must be proven now
 
 Two things, both cheap.
