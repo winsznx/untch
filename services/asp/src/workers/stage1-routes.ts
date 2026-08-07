@@ -37,9 +37,12 @@ import {
   RANK_OPTIONS_ROUTE,
   RECEIPT_STATUS_ROUTE,
   SEO_TIPS_ROUTE,
+  LOG_RECEIPT_ROUTE,
+  GET_LEDGER_ROUTE,
 } from "../config";
 import { coerceObjectParams } from "./coerce-params";
-import { receiptReader, receiptStatusRoute } from "./receipt-reads";
+import { logReceiptRoute, receiptReader, receiptStatusRoute } from "./receipt-reads";
+import { getLedgerRoute } from "./ledger-route";
 import {
   handleCafeMenu,
   handleCafeOrderLatte,
@@ -124,7 +127,7 @@ export const STAGE1_SERVED: ReadonlySet<string> = new Set<string>([
   SEO_TIPS_ROUTE,
   CHECK_DOMAINS_ROUTE,
   // A read. It answers from Postgres and holds nothing that could enqueue a receipt.
-  RECEIPT_STATUS_ROUTE,
+  RECEIPT_STATUS_ROUTE, LOG_RECEIPT_ROUTE, GET_LEDGER_ROUTE,
 ]);
 
 /**
@@ -276,6 +279,14 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
      * got it from this service and is entitled to know what happened to it.
      */
     receiptStatusRoute(receiptReader(ctx.pool)),
+    /**
+     * `log_receipt` reads the same Postgres row as `receipt_status`. It sat on the 503 because the
+     * Express wiring it asked for builds a Redis connection alongside the repo, and a Worker has no
+     * Redis — but Redis is how a receipt gets ENQUEUED, not how its status is read.
+     */
+    logReceiptRoute(receiptReader(ctx.pool)),
+    /** Refused by name, with the reason and the two routes that do answer. See `ledger-route.ts`. */
+    getLedgerRoute(),
 
     { method: "GET", pattern: "/healthz", bodyMode: "none", handler: () => json(healthBody(ctx)) },
 
