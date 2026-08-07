@@ -225,7 +225,7 @@
       "post": {
         "operationId": "preflight_payment",
         "summary": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it.",
-        "description": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.\n\nYou provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).\n\nYou receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.",
+        "description": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.\n\nYou provide: policyId (string); provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string).\n\nYou receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.",
         "tags": [
           "A2MCP"
         ],
@@ -245,10 +245,6 @@
                     "examples": [
                       "7"
                     ]
-                  },
-                  "useDefaultPolicy": {
-                    "type": "boolean",
-                    "description": "Use the policy this account has marked as its default. Send this or policyId, not neither — a request that silently fell back to a default would be a request whose limits nobody chose."
                   },
                   "provider": {
                     "type": "string",
@@ -332,24 +328,13 @@
                   }
                 },
                 "required": [
+                  "policyId",
                   "provider",
                   "capability",
                   "task",
                   "maxSpend",
                   "currency",
                   "deadline"
-                ],
-                "anyOf": [
-                  {
-                    "required": [
-                      "policyId"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "useDefaultPolicy"
-                    ]
-                  }
                 ]
               },
               "examples": {
@@ -373,7 +358,7 @@
                   }
                 },
                 "refused": {
-                  "summary": "Name neither a policy nor a default one the account has chosen → POLICY_REQUIRED",
+                  "summary": "Omit the policyId → POLICY_ID_REQUIRED",
                   "value": {
                     "provider": "stabledomains",
                     "capability": "domains.register",
@@ -452,7 +437,7 @@
             }
           },
           "400": {
-            "description": "REQUEST_SCHEMA_VIOLATION — a field is missing or has the wrong shape; the message names each one; CURRENCY_NOT_SETTLEABLE — this network has no confirmed contract for that currency; MAX_SPEND_INVALID — maxSpend is not a decimal amount the settlement token can express; DEADLINE_IN_THE_PAST — the deadline has already passed",
+            "description": "REQUEST_SCHEMA_VIOLATION — a field is missing or has the wrong shape; the message names each one; CURRENCY_NOT_SETTLEABLE — this network has no confirmed contract for that currency; MAX_SPEND_INVALID — maxSpend is not a decimal amount the settlement token can express; DEADLINE_IN_THE_PAST — the deadline has already passed; POLICY_ID_REQUIRED — no policyId was sent. This surface has no account to resolve a default from, so the id is required outright",
             "content": {
               "application/json": {
                 "schema": {

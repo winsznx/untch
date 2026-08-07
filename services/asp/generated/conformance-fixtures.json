@@ -64,7 +64,7 @@
     {
       "toolId": "preflight_payment",
       "kind": "refused",
-      "title": "Name neither a policy nor a default one the account has chosen",
+      "title": "Omit the policyId",
       "method": "POST",
       "path": "/preflight_payment",
       "request": {
@@ -82,7 +82,7 @@
         "buyerAgentId": "6047",
         "workerAgentId": "6086"
       },
-      "expectRefusalCode": "POLICY_REQUIRED"
+      "expectRefusalCode": "POLICY_ID_REQUIRED"
     },
     {
       "toolId": "verify_delivery",

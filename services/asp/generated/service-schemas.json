@@ -192,7 +192,7 @@
       "schemaVersion": "2.0.0",
       "description": {
         "what": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.",
-        "provide": "You provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).",
+        "provide": "You provide: policyId (string); provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string).",
         "receive": "You receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision."
       },
       "input": {
@@ -207,10 +207,6 @@
             "examples": [
               "7"
             ]
-          },
-          "useDefaultPolicy": {
-            "type": "boolean",
-            "description": "Use the policy this account has marked as its default. Send this or policyId, not neither — a request that silently fell back to a default would be a request whose limits nobody chose."
           },
           "provider": {
             "type": "string",
@@ -294,24 +290,13 @@
           }
         },
         "required": [
+          "policyId",
           "provider",
           "capability",
           "task",
           "maxSpend",
           "currency",
           "deadline"
-        ],
-        "anyOf": [
-          {
-            "required": [
-              "policyId"
-            ]
-          },
-          {
-            "required": [
-              "useDefaultPolicy"
-            ]
-          }
         ]
       },
       "output": {
@@ -384,7 +369,7 @@
           }
         },
         "refused": {
-          "title": "Name neither a policy nor a default one the account has chosen",
+          "title": "Omit the policyId",
           "request": {
             "provider": "stabledomains",
             "capability": "domains.register",
@@ -400,7 +385,7 @@
             "buyerAgentId": "6047",
             "workerAgentId": "6086"
           },
-          "refusalCode": "POLICY_REQUIRED"
+          "refusalCode": "POLICY_ID_REQUIRED"
         }
       },
       "predecessors": [
@@ -446,6 +431,11 @@
           "code": "DEADLINE_IN_THE_PAST",
           "status": 400,
           "when": "the deadline has already passed"
+        },
+        {
+          "code": "POLICY_ID_REQUIRED",
+          "status": 400,
+          "when": "no policyId was sent. This surface has no account to resolve a default from, so the id is required outright"
         },
         {
           "code": "ACCOUNT_LINK_REQUIRED",

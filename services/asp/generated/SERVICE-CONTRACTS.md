@@ -117,7 +117,7 @@ null
 
 Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.
 
-You provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).
+You provide: policyId (string); provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string).
 
 You receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.
 
@@ -139,6 +139,7 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
 - `CURRENCY_NOT_SETTLEABLE` (400) — this network has no confirmed contract for that currency
 - `MAX_SPEND_INVALID` (400) — maxSpend is not a decimal amount the settlement token can express
 - `DEADLINE_IN_THE_PAST` (400) — the deadline has already passed
+- `POLICY_ID_REQUIRED` (400) — no policyId was sent. This surface has no account to resolve a default from, so the id is required outright
 - `ACCOUNT_LINK_REQUIRED` (401) — no wallet-backed session accompanied the request; the policy, the spending agent and the owning wallet are all properties of an account
 - `POLICY_REQUIRED` (409) — no policyId was sent and the account has chosen no default, or the named policy is neither owned by nor delegated to this account
 - `POLICY_INACTIVE` (409) — the policy is paused, revoked, or past its on-chain expiry
@@ -169,7 +170,7 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
 }
 ```
 
-**A request that is refused** — `POLICY_REQUIRED`
+**A request that is refused** — `POLICY_ID_REQUIRED`
 
 ```json
 {

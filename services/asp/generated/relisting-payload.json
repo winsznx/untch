@@ -66,7 +66,7 @@
       "paid": true,
       "price": "$0.05",
       "amountBaseUnits": "50000",
-      "description": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.\n\nYou provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).\n\nYou receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.",
+      "description": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.\n\nYou provide: policyId (string); provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string).\n\nYou receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.",
       "inputSchemaUrl": "https://asp.untch.xyz/schema/preflight_payment",
       "outputSummary": "a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision",
       "schemaVersion": "2.0.0"

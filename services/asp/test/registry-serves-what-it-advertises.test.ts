@@ -50,3 +50,36 @@ describe("the registry advertises only what this host serves", () => {
     });
   }
 });
+
+/**
+ * The marketplace contract must not advertise an account feature.
+ *
+ * `PUBLIC_PREFLIGHT_INPUT` offered `useDefaultPolicy` as an `anyOf` alternative to `policyId`. This is
+ * the contract a STRANGER buys against over x402 — no session, no account — and a default policy is a
+ * property of an account, so there was nothing for the marketplace handler to resolve it against. It
+ * reads a literal `policyId` and refuses without one.
+ *
+ * Found by buying it: quote clean, `missingParams: []`, paid, answered POLICY_ID_REQUIRED. The buyer
+ * was not charged, because a failing handler settles nothing — but they were refused for doing exactly
+ * what the published schema instructed.
+ */
+describe("the marketplace preflight contract matches the marketplace handler", () => {
+  const preflight = SERVICES.find((s) => s.toolId === "preflight_payment")!;
+  const input = preflight.input as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+    anyOf?: unknown[];
+  };
+
+  test("policyId is required outright, since nothing here can supply a default", () => {
+    assert.ok(input.required?.includes("policyId"), "the handler refuses without it, so the contract must ask for it");
+    assert.ok(!input.anyOf, "an anyOf alternative implies a second way in that this surface does not have");
+  });
+
+  test("useDefaultPolicy is not offered on a surface with no account", () => {
+    assert.ok(
+      !("useDefaultPolicy" in (input.properties ?? {})),
+      "advertising it here sends a paying stranger down a path only an account-scoped caller can take",
+    );
+  });
+});

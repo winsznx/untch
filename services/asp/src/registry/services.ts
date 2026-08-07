@@ -320,9 +320,9 @@ export const SERVICES: readonly ServiceDefinition[] = [
       request: EXAMPLE_PREFLIGHT_REQUEST,
     },
     invalidExample: {
-      title: "Name neither a policy nor a default one the account has chosen",
+      title: "Omit the policyId",
       request: { ...EXAMPLE_PREFLIGHT_REQUEST, policyId: undefined },
-      refusalCode: "POLICY_REQUIRED",
+      refusalCode: "POLICY_ID_REQUIRED",
     },
     /**
      * One predecessor now, not two.
@@ -344,6 +344,18 @@ export const SERVICES: readonly ServiceDefinition[] = [
       { code: "CURRENCY_NOT_SETTLEABLE", status: 400, when: "this network has no confirmed contract for that currency" },
       { code: "MAX_SPEND_INVALID", status: 400, when: "maxSpend is not a decimal amount the settlement token can express" },
       { code: "DEADLINE_IN_THE_PAST", status: 400, when: "the deadline has already passed" },
+      /**
+       * What this handler ACTUALLY answers without a policyId, and it was documented nowhere.
+       *
+       * The list described the account-scoped path — `POLICY_REQUIRED` when no default is chosen —
+       * while the marketplace handler reads a literal `policyId` and returns `POLICY_ID_REQUIRED`. A
+       * buyer who hit it found their refusal code in no published list.
+       */
+      {
+        code: "POLICY_ID_REQUIRED",
+        status: 400,
+        when: "no policyId was sent. This surface has no account to resolve a default from, so the id is required outright",
+      },
       {
         code: "ACCOUNT_LINK_REQUIRED",
         status: 401,

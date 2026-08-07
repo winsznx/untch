@@ -117,7 +117,19 @@ describe("the generated listing description", () => {
     for (const field of ["provider", "capability", "task", "maxSpend", "currency", "deadline"]) {
       assert.ok(provide.includes(field), `the description does not name ${field}`);
     }
-    assert.match(provide, /either policyId .*, or useDefaultPolicy/);
+    /**
+     * `policyId` outright, not "either this or a default".
+     *
+     * The contract used to offer `useDefaultPolicy` as an alternative here, and this test asserted it.
+     * Both were wrong: this is the MARKETPLACE tool, bought by a stranger over x402 with no session,
+     * and a default policy belongs to an account there is none of. A buyer followed the schema, paid,
+     * and was answered POLICY_ID_REQUIRED.
+     */
+    assert.ok(provide.includes("policyId"), "the handler refuses without it, so the description must ask for it");
+    assert.ok(
+      !provide.includes("useDefaultPolicy"),
+      "offering it on this surface sends a paying stranger down a path only an account-scoped caller has",
+    );
     for (const derived of ["policyHash", "taskHash", "paramsHash", "nonce"]) {
       assert.ok(!provide.includes(derived), `${derived} is derived server-side and must not be asked for`);
     }
