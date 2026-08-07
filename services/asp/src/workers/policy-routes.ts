@@ -31,7 +31,7 @@ import {
 } from "@untch/policy-store";
 import { activeChain, activeRpcUrl } from "@untch/shared";
 import { openAccountSession } from "../consumer/account-auth";
-import { POLICY_DRAFT_ROUTE, POLICY_SYNC_ROUTE } from "../consumer/policy-routes";
+import { DEFAULT_POLICY_ROUTE, POLICY_DRAFT_ROUTE, POLICY_SYNC_ROUTE } from "../consumer/policy-routes";
 import {
   derivePolicyRules,
   PolicyShapeError,
@@ -124,6 +124,79 @@ export function policyRoutes(deps: PolicyRouteDeps): readonly Route[] {
     };
 
   return [
+    {
+      /**
+       * Sets which policy answers when a caller does not name one.
+       *
+       * It matters more than a preference toggle: `preflight_payment` accepts `useDefaultPolicy`, and
+       * with nothing set that path refuses — so the account could hold a perfectly good registered
+       * policy and still be unable to buy the service it was registered for.
+       *
+       * PUT, because setting a default is an idempotent replace. The registry advertised POST for as
+       * long as it existed and a caller following our own catalog got a 405.
+       */
+      method: "PUT",
+      pattern: DEFAULT_POLICY_ROUTE,
+      bodyMode: "json",
+      handler: authed(async (accountId, req) => {
+        const policyId = (req.body as { policyId?: unknown } | undefined)?.policyId;
+        if (typeof policyId !== "string" || policyId.length === 0) {
+          return refuse(400, "POLICY_ID_REQUIRED", "policyId is required");
+        }
+
+        const owned = await accounts.policiesFor(accountId);
+        if (!owned.includes(policyId)) {
+          return refuse(404, "POLICY_NOT_FOUND", `no policy ${policyId} on this account`);
+        }
+
+        const stored = await policies.loadStored(policyId);
+        if (!stored) return refuse(404, "POLICY_NOT_FOUND", `no stored policy ${policyId}`);
+
+        /**
+         * A default is what a caller gets when they did not choose. Letting a paused or expired policy
+         * be one means every unchosen call fails at decision time with a reason the caller cannot act
+         * on, which is worse than refusing the setting here where they can.
+         */
+        if (stored.status !== "ACTIVE") {
+          return refuse(409, "POLICY_NOT_ACTIVE", `policy ${policyId} is ${stored.status} and cannot be a default`);
+        }
+        if (stored.expiry * 1000 <= Date.now()) {
+          return refuse(
+            409,
+            "POLICY_EXPIRED",
+            `policy ${policyId} expired at ${new Date(stored.expiry * 1000).toISOString()} and cannot be a default`,
+          );
+        }
+
+        /**
+         * The owner must be a wallet this account can actually sign with. A default naming a policy
+         * owned by someone else would send every unchosen call at rules this account cannot change.
+         */
+        const wallets = await accounts.walletsFor(accountId);
+        const authorities = wallets
+          .filter(
+            (w) =>
+              w.status === "ACTIVE" &&
+              w.chainKind === "evm" &&
+              w.proofKind === "siwe" &&
+              (w.scopes as readonly string[]).includes("policy-authority"),
+          )
+          .map((w) => w.address.toLowerCase());
+        if (!authorities.includes(stored.owner.toLowerCase())) {
+          return refuse(
+            403,
+            "NOT_POLICY_OWNER",
+            `policy ${policyId} is owned by ${stored.owner}, which is not a policy-authority wallet of ` +
+              "this account; a default must be a policy this account can actually sign for",
+          );
+        }
+
+        assertOwnsWrites(deps.gate, "approval-expiry-mutation");
+        await accounts.setDefaultPolicy({ accountId, policyId, by: `account:${accountId}` });
+        return json({ accountId, defaultPolicyId: policyId });
+      }),
+    },
+
     {
       /**
        * Returns UNSIGNED `registerPolicy` calldata. The caller's own wallet is the only signer — this
@@ -250,4 +323,4 @@ export function policyRoutes(deps: PolicyRouteDeps): readonly Route[] {
 }
 
 /** The paths this module serves, so the route classifier reads truth rather than a guess. */
-export const POLICY_PATHS = [POLICY_DRAFT_ROUTE, POLICY_SYNC_ROUTE] as const;
+export const POLICY_PATHS = [POLICY_DRAFT_ROUTE, POLICY_SYNC_ROUTE, DEFAULT_POLICY_ROUTE] as const;
