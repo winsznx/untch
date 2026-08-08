@@ -116,7 +116,7 @@ registered: `2120285619…572` and `19094645725…019`.
 
 Gotchas that cost a probe each, worth knowing before the next run:
 
-- `currency` must be exactly `USD₮` (U+20AE), not `USDT` or `USD₮0`.
+- `currency` must be exactly `USD₮0` (U+20AE), not `USDT` or `USD₮0`.
 - Marketplace `verify_delivery` takes `intentHash`, not `intentId`. Sending `intentId` alone
   routes to the account-scoped public verify, which needs a session bearer the CLI cannot attach.
 - A public `preflight_payment` needs `Authorization: Bearer <session>`. The CLI's two-phase
