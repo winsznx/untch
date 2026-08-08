@@ -7,8 +7,8 @@ we build it. Nothing in the running system changes because of this document.
 
 Today the cross-rail leg works like this:
 
-- The user pays **USDT0 on X Layer** (chainId 196) — the settlement token the ASP is built on.
-- Untch pays the **provider in USDC on Base (eip155:8453) or Solana** — see
+- The user pays **USDT0 on X Layer** (chainId 196). That is the settlement token the ASP is built on.
+- Untch pays the **provider in USDC on Base (eip155:8453) or Solana**. See
   `packages/consumer-core/src/money.ts` and `assets.ts`, which model exactly this cross-chain,
   cross-token intent.
 - To pay a provider on Base or Solana, Untch signs a USDC transfer from a treasury it holds **on those
@@ -21,7 +21,7 @@ holds spendable USDC on two chains and signs outbound payments, sitting in serve
 
 Circle's Cross-Chain Transfer Protocol (CCTP V2) moves **native USDC** between chains by burning it on
 the source and minting it on the destination against a Circle-signed attestation. The mint lands at an
-**arbitrary `mintRecipient`** — it does not have to be the sender — so USDC can be minted **directly to
+**arbitrary `mintRecipient`**. It does not have to be the sender, so USDC can be minted **directly to
 the provider** on their chain.
 
 Confirmed against Circle's current docs (2026-08-08):
@@ -29,8 +29,8 @@ Confirmed against Circle's current docs (2026-08-08):
 | chain | CCTP V2 domain | as source | notes |
 |---|---|---|---|
 | X Layer | **37** | Standard ✅, Fast ✅ | Forwarding Service ❌ (as source) |
-| Base | 6 | — | destination for our providers |
-| Solana | 5 | — | destination; mint recipient is an SPL token account |
+| Base | 6 | (dest) | destination for our providers |
+| Solana | 5 | (dest) | destination, mint recipient is an SPL token account |
 
 X Layer is a supported CCTP V2 chain, and Circle has launched **native USDC on X Layer**, which is what
 makes the whole plan possible: we can hold and burn USDC on the same chain the user already pays on.
@@ -43,10 +43,10 @@ makes the whole plan possible: we can hold and burn USDC on the same chain the u
   finality.
 - `receiveMessage(message, attestation)` on the destination mints USDC to `mintRecipient`. It is **not
   fully permissionless**: the message carries a `destinationCaller` field. Set it to `bytes32(0)` and
-  **anyone** may submit the mint; set it to a specific address to restrict who can.
+  **anyone** may submit the mint. Set it to a specific address to restrict who can.
 - **Standard Transfer** waits for *finalized* source finality (minutes). **Fast Transfer** attests at
   *confirmed* finality (seconds) for a Circle fee, so the minted amount is `burn − fastFee`.
-- **Hooks** are metadata attached to the burn for custom destination logic; CCTP does not execute them
+- **Hooks** are metadata attached to the burn for custom destination logic. CCTP does not execute them
   itself, the integrator does.
 
 ## The target flow
@@ -68,18 +68,18 @@ Circle Iris attests the burn
       │
       ▼
 receiveMessage on Base/Solana → USDC minted straight to the provider
-   (submitted by a relayer, the provider, or us — permissionless)
+   (submitted by a relayer, the provider, or us, permissionless)
 ```
 
 **What this removes:** Untch no longer holds USDC on Base or Solana and never signs a payment on those
 chains. The destination mint is permissionless, so no Untch key touches Base or Solana at all.
 
-**What it does not remove by itself:** we still sign two transactions **on X Layer** — the swap and the
-burn. So this is not "no key", it is "one chain, minimal surface, funds never idle on the destination".
+**What it does not remove by itself:** we still sign two transactions **on X Layer**, the swap and the
+burn. So it is one chain, minimal surface, with funds never idle on the destination.
 
 ### The part that actually retires the raw key
 
-The X Layer signing can be done by an **OKX Onchain OS Agentic Wallet (TEE-managed)** — the exact
+The X Layer signing can be done by an **OKX Onchain OS Agentic Wallet (TEE-managed)**, the exact
 mechanism the buyer side already uses, where the signing key never leaves OKX's TEE and we hold no raw
 private key. If the settlement treasury on X Layer is an Agentic Wallet, then:
 
@@ -87,8 +87,8 @@ private key. If the settlement treasury on X Layer is an Agentic Wallet, then:
 - no raw private key exists in server memory on any chain,
 - and the destination chains see only permissionless mints.
 
-That is the real prize: not "CCTP instead of a key", but "CCTP so the only signer is a TEE wallet on one
-chain, and the destinations hold nothing".
+The real prize is narrow. CCTP leaves one signer, a TEE wallet on one chain, and destinations that
+hold nothing.
 
 ## Risks and open questions to resolve before building
 
@@ -110,7 +110,7 @@ chain, and the destinations hold nothing".
    and eat the fee.
 6. **Reconciliation.** The cross-rail ledger (`consumer-core` clearing) must record the burn tx on
    X Layer and the mint tx on the destination as the two legs of one intent, so "balanced" stays
-   checkable — the same property `money.ts` already enforces per-asset.
+   checkable, the same property `money.ts` already enforces per-asset.
 
 ## Sequencing (when we do build it)
 

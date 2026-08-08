@@ -13,7 +13,7 @@
 
 > **Production maturity, stated up front.**
 >
-> The marketplace ASP is live on X Layer mainnet and settles real USDT0. The full agent lifecycle has been completed end to end with real money: an OKX Onchain OS wallet signs in through a TEE, registers a spend policy on the PolicyRegistry contract, and then `preflight_payment` returns an on-chain-anchored APPROVED decision and `verify_delivery` returns a real acceptance verdict — each a paid x402 call that settles on chain. All nine listed services (six paid, three free) have been exercised against production with real settlement.
+> The marketplace ASP is live on X Layer mainnet and settles real USDT0. The full agent lifecycle has been completed end to end with real money: an OKX Onchain OS wallet signs in through a TEE, registers a spend policy on the PolicyRegistry contract, Then `preflight_payment` returns an on-chain-anchored APPROVED decision and `verify_delivery` returns a real acceptance verdict. Each is a paid x402 call that settles on chain. All nine listed services (six paid, three free) have been exercised against production with real settlement.
 >
 > Untch also completed real production-governed provider settlements in Base USDC, independently verified the delivered domain result through public RDAP data, and generated durable Consumer Pack receipts.
 >
