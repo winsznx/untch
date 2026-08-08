@@ -261,7 +261,10 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
       const value = b[key];
       const want = props[key]?.type;
       if (!want || value === undefined || value === null) continue;
-      if (!typeMatches(value, want)) typeErrors.push(`${key} must be ${want === "integer" ? "an integer" : `a ${want}`}`);
+      if (!typeMatches(value, want)) {
+        const article = /^[aeiou]/.test(want) ? "an" : "a";
+        typeErrors.push(`${key} must be ${article} ${want}`);
+      }
     }
     if (typeErrors.length > 0) return schema400(typeErrors.join("; "));
 
