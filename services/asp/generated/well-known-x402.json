@@ -3,7 +3,7 @@
   "network": "eip155:196",
   "payTo": "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
   "asset": {
-    "symbol": "USD₮",
+    "symbol": "USD₮0",
     "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
     "decimals": 6
   },

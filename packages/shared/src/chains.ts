@@ -88,11 +88,19 @@ export const TOKENS = {
         "OKLink explorer labels this 'Tether USD' (USDT); on-chain symbol()=USDT, name()='Tether USD', decimals()=6 via rpc.xlayer.tech (2026-07-09). Legacy bridged/wrapped USDT — OKX is phasing it out toward USDT0.",
     },
     USDT0: {
-      symbol: "USD₮",
+      // "USD₮0" — U+0055 U+0053 U+0044 U+20AE U+0030, the trailing 0 included.
+      //
+      // Was "USD₮" (no 0), and that one missing character was a real bug: the preflight `currency`
+      // field is compared against this symbol, so an agent who read the token's real name from their
+      // OKX wallet — which shows "USD₮0" — and sent it was refused CURRENCY_NOT_SETTLEABLE, while the
+      // wrong "USD₮" was the only value accepted. The 2026-07-09 note that recorded "USD₮" was a
+      // truncated reading; the raw symbol() bytes are 555344e282ae30.
+      symbol: "USD₮0",
       address: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736" as Address,
       decimals: 6,
       confirmedFrom:
-        "On-chain symbol()='USD₮', decimals()=6 via rpc.xlayer.tech; OKX Learn 'Tether's USDT0 on X Layer' names this the forward USDT (2026-07-09).",
+        "On-chain symbol()=name()='USD₮0' (raw 555344e282ae30), decimals()=6 via rpc.xlayer.tech, " +
+        "and OKX's own wallet balance API reports the same symbol (2026-08-08).",
     },
     USDG: {
       symbol: "USDG",

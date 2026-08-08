@@ -155,9 +155,9 @@ const EXAMPLE_PREFLIGHT_REQUEST = {
   capability: "domains.register",
   task: "Register kyrve.xyz for one year",
   maxSpend: "20.00",
-  // The exact settlement symbol the handler matches (SETTLEMENT_TOKEN.symbol). "USDT0" is the token's
-  // common name; the `currency` field is compared against the symbol, and only the symbol settles.
-  currency: "USD₮",
+  // The exact on-chain symbol the handler matches (SETTLEMENT_TOKEN.symbol): "USD₮0", trailing 0
+  // included, which is what the token contract and OKX's own wallet both report.
+  currency: "USD₮0",
   // Far future on purpose: a near-dated example rots into DEADLINE_IN_THE_PAST for anyone who copies it.
   deadline: "2030-01-01T00:00:00.000Z",
   recipient: "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",

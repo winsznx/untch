@@ -158,7 +158,7 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
   "capability": "domains.register",
   "task": "Register kyrve.xyz for one year",
   "maxSpend": "20.00",
-  "currency": "USD₮",
+  "currency": "USD₮0",
   "deadline": "2030-01-01T00:00:00.000Z",
   "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
   "parameters": {
@@ -178,7 +178,7 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
   "capability": "domains.register",
   "task": "Register kyrve.xyz for one year",
   "maxSpend": "20.00",
-  "currency": "USD₮",
+  "currency": "USD₮0",
   "deadline": "2030-01-01T00:00:00.000Z",
   "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
   "parameters": {
