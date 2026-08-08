@@ -703,7 +703,29 @@ describe("two-process proof: a keyless controller over HTTP against a real ASP, 
 
   after(async () => {
     await Promise.all(servers.map((s) => new Promise<void>((r) => s.close(() => r()))));
-    await pool?.end();
+
+    /**
+     * Let in-flight queries finish before the pool goes away.
+     *
+     * `server.close` resolves when the last CONNECTION closes, which is not the same as the last
+     * QUERY finishing: a handler that kicked off a write and returned leaves work the HTTP layer no
+     * longer knows about. Ending the pool underneath it produced "Cannot use a pool after calling end
+     * on the pool" as an unhandledRejection AFTER the test had passed, which the runner reports as a
+     * failure of whichever test happened to be last. It failed roughly one run in three and passed on
+     * re-run, which is the worst kind of red — it teaches people to re-run instead of read.
+     *
+     * A pool with no active clients is one with nothing left to interrupt. Bounded, because a drain
+     * that never completes should surface as the hang it is rather than block the suite forever.
+     */
+    if (pool) {
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline) {
+        const p = pool as unknown as { totalCount: number; idleCount: number };
+        if (p.totalCount === p.idleCount) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      await pool.end();
+    }
     rmSync(ATTESTATION_DIR, { recursive: true, force: true });
   });
 
