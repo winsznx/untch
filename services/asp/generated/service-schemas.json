@@ -182,7 +182,7 @@
         "price": "$0.05",
         "amountBaseUnits": "50000"
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -491,7 +491,7 @@
         "price": "$0.10",
         "amountBaseUnits": "100000"
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -1058,7 +1058,7 @@
         "price": "$0.02",
         "amountBaseUnits": "20000"
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2324,7 +2324,7 @@
         "price": "$0.01",
         "amountBaseUnits": "10000"
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2425,7 +2425,7 @@
         "price": null,
         "amountBaseUnits": null
       },
-      "maturity": "blocked",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2521,7 +2521,7 @@
         "price": null,
         "amountBaseUnits": null
       },
-      "maturity": "blocked",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2623,7 +2623,7 @@
         "price": null,
         "amountBaseUnits": null
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2720,7 +2720,7 @@
         "price": "$0.05",
         "amountBaseUnits": "50000"
       },
-      "maturity": "blocked",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,

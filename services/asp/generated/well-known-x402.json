@@ -22,7 +22,7 @@
       "schema": "https://asp.untch.xyz/schema/preflight_payment",
       "schemaVersion": "2.0.0",
       "idempotency": "not-idempotent",
-      "maturity": "demo"
+      "maturity": "live"
     },
     {
       "toolId": "verify_delivery",
@@ -36,7 +36,7 @@
       "schema": "https://asp.untch.xyz/schema/verify_delivery",
       "schemaVersion": "2.0.0",
       "idempotency": "not-idempotent",
-      "maturity": "demo"
+      "maturity": "live"
     },
     {
       "toolId": "detect_duplicate",
@@ -50,7 +50,7 @@
       "schema": "https://asp.untch.xyz/schema/detect_duplicate",
       "schemaVersion": "1.0.0",
       "idempotency": "read-only",
-      "maturity": "demo"
+      "maturity": "live"
     },
     {
       "toolId": "redact_payment_metadata",
@@ -78,7 +78,7 @@
       "schema": "https://asp.untch.xyz/schema/suggest_names",
       "schemaVersion": "1.0.0",
       "idempotency": "not-idempotent",
-      "maturity": "demo"
+      "maturity": "live"
     },
     {
       "toolId": "brand_pack",
@@ -92,7 +92,7 @@
       "schema": "https://asp.untch.xyz/schema/brand_pack",
       "schemaVersion": "1.0.0",
       "idempotency": "not-idempotent",
-      "maturity": "blocked"
+      "maturity": "live"
     }
   ],
   "freeResources": [

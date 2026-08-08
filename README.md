@@ -3,7 +3,7 @@
 [![CI](https://github.com/winsznx/untch/actions/workflows/consumer-pack.yml/badge.svg?branch=main)](https://github.com/winsznx/untch/actions/workflows/consumer-pack.yml)
 [![policy engine](https://github.com/winsznx/untch/actions/workflows/policy-engine.yml/badge.svg?branch=main)](https://github.com/winsznx/untch/actions/workflows/policy-engine.yml)
 [![contracts](https://github.com/winsznx/untch/actions/workflows/contracts.yml/badge.svg?branch=main)](https://github.com/winsznx/untch/actions/workflows/contracts.yml)
-[![tests](https://img.shields.io/badge/tests-671%20passing-brightgreen)](#22-running-tests)
+[![tests](https://img.shields.io/badge/tests-827%20passing-brightgreen)](#22-running-tests)
 [![production](https://img.shields.io/badge/production-asp.untch.xyz-blue)](https://asp.untch.xyz/consumer/catalog)
 [![docs](https://img.shields.io/badge/docs-docs.untch.xyz-blue)](https://docs.untch.xyz)
 [![OKX.AI ASP](https://img.shields.io/badge/OKX.AI-ASP%20%236086-black)](https://okx.ai)
@@ -13,7 +13,9 @@
 
 > **Production maturity, stated up front.**
 >
-> Untch completed real production-governed provider settlements in Base USDC, independently verified the delivered domain result through public RDAP data, and generated durable Consumer Pack receipts.
+> The marketplace ASP is live on X Layer mainnet and settles real USDT0. The full agent lifecycle has been completed end to end with real money: an OKX Onchain OS wallet signs in through a TEE, registers a spend policy on the PolicyRegistry contract, and then `preflight_payment` returns an on-chain-anchored APPROVED decision and `verify_delivery` returns a real acceptance verdict — each a paid x402 call that settles on chain. All nine listed services (six paid, three free) have been exercised against production with real settlement.
+>
+> Untch also completed real production-governed provider settlements in Base USDC, independently verified the delivered domain result through public RDAP data, and generated durable Consumer Pack receipts.
 >
 > Untch has completed an externally funded Consumer Intent in production. The user funding wallet and Untch provider-settlement treasury are separate, while policy, payment, delivery verification and accounting remain bound to one intent. Providers are currently settled from Untch's pre-funded operational treasury. Receipts currently include durable Untch records and X Layer testnet anchors. Mainnet receipt anchoring is pending writer activation through the contract's three-day timelock.
 >

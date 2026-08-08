@@ -694,7 +694,7 @@
           "price": "$0.05",
           "amountBaseUnits": "50000"
         },
-        "x-untch-maturity": "demo",
+        "x-untch-maturity": "live",
         "x-untch-class": "MARKETPLACE_LISTABLE",
         "x-untch-predecessors": [
           {
@@ -1029,7 +1029,7 @@
           "price": "$0.10",
           "amountBaseUnits": "100000"
         },
-        "x-untch-maturity": "demo",
+        "x-untch-maturity": "live",
         "x-untch-class": "MARKETPLACE_LISTABLE",
         "x-untch-predecessors": [
           {
@@ -1815,7 +1815,7 @@
           "price": "$0.02",
           "amountBaseUnits": "20000"
         },
-        "x-untch-maturity": "demo",
+        "x-untch-maturity": "live",
         "x-untch-class": "MARKETPLACE_LISTABLE",
         "x-untch-predecessors": [
           {
@@ -3968,7 +3968,7 @@
           "price": "$0.01",
           "amountBaseUnits": "10000"
         },
-        "x-untch-maturity": "demo",
+        "x-untch-maturity": "live",
         "x-untch-class": "MARKETPLACE_LISTABLE",
         "x-untch-predecessors": [],
         "x-untch-side-effects": [
@@ -4111,7 +4111,7 @@
           "price": null,
           "amountBaseUnits": null
         },
-        "x-untch-maturity": "blocked",
+        "x-untch-maturity": "live",
         "x-untch-class": "MARKETPLACE_LISTABLE",
         "x-untch-predecessors": [],
         "x-untch-side-effects": [],
@@ -4250,7 +4250,7 @@
           "price": null,
           "amountBaseUnits": null
         },
-        "x-untch-maturity": "blocked",
+        "x-untch-maturity": "live",
         "x-untch-class": "MARKETPLACE_LISTABLE",
         "x-untch-predecessors": [],
         "x-untch-side-effects": [
@@ -4394,7 +4394,7 @@
           "price": null,
           "amountBaseUnits": null
         },
-        "x-untch-maturity": "demo",
+        "x-untch-maturity": "live",
         "x-untch-class": "MARKETPLACE_LISTABLE",
         "x-untch-predecessors": [],
         "x-untch-side-effects": [],
@@ -4582,7 +4582,7 @@
           "price": "$0.05",
           "amountBaseUnits": "50000"
         },
-        "x-untch-maturity": "blocked",
+        "x-untch-maturity": "live",
         "x-untch-class": "MARKETPLACE_LISTABLE",
         "x-untch-predecessors": [],
         "x-untch-side-effects": [

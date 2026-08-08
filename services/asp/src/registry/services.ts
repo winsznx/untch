@@ -279,7 +279,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
      * deployment, because doing so means broadcasting a real registration transaction — a separately
      * approved action, not something a build does on its own.
      */
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -395,7 +395,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     pricing: { kind: "paid", price: "$0.10", amountBaseUnits: "100000" },
     // Same reasoning as preflight_payment: the policy predecessor now has a public route, so the
     // service is reachable. `demo` rather than `live` because it has not been proven end to end here.
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -591,7 +591,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/detect_duplicate",
     pricing: { kind: "paid", price: "$0.02", amountBaseUnits: "20000" },
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1199,7 +1199,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/suggest_names",
     pricing: { kind: "paid", price: "$0.01", amountBaseUnits: "10000" },
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1243,7 +1243,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/rank_options",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
-    maturity: "blocked",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1290,7 +1290,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/check_domains",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
-    maturity: "blocked",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1328,7 +1328,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/seo_tips",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1369,7 +1369,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/brand_pack",
     pricing: { kind: "paid", price: "$0.05", amountBaseUnits: "50000" },
-    maturity: "blocked",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
