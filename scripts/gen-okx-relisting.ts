@@ -35,6 +35,7 @@ import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SERVICES } from "../services/asp/src/registry/services";
+import { SETTLEMENT_TOKEN } from "../services/asp/src/config";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASE = "https://asp.untch.xyz";
@@ -81,6 +82,39 @@ function parameterSpec(input: JsonSchemaish): string {
   return parts.length > 0 ? parts.join("; ") : "no parameters";
 }
 
+/**
+ * A far-future deadline, computed at generation time.
+ *
+ * The registry's static preflight example carried `2026-08-02`, which was already in the past by the
+ * time it was read — an agent who pasted it, paid, and sent it got DEADLINE_IN_THE_PAST. Any hardcoded
+ * date rots; this one is stamped a year out whenever the payload is generated.
+ */
+const FUTURE_DEADLINE = new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString();
+
+/**
+ * The example an agent actually copies, made to WORK for a session-less x402 buyer.
+ *
+ * Two registry examples fail on the marketplace hire path, and both were proven live:
+ *
+ *   • preflight_payment used `currency: "USDT0"` — only the exact settlement symbol settles, everything
+ *     else is CURRENCY_NOT_SETTLEABLE — and a past `deadline`.
+ *   • verify_delivery used `intentId`, which routes a caller with no session to the account-scoped
+ *     handler and answers ACCOUNT_LINK_REQUIRED. The x402 hire path needs `intentHash`.
+ *
+ * So the example is corrected per tool rather than copied blindly. A reviewer pastes line 4; it must
+ * be the call that works, not the one the docs happened to hold.
+ */
+function marketplaceExample(toolId: string, registryExample: Record<string, unknown>): Record<string, unknown> {
+  if (toolId === "preflight_payment") {
+    return { ...registryExample, currency: SETTLEMENT_TOKEN.symbol, deadline: FUTURE_DEADLINE };
+  }
+  if (toolId === "verify_delivery") {
+    // A session-less buyer verifies by the intent's own hash, not the account-scoped intentId.
+    return { intentHash: "0x" + "11".repeat(32), payload: { result: "the delivered work" } };
+  }
+  return registryExample;
+}
+
 /** Line 4: a curl a reviewer can paste. It must name the REAL endpoint, so it is built from one. */
 function curlExample(endpoint: string, example: unknown): string {
   const body = JSON.stringify(example).replace(/"/g, '\\"');
@@ -98,7 +132,7 @@ const services = listable.map((s) => {
     s.summary.replace(/\s+/g, " ").trim(),
     parameterSpec(s.input as JsonSchemaish),
     s.method.toUpperCase(),
-    curlExample(endpoint, s.validExample.request),
+    curlExample(endpoint, marketplaceExample(s.toolId, s.validExample.request as Record<string, unknown>)),
   ].join("\n");
 
   const existing = LIVE[s.path];
@@ -143,6 +177,23 @@ for (const s of services) {
   // Half-width budget; CJK counts double, and none of ours is CJK.
   if (s.serviceDescription.length > 2000) {
     problems.push(`${s.serviceName}: description exceeds 2000 half-width characters`);
+  }
+  /**
+   * The example must be one a buyer can actually run, not just one that parses. These two are what a
+   * copied example got wrong before, so they are checked by name.
+   */
+  const example = s.serviceDescription.split("\n")[3]!;
+  if (s.endpoint.endsWith("/preflight_payment")) {
+    if (!example.includes(SETTLEMENT_TOKEN.symbol)) {
+      problems.push(`${s.serviceName}: example currency must be ${SETTLEMENT_TOKEN.symbol}, the only settleable symbol`);
+    }
+    const m = example.match(/deadline\\?":\\?"([^"\\]+)/);
+    if (m && Date.parse(m[1]!) <= Date.now()) {
+      problems.push(`${s.serviceName}: example deadline ${m[1]} is in the past`);
+    }
+  }
+  if (s.endpoint.endsWith("/verify_delivery") && !example.includes("intentHash")) {
+    problems.push(`${s.serviceName}: example must use intentHash — intentId needs a session a marketplace buyer has not got`);
   }
 }
 

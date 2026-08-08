@@ -155,8 +155,11 @@ const EXAMPLE_PREFLIGHT_REQUEST = {
   capability: "domains.register",
   task: "Register kyrve.xyz for one year",
   maxSpend: "20.00",
-  currency: "USDT0",
-  deadline: "2026-08-02T12:00:00.000Z",
+  // The exact settlement symbol the handler matches (SETTLEMENT_TOKEN.symbol). "USDT0" is the token's
+  // common name; the `currency` field is compared against the symbol, and only the symbol settles.
+  currency: "USD₮",
+  // Far future on purpose: a near-dated example rots into DEADLINE_IN_THE_PAST for anyone who copies it.
+  deadline: "2030-01-01T00:00:00.000Z",
   recipient: "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
   parameters: { domain: "kyrve.xyz", years: 1 },
   buyerAgentId: "6047",

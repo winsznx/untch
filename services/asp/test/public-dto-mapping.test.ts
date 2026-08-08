@@ -12,6 +12,7 @@ import {
 import type { PublicPreflightRequest } from "../src/public-dto/types";
 import { validate, describeViolations } from "../src/registry/schema";
 import { serviceById } from "../src/registry/services";
+import { SETTLEMENT_TOKEN } from "../src/config";
 
 const NOW = Date.parse("2026-08-01T12:00:00.000Z");
 
@@ -21,7 +22,15 @@ const CONTEXT: MappingContext = {
     policyHash: `0x${"44".repeat(32)}`,
     owner: "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
   },
-  network: { token: "0x779ded0c9e1022225f8e0630b35a9b54be713736", symbol: "USDT0", decimals: 6 },
+  /**
+   * The REAL settlement token, imported rather than hardcoded.
+   *
+   * This mock said `symbol: "USDT0"`, and so did the published example's `currency`. Both were wrong —
+   * the token's on-chain symbol is `USD₮`, which is what the live mapping compares against — but they
+   * were wrong the SAME way, so the test passed while the example it blessed was refused in production.
+   * Importing the symbol makes the mock match reality and makes this drift impossible to reintroduce.
+   */
+  network: { token: SETTLEMENT_TOKEN.address, symbol: SETTLEMENT_TOKEN.symbol, decimals: SETTLEMENT_TOKEN.decimals },
   provider: {
     providerId: "stabledomains",
     capability: "domains.register",
@@ -37,8 +46,8 @@ const REQUEST: PublicPreflightRequest = {
   capability: "domains.register",
   task: "Register kyrve.xyz for one year",
   maxSpend: "20.00",
-  currency: "USDT0",
-  deadline: "2026-08-02T12:00:00.000Z",
+  currency: SETTLEMENT_TOKEN.symbol,
+  deadline: "2030-01-01T00:00:00.000Z",
   recipient: "0xAbCdEf0123456789AbCdEf0123456789AbCdEf01",
   parameters: { domain: "kyrve.xyz", years: 1 },
   buyerAgentId: "6047",
