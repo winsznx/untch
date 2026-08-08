@@ -16,6 +16,7 @@ import { buildWorker, type RouteContext } from "./entry";
 import { accountLinkRoutes } from "./account-link-routes";
 import { agentCardRoutes } from "./agent-card";
 import { consumerReadRoutes } from "./consumer-reads";
+import { consumerReceiptRoute } from "./consumer-receipt-route";
 import { discordRoutes } from "./discord-routes";
 import { mcpJsonRpcRoutes } from "./mcp-jsonrpc";
 import { policyRoutes } from "./policy-routes";
@@ -211,6 +212,8 @@ function allRoutes(ctx: RouteContext): readonly Route[] {
     ...consumerRoutes(ctx),
     ...discord(ctx),
     ...agentCardRoutes(ctx.baseUrl),
+    /** Public, unauthenticated: the receipt URL the README hands out. No secret required. */
+    consumerReceiptRoute({ pool: ctx.pool, publicBaseUrl: ctx.baseUrl }),
     ...mcp(ctx, httpRoutes),
   ];
 }
