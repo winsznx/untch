@@ -1,5 +1,6 @@
 import type { RouteConfig } from "@okxweb3/x402-core/server";
 import {
+  SETTLEMENT_TOKEN,
   BRAND_PACK_PRICE,
   BRAND_PACK_ROUTE,
   DETECT_DUP_PRICE,
@@ -62,7 +63,25 @@ function listedTool(
   price: string,
 ): Record<string, RouteConfig> {
   const config: RouteConfig = {
-    accepts: { scheme: "exact", network: NETWORK, payTo: args.payTo, price },
+    accepts: {
+      scheme: "exact",
+      network: NETWORK,
+      payTo: args.payTo,
+      price,
+      /**
+       * Published so a client that does not already know our token can still read the amount.
+       *
+       * OKX's own `agent x402-check` reports: "cannot determine token decimals: token-info lookup
+       * failed (asset 0x779ded… is not in the task system's supported token list (checked: USDT,
+       * USDG)) and the accepts entry does not provide a `decimals` field". USDT0 is not in their task
+       * system's list, so without this nothing downstream can turn `10000` into `0.01`.
+       *
+       * Safe to add here: the EIP-712 domain reads `extra.name` and `extra.version` by name and never
+       * spreads `extra`, so an additional key cannot change what a payer signs. The SDK merges
+       * `resourceConfig.extra` over the scheme's own, which is why the domain fields survive.
+       */
+      extra: { decimals: SETTLEMENT_TOKEN.decimals },
+    },
     description: challengeDescription(toolId, args.publicBaseUrl),
     mimeType: "application/json",
   };
