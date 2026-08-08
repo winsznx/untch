@@ -185,36 +185,25 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
     [PREFLIGHT_ROUTE]: { allOf: ["policyId"], anyOf: ["provider", "intent"] },
   };
 
-  /**
-   * The 400 a doomed request gets BEFORE it is asked to pay.
-   *
-   * An empty `{}` or a body of junk keys used to receive a 402, so a buyer could prepare, sign and
-   * submit a payment for a call the handler was always going to refuse. Checking the required fields
-   * before the challenge means they are told what is missing without spending anything. Only POST
-   * bodies are checked — the GET and HEAD compatibility probes carry no body and must still answer the
-   * priced 402 that proves the endpoint is real.
-   */
-  const preGateRefusal = (request: Request, body: unknown): Response | null => {
-    if (request.method !== "POST") return null;
-    const pathname = new URL(request.url).pathname;
-    const rule = requiredPresence[pathname];
-    if (!rule) return null;
+  /** Does a value satisfy a JSON Schema `type`? Only the types our tools declare. */
+  const typeMatches = (value: unknown, want: string): boolean => {
+    switch (want) {
+      case "object": return typeof value === "object" && value !== null && !Array.isArray(value);
+      case "array": return Array.isArray(value);
+      case "string": return typeof value === "string";
+      case "number":
+      case "integer": return typeof value === "number" && Number.isFinite(value);
+      case "boolean": return typeof value === "boolean";
+      default: return true; // an undeclared or unknown type is not something to reject on
+    }
+  };
 
-    const b = (body ?? {}) as Record<string, unknown>;
-    const has = (k: string) => b[k] !== undefined && b[k] !== null && b[k] !== "";
-    const missingAll = (rule.allOf ?? []).filter((k) => !has(k));
-    const anyOfUnmet = rule.anyOf && rule.anyOf.length > 0 && !rule.anyOf.some(has);
-
-    if (missingAll.length === 0 && !anyOfUnmet) return null;
-
-    const parts: string[] = [];
-    if (missingAll.length > 0) parts.push(`missing required field(s): ${missingAll.join(", ")}`);
-    if (anyOfUnmet) parts.push(`provide at least one of: ${rule.anyOf!.join(", ")}`);
-    return new Response(
+  const schema400 = (message: string): Response =>
+    new Response(
       JSON.stringify(
         {
           code: "REQUEST_SCHEMA_VIOLATION",
-          message: `${parts.join("; ")}. Refused before payment, so nothing was charged.`,
+          message: `${message}. Refused before payment, so nothing was charged.`,
           retryable: false,
           docsUrl: null,
         },
@@ -223,6 +212,60 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
       ),
       { status: 400, headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*" } },
     );
+
+  /**
+   * The 400 a doomed request gets BEFORE it is asked to pay.
+   *
+   * An empty `{}`, a body of junk keys, or a field of the WRONG TYPE used to receive a 402, so a buyer
+   * could prepare, sign and submit a payment for a call the handler was always going to refuse. Two
+   * checks run here, both before the challenge and both charging nothing:
+   *
+   *   • PRESENCE — the `requiredPresence` rules above, which keep the dual-shape tools honest.
+   *   • TYPE — every present field the schema names a type for must match it, checked AFTER the same
+   *     coercion the handler applies. `redact_payment_metadata` declares `metadata` an object, and its
+   *     own refused example sends `"ada@example.com"` — a string. Presence alone let that reach a 402;
+   *     the type check turns it into the 400 the example expects. A JSON-object STRING still passes,
+   *     because coercion parses it first, so a CLI buyer who sent `--param metadata={...}` is fine.
+   *
+   * Only POST bodies are checked. The GET and HEAD compatibility probes carry no body and must still
+   * answer the priced 402 that proves the endpoint is real.
+   */
+  const preGateRefusal = (request: Request, body: unknown): Response | null => {
+    if (request.method !== "POST") return null;
+    const pathname = new URL(request.url).pathname;
+    const rule = requiredPresence[pathname];
+    if (!rule) return null;
+
+    // The same schema-driven coercion the handler will apply, so a JSON-string object is judged as the
+    // object it will become, not the string it arrived as.
+    const svc = SERVICES.find((s) => s.path === pathname && s.method === "POST");
+    const b = (coerceObjectParams(body, svc?.input as never) ?? {}) as Record<string, unknown>;
+
+    const has = (k: string) => b[k] !== undefined && b[k] !== null && b[k] !== "";
+    const missingAll = (rule.allOf ?? []).filter((k) => !has(k));
+    const anyOfUnmet = rule.anyOf && rule.anyOf.length > 0 && !rule.anyOf.some(has);
+
+    const parts: string[] = [];
+    if (missingAll.length > 0) parts.push(`missing required field(s): ${missingAll.join(", ")}`);
+    if (anyOfUnmet) parts.push(`provide at least one of: ${rule.anyOf!.join(", ")}`);
+    if (parts.length > 0) return schema400(parts.join("; "));
+
+    // Presence is satisfied. Now the type of the fields that GATE the call — the ones named in the
+    // presence rule — not every optional field, so a lenient handler's tolerance for an odd optional
+    // is not overridden here. This is exactly where the reviewer's case lives: `metadata` is required
+    // and declared an object, and a string for it makes the call impossible.
+    const props = (svc?.input as { properties?: Record<string, { type?: string }> } | undefined)?.properties ?? {};
+    const gating = [...(rule.allOf ?? []), ...(rule.anyOf ?? [])];
+    const typeErrors: string[] = [];
+    for (const key of gating) {
+      const value = b[key];
+      const want = props[key]?.type;
+      if (!want || value === undefined || value === null) continue;
+      if (!typeMatches(value, want)) typeErrors.push(`${key} must be ${want === "integer" ? "an integer" : `a ${want}`}`);
+    }
+    if (typeErrors.length > 0) return schema400(typeErrors.join("; "));
+
+    return null;
   };
 
   const gate: WorkersPaymentGate = async (request, body, run, onSettled) => {
