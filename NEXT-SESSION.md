@@ -116,7 +116,9 @@ registered: `2120285619…572` and `19094645725…019`.
 
 Gotchas that cost a probe each, worth knowing before the next run:
 
-- `currency` must be exactly `USD₮0` (U+20AE), not `USDT` or `USD₮0`.
+- `currency` must be exactly `USD₮0` — U+0055 U+0053 U+0044 U+20AE U+0030, the trailing 0 included.
+  It is the token's real on-chain symbol and what the OKX wallet shows. `USDT`, `USDT0` (ASCII T)
+  and the old truncated `USD₮` (no 0) are all refused CURRENCY_NOT_SETTLEABLE.
 - Marketplace `verify_delivery` takes `intentHash`, not `intentId`. Sending `intentId` alone
   routes to the account-scoped public verify, which needs a session bearer the CLI cannot attach.
 - A public `preflight_payment` needs `Authorization: Bearer <session>`. The CLI's two-phase
