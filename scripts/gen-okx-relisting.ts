@@ -147,10 +147,24 @@ const services = listable.map((s) => {
   };
 });
 
-/** Selling a disabled simulation and a free health check. Removed, not rewritten. */
+/**
+ * Selling a disabled simulation and a free health check. Removed, not rewritten.
+ *
+ * The A2A CLI (0.2.2+) validates every element against the full service shape, even a delete, so an
+ * `{operation, id}` pair is rejected with "missing field serviceName". Each delete therefore carries
+ * the record it is removing.
+ */
 const deletions = [
-  { operation: "delete", id: String(LIVE["/cafe/order/latte"]) },
-  { operation: "delete", id: String(LIVE["/ping_untch"]) },
+  {
+    operation: "delete", id: String(LIVE["/cafe/order/latte"]),
+    serviceName: "Untch cafe latte", serviceType: "A2MCP", fee: "0.04",
+    endpoint: `${BASE}/cafe/order/latte`, serviceDescription: "Removed from the listing.",
+  },
+  {
+    operation: "delete", id: String(LIVE["/ping_untch"]),
+    serviceName: "Rail ping", serviceType: "A2MCP", fee: "0.01",
+    endpoint: `${BASE}/ping_untch`, serviceDescription: "Removed from the listing.",
+  },
 ];
 
 const payload = [...services, ...deletions];
