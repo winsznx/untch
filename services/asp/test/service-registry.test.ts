@@ -117,7 +117,19 @@ describe("the generated listing description", () => {
     for (const field of ["provider", "capability", "task", "maxSpend", "currency", "deadline"]) {
       assert.ok(provide.includes(field), `the description does not name ${field}`);
     }
-    assert.match(provide, /either policyId .*, or useDefaultPolicy/);
+    /**
+     * `policyId` outright, not "either this or a default".
+     *
+     * The contract used to offer `useDefaultPolicy` as an alternative here, and this test asserted it.
+     * Both were wrong: this is the MARKETPLACE tool, bought by a stranger over x402 with no session,
+     * and a default policy belongs to an account there is none of. A buyer followed the schema, paid,
+     * and was answered POLICY_ID_REQUIRED.
+     */
+    assert.ok(provide.includes("policyId"), "the handler refuses without it, so the description must ask for it");
+    assert.ok(
+      !provide.includes("useDefaultPolicy"),
+      "offering it on this surface sends a paying stranger down a path only an account-scoped caller has",
+    );
     for (const derived of ["policyHash", "taskHash", "paramsHash", "nonce"]) {
       assert.ok(!provide.includes(derived), `${derived} is derived server-side and must not be asked for`);
     }
@@ -281,8 +293,33 @@ describe("the generated machine-readable surfaces", () => {
     }) as { x402Version: number; resources: Array<Record<string, unknown>> };
 
     assert.equal(doc.x402Version, 2);
-    const paid = SERVICES.filter((s) => s.pricing.kind === "paid");
-    assert.equal(doc.resources.length, paid.length);
+
+    /**
+     * PURCHASABLE, not merely priced.
+     *
+     * This asserted every paid service appeared, which published ten resources when six could be
+     * bought. The other four are the Bureau tools: they carry a price and refuse before any payment
+     * challenge, because they answer from receipt history this host holds and a stranger has none.
+     * A paying client reads this document FIRST, so listing them there invites payment for a refusal.
+     */
+    const purchasable = SERVICES.filter(
+      (s) => s.pricing.kind === "paid" && s.classification.serviceClass === "MARKETPLACE_LISTABLE",
+    );
+    assert.equal(doc.resources.length, purchasable.length);
+
+    const advertised = new Set(doc.resources.map((r) => r.toolId));
+    for (const s of SERVICES) {
+      if (s.pricing.kind !== "paid") continue;
+      const listed = s.classification.serviceClass === "MARKETPLACE_LISTABLE";
+      assert.equal(
+        advertised.has(s.toolId),
+        listed,
+        listed
+          ? `${s.toolId} is sold but absent from x402 discovery`
+          : `${s.toolId} refuses before payment and must not be advertised as payable`,
+      );
+    }
+
     for (const r of doc.resources) {
       assert.equal(r.schema, `${BASE}/schema/${r.toolId}`);
       assert.ok(r.amountBaseUnits, `${r.toolId} publishes no base-unit amount`);
@@ -301,9 +338,30 @@ describe("the generated machine-readable surfaces", () => {
 
   test("the ERC-8004 card's service list is generated, not retyped", () => {
     const card = buildRegistrationCard({ payTo: "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba", baseUrl: BASE });
-    const endpoints = card.services.map((s) => s.endpoint);
+    const endpoints = new Set(card.services.map((s) => s.endpoint));
+
+    /**
+     * The card advertises what a stranger reading it can CALL.
+     *
+     * It used to list every registry entry — around twenty-five endpoints, including account-control
+     * routes needing an account the reader does not have, Bureau tools that refuse before payment, and
+     * the disabled café simulation. After the Cloudflare port most of those answer 503, so a public
+     * descriptor pointed largely at dead ends.
+     *
+     * Asserted in both directions, because "generated, not retyped" is only half the property: the
+     * generation must also select the right rows.
+     */
     for (const s of SERVICES) {
-      assert.ok(endpoints.includes(`${BASE}${s.path}`), `${s.toolId} is missing from the registration card`);
+      const offered =
+        s.classification.serviceClass === "MARKETPLACE_LISTABLE" ||
+        s.classification.serviceClass === "PUBLIC_SUPPORT";
+      assert.equal(
+        endpoints.has(`${BASE}${s.path}`),
+        offered,
+        offered
+          ? `${s.toolId} is on offer but missing from the registration card`
+          : `${s.toolId} is ${s.classification.serviceClass} and must not be advertised on the card`,
+      );
     }
     for (const service of card.services) {
       assert.ok(!/§\s*\d/.test(service.description ?? ""), `${service.endpoint} cites a private section number`);

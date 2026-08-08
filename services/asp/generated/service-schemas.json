@@ -182,7 +182,7 @@
         "price": "$0.05",
         "amountBaseUnits": "50000"
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -192,7 +192,7 @@
       "schemaVersion": "2.0.0",
       "description": {
         "what": "Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.",
-        "provide": "You provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).",
+        "provide": "You provide: policyId (string); provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string).",
         "receive": "You receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision."
       },
       "input": {
@@ -207,10 +207,6 @@
             "examples": [
               "7"
             ]
-          },
-          "useDefaultPolicy": {
-            "type": "boolean",
-            "description": "Use the policy this account has marked as its default. Send this or policyId, not neither — a request that silently fell back to a default would be a request whose limits nobody chose."
           },
           "provider": {
             "type": "string",
@@ -294,24 +290,13 @@
           }
         },
         "required": [
+          "policyId",
           "provider",
           "capability",
           "task",
           "maxSpend",
           "currency",
           "deadline"
-        ],
-        "anyOf": [
-          {
-            "required": [
-              "policyId"
-            ]
-          },
-          {
-            "required": [
-              "useDefaultPolicy"
-            ]
-          }
         ]
       },
       "output": {
@@ -372,8 +357,8 @@
             "capability": "domains.register",
             "task": "Register kyrve.xyz for one year",
             "maxSpend": "20.00",
-            "currency": "USDT0",
-            "deadline": "2026-08-02T12:00:00.000Z",
+            "currency": "USD₮0",
+            "deadline": "2030-01-01T00:00:00.000Z",
             "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
             "parameters": {
               "domain": "kyrve.xyz",
@@ -384,14 +369,14 @@
           }
         },
         "refused": {
-          "title": "Name neither a policy nor a default one the account has chosen",
+          "title": "Omit the policyId",
           "request": {
             "provider": "stabledomains",
             "capability": "domains.register",
             "task": "Register kyrve.xyz for one year",
             "maxSpend": "20.00",
-            "currency": "USDT0",
-            "deadline": "2026-08-02T12:00:00.000Z",
+            "currency": "USD₮0",
+            "deadline": "2030-01-01T00:00:00.000Z",
             "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
             "parameters": {
               "domain": "kyrve.xyz",
@@ -400,7 +385,7 @@
             "buyerAgentId": "6047",
             "workerAgentId": "6086"
           },
-          "refusalCode": "POLICY_REQUIRED"
+          "refusalCode": "POLICY_ID_REQUIRED"
         }
       },
       "predecessors": [
@@ -446,6 +431,11 @@
           "code": "DEADLINE_IN_THE_PAST",
           "status": 400,
           "when": "the deadline has already passed"
+        },
+        {
+          "code": "POLICY_ID_REQUIRED",
+          "status": 400,
+          "when": "no policyId was sent. This surface has no account to resolve a default from, so the id is required outright"
         },
         {
           "code": "ACCOUNT_LINK_REQUIRED",
@@ -501,7 +491,7 @@
         "price": "$0.10",
         "amountBaseUnits": "100000"
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -1068,7 +1058,7 @@
         "price": "$0.02",
         "amountBaseUnits": "20000"
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2334,7 +2324,7 @@
         "price": "$0.01",
         "amountBaseUnits": "10000"
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2435,7 +2425,7 @@
         "price": null,
         "amountBaseUnits": null
       },
-      "maturity": "blocked",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2531,7 +2521,7 @@
         "price": null,
         "amountBaseUnits": null
       },
-      "maturity": "blocked",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2633,7 +2623,7 @@
         "price": null,
         "amountBaseUnits": null
       },
-      "maturity": "demo",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -2730,7 +2720,7 @@
         "price": "$0.05",
         "amountBaseUnits": "50000"
       },
-      "maturity": "blocked",
+      "maturity": "live",
       "classification": {
         "serviceClass": "MARKETPLACE_LISTABLE",
         "strangerCallable": true,
@@ -3588,7 +3578,7 @@
       "name": "Default policy",
       "protocol": "A2MCP",
       "endpoint": "https://asp.untch.xyz/consumer/account/default-policy",
-      "method": "POST",
+      "method": "PUT",
       "pricing": {
         "kind": "free",
         "price": null,

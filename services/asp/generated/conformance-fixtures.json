@@ -50,8 +50,8 @@
         "capability": "domains.register",
         "task": "Register kyrve.xyz for one year",
         "maxSpend": "20.00",
-        "currency": "USDT0",
-        "deadline": "2026-08-02T12:00:00.000Z",
+        "currency": "USD₮0",
+        "deadline": "2030-01-01T00:00:00.000Z",
         "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
         "parameters": {
           "domain": "kyrve.xyz",
@@ -64,7 +64,7 @@
     {
       "toolId": "preflight_payment",
       "kind": "refused",
-      "title": "Name neither a policy nor a default one the account has chosen",
+      "title": "Omit the policyId",
       "method": "POST",
       "path": "/preflight_payment",
       "request": {
@@ -72,8 +72,8 @@
         "capability": "domains.register",
         "task": "Register kyrve.xyz for one year",
         "maxSpend": "20.00",
-        "currency": "USDT0",
-        "deadline": "2026-08-02T12:00:00.000Z",
+        "currency": "USD₮0",
+        "deadline": "2030-01-01T00:00:00.000Z",
         "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
         "parameters": {
           "domain": "kyrve.xyz",
@@ -82,7 +82,7 @@
         "buyerAgentId": "6047",
         "workerAgentId": "6086"
       },
-      "expectRefusalCode": "POLICY_REQUIRED"
+      "expectRefusalCode": "POLICY_ID_REQUIRED"
     },
     {
       "toolId": "verify_delivery",
@@ -621,7 +621,7 @@
       "toolId": "set_default_policy",
       "kind": "valid",
       "title": "Choose a default",
-      "method": "POST",
+      "method": "PUT",
       "path": "/consumer/account/default-policy",
       "request": {
         "policyId": "9001"
@@ -631,7 +631,7 @@
       "toolId": "set_default_policy",
       "kind": "refused",
       "title": "Choose an expired policy",
-      "method": "POST",
+      "method": "PUT",
       "path": "/consumer/account/default-policy",
       "request": {
         "policyId": "9001"

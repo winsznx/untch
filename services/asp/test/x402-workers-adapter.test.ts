@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { buildPaidSurface } from "../src/workers/paid-routes";
 import {
   WorkersHTTPAdapter,
   workersPaymentGateFromHTTPServer,
@@ -207,6 +208,81 @@ describe("a failing handler is never charged for", () => {
   });
 });
 
+/**
+ * The settlement hook, which is how a sale gets written down.
+ *
+ * An independent buyer settled `suggest_names` for real and the sales table stayed empty, so these
+ * pin the wiring rather than trusting it: the hook fires on a confirmed settlement, carries the facts
+ * needed to reconcile, and never fires on a path where no money moved.
+ */
+describe("a confirmed settlement reaches the recorder", () => {
+  test("the per-call hook fires with the transfer's facts", async () => {
+    const { server } = stubServer({
+      requiresPayment: true,
+      process: {
+        type: "payment-verified",
+        paymentPayload: { payer: "0x57a3660e8d10a89dfaee9c130a73c9bcc76e8950", nonce: "0xabc" },
+        paymentRequirements: {
+          payTo: "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
+          asset: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+          network: "eip155:196",
+          amount: "10000",
+        },
+      },
+    });
+    const gate = workersPaymentGateFromHTTPServer(server as never, { syncFacilitatorOnStart: false });
+
+    const seen: Record<string, unknown>[] = [];
+    const res = await gate(
+      new Request("https://asp.untch.xyz/builder/suggest_names", { method: "POST" }),
+      null,
+      () => new Response(JSON.stringify({ names: ["a"] }), { status: 200 }),
+      (facts) => {
+        seen.push(facts as unknown as Record<string, unknown>);
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(seen.length, 1, "a confirmed settlement that records nothing is money taken without a trace");
+    const f = seen[0]!;
+    assert.equal(f.route, "/builder/suggest_names");
+    assert.equal(f.payer, "0x57a3660e8d10a89dfaee9c130a73c9bcc76e8950");
+    assert.equal(f.amountBaseUnits, "10000");
+    assert.equal(f.network, "eip155:196");
+    assert.equal(f.responseStatus, 200);
+  });
+
+  test("a handler refusal settles nothing and records nothing", async () => {
+    const { server } = stubServer({
+      requiresPayment: true,
+      process: { type: "payment-verified", paymentPayload: {}, paymentRequirements: {} },
+    });
+    const gate = workersPaymentGateFromHTTPServer(server as never, { syncFacilitatorOnStart: false });
+
+    const seen: unknown[] = [];
+    await gate(
+      new Request("https://asp.untch.xyz/preflight_payment", { method: "POST" }),
+      null,
+      () => new Response(JSON.stringify({ code: "BAD" }), { status: 400 }),
+      (f) => { seen.push(f); },
+    );
+    assert.equal(seen.length, 0, "a refusal is not a sale");
+  });
+
+  test("a free route records nothing", async () => {
+    const { server } = stubServer({ requiresPayment: false });
+    const gate = workersPaymentGateFromHTTPServer(server as never, { syncFacilitatorOnStart: false });
+    const seen: unknown[] = [];
+    await gate(
+      new Request("https://asp.untch.xyz/builder/rank_options", { method: "POST" }),
+      null,
+      () => new Response("{}", { status: 200 }),
+      (f) => { seen.push(f); },
+    );
+    assert.equal(seen.length, 0, "nothing was charged, so nothing is a sale");
+  });
+});
+
 describe("the response is buffered before settlement, not streamed past it", () => {
   test("processSettlement receives the exact handler body", async () => {
     const { server, calls } = stubServer({
@@ -280,5 +356,53 @@ describe("the response is buffered before settlement, not streamed past it", () 
 
     assert.equal(res.status, 402);
     assert.deepEqual(await res.json(), {});
+  });
+});
+
+/**
+ * THE BUG THAT COST TWO REAL SETTLEMENTS.
+ *
+ * `buildPaidSurface` wraps the raw gate to check arming before a settlement. That wrapper was written
+ * with THREE parameters and forwarded three, so the fourth — the hook that records the sale — was
+ * silently dropped. Two paid calls settled on chain, returned correct results, and left
+ * `untch_marketplace_sales` empty.
+ *
+ * TypeScript cannot catch this: a function of three parameters is assignable to a type of four. The
+ * adapter's existing hook tests passed throughout, because they call `workersPaymentGate` directly —
+ * one layer BELOW the wrapper that was dropping the argument.
+ *
+ * So the check is on the shipped object itself. A function's `length` is its declared parameter
+ * count, which is exactly the property that was wrong, and it cannot drift out of sync with the source
+ * the way a text match can.
+ */
+describe("a settled sale survives the arming wrapper", () => {
+  const surface = () =>
+    buildPaidSurface({
+      payTo: "0xD9eD4D474B0D01031d10d637546450F39ed6a5ba",
+      publicBaseUrl: "https://asp.untch.xyz",
+      // Never used: constructing the facilitator client performs no I/O, and no request is made here.
+      okx: { apiKey: "k", secretKey: "s", passphrase: "p" },
+      arming: () => ({ armed: true, refusals: [], attested: true, schemaOk: true, operatorArmed: true }),
+    });
+
+  test("the arming wrapper accepts the settlement hook rather than dropping it", () => {
+    assert.equal(
+      surface().gate.length,
+      4,
+      "the gate must declare all four parameters. Declaring three silently discards the recorder the " +
+        "Worker passes as the fourth, and money moves with nothing written down.",
+    );
+  });
+
+  test("it forwards the hook rather than merely accepting it", async () => {
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("../src/workers/paid-routes.ts", import.meta.url), "utf8"),
+    );
+    const wrapper = src.slice(src.indexOf("const gate: WorkersPaymentGate"), src.indexOf("const ledgerState"));
+    assert.match(
+      wrapper,
+      /rawGate\(request, body, run, onSettled\)/,
+      "accepting the hook and then not passing it on is the same silent failure with an extra step",
+    );
   });
 });

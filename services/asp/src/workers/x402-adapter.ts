@@ -152,6 +152,44 @@ export interface WorkersPaymentGateOptions {
    * wait on the facilitator even for free routes.
    */
   readonly syncFacilitatorOnStart?: boolean;
+  /**
+   * Called after a settlement the facilitator confirmed, with the facts of the transfer.
+   *
+   * A hook rather than a database call inside the adapter, because this module deliberately knows
+   * nothing about storage — the same reason it takes a route table instead of reading one. It fires
+   * only on confirmed success, so a refused or failed settlement can never be recorded as a sale.
+   */
+  readonly onSettled?: (facts: SettlementFacts) => void | Promise<void>;
+}
+
+/** What the seller needs to reconcile a sale, taken from what the SDK already verified. */
+export interface SettlementFacts {
+  readonly route: string;
+  readonly payer: string;
+  readonly payTo: string;
+  readonly token: string;
+  readonly network: string;
+  readonly amountBaseUnits: string;
+  readonly transactionHash: string | null;
+  readonly facilitatorStatus: string | null;
+  readonly responseStatus: number;
+  readonly responseBytes: number;
+  readonly authorizationNonce: string | null;
+}
+
+/** Dig a value out of the SDK payload without assuming one shape across versions. */
+function pick(o: unknown, ...keys: readonly string[]): string | null {
+  if (!o || typeof o !== "object") return null;
+  for (const k of keys) {
+    const v = (o as Record<string, unknown>)[k];
+    if (typeof v === "string" && v.length > 0) return v;
+    if (typeof v === "number") return String(v);
+    if (v && typeof v === "object") {
+      const nested = pick(v, ...keys);
+      if (nested) return nested;
+    }
+  }
+  return null;
 }
 
 export interface WorkersPaymentGate {
@@ -161,7 +199,20 @@ export interface WorkersPaymentGate {
    * Returns the SDK's response when payment is required and absent or invalid, and otherwise calls
    * `handler` and returns its response — settled, when the route is priced and the handler succeeded.
    */
-  (request: Request, body: unknown, handler: PaidHandler): Promise<Response>;
+  (
+    request: Request,
+    body: unknown,
+    handler: PaidHandler,
+    /**
+     * Where to record a confirmed settlement, supplied PER CALL.
+     *
+     * The gate is memoised per isolate so the facilitator handshake happens once. The place a sale is
+     * written is not isolate state — it belongs to the request in flight — so it is passed in rather
+     * than captured at construction. Capturing it meant concurrent requests recorded against whichever
+     * request happened to write the shared reference last.
+     */
+    onSettled?: (facts: SettlementFacts) => void | Promise<void>,
+  ): Promise<Response>;
 }
 
 /**
@@ -209,7 +260,12 @@ export function workersPaymentGateFromHTTPServer(
     }
   }
 
-  return async function gate(request: Request, body: unknown, handler: PaidHandler): Promise<Response> {
+  return async function gate(
+    request: Request,
+    body: unknown,
+    handler: PaidHandler,
+    onSettled?: (facts: SettlementFacts) => void | Promise<void>,
+  ): Promise<Response> {
     const adapter = new WorkersHTTPAdapter(request, body);
     // Both spellings, in the SDK's own precedence order. Omitted entirely when absent rather than set
     // to undefined: `exactOptionalPropertyTypes` is on, and "no payment header" and "a payment header
@@ -307,6 +363,33 @@ export function workersPaymentGateFromHTTPServer(
     }
 
     for (const [k, v] of Object.entries(settleResult.headers)) responseHeaders.set(k, v);
+
+    /**
+     * Recorded only here — after the facilitator confirmed, and only on success.
+     *
+     * Everything above this line either refused, failed or never charged, so nothing above it is a
+     * sale. Awaited rather than fired and forgotten: a Worker isolate can be frozen the moment the
+     * response is returned, and an un-awaited write is a write that may simply not happen.
+     */
+    const settledHook = onSettled ?? options.onSettled;
+    if (settledHook) {
+      const settleBody = (settleResult as unknown as { response?: { body?: unknown } }).response?.body;
+      await settledHook({
+        route: adapter.getPath(),
+        payer: pick(paymentPayload, "payer", "from", "sender") ?? "unknown",
+        payTo: pick(paymentRequirements, "payTo", "recipient") ?? "unknown",
+        token: pick(paymentRequirements, "asset", "token", "currency") ?? "unknown",
+        network: pick(paymentRequirements, "network", "chain") ?? "unknown",
+        amountBaseUnits:
+          pick(paymentRequirements, "amount", "maxAmountRequired", "amountBaseUnits") ?? "unknown",
+        transactionHash: pick(settleBody, "transaction", "transactionHash", "txHash", "hash"),
+        facilitatorStatus: pick(settleBody, "status", "settleStatus"),
+        responseStatus: handlerResponse.status,
+        responseBytes: responseBytes.byteLength,
+        authorizationNonce: pick(paymentPayload, "nonce", "authorizationNonce"),
+      });
+    }
+
     return new Response(responseBytes, {
       status: handlerResponse.status,
       statusText: handlerResponse.statusText,

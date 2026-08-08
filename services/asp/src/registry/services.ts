@@ -155,8 +155,11 @@ const EXAMPLE_PREFLIGHT_REQUEST = {
   capability: "domains.register",
   task: "Register kyrve.xyz for one year",
   maxSpend: "20.00",
-  currency: "USDT0",
-  deadline: "2026-08-02T12:00:00.000Z",
+  // The exact on-chain symbol the handler matches (SETTLEMENT_TOKEN.symbol): "USD₮0", trailing 0
+  // included, which is what the token contract and OKX's own wallet both report.
+  currency: "USD₮0",
+  // Far future on purpose: a near-dated example rots into DEADLINE_IN_THE_PAST for anyone who copies it.
+  deadline: "2030-01-01T00:00:00.000Z",
   recipient: "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
   parameters: { domain: "kyrve.xyz", years: 1 },
   buyerAgentId: "6047",
@@ -276,7 +279,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
      * deployment, because doing so means broadcasting a real registration transaction — a separately
      * approved action, not something a build does on its own.
      */
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -320,9 +323,9 @@ export const SERVICES: readonly ServiceDefinition[] = [
       request: EXAMPLE_PREFLIGHT_REQUEST,
     },
     invalidExample: {
-      title: "Name neither a policy nor a default one the account has chosen",
+      title: "Omit the policyId",
       request: { ...EXAMPLE_PREFLIGHT_REQUEST, policyId: undefined },
-      refusalCode: "POLICY_REQUIRED",
+      refusalCode: "POLICY_ID_REQUIRED",
     },
     /**
      * One predecessor now, not two.
@@ -344,6 +347,18 @@ export const SERVICES: readonly ServiceDefinition[] = [
       { code: "CURRENCY_NOT_SETTLEABLE", status: 400, when: "this network has no confirmed contract for that currency" },
       { code: "MAX_SPEND_INVALID", status: 400, when: "maxSpend is not a decimal amount the settlement token can express" },
       { code: "DEADLINE_IN_THE_PAST", status: 400, when: "the deadline has already passed" },
+      /**
+       * What this handler ACTUALLY answers without a policyId, and it was documented nowhere.
+       *
+       * The list described the account-scoped path — `POLICY_REQUIRED` when no default is chosen —
+       * while the marketplace handler reads a literal `policyId` and returns `POLICY_ID_REQUIRED`. A
+       * buyer who hit it found their refusal code in no published list.
+       */
+      {
+        code: "POLICY_ID_REQUIRED",
+        status: 400,
+        when: "no policyId was sent. This surface has no account to resolve a default from, so the id is required outright",
+      },
       {
         code: "ACCOUNT_LINK_REQUIRED",
         status: 401,
@@ -380,7 +395,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     pricing: { kind: "paid", price: "$0.10", amountBaseUnits: "100000" },
     // Same reasoning as preflight_payment: the policy predecessor now has a public route, so the
     // service is reachable. `demo` rather than `live` because it has not been proven end to end here.
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -576,7 +591,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/detect_duplicate",
     pricing: { kind: "paid", price: "$0.02", amountBaseUnits: "20000" },
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1184,7 +1199,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/suggest_names",
     pricing: { kind: "paid", price: "$0.01", amountBaseUnits: "10000" },
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1228,7 +1243,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/rank_options",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
-    maturity: "blocked",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1275,7 +1290,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/check_domains",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
-    maturity: "blocked",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1313,7 +1328,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/seo_tips",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
-    maturity: "demo",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1354,7 +1369,7 @@ export const SERVICES: readonly ServiceDefinition[] = [
     method: "POST",
     path: "/builder/brand_pack",
     pricing: { kind: "paid", price: "$0.05", amountBaseUnits: "50000" },
-    maturity: "blocked",
+    maturity: "live",
     classification: {
       serviceClass: "MARKETPLACE_LISTABLE",
       strangerCallable: true,
@@ -1767,7 +1782,13 @@ export const SERVICES: readonly ServiceDefinition[] = [
     toolId: "set_default_policy",
     publicName: "Default policy",
     protocol: "A2MCP",
-    method: "POST",
+    /**
+     * PUT, which is what the route has always been. The registry said POST, so a caller following our
+     * own catalog or MCP tool list got a 405 naming the method they should have been told to use.
+     * `registry-serves-what-it-advertises.test.ts` now checks every entry against the generated route
+     * manifest so an advertised method cannot drift from the served one again.
+     */
+    method: "PUT",
     path: "/consumer/account/default-policy",
     pricing: { kind: "free", price: null, amountBaseUnits: null },
     maturity: "live",

@@ -45,7 +45,9 @@ import { WEB_APPROVAL_ACTION_ROUTE } from "./approval-action-routes";
 
 export const APPROVALS_LIST_ROUTE = "/consumer/approvals" as const;
 export const APPROVAL_DETAIL_ROUTE = "/consumer/approvals/:approvalRequestId" as const;
-export const APPROVAL_DECIDE_ROUTE = "/consumer/approvals/:approvalRequestId/decide" as const;
+/** Defined in `config.ts` so a Worker can name it without importing Express. */
+import { APPROVAL_DECIDE_ROUTE } from "../config";
+export { APPROVAL_DECIDE_ROUTE };
 
 export interface ApprovalRoutesDeps {
   readonly approvals: PgApprovalStore;

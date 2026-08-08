@@ -24,7 +24,7 @@
 import type { Pool } from "@untch/consumer-core";
 import { PgReceiptsRepo } from "@untch/receipt-writer/src/repo-pg";
 import { isReceiptId } from "@untch/receipt-writer/src/status";
-import { RECEIPT_STATUS_ROUTE } from "../config";
+import { LOG_RECEIPT_ROUTE, RECEIPT_STATUS_ROUTE } from "../config";
 import type { Route } from "./router";
 
 /** The same envelope every other refusal on this host uses. */
@@ -74,3 +74,41 @@ export function receiptStatusRoute(reader: ReceiptStatusReader): Route {
 /** The production reader: a Postgres repo over Hyperdrive, and nothing that can write. */
 export const receiptReader = (pool: Pool): ReceiptStatusReader =>
   new PgReceiptsRepo(pool as never) as unknown as ReceiptStatusReader;
+
+/**
+ * `log_receipt`, which despite the name only READS.
+ *
+ * It was left on the 503 because the Express wiring it asks for — `ReceiptWiring` — builds a Postgres
+ * repo AND a Redis connection AND a tick queue together, and a Worker has no Redis. But Redis is how a
+ * receipt gets ENQUEUED; status comes from Postgres alone. The route was blocked by a dependency it
+ * never used.
+ *
+ * So it is the POST-bodied twin of `receipt_status`, over the same reader, and this deployment still
+ * cannot write a receipt. The registry calls it ACCOUNT_CONTROL rather than listable for that reason:
+ * it answers about a receipt some earlier paid call produced, and creates nothing.
+ */
+export function logReceiptRoute(reader: ReceiptStatusReader): Route {
+  return {
+    method: "POST",
+    pattern: LOG_RECEIPT_ROUTE,
+    bodyMode: "json",
+    handler: async (req) => {
+      const receiptId = (req.body as { receiptId?: unknown } | undefined)?.receiptId;
+      if (typeof receiptId !== "string" || receiptId.length === 0) {
+        return json(
+          errorBody("RECEIPT_ID_REQUIRED", "provide receiptId from a prior preflight/verify"),
+          400,
+        );
+      }
+      // Same ordering as the GET: a malformed id is a bad request, not a missing receipt.
+      if (!isReceiptId(receiptId)) {
+        return json(errorBody("RECEIPT_ID_INVALID", "receiptId is not a valid hex id"), 400);
+      }
+      const view = await reader.statusOf(receiptId as `0x${string}`);
+      if (view === null) {
+        return json(errorBody("RECEIPT_NOT_FOUND", `no receipt with id ${receiptId}`), 404);
+      }
+      return json({ receiptId, status: view });
+    },
+  };
+}

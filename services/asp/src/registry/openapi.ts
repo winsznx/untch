@@ -85,7 +85,15 @@ function operationFor(service: ServiceDefinition): OpenApiOperation {
     description: description.text,
     tags: [service.protocol],
     ...(service.deprecated ? { deprecated: true } : {}),
-    ...(service.method === "POST"
+    /**
+     * Any method that carries a body, not POST specifically.
+     *
+     * `set_default_policy` is a PUT, and this read `=== "POST"` — so the moment the registry started
+     * telling the truth about its method, the published OpenAPI silently dropped its request body and
+     * described a PUT that takes no input. A caller generating a client from it would have sent an
+     * empty body to a route whose first check is `policyId is required`.
+     */
+    ...(service.method !== "GET"
       ? {
           requestBody: {
             required: (service.input.required ?? []).length > 0,
@@ -167,7 +175,20 @@ export function buildWellKnownX402(args: {
     asset: args.asset,
     schemaIndex: `${args.baseUrl}/schema`,
     openapi: `${args.baseUrl}/openapi.json`,
-    resources: SERVICES.filter((s) => s.pricing.kind === "paid").map((s) => ({
+    /**
+     * Only what a stranger can actually buy.
+     *
+     * This filtered on price alone, which advertised ten paid resources when six are purchasable. The
+     * other four are the Bureau tools: they carry a price in the registry and refuse before any payment
+     * challenge, because they answer from receipt history this host holds and a stranger has none.
+     * Listing them in the document a paying client reads FIRST invites payment for a refusal.
+     *
+     * `MARKETPLACE_LISTABLE` is the same class the catalog and the relisting payload use, so what x402
+     * discovery offers and what the marketplace sells can no longer disagree.
+     */
+    resources: SERVICES.filter(
+      (s) => s.pricing.kind === "paid" && s.classification.serviceClass === "MARKETPLACE_LISTABLE",
+    ).map((s) => ({
       toolId: s.toolId,
       name: s.publicName,
       resource: `${args.baseUrl}${s.path}`,
@@ -181,7 +202,20 @@ export function buildWellKnownX402(args: {
       idempotency: s.idempotency,
       maturity: s.maturity,
     })),
-    freeResources: SERVICES.filter((s) => s.pricing.kind === "free").map((s) => ({
+    /**
+     * Free things a stranger can call, on the same rule as the paid list.
+     *
+     * `PUBLIC_SUPPORT` is included alongside the listable ones because discovery, the schema index and
+     * the liveness probe are genuinely callable by anyone and are what a client reads next. Account
+     * control and the disabled café simulation are not: one needs an account this caller does not have,
+     * and the other sells nothing.
+     */
+    freeResources: SERVICES.filter(
+      (s) =>
+        s.pricing.kind === "free" &&
+        (s.classification.serviceClass === "MARKETPLACE_LISTABLE" ||
+          s.classification.serviceClass === "PUBLIC_SUPPORT"),
+    ).map((s) => ({
       toolId: s.toolId,
       resource: `${args.baseUrl}${s.path}`,
       method: s.method,

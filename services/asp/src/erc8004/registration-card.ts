@@ -100,7 +100,23 @@ function buildServices(baseUrl: string, payTo: string | null): AgentService[] {
      * `version` is the service's schemaVersion, not a build number: what a consumer of this card
      * needs to know is whether the CONTRACT changed.
      */
-    ...SERVICES.map((service) => ({
+    /**
+     * Only the services a stranger reading this card can actually call.
+     *
+     * It listed every entry in the registry — around twenty-five endpoints — including account-control
+     * routes that need an account the reader does not have, Bureau tools that refuse before payment,
+     * and the disabled café simulation. After the Cloudflare port most of those answer 503, so the
+     * card became a public descriptor pointing largely at dead ends.
+     *
+     * `MARKETPLACE_LISTABLE` plus `PUBLIC_SUPPORT` is the same rule the catalog, the x402 document and
+     * the relisting payload use. Four surfaces, one definition of what is on offer — which is the whole
+     * reason the classification exists.
+     */
+    ...SERVICES.filter(
+      (service) =>
+        service.classification.serviceClass === "MARKETPLACE_LISTABLE" ||
+        service.classification.serviceClass === "PUBLIC_SUPPORT",
+    ).map((service) => ({
       name: "service" as const,
       endpoint: `${asp}${service.path}`,
       version: service.schemaVersion,

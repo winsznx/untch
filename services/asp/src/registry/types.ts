@@ -172,7 +172,16 @@ export interface ServiceDefinition {
   /** What a human sees in a marketplace listing. */
   readonly publicName: string;
   readonly protocol: ServiceProtocol;
-  readonly method: "GET" | "POST";
+  /**
+   * PUT is here because one route is a PUT and the type could not say so.
+   *
+   * `set_default_policy` is served as `PUT /consumer/account/default-policy` — the idempotent-replace
+   * semantic is the right one for setting a default. With only GET and POST available, the entry was
+   * written as POST, and every caller following our own catalog or MCP tool list got a 405 naming the
+   * method they should have been given. A type that cannot express the truth gets a plausible lie
+   * instead.
+   */
+  readonly method: "GET" | "POST" | "PUT";
   readonly path: string;
   readonly pricing: ServicePricing;
   readonly maturity: ServiceMaturity;

@@ -21,7 +21,7 @@
         "vaultFactory": "0x6cc3bc686a7bc554dbd5636cb3eeee9171036805"
       },
       "settlementToken": {
-        "symbol": "USD₮",
+        "symbol": "USD₮0",
         "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
         "decimals": 6
       },

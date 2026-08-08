@@ -33,6 +33,12 @@ export interface WorkerEnv {
   readonly ASP_PUBLIC_URL?: string;
   /** The published payee for every priced route. Public, and required: see REQUIRED_VARS. */
   readonly PAY_TO_ADDRESS?: string;
+  /** Policy registry config, all public. Absent means policy_draft/policy_sync refuse by name. */
+  readonly POLICY_REGISTRY?: string;
+  readonly POLICY_REGISTRY_ADDRESS?: string;
+  readonly CHAIN_ID?: string;
+  readonly NETWORK?: string;
+  readonly RPC_URL?: string;
   readonly DISCORD_PUBLIC_KEY?: string;
   readonly DISCORD_APPLICATION_ID?: string;
 
@@ -41,6 +47,7 @@ export interface WorkerEnv {
   readonly OKX_SECRET_KEY?: string;
   readonly OKX_PASSPHRASE?: string;
   readonly CONSUMER_SESSION_SECRET?: string;
+  readonly CONSUMER_AUTH_SECRET?: string;
   readonly APPROVAL_ACTION_TOKEN_SECRET?: string;
 }
 

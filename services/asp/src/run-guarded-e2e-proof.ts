@@ -27,7 +27,7 @@ import { loadDemoPolicyRef } from "./demo-policy";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(here, "..", "..", "..", "internal", "day0", "D0.1-evidence");
-const DEFAULT_SELLER = "https://untch-asp-production.up.railway.app";
+const DEFAULT_SELLER = "https://asp.untch.xyz";
 const PING_PRICE_ATOMIC = "10000"; // $0.01 in USDT0 base units (6dp) — the live ping_untch price
 const NEEDED_ATOMIC = parseUnits("0.10", SETTLEMENT_TOKEN.decimals); // preflight $0.05 + call $0.01 + margin
 

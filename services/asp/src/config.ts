@@ -96,6 +96,15 @@ export const RECEIPT_STATUS_ROUTE = "/receipt_status/:receiptId" as const;
 /** §7.2 escalation status poll (unpriced) — GET /escalation_status/:pollRef. What the guard's poll()
  *  resolves against: returns the getState() state + the escalation record's final fields. */
 export const ESCALATION_STATUS_ROUTE = "/escalation_status/:pollRef" as const;
+/**
+ * Declared here rather than in `approval-routes.ts`, which imports Express.
+ *
+ * The Worker needs the path to refuse it by name, and importing the constant from its Express home
+ * pulled `iconv-lite` into the bundle, whose module-scope `require_streams(...)` is not a function
+ * under workerd. The deploy failed with exactly that while `--dry-run` passed, which is why the deploy
+ * script checks the live Worker rather than the upload's exit code.
+ */
+export const APPROVAL_DECIDE_ROUTE = "/consumer/approvals/:approvalRequestId/decide" as const;
 
 /**
  * Operator-facing policy tools (§11 create/update/pause_policy). These sign real PolicyRegistry

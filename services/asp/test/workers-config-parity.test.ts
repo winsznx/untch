@@ -131,20 +131,50 @@ describe("both environments ship in the safe posture", () => {
    * A deploy from this config must not be able to spend money or claim production writes. Both gates
    * default to "0", and only a deliberate change makes either "1".
    */
-  test("financial arming is off in every environment", () => {
-    for (const [name, envConfig] of environments) {
-      assert.equal(envConfig.vars?.UNTCH_FINANCIAL_ARMED, "0", `${name} must ship financially disarmed`);
-    }
+  /**
+   * A PREVIEW MUST NEVER SETTLE.
+   *
+   * Both environments shipped disarmed until the marketplace surface was ready to take real payment.
+   * Production is now armed, because a 402 that can never be honoured is worse than no listing — but
+   * the preview shares the production database and the production facilitator credentials, so an armed
+   * preview could settle a real buyer's authorization from an unreviewed branch.
+   *
+   * Arming is only half the control: `settle-payment` is asserted on the paid path, so a disarmed
+   * deployment refuses to convert an authorization into a transfer rather than merely declining to
+   * advertise one.
+   */
+  test("preview can never settle, whatever production does", () => {
+    assert.equal(
+      config.vars?.UNTCH_FINANCIAL_ARMED,
+      "0",
+      "a preview shares production's database and facilitator credentials — it must never settle",
+    );
   });
 
-  test("production write ownership is off in every environment", () => {
-    for (const [name, envConfig] of environments) {
-      assert.equal(
-        envConfig.vars?.UNTCH_PRODUCTION_WRITER_ACTIVE,
-        "0",
-        `${name} must not claim production writes — Railway owns them until cutover`,
-      );
-    }
+  test("production arming is an explicit value, never an accident of omission", () => {
+    const armed = production.vars?.UNTCH_FINANCIAL_ARMED;
+    assert.ok(armed === "0" || armed === "1", "arming must be stated explicitly, not left undefined");
+  });
+
+  /**
+   * EXACTLY ONE DEPLOYMENT OWNS PRODUCTION WRITES.
+   *
+   * Before cutover that was Railway and both environments shipped "0". Railway is now frozen — its
+   * deployments removed, zero row growth verified, all 74 tables byte-identical — so production claims
+   * writes and preview must not. Two writers against one database is worse than none: a preview
+   * sweeping expiries against production rows would expire real approvals.
+   */
+  test("production owns writes and preview never does", () => {
+    assert.equal(
+      production.vars?.UNTCH_PRODUCTION_WRITER_ACTIVE,
+      "1",
+      "production owns production writes after cutover",
+    );
+    assert.equal(
+      config.vars?.UNTCH_PRODUCTION_WRITER_ACTIVE,
+      "0",
+      "a preview must never claim production writes — it shares the production database",
+    );
   });
 
   /**

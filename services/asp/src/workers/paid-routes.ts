@@ -25,6 +25,7 @@
  */
 
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
+import { assertArmed, type ArmingState } from "./arming";
 import type { RouteConfig } from "@okxweb3/x402-core/server";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { x402ResourceServer } from "@okxweb3/x402-express";
@@ -33,6 +34,7 @@ import { PgPolicyRepo } from "@untch/policy-store";
 import type { Pool } from "@untch/consumer-core";
 import {
   BRAND_PACK_ROUTE,
+  CREATE_INTENT_ROUTE,
   DETECT_DUP_ROUTE,
   PREFLIGHT_ROUTE,
   REDACT_META_ROUTE,
@@ -41,11 +43,23 @@ import {
 } from "../config";
 import { handleBrandPack, handleSuggestNames } from "../consumer-handlers";
 import type { HandlerResult } from "../handlers";
-import { handlePreflightPayment, handleVerifyDelivery } from "../handlers";
+import { handleCreateSpendIntent, handlePreflightPayment, handleVerifyDelivery } from "../handlers";
 import { handleDetectDuplicate, handleRedactPaymentMetadata } from "../s11-handlers";
 import { createLedgerState } from "../ledger-state";
 import { buildPaidRouteTable } from "../paid-route-table";
+import { narrowToDecisionOnly } from "../route-profiles";
 import type { Route } from "./router";
+import { coerceObjectParams, type ParamSchema } from "./coerce-params";
+import {
+  looksPublic,
+  looksPublicVerify,
+  runPublicPreflight,
+  runPublicVerify,
+  type PublicSurfaceArgs,
+} from "./public-surface";
+import { SERVICES } from "../registry/services";
+import { PgIntentStore } from "./intent-store";
+import { recordSale } from "./sales";
 import { workersPaymentGate, type WorkersPaymentGate } from "./x402-adapter";
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
@@ -57,16 +71,45 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
 const fromResult = (r: HandlerResult): Response => json(r.body, r.status, { ...(r.headers ?? {}) });
 
 export interface PaidSurfaceArgs {
-  readonly pool: Pool;
+
   readonly payTo: string;
   readonly publicBaseUrl: string;
   readonly okx: { readonly apiKey: string; readonly secretKey: string; readonly passphrase: string };
   readonly facilitatorUrl?: string;
+  /**
+   * The arming state, consulted before settlement rather than alongside it.
+   *
+   * `settle-payment` is on the financial deny-list and this path was not asking. That made the gate
+   * decorative exactly where it matters most: a deployment could take a buyer's authorization and
+   * settle it while reporting `financiallyArmed: false`. Issuing the challenge stays unarmed — a 402
+   * moves nothing — but turning an authorization into a transfer does not.
+   */
+  readonly arming: () => ArmingState;
+  /**
+   * The account-session secret and the policy registry address.
+   *
+   * Both are what the PUBLISHED preflight contract needs and the protocol one does not. Optional so a
+   * deployment missing either still serves the protocol shape rather than failing to build a route
+   * table.
+   */
+  readonly sessionSecret?: string | undefined;
+  readonly registry?: string | undefined;
 }
 
 export interface PaidSurface {
+  /**
+   * Everything below is bound to ONE request's pool.
+   *
+   * The expensive parts — facilitator client, resource server, route table — are memoised per isolate.
+   * The pool is not: a Worker forbids using an I/O object across request contexts, so anything that
+   * touches the database has to be created with the pool of the request in flight.
+   *
+   * An earlier version kept the pool in a module-scope variable that each request overwrote. Sequential
+   * traffic never noticed; ten concurrent requests clobbered each other's reference and roughly two in
+   * ten did their database work against a pool belonging to a different, possibly finished, request.
+   */
   readonly gate: WorkersPaymentGate;
-  readonly routes: readonly Route[];
+  readonly routesFor: (pool: Pool) => readonly Route[];
   readonly table: Record<string, RouteConfig>;
 }
 
@@ -93,9 +136,47 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
   } as never);
 
   const server = new x402ResourceServer(facilitator).register("eip155:196", new ExactEvmScheme());
-  const gate = workersPaymentGate(table, server);
+  /**
+   * Every confirmed settlement is written down before the buyer gets their bytes back.
+   *
+   * Four real sales settled on chain with no record of any kind, which left the seller unable to say
+   * what it had sold and the buyer unable to prove a purchase. The hook fires only after the
+   * facilitator confirms, so nothing refused or failed can be recorded as revenue.
+   */
+  const rawGate = workersPaymentGate(table, server);
 
-  const policyProvider = policyReader(args.pool);
+  /**
+   * The arming check sits between the challenge and the settlement.
+   *
+   * A request with no payment header never reaches it: the SDK answers 402 and returns, which is
+   * correct unarmed because a challenge states a price and moves nothing. A request CARRYING an
+   * authorization is asking this deployment to convert it into a transfer, and that is the operation
+   * the deny-list names. Refusing here rather than inside the SDK keeps the SDK unmodified and puts
+   * the posture check where a reader looking for it would expect it.
+   */
+  /**
+   * `onSettled` is forwarded, and its absence here cost two real settlements.
+   *
+   * This wrapper took THREE parameters and called `rawGate(request, body, run)`. The caller in
+   * `index.ts` passes a fourth — the hook that writes the sale down — and it was silently discarded,
+   * so `recordSale` was unreachable in production. Two paid calls settled on chain, returned correct
+   * results, and left `untch_marketplace_sales` empty.
+   *
+   * TypeScript could not catch it: a function of three parameters is assignable to a type of four.
+   * The adapter's own hook tests passed because they exercised `rawGate` directly, below this wrapper.
+   * So the guard is behavioural — `a settled sale survives the arming wrapper` in
+   * `x402-workers-adapter.test.ts` calls the gate the way the Worker actually calls it.
+   */
+  const gate: WorkersPaymentGate = async (request, body, run, onSettled) => {
+    const carriesAuthorization =
+      request.headers.has("x-payment") || request.headers.has("payment") || request.headers.has("x-payment-signature");
+    // Read per request, not captured: the surface is memoised per isolate, and a captured state would
+    // keep answering from the posture the isolate happened to start in.
+    if (carriesAuthorization) assertArmed(args.arming(), "settle-payment");
+    return rawGate(request, body, run, onSettled);
+  };
+
+
   /**
    * In-memory, exactly as Express builds it per process.
    *
@@ -106,43 +187,225 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
   const ledgerState = createLedgerState();
 
   /**
-   * Deliberately missing: `receiptEnqueuer`, `escalationGateway`, `intentRegistry`, `oracleSigner`.
+   * Built per request, because everything in here touches the pool.
    *
-   * Each is a WRITE — a durable receipt, a message to a human, an on-chain anchor, a signed oracle
-   * attestation. Railway owns those until the writer transfer. Omitted rather than stubbed so there is
-   * nothing here to accidentally call.
+   * The policy reader, the durable intent store and the hydration bridge all perform I/O, and a Worker
+   * forbids reusing an I/O object across request contexts. The facilitator client, resource server and
+   * route table above are isolate state and stay memoised; this is the line between them.
    */
-  const preflightDeps = {
-    policyProvider,
-    ledger: ledgerState.ledger,
-    intentStore: ledgerState.intentStore,
-    intentRegistry: null,
-    oracleSigner: null,
-    scoreDataSource: null,
-  };
+  const routesFor = (pool: Pool): readonly Route[] => {
+    const policyProvider = policyReader(pool);
+    const intents = new PgIntentStore(pool);
+
+    /**
+     * Deliberately missing: `receiptEnqueuer`, `escalationGateway`, `intentRegistry`, `oracleSigner`.
+     *
+     * Each is a WRITE — a durable receipt, a message to a human, an on-chain anchor, a signed oracle
+     * attestation. Railway owns those until the writer transfer. Omitted rather than stubbed so there is
+     * nothing here to accidentally call.
+     */
+    /**
+     * The published surface's dependencies, built per request because every one touches the pool.
+     *
+     * `sessionSecret` and the registry address are what a public preflight needs beyond the policy
+     * reader: the first to open the caller's account session, the second to name the chain and
+     * registry in the decision snapshot. Absent either, the public branch is not offered and the
+     * protocol handler answers as before — a wrong decision is worse than a refused one.
+     */
+    const publicArgs: PublicSurfaceArgs | null =
+      args.sessionSecret && args.registry
+        ? { pool, policies: policyProvider, sessionSecret: args.sessionSecret, registry: args.registry }
+        : null;
+
+    /**
+     * DECISION-ONLY, enforced by the type and re-checked at runtime.
+     *
+     * `narrowToDecisionOnly` refuses if an execution key is present anyway, so this route cannot reach
+     * an executor however the bundle above is later edited.
+     */
+    const decisionOnly = narrowToDecisionOnly({
+      policyProvider,
+      intentStore: ledgerState.intentStore,
+      scoreDataSource: null,
+    } as never);
+
+    const preflightDeps = {
+      policyProvider,
+      ledger: ledgerState.ledger,
+      intentStore: ledgerState.intentStore,
+      intentRegistry: null,
+      oracleSigner: null,
+      scoreDataSource: null,
+    };
+
+
+
+    /**
+     * Bridge the durable store to the in-memory one the canonical handlers take.
+     *
+     * `resolveIntent` and `resolveIntentForVerify` read the store synchronously and are typed against
+     * `InMemoryIntentStore` concretely. Making them async would mean editing the engine that decides
+     * whether money may move, to solve a storage problem — the wrong place to take that risk. Instead the
+     * intent is loaded from Postgres BEFORE the handler runs and written back AFTER, so the handler sees
+     * exactly the store it expects and the durability lives out here.
+     */
+    const hydrate = async (body: unknown): Promise<void> => {
+      const hash = (body as Record<string, unknown> | null)?.intentHash;
+      if (typeof hash !== "string") return;
+      const stored = await intents.get(hash);
+      if (stored) ledgerState.intentStore.put(hash as `0x${string}`, stored as never);
+    };
+
+    /** Persist whatever the handler just created, so the next request finds it on another isolate. */
+    const persist = async (body: unknown, result: HandlerResult): Promise<void> => {
+      const hash = (result.body as Record<string, unknown> | undefined)?.intentHash;
+      if (typeof hash !== "string") return;
+      const stored = ledgerState.intentStore.get(hash);
+      if (stored) await intents.put(hash, stored);
+    };
+
+    /**
+     * The GET and HEAD compatibility probes on a POST-only business route.
+     *
+     * Marketplace validators probe a listed endpoint with GET or HEAD to check it is alive. Express registers these
+     * and prices them — the shared route table already carries `GET` and `HEAD` entries for each — so a
+     * probe gets a 402 proving the endpoint is real and priced, and only a PAID probe reaches the 405.
+     *
+     * They were left to the 503 fallback while the paid surface could not settle, which was right at
+     * the time: a 402 this deployment could not honour would have invited payment for nothing. Now that
+     * it settles, Express's answer is the honest one.
+     *
+     * The GET executes no business logic. Query parameters are not an acceptable transport for a
+     * SpendIntent — proxies and access logs keep them — so real calls stay POST-only on both transports.
+     */
+    const probe = (method: "GET" | "HEAD", pattern: string): Route => ({
+      method,
+      pattern,
+      bodyMode: "none",
+      priced: true,
+      handler: () =>
+        json(
+          {
+            code: "USE_POST",
+            message: "this endpoint is POST-only; GET is accepted only as a paid compatibility probe",
+            retryable: false,
+            docsUrl: null,
+          },
+          405,
+        ),
+    });
+
+  /**
+   * The tool's own declared input shape, looked up by route.
+   *
+   * `--param` can only produce strings, so a contract's `boolean` or `number` arrives as text and is
+   * dropped by a handler checking `typeof`. Handing the schema to the coercion is what turns that from
+   * a guess into honouring what we published.
+   */
+  const schemaFor = (pattern: string): ParamSchema | undefined =>
+    SERVICES.find((svc) => svc.path === pattern)?.input as ParamSchema | undefined;
+
+  /**
+   * Same as `priced`, but the handler also sees the request.
+   *
+   * The published preflight needs the account session bearer and the payment authorization the gate
+   * has already verified. Both live on headers, and neither is a capability: the authorization is
+   * parsed down to strings and nulls before it reaches application code.
+   */
+  const pricedWithRequest = (
+    pattern: string,
+    run: (body: unknown, request: Request) => Promise<HandlerResult> | HandlerResult,
+  ): Route => ({
+    method: "POST",
+    pattern,
+    bodyMode: "json",
+    priced: true,
+    handler: async (req) => {
+      await hydrate(req.body);
+      return fromResult(await run(coerceObjectParams(req.body, schemaFor(pattern)), req.request));
+    },
+  });
 
   const priced = (pattern: string, run: (body: unknown) => Promise<HandlerResult> | HandlerResult): Route => ({
     method: "POST",
     pattern,
     bodyMode: "json",
     priced: true,
-    handler: async (req) => fromResult(await run(req.body)),
+    handler: async (req) => {
+      await hydrate(req.body);
+      return fromResult(await run(coerceObjectParams(req.body, schemaFor(pattern))));
+    },
   });
 
-  return {
-    gate,
-    table,
-    routes: [
-      priced(PREFLIGHT_ROUTE, (body) => handlePreflightPayment(body, preflightDeps as never)),
-      priced(VERIFY_ROUTE, (body) =>
-        handleVerifyDelivery(body, { policyProvider, intentStore: ledgerState.intentStore } as never),
+  /**
+   * The free prerequisite, served here because it shares the paid routes' wiring.
+   *
+   * It was never ported, and two of the six paid services depend on it — an independent buyer found
+   * `preflight_payment` and `verify_delivery` unusable because the intent they need could not be
+   * created. It is free, so it carries no `priced` flag and never reaches the payment gate; what makes
+   * it belong in this module is the policy provider and the intent store, not a price.
+   */
+  const freeIntent: Route = {
+    method: "POST",
+    pattern: CREATE_INTENT_ROUTE,
+    bodyMode: "json",
+    handler: async (req) => {
+      const result = await handleCreateSpendIntent(coerceObjectParams(req.body, schemaFor(CREATE_INTENT_ROUTE)), {
+        intentStore: ledgerState.intentStore,
+        policyProvider,
+        intentRegistry: null,
+      } as never);
+      await persist(req.body, result);
+      return fromResult(result);
+    },
+  };
+
+  return [
+      freeIntent,
+      /**
+       * The published contract first, the protocol one as the fallback it is.
+       *
+       * Express branches on the body shape and the port kept only the second arm, so a buyer sending
+       * exactly what we advertise reached a handler demanding an intent struct and got INTENT_REQUIRED.
+       * The two shapes cannot be confused — a public request has `provider`, `capability`, `task` and
+       * `maxSpend`; a protocol intent has `owner` and `taskHash` — which is what lets one route serve
+       * both without a version flag.
+       */
+      pricedWithRequest(PREFLIGHT_ROUTE, (body, request) =>
+        looksPublic(body) && publicArgs
+          ? runPublicPreflight(body, request, publicArgs, decisionOnly)
+          : handlePreflightPayment(body, preflightDeps as never),
+      ),
+      pricedWithRequest(VERIFY_ROUTE, (body, request) =>
+        looksPublicVerify(body) && publicArgs
+          ? runPublicVerify(body, request, publicArgs)
+          : handleVerifyDelivery(body, { policyProvider, intentStore: ledgerState.intentStore } as never),
       ),
       priced(DETECT_DUP_ROUTE, (body) => handleDetectDuplicate(body, ledgerState.ledger)),
       priced(REDACT_META_ROUTE, (body) => handleRedactPaymentMetadata(body)),
       priced(SUGGEST_NAMES_ROUTE, (body) => handleSuggestNames(body)),
       priced(BRAND_PACK_ROUTE, (body) => handleBrandPack(body)),
-    ],
+      /**
+       * Every LISTED tool, not the three that happened to be written out by hand.
+       *
+       * The shared table now generates GET, HEAD and POST together for each listed tool, so there is no
+       * longer a route whose GET is priced in one place and missing in the other. Before that,
+       * `payment quote https://asp.untch.xyz/detect_duplicate` failed on the GET probe while the same
+       * command against `preflight_payment` quoted a price — a buyer comparing two listed endpoints saw
+       * one working service and one broken one, with nothing to explain the difference.
+       */
+      ...PAID_PATHS.map((p) => probe("GET", p)),
+      /**
+       * HEAD as well as GET. The shared table prices both, and a validator that probes with HEAD —
+       * the cheaper, more conventional liveness check — would otherwise get a 503 for an endpoint the
+       * listing says is live. A HEAD response carries no body by definition, so the 405 is the status
+       * and headers alone.
+       */
+      ...PAID_PATHS.map((p) => probe("HEAD", p)),
+    ];
   };
+
+  return { gate, table, routesFor };
 }
 
 /** The six paths this module serves. Named once so the Stage table and the tests cannot disagree. */

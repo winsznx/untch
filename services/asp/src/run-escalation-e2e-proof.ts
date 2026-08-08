@@ -53,7 +53,7 @@ import { guardedBuyerCall, type PreflightCallResult } from "./guard-buyer";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(here, "..", "..", "..", "internal", "day0", "D0.1-evidence");
-const DEFAULT_SELLER = "https://untch-asp-production.up.railway.app";
+const DEFAULT_SELLER = "https://asp.untch.xyz";
 const PING_PRICE_ATOMIC = "10000"; // $0.01 USDT0 — the live ping price the guard binds/holds
 const NEEDED_ATOMIC = parseUnits("0.10", SETTLEMENT_TOKEN.decimals); // covers the $0.05 preflight + margin
 

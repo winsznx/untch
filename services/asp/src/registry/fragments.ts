@@ -173,11 +173,6 @@ export const PUBLIC_PREFLIGHT_INPUT: JsonSchema = {
     "A payment you are considering, in your own terms. Every protocol value — the policy hash, the token contract, the hashes of the things you describe below, the nonce, the endpoint — is derived server-side from production state and returned to you, so there is nothing here you have to look up first.",
   properties: {
     policyId: policyIdField,
-    useDefaultPolicy: {
-      type: "boolean",
-      description:
-        "Use the policy this account has marked as its default. Send this or policyId, not neither — a request that silently fell back to a default would be a request whose limits nobody chose.",
-    },
     provider: {
       type: "string",
       minLength: 1,
@@ -239,8 +234,21 @@ export const PUBLIC_PREFLIGHT_INPUT: JsonSchema = {
         "Optional and temporary. Which agent is being paid is a property of the provider's registration; send it explicitly until that binding exists.",
     },
   },
-  required: ["provider", "capability", "task", "maxSpend", "currency", "deadline"],
-  anyOf: [{ required: ["policyId"] }, { required: ["useDefaultPolicy"] }],
+  /**
+   * `policyId` is required, and `useDefaultPolicy` is not offered here.
+   *
+   * It used to be, as an `anyOf` alternative, and this is the MARKETPLACE contract — the tool a
+   * stranger buys over x402 with no session and no account. A default policy is a property of an
+   * account, so there was nothing for the handler to resolve it against: `handlers.ts` reads a literal
+   * `policyId` and refuses without one. A buyer following the published schema sent
+   * `useDefaultPolicy`, paid, and was answered POLICY_ID_REQUIRED for doing what the contract told
+   * them to do. (They were not charged — a failing handler settles nothing — but they were still
+   * refused for our mistake.)
+   *
+   * The account-scoped path in `authority.ts` does support it, correctly, because there it has an
+   * account to ask. That is a different surface with a different contract.
+   */
+  required: ["policyId", "provider", "capability", "task", "maxSpend", "currency", "deadline"],
 };
 
 /**

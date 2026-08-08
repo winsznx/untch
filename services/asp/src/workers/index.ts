@@ -13,7 +13,15 @@
 import pg from "pg";
 import { NETWORK, SETTLEMENT_TOKEN } from "../config";
 import { buildWorker, type RouteContext } from "./entry";
+import { accountLinkRoutes } from "./account-link-routes";
+import { agentCardRoutes } from "./agent-card";
+import { consumerReadRoutes } from "./consumer-reads";
+import { discordRoutes } from "./discord-routes";
+import { mcpJsonRpcRoutes } from "./mcp-jsonrpc";
+import { policyRoutes } from "./policy-routes";
+import { realJobDeps } from "./job-wiring";
 import { buildPaidSurface } from "./paid-routes";
+import { recordSale } from "./sales";
 import { stage1Fallback, stage1Routes, type Stage1Settlement } from "./stage1-routes";
 import type { Route } from "./router";
 import type { WorkerEnv } from "./env";
@@ -34,7 +42,7 @@ const MIGRATIONS: readonly string[] = [
   "028_x402_service_calls_and_approval_activation.sql", "029_approval_channels_actions_lineage.sql",
   "030_bound_approval_actions.sql", "031_requote_lineage.sql", "032_approval_oauth_state.sql",
   "033_approval_oauth_smoke.sql", "034_discord_dm_binding_repair.sql",
-  "035_wallet_scope_downgrade.sql",
+  "035_wallet_scope_downgrade.sql", "036_marketplace_sales.sql", "037_spend_intents.sql",
 ];
 
 /**
@@ -91,6 +99,7 @@ function settlement(env: WorkerEnv): Stage1Settlement {
  */
 let paidSurface: ReturnType<typeof buildPaidSurface> | null | undefined;
 
+
 function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
   if (paidSurface !== undefined) return paidSurface;
   const env = ctx.env;
@@ -102,28 +111,150 @@ function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
     return null;
   }
   paidSurface = buildPaidSurface({
-    pool: ctx.pool,
     payTo: settlement(ctx.env).payTo,
     publicBaseUrl: ctx.baseUrl,
     okx: { apiKey, secretKey, passphrase },
+    arming: () => ctx.arming,
+    /**
+     * What the PUBLISHED preflight contract needs beyond the protocol one: a secret to open the
+     * caller's account session, and the registry the decision snapshot names. Without them the paid
+     * routes still serve the protocol shape — they just cannot serve the shape we advertise.
+     */
+    ...(env.CONSUMER_AUTH_SECRET?.trim() ? { sessionSecret: env.CONSUMER_AUTH_SECRET.trim() } : {}),
+    ...(env.POLICY_REGISTRY?.trim() ? { registry: env.POLICY_REGISTRY.trim() } : {}),
   });
   return paidSurface;
 }
 
-const worker = buildWorker({
-  makePool: (connectionString) => new pg.Pool({ connectionString, max: 5 }) as never,
-  expectedMigrations: MIGRATIONS,
-  jobDeps: noopJobDeps as never,
-  routes: (ctx: RouteContext): readonly Route[] => [
+/**
+ * The account-scoped reads, wired only when this deployment can verify a session.
+ *
+ * Without `CONSUMER_AUTH_SECRET` no bearer token can be opened, so every one of these routes would
+ * answer 401 to a legitimate caller. Leaving them unregistered lets the fallback say the honest thing
+ * instead — the endpoint is real and this deployment cannot serve it.
+ */
+function consumerRoutes(ctx: RouteContext): readonly Route[] {
+  const secret = ctx.env.CONSUMER_AUTH_SECRET?.trim();
+  if (!secret) return [];
+  return [
+    /**
+     * The head of the chain, first because everything below it needs the session it mints. Without it
+     * the reads and the policy routes answered 401 to a caller with no way to stop being anonymous.
+     */
+    ...accountLinkRoutes({
+      pool: ctx.pool,
+      secret,
+      baseUrl: ctx.baseUrl,
+      rpcUrl: ctx.env.RPC_URL?.trim() || "https://rpc.xlayer.tech",
+      gate: ctx.gate,
+    }),
+    ...consumerReadRoutes({ pool: ctx.pool, secret, gate: ctx.gate, executionEnabled: false }),
+    /**
+     * Policy registration shares the session secret, and it is the HEAD of the pipeline: without it a
+     * caller can never obtain the registered policy that `create_spend_intent`, `preflight_payment`
+     * and `verify_delivery` all require.
+     */
+    ...policyRoutes({ pool: ctx.pool, secret, gate: ctx.gate }),
+  ];
+}
+
+/**
+ * The Discord interaction endpoint, wired only with a public key to verify against.
+ *
+ * Without `DISCORD_PUBLIC_KEY` no signature can be checked, and an endpoint that cannot verify must
+ * not answer at all — Discord would take a 2xx as proof the endpoint is healthy.
+ */
+function discord(ctx: RouteContext): readonly Route[] {
+  const publicKeyHex = ctx.env.DISCORD_PUBLIC_KEY?.trim();
+  if (!publicKeyHex) return [];
+  return discordRoutes({ publicKeyHex, log: (line) => console.log(line) });
+}
+
+/**
+ * MCP JSON-RPC, which is how the OKX client discovers tools and their input schemas.
+ *
+ * `tools/call` re-enters the SAME route this Worker already serves — payment gate included — rather
+ * than calling a handler directly. A second path to a paid tool would be a second place for the
+ * payment decision to diverge.
+ */
+function mcp(ctx: RouteContext, routesOf: (c: RouteContext) => readonly Route[]): readonly Route[] {
+  return mcpJsonRpcRoutes({
+    baseUrl: ctx.baseUrl,
+    callTool: async (path, method, body, asTool, req) => {
+      const table = routesOf(ctx);
+      const target = table.find((r) => r.pattern === path && r.method === method);
+      if (!target) {
+        return new Response(
+          JSON.stringify({ code: "SERVICE_TEMPORARILY_UNAVAILABLE", message: `${method} ${path} is not served here yet` }),
+          { status: 503, headers: { "content-type": "application/json" } },
+        );
+      }
+      const run = () => Promise.resolve(target.handler({ ...req, request: asTool, body, params: {} }));
+      const gate = target.priced ? paymentGateFor(ctx) : undefined;
+      return gate ? gate(asTool, body, run) : run();
+    },
+  });
+}
+
+/** The gate a priced tool must pass, built once here so the HTTP and MCP paths share it exactly. */
+function paymentGateFor(ctx: RouteContext) {
+  const gate = paid(ctx)?.gate;
+  if (!gate) return undefined;
+  return (request: Request, body: unknown, run: () => Promise<Response>) =>
+    gate(request, body, run, (facts) => recordSale(ctx.pool, facts));
+}
+
+function allRoutes(ctx: RouteContext): readonly Route[] {
+  return [
     ...stage1Routes(ctx, settlement(ctx.env)),
-    ...(paid(ctx)?.routes ?? []),
-  ],
+    ...(paid(ctx)?.routesFor(ctx.pool) ?? []),
+    ...consumerRoutes(ctx),
+    ...discord(ctx),
+    ...agentCardRoutes(ctx.baseUrl),
+    ...mcp(ctx, httpRoutes),
+  ];
+}
+
+/** The HTTP table WITHOUT the MCP routes, so tools/call cannot recurse into itself. */
+function httpRoutes(ctx: RouteContext): readonly Route[] {
+  return [
+    ...stage1Routes(ctx, settlement(ctx.env)),
+    ...(paid(ctx)?.routesFor(ctx.pool) ?? []),
+    ...consumerRoutes(ctx),
+  ];
+}
+
+const worker = buildWorker({
+  /**
+   * Three connections, not five.
+   *
+   * The pool is per-request — a Worker cannot reuse an I/O object across request contexts — so `max`
+   * multiplies by concurrency rather than bounding the process. At five, fifteen concurrent requests
+   * could ask the origin for seventy-five connections against a Hyperdrive budget of sixty, and three
+   * of fifteen failed. Three is enough for the widest fan-out any single handler does (the account read
+   * runs three queries together) and keeps a burst inside the budget.
+   */
+  makePool: (connectionString) => new pg.Pool({ connectionString, max: 3 }) as never,
+  expectedMigrations: MIGRATIONS,
+  jobDeps: realJobDeps as never,
+  routes: allRoutes,
   onUnmatched: stage1Fallback,
-  paymentGate: (ctx) => paid(ctx)?.gate,
+  /**
+   * The gate is memoised; where a sale is recorded is not. The pool belongs to the request in flight,
+   * so it is handed to the gate per call rather than captured when the gate was built.
+   */
+  paymentGate: paymentGateFor,
 });
 
 export default {
-  fetch: (request: Request, env: WorkerEnv) => worker.fetch(request, env),
+  /**
+   * `ctx` is Cloudflare's execution context, typed structurally rather than pulled from
+   * `@cloudflare/workers-types`. The ambient global is not in this package's tsconfig, and naming it
+   * compiled locally only because the ROOT tsconfig covers `packages/**` and `scripts/**` but not
+   * `services/**` — so the failure surfaced in CI rather than here. Only `waitUntil` is used.
+   */
+  fetch: (request: Request, env: WorkerEnv, ctx: { waitUntil(p: Promise<unknown>): void }) =>
+    worker.fetch(request, env, ctx),
   queue: (batch: never, env: WorkerEnv) => worker.queue(batch, env),
   scheduled: (event: { cron: string }, env: WorkerEnv) => worker.scheduled(event, env),
 };

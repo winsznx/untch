@@ -29,7 +29,7 @@ import { loadDemoPolicyRef } from "./demo-policy";
 const here = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(here, "..", "..", "..", "internal", "day0", "D0.1-evidence");
 const PRICE_ATOMIC = parseUnits("0.05", SETTLEMENT_TOKEN.decimals);
-const DEFAULT_SELLER = "https://untch-asp-production.up.railway.app";
+const DEFAULT_SELLER = "https://asp.untch.xyz";
 
 function save(name: string, data: unknown): string {
   mkdirSync(EVIDENCE_DIR, { recursive: true });

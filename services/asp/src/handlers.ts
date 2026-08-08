@@ -94,7 +94,21 @@ export async function handleCreateSpendIntent(
 
   let parsed: { input: SpendIntentInput; intentHash: Hex };
   try {
-    parsed = parseFullIntent(body);
+    /**
+     * Accept the intent nested under `intent` as well as spread at the top level.
+     *
+     * `resolveIntent` and `resolveIntentForVerify` already unwrap it, so `preflight_payment` and
+     * `verify_delivery` took both shapes while this route took only the flat one — and the PUBLISHED
+     * example in `/schema/create_spend_intent` shows the nested form. A caller following our own
+     * documentation got "owner is required… buyerAgentId is required…" listing every field as missing,
+     * which reads as a malformed intent rather than a wrapper this one route would not open.
+     *
+     * Same rule as the other two now, so the three routes of one pipeline stop disagreeing about the
+     * shape of the thing they pass between them.
+     */
+    const b = (body ?? {}) as Record<string, unknown>;
+    const source = b.intent !== undefined && b.intent !== null ? b.intent : body;
+    parsed = parseFullIntent(source);
   } catch (err) {
     if (err instanceof IntentValidationError) {
       return { status: 400, body: errorEnvelope(err.code, err.message) };

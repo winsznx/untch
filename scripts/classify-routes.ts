@@ -28,6 +28,11 @@ import { fileURLToPath } from "node:url";
 import { SERVICES } from "../services/asp/src/registry/services";
 import { STAGE1_SERVED } from "../services/asp/src/workers/stage1-routes";
 import { PAID_PATHS } from "../services/asp/src/workers/paid-routes";
+import { CONSUMER_READ_PATHS } from "../services/asp/src/workers/consumer-reads";
+import { DISCORD_PATHS } from "../services/asp/src/workers/discord-routes";
+import { AGENT_CARD_PATHS } from "../services/asp/src/workers/agent-card";
+import { POLICY_PATHS } from "../services/asp/src/workers/policy-routes";
+import { CREATE_INTENT_ROUTE } from "../services/asp/src/config";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..");
@@ -52,7 +57,7 @@ const manifest = JSON.parse(readFileSync(MANIFEST, "utf8")) as {
 };
 
 /** What the Worker's route tables actually declare. Read, not restated. */
-const served = new Set<string>([...STAGE1_SERVED, ...PAID_PATHS]);
+const served = new Set<string>([...STAGE1_SERVED, ...PAID_PATHS, ...CONSUMER_READ_PATHS, ...DISCORD_PATHS, ...AGENT_CARD_PATHS, ...POLICY_PATHS, CREATE_INTENT_ROUTE]);
 
 /**
  * The routes the marketplace listing points a buyer at.
@@ -92,8 +97,20 @@ function classify(route: ManifestRoute): { state: State; why: string } {
   if (PRODUCT_UI_PATHS.includes(route.path)) {
     return { state: "DEFERRED_AFTER_RELIST", why: "the product UI calls this — BLOCKING" };
   }
+  /**
+   * A control-channel callback blocks relisting only if something the marketplace advertises depends
+   * on it. Nothing does: no MARKETPLACE_LISTABLE service references a channel binding, and Telegram
+   * has no service definition at all. The pattern `callback|webhook` was matching on the path shape
+   * rather than on that dependency, which reported three routes as release blockers when the listing
+   * makes no promise about any of them.
+   *
+   * They remain real product surface and remain deferred — deferred is not the same as fine.
+   */
   if (/callback|interactions|webhook/.test(route.path)) {
-    return { state: "DEFERRED_AFTER_RELIST", why: "control-channel callback — BLOCKING if the channel is advertised" };
+    return {
+      state: "DEFERRED_AFTER_RELIST",
+      why: "control-channel callback; no advertised marketplace service depends on it",
+    };
   }
   if (route.path.startsWith("/consumer/")) {
     return { state: "DEFERRED_AFTER_RELIST", why: "Consumer Pack surface, refuses by name until ported" };

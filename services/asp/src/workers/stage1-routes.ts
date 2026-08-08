@@ -37,8 +37,14 @@ import {
   RANK_OPTIONS_ROUTE,
   RECEIPT_STATUS_ROUTE,
   SEO_TIPS_ROUTE,
+  LOG_RECEIPT_ROUTE,
+  GET_LEDGER_ROUTE,
+  ESCALATION_STATUS_ROUTE,
+  APPROVAL_DECIDE_ROUTE,
 } from "../config";
-import { receiptReader, receiptStatusRoute } from "./receipt-reads";
+import { coerceObjectParams } from "./coerce-params";
+import { logReceiptRoute, receiptReader, receiptStatusRoute } from "./receipt-reads";
+import { approvalDecideRoute, escalationStatusRoute, getLedgerRoute } from "./ledger-route";
 import {
   handleCafeMenu,
   handleCafeOrderLatte,
@@ -123,7 +129,8 @@ export const STAGE1_SERVED: ReadonlySet<string> = new Set<string>([
   SEO_TIPS_ROUTE,
   CHECK_DOMAINS_ROUTE,
   // A read. It answers from Postgres and holds nothing that could enqueue a receipt.
-  RECEIPT_STATUS_ROUTE,
+  RECEIPT_STATUS_ROUTE, LOG_RECEIPT_ROUTE, GET_LEDGER_ROUTE,
+  ESCALATION_STATUS_ROUTE, APPROVAL_DECIDE_ROUTE,
 ]);
 
 /**
@@ -211,22 +218,45 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
      */
     { method: "GET", pattern: CAFE_MENU_ROUTE, bodyMode: "none", handler: () => fromResult(handleCafeMenu()) },
     {
+      /**
+       * PRODUCTION_DISABLED, and now actually disabled.
+       *
+       * The registry classifies this `PRODUCTION_DISABLED` and the catalog said so, but the route was
+       * ported alongside the free tools and kept fulfilling: an empty unpaid POST returned an order id
+       * and `"amountPaid":"4.00"`, describing a payment that never happened for coffee that does not
+       * exist. A label is not a gate — the same failure the arming fix corrected, on the disable side.
+       *
+       * Refused with its own code rather than the migration 503, because "deliberately off" and "not
+       * ported yet" are different facts and a caller deciding whether to retry needs to tell them apart.
+       */
       method: "POST",
       pattern: CAFE_LATTE_ROUTE,
-      bodyMode: "json",
-      handler: (req) => fromResult(handleCafeOrderLatte(req.body)),
+      bodyMode: "none",
+      handler: () =>
+        json(
+          {
+            code: "SERVICE_PRODUCTION_DISABLED",
+            message:
+              "the cafe order simulation is disabled in production. It contacted no merchant, placed no " +
+              "order and produced no coffee, and returning a paid-looking receipt for it misrepresented " +
+              "what a payment buys.",
+            retryable: false,
+            docsUrl: "https://docs.untch.xyz",
+          },
+          410,
+        ),
     },
     {
       method: "POST",
       pattern: RANK_OPTIONS_ROUTE,
       bodyMode: "json",
-      handler: (req) => fromResult(handleRankOptions(req.body)),
+      handler: (req) => fromResult(handleRankOptions(coerceObjectParams(req.body))),
     },
     {
       method: "POST",
       pattern: SEO_TIPS_ROUTE,
       bodyMode: "json",
-      handler: (req) => fromResult(handleSeoTips(req.body)),
+      handler: (req) => fromResult(handleSeoTips(coerceObjectParams(req.body))),
     },
     {
       /**
@@ -237,7 +267,7 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
       method: "POST",
       pattern: CHECK_DOMAINS_ROUTE,
       bodyMode: "json",
-      handler: async (req) => fromResult(await handleCheckDomains(req.body)),
+      handler: async (req) => fromResult(await handleCheckDomains(coerceObjectParams(req.body))),
     },
 
     {
@@ -252,6 +282,17 @@ export function stage1Routes(ctx: RouteContext, settlement: Stage1Settlement): r
      * got it from this service and is entitled to know what happened to it.
      */
     receiptStatusRoute(receiptReader(ctx.pool)),
+    /**
+     * `log_receipt` reads the same Postgres row as `receipt_status`. It sat on the 503 because the
+     * Express wiring it asked for builds a Redis connection alongside the repo, and a Worker has no
+     * Redis — but Redis is how a receipt gets ENQUEUED, not how its status is read.
+     */
+    logReceiptRoute(receiptReader(ctx.pool)),
+    /** Refused by name, with the reason and the two routes that do answer. See `ledger-route.ts`. */
+    getLedgerRoute(),
+    /** Both refused by name for stated reasons, rather than falling to a bare 503. */
+    escalationStatusRoute(),
+    approvalDecideRoute(),
 
     { method: "GET", pattern: "/healthz", bodyMode: "none", handler: () => json(healthBody(ctx)) },
 

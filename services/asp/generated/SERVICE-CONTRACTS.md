@@ -10,11 +10,11 @@ from — so there is no version of this page that can disagree with the service.
 | --- | --- | --- | --- |
 | `catalog` | free | live | [/schema/catalog](https://asp.untch.xyz/schema/catalog) |
 | `ping_untch` | free | live | [/schema/ping_untch](https://asp.untch.xyz/schema/ping_untch) |
-| `preflight_payment` | $0.05 | demo | [/schema/preflight_payment](https://asp.untch.xyz/schema/preflight_payment) |
-| `verify_delivery` | $0.10 | demo | [/schema/verify_delivery](https://asp.untch.xyz/schema/verify_delivery) |
+| `preflight_payment` | $0.05 | live | [/schema/preflight_payment](https://asp.untch.xyz/schema/preflight_payment) |
+| `verify_delivery` | $0.10 | live | [/schema/verify_delivery](https://asp.untch.xyz/schema/verify_delivery) |
 | `create_spend_intent` | free | demo | [/schema/create_spend_intent](https://asp.untch.xyz/schema/create_spend_intent) |
 | `get_ledger` | free | demo | [/schema/get_ledger](https://asp.untch.xyz/schema/get_ledger) |
-| `detect_duplicate` | $0.02 | demo | [/schema/detect_duplicate](https://asp.untch.xyz/schema/detect_duplicate) |
+| `detect_duplicate` | $0.02 | live | [/schema/detect_duplicate](https://asp.untch.xyz/schema/detect_duplicate) |
 | `redact_payment_metadata` | $0.02 | live | [/schema/redact_payment_metadata](https://asp.untch.xyz/schema/redact_payment_metadata) |
 | `log_receipt` | free | live | [/schema/log_receipt](https://asp.untch.xyz/schema/log_receipt) |
 | `receipt_status` | free | live | [/schema/receipt_status](https://asp.untch.xyz/schema/receipt_status) |
@@ -25,11 +25,11 @@ from — so there is no version of this page that can disagree with the service.
 | `reconcile_agent_spend` | $0.25 | blocked | [/schema/reconcile_agent_spend](https://asp.untch.xyz/schema/reconcile_agent_spend) |
 | `cafe_menu` | free | demo | [/schema/cafe_menu](https://asp.untch.xyz/schema/cafe_menu) |
 | `cafe_order_latte` | free | demo | [/schema/cafe_order_latte](https://asp.untch.xyz/schema/cafe_order_latte) |
-| `suggest_names` | $0.01 | demo | [/schema/suggest_names](https://asp.untch.xyz/schema/suggest_names) |
-| `rank_options` | free | blocked | [/schema/rank_options](https://asp.untch.xyz/schema/rank_options) |
-| `check_domains` | free | blocked | [/schema/check_domains](https://asp.untch.xyz/schema/check_domains) |
-| `seo_tips` | free | demo | [/schema/seo_tips](https://asp.untch.xyz/schema/seo_tips) |
-| `brand_pack` | $0.05 | blocked | [/schema/brand_pack](https://asp.untch.xyz/schema/brand_pack) |
+| `suggest_names` | $0.01 | live | [/schema/suggest_names](https://asp.untch.xyz/schema/suggest_names) |
+| `rank_options` | free | live | [/schema/rank_options](https://asp.untch.xyz/schema/rank_options) |
+| `check_domains` | free | live | [/schema/check_domains](https://asp.untch.xyz/schema/check_domains) |
+| `seo_tips` | free | live | [/schema/seo_tips](https://asp.untch.xyz/schema/seo_tips) |
+| `brand_pack` | $0.05 | live | [/schema/brand_pack](https://asp.untch.xyz/schema/brand_pack) |
 | `account_link_start` | free | live | [/schema/account_link_start](https://asp.untch.xyz/schema/account_link_start) |
 | `account_link_complete` | free | live | [/schema/account_link_complete](https://asp.untch.xyz/schema/account_link_complete) |
 | `policy_draft` | free | live | [/schema/policy_draft](https://asp.untch.xyz/schema/policy_draft) |
@@ -117,7 +117,7 @@ null
 
 Judges a proposed payment against a registered spend policy and returns allow, block or escalate, with the rule that decided it. For an operator funding an autonomous agent who wants every payment checked before it moves.
 
-You provide: provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string); either policyId (string), or useDefaultPolicy (boolean).
+You provide: policyId (string); provider (string); capability (string); task (string); maxSpend (string); currency (string); deadline (string).
 
 You receive: a decision, the ordered list of rules that were evaluated and what each one found, and a receipt reference for the decision.
 
@@ -139,6 +139,7 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
 - `CURRENCY_NOT_SETTLEABLE` (400) — this network has no confirmed contract for that currency
 - `MAX_SPEND_INVALID` (400) — maxSpend is not a decimal amount the settlement token can express
 - `DEADLINE_IN_THE_PAST` (400) — the deadline has already passed
+- `POLICY_ID_REQUIRED` (400) — no policyId was sent. This surface has no account to resolve a default from, so the id is required outright
 - `ACCOUNT_LINK_REQUIRED` (401) — no wallet-backed session accompanied the request; the policy, the spending agent and the owning wallet are all properties of an account
 - `POLICY_REQUIRED` (409) — no policyId was sent and the account has chosen no default, or the named policy is neither owned by nor delegated to this account
 - `POLICY_INACTIVE` (409) — the policy is paused, revoked, or past its on-chain expiry
@@ -157,8 +158,8 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
   "capability": "domains.register",
   "task": "Register kyrve.xyz for one year",
   "maxSpend": "20.00",
-  "currency": "USDT0",
-  "deadline": "2026-08-02T12:00:00.000Z",
+  "currency": "USD₮0",
+  "deadline": "2030-01-01T00:00:00.000Z",
   "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
   "parameters": {
     "domain": "kyrve.xyz",
@@ -169,7 +170,7 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
 }
 ```
 
-**A request that is refused** — `POLICY_REQUIRED`
+**A request that is refused** — `POLICY_ID_REQUIRED`
 
 ```json
 {
@@ -177,8 +178,8 @@ You receive: a decision, the ordered list of rules that were evaluated and what 
   "capability": "domains.register",
   "task": "Register kyrve.xyz for one year",
   "maxSpend": "20.00",
-  "currency": "USDT0",
-  "deadline": "2026-08-02T12:00:00.000Z",
+  "currency": "USD₮0",
+  "deadline": "2030-01-01T00:00:00.000Z",
   "recipient": "0xd9ed4d474b0d01031d10d637546450f39ed6a5ba",
   "parameters": {
     "domain": "kyrve.xyz",
@@ -1224,7 +1225,7 @@ You receive: the numeric policyId, the on-chain owner, and whether the policy be
 
 ## Default policy — `set_default_policy`
 
-`POST /consumer/account/default-policy` · free · schema v1.0.0
+`PUT /consumer/account/default-policy` · free · schema v1.0.0
 
 Chooses which policy answers when a request names none. For an account owner holding more than one policy.
 

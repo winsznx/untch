@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import { after, before, describe, test } from "node:test";
 import { NETWORK, SETTLEMENT_TOKEN } from "../src/config";
+import { SERVICES } from "../src/registry/services";
 import { ERC8004_AGENT_ID } from "../src/registry/marketplace-identity";
 import { createSellerApp } from "../src/server";
 import { armingState } from "../src/workers/arming";
@@ -232,6 +233,63 @@ describe("the table serves exactly what it claims to serve", () => {
    * ported. Any other route declaring `raw` would be claiming it needs unparsed bytes when it does
    * not, and `assertRawBodyRoutesFirst` would then start constraining the table for no reason.
    */
+  /**
+   * A CLASS IS A GATE, NOT A LABEL.
+   *
+   * `cafe_order_latte` is PRODUCTION_DISABLED and the catalog said so, while the live route happily
+   * fulfilled an empty unpaid POST and returned `"amountPaid":"4.00"` — a receipt for a payment that
+   * never happened, for coffee that does not exist. It was ported alongside the free tools because its
+   * GET probe is free, without anyone checking what class it was in.
+   *
+   * This is the check that the classification actually decides what runs. It fails on the route table,
+   * not on the catalog, because the catalog was already telling the truth.
+   */
+  test("no PRODUCTION_DISABLED service is ever served", async () => {
+    const disabled = SERVICES.filter((s) => s.classification.serviceClass === "PRODUCTION_DISABLED");
+    assert.ok(disabled.length > 0, "this guard is meaningless if nothing is disabled");
+
+    /**
+     * Asserted on BEHAVIOUR, not on whether a route exists.
+     *
+     * A disabled service may still answer — it should say it is disabled rather than 503 "migrating",
+     * because a caller deciding whether to retry needs to know it is never coming back. What it must
+     * never do is succeed.
+     */
+    for (const svc of disabled) {
+      const res = await dispatch(
+        routerFor(),
+        new Request(`${BASE}${svc.path}`, {
+          method: svc.method,
+          ...(svc.method === "POST"
+            ? { body: "{}", headers: { "content-type": "application/json" } }
+            : {}),
+        }),
+        { onNotFound: stage1Fallback },
+      );
+      assert.ok(
+        res.status >= 400,
+        `${svc.toolId} is ${svc.classification.serviceClass} but ${svc.method} ${svc.path} returned ${res.status}`,
+      );
+    }
+  });
+
+  test("a disabled route refuses distinctly from an unported one", async () => {
+    const res = await workerGet("/cafe/order/latte");
+    assert.notEqual(res.status, 200, "a disabled service must not fulfil");
+    const disabledPost = await dispatch(
+      routerFor(),
+      new Request(`${BASE}/cafe/order/latte`, { method: "POST" }),
+      { onNotFound: stage1Fallback },
+    );
+    const body = (await disabledPost.json()) as { code: string };
+    assert.equal(disabledPost.status, 410);
+    assert.equal(
+      body.code,
+      "SERVICE_PRODUCTION_DISABLED",
+      "deliberately off and not-yet-ported are different facts; a caller deciding whether to retry needs both",
+    );
+  });
+
   test("no Stage 1 route claims raw bytes", () => {
     for (const route of routerFor().allRoutes()) {
       assert.notEqual(route.bodyMode, "raw", `${route.pattern} does not verify a signature over its bytes`);
@@ -267,6 +325,31 @@ describe("a marketplace validator probing a listed service gets the Express answ
    * delisting and a 503 reads as an outage, so both transports must say the same thing: the endpoint
    * is real, and it takes POST.
    */
+  /**
+   * A DELIBERATE DIVERGENCE FROM EXPRESS.
+   *
+   * Express still fulfils `POST /cafe/order/latte` and returns a receipt reading `amountPaid: 4.00`
+   * for a simulation that contacts no merchant. The registry classifies it PRODUCTION_DISABLED, so
+   * this transport refuses it. Parity with a behaviour the classification says is wrong is not a
+   * property worth keeping.
+   */
+  test("the disabled cafe order refuses here even though Express fulfils it", async () => {
+    const fromExpress = await fetch(`${expressBase}/cafe/order/latte`, {
+      method: "POST",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(fromExpress.status, 200, "Express still fulfils it; that is the behaviour being dropped");
+
+    const fromWorker = await dispatch(
+      routerFor(),
+      new Request(`${BASE}/cafe/order/latte`, { method: "POST" }),
+      { onNotFound: stage1Fallback },
+    );
+    assert.equal(fromWorker.status, 410);
+    assert.equal(((await fromWorker.json()) as { code: string }).code, "SERVICE_PRODUCTION_DISABLED");
+  });
+
   test("the free probe answers 405 USE_POST, exactly as Express does", async () => {
     const [fromExpress, fromWorker] = await Promise.all([
       expressGet("/cafe/order/latte"),
@@ -346,15 +429,6 @@ describe("the free tools answer identically on both transports", () => {
     assert.equal(fromExpress.status, 200);
     assert.equal(fromWorker.status, 200);
     assert.deepEqual(await fromWorker.json(), await fromExpress.json());
-  });
-
-  test("POST /cafe/order/latte", async () => {
-    const { fromExpress, fromWorker } = await post("/cafe/order/latte", { size: "large", milk: "oat" });
-    assert.equal(fromWorker.status, fromExpress.status);
-    // The demo mints an order id per call, so only the shape and the fixed fields can be compared.
-    const e = (await fromExpress.json()) as Record<string, unknown>;
-    const w = (await fromWorker.json()) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(w).sort(), Object.keys(e).sort());
   });
 
   /**
