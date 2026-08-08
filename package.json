@@ -75,7 +75,8 @@
     "migrate:all": "tsx scripts/migrate-all.ts",
     "demo:record": "pnpm --dir scripts/demo-video record",
     "gen:routes": "tsx scripts/gen-route-manifest.ts",
-    "deploy:worker": "tsx scripts/deploy-worker.ts"
+    "deploy:worker": "tsx scripts/deploy-worker.ts",
+    "gen:relisting": "tsx scripts/gen-okx-relisting.ts"
   },
   "dependencies": {
     "canonicalize": "^3.0.0",
