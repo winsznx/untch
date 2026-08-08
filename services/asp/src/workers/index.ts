@@ -115,6 +115,13 @@ function paid(ctx: RouteContext): ReturnType<typeof buildPaidSurface> | null {
     publicBaseUrl: ctx.baseUrl,
     okx: { apiKey, secretKey, passphrase },
     arming: () => ctx.arming,
+    /**
+     * What the PUBLISHED preflight contract needs beyond the protocol one: a secret to open the
+     * caller's account session, and the registry the decision snapshot names. Without them the paid
+     * routes still serve the protocol shape — they just cannot serve the shape we advertise.
+     */
+    ...(env.CONSUMER_AUTH_SECRET?.trim() ? { sessionSecret: env.CONSUMER_AUTH_SECRET.trim() } : {}),
+    ...(env.POLICY_REGISTRY?.trim() ? { registry: env.POLICY_REGISTRY.trim() } : {}),
   });
   return paidSurface;
 }

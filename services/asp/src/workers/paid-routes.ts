@@ -47,8 +47,16 @@ import { handleCreateSpendIntent, handlePreflightPayment, handleVerifyDelivery }
 import { handleDetectDuplicate, handleRedactPaymentMetadata } from "../s11-handlers";
 import { createLedgerState } from "../ledger-state";
 import { buildPaidRouteTable } from "../paid-route-table";
+import { narrowToDecisionOnly } from "../route-profiles";
 import type { Route } from "./router";
 import { coerceObjectParams, type ParamSchema } from "./coerce-params";
+import {
+  looksPublic,
+  looksPublicVerify,
+  runPublicPreflight,
+  runPublicVerify,
+  type PublicSurfaceArgs,
+} from "./public-surface";
 import { SERVICES } from "../registry/services";
 import { PgIntentStore } from "./intent-store";
 import { recordSale } from "./sales";
@@ -77,6 +85,15 @@ export interface PaidSurfaceArgs {
    * moves nothing — but turning an authorization into a transfer does not.
    */
   readonly arming: () => ArmingState;
+  /**
+   * The account-session secret and the policy registry address.
+   *
+   * Both are what the PUBLISHED preflight contract needs and the protocol one does not. Optional so a
+   * deployment missing either still serves the protocol shape rather than failing to build a route
+   * table.
+   */
+  readonly sessionSecret?: string | undefined;
+  readonly registry?: string | undefined;
 }
 
 export interface PaidSurface {
@@ -187,6 +204,31 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
      * attestation. Railway owns those until the writer transfer. Omitted rather than stubbed so there is
      * nothing here to accidentally call.
      */
+    /**
+     * The published surface's dependencies, built per request because every one touches the pool.
+     *
+     * `sessionSecret` and the registry address are what a public preflight needs beyond the policy
+     * reader: the first to open the caller's account session, the second to name the chain and
+     * registry in the decision snapshot. Absent either, the public branch is not offered and the
+     * protocol handler answers as before — a wrong decision is worse than a refused one.
+     */
+    const publicArgs: PublicSurfaceArgs | null =
+      args.sessionSecret && args.registry
+        ? { pool, policies: policyProvider, sessionSecret: args.sessionSecret, registry: args.registry }
+        : null;
+
+    /**
+     * DECISION-ONLY, enforced by the type and re-checked at runtime.
+     *
+     * `narrowToDecisionOnly` refuses if an execution key is present anyway, so this route cannot reach
+     * an executor however the bundle above is later edited.
+     */
+    const decisionOnly = narrowToDecisionOnly({
+      policyProvider,
+      intentStore: ledgerState.intentStore,
+      scoreDataSource: null,
+    } as never);
+
     const preflightDeps = {
       policyProvider,
       ledger: ledgerState.ledger,
@@ -263,6 +305,27 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
   const schemaFor = (pattern: string): ParamSchema | undefined =>
     SERVICES.find((svc) => svc.path === pattern)?.input as ParamSchema | undefined;
 
+  /**
+   * Same as `priced`, but the handler also sees the request.
+   *
+   * The published preflight needs the account session bearer and the payment authorization the gate
+   * has already verified. Both live on headers, and neither is a capability: the authorization is
+   * parsed down to strings and nulls before it reaches application code.
+   */
+  const pricedWithRequest = (
+    pattern: string,
+    run: (body: unknown, request: Request) => Promise<HandlerResult> | HandlerResult,
+  ): Route => ({
+    method: "POST",
+    pattern,
+    bodyMode: "json",
+    priced: true,
+    handler: async (req) => {
+      await hydrate(req.body);
+      return fromResult(await run(coerceObjectParams(req.body, schemaFor(pattern)), req.request));
+    },
+  });
+
   const priced = (pattern: string, run: (body: unknown) => Promise<HandlerResult> | HandlerResult): Route => ({
     method: "POST",
     pattern,
@@ -299,9 +362,24 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
 
   return [
       freeIntent,
-      priced(PREFLIGHT_ROUTE, (body) => handlePreflightPayment(body, preflightDeps as never)),
-      priced(VERIFY_ROUTE, (body) =>
-        handleVerifyDelivery(body, { policyProvider, intentStore: ledgerState.intentStore } as never),
+      /**
+       * The published contract first, the protocol one as the fallback it is.
+       *
+       * Express branches on the body shape and the port kept only the second arm, so a buyer sending
+       * exactly what we advertise reached a handler demanding an intent struct and got INTENT_REQUIRED.
+       * The two shapes cannot be confused — a public request has `provider`, `capability`, `task` and
+       * `maxSpend`; a protocol intent has `owner` and `taskHash` — which is what lets one route serve
+       * both without a version flag.
+       */
+      pricedWithRequest(PREFLIGHT_ROUTE, (body, request) =>
+        looksPublic(body) && publicArgs
+          ? runPublicPreflight(body, request, publicArgs, decisionOnly)
+          : handlePreflightPayment(body, preflightDeps as never),
+      ),
+      pricedWithRequest(VERIFY_ROUTE, (body, request) =>
+        looksPublicVerify(body) && publicArgs
+          ? runPublicVerify(body, request, publicArgs)
+          : handleVerifyDelivery(body, { policyProvider, intentStore: ledgerState.intentStore } as never),
       ),
       priced(DETECT_DUP_ROUTE, (body) => handleDetectDuplicate(body, ledgerState.ledger)),
       priced(REDACT_META_ROUTE, (body) => handleRedactPaymentMetadata(body)),
