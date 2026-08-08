@@ -167,7 +167,69 @@ export function buildPaidSurface(args: PaidSurfaceArgs): PaidSurface {
    * So the guard is behavioural — `a settled sale survives the arming wrapper` in
    * `x402-workers-adapter.test.ts` calls the gate the way the Worker actually calls it.
    */
+  /**
+   * The fields a POST must carry for the call to have any chance of succeeding.
+   *
+   * `allOf` must all be present. `anyOf`, when set, needs at least one. The four single-shape tools
+   * take their `allOf` straight from the schema's `required`. `verify_delivery` and `preflight_payment`
+   * are dual-shape — a marketplace buyer sends `intentHash` or an inline `intent`, not the account-path
+   * `intentId` or the friendly public fields — so a strict schema check would reject a valid protocol
+   * call. Their presence rules are stated by hand to cover both shapes.
+   */
+  const requiredPresence: Record<string, { allOf?: readonly string[]; anyOf?: readonly string[] }> = {
+    [SUGGEST_NAMES_ROUTE]: { allOf: ["idea"] },
+    [BRAND_PACK_ROUTE]: { allOf: ["idea"] },
+    [DETECT_DUP_ROUTE]: { allOf: ["policyId", "taskHash", "endpoint", "paramsHash"] },
+    [REDACT_META_ROUTE]: { allOf: ["metadata"] },
+    [VERIFY_ROUTE]: { anyOf: ["intentId", "intentHash", "intent"] },
+    [PREFLIGHT_ROUTE]: { allOf: ["policyId"], anyOf: ["provider", "intent"] },
+  };
+
+  /**
+   * The 400 a doomed request gets BEFORE it is asked to pay.
+   *
+   * An empty `{}` or a body of junk keys used to receive a 402, so a buyer could prepare, sign and
+   * submit a payment for a call the handler was always going to refuse. Checking the required fields
+   * before the challenge means they are told what is missing without spending anything. Only POST
+   * bodies are checked — the GET and HEAD compatibility probes carry no body and must still answer the
+   * priced 402 that proves the endpoint is real.
+   */
+  const preGateRefusal = (request: Request, body: unknown): Response | null => {
+    if (request.method !== "POST") return null;
+    const pathname = new URL(request.url).pathname;
+    const rule = requiredPresence[pathname];
+    if (!rule) return null;
+
+    const b = (body ?? {}) as Record<string, unknown>;
+    const has = (k: string) => b[k] !== undefined && b[k] !== null && b[k] !== "";
+    const missingAll = (rule.allOf ?? []).filter((k) => !has(k));
+    const anyOfUnmet = rule.anyOf && rule.anyOf.length > 0 && !rule.anyOf.some(has);
+
+    if (missingAll.length === 0 && !anyOfUnmet) return null;
+
+    const parts: string[] = [];
+    if (missingAll.length > 0) parts.push(`missing required field(s): ${missingAll.join(", ")}`);
+    if (anyOfUnmet) parts.push(`provide at least one of: ${rule.anyOf!.join(", ")}`);
+    return new Response(
+      JSON.stringify(
+        {
+          code: "REQUEST_SCHEMA_VIOLATION",
+          message: `${parts.join("; ")}. Refused before payment, so nothing was charged.`,
+          retryable: false,
+          docsUrl: null,
+        },
+        null,
+        2,
+      ),
+      { status: 400, headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*" } },
+    );
+  };
+
   const gate: WorkersPaymentGate = async (request, body, run, onSettled) => {
+    // Refuse a call that cannot succeed BEFORE issuing the 402, so no one pays for an empty body.
+    const refusal = preGateRefusal(request, body);
+    if (refusal) return refusal;
+
     const carriesAuthorization =
       request.headers.has("x-payment") || request.headers.has("payment") || request.headers.has("x-payment-signature");
     // Read per request, not captured: the surface is memoised per isolate, and a captured state would
